@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\CsrfTokenController;
+use App\Http\Controllers\Portal\BranchesController;
+use App\Http\Controllers\Portal\PortalUsersController;
 use App\Http\Controllers\SpaController;
 use App\Http\Middleware\EnsureMerchantSessionIsFresh;
 use App\Http\Middleware\EnsureUserIsAuthenticated;
@@ -60,6 +62,29 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
     Route::get('/auth/user', [AuthenticatedSessionController::class, 'show'])
         ->middleware(RequireJsonRequest::class)
         ->name('auth.user');
+
+    // -------- Phase 4.5 — Portal Users (merchant manages own team) -----
+    // All endpoints auto-scoped to the actor's company via the
+    // MerchantTenantContext middleware that ran before this group.
+    // Permission gating happens inside each controller method.
+    Route::prefix('api')->middleware(RequireJsonRequest::class)->group(function (): void {
+        Route::get('portal-users', [PortalUsersController::class, 'index'])
+            ->name('portal-users.index');
+        Route::post('portal-users', [PortalUsersController::class, 'store'])
+            ->name('portal-users.store');
+        Route::patch('portal-users/{portalUser}', [PortalUsersController::class, 'update'])
+            ->name('portal-users.update');
+        Route::post('portal-users/{portalUser}/suspend', [PortalUsersController::class, 'suspend'])
+            ->name('portal-users.suspend');
+        Route::post('portal-users/{portalUser}/reactivate', [PortalUsersController::class, 'reactivate'])
+            ->name('portal-users.reactivate');
+        Route::post('portal-users/{portalUser}/reset-password', [PortalUsersController::class, 'resetPassword'])
+            ->name('portal-users.reset-password');
+
+        // Read-only branches list for the scope multi-select.
+        Route::get('branches', [BranchesController::class, 'index'])
+            ->name('branches.index');
+    });
 
     // SPA fallback — every authenticated path that isn't an API
     // endpoint or an auth route serves the shell. The Vue router

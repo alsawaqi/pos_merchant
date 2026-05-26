@@ -23,6 +23,10 @@ export interface AuthUser {
     status: string | null;
     company_id: number | null;
     locale: string | null;
+    /** Spatie role names under the user's company team scope. */
+    roles?: string[];
+    /** Flat permission names ('portal_users.view', etc.). */
+    permissions?: string[];
 }
 
 export interface AuthSession {

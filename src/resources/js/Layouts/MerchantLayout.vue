@@ -17,17 +17,26 @@
 import { computed, onMounted, ref, type Component } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { RouterLink } from 'vue-router';
-import { ChevronDown, Gauge, Globe, LogOut, Menu, X } from 'lucide-vue-next';
+import { ChevronDown, Gauge, Globe, LogOut, Menu, Users, X } from 'lucide-vue-next';
 import { authState } from '@/stores/auth';
 import { setLocale, type SupportedLocale } from '@/lib/i18n';
+import { usePermissions } from '@/composables/usePermissions';
+import { MerchantPermission, type MerchantPermissionValue } from '@/lib/permissions';
 
 interface NavItem {
     key: string;
     to: string;
     icon: Component;
+    /**
+     * When null, the entry is always visible. When set, the entry
+     * is gated by usePermissions().can(permission). Server-side
+     * is still the real enforcement.
+     */
+    permission: MerchantPermissionValue | null;
 }
 
 const { t, locale } = useI18n();
+const { can } = usePermissions();
 
 const sidebarOpen = ref(false);
 const csrfToken = ref('');
@@ -37,10 +46,13 @@ onMounted(() => {
 });
 
 const navigationCatalog: readonly NavItem[] = [
-    { key: 'dashboard', to: '/', icon: Gauge },
+    { key: 'dashboard', to: '/', icon: Gauge, permission: null },
+    { key: 'portal_users', to: '/portal-users', icon: Users, permission: MerchantPermission.PortalUsersView },
 ];
 
-const visibleNavigation = computed(() => navigationCatalog);
+const visibleNavigation = computed(() =>
+    navigationCatalog.filter((item) => item.permission === null || can(item.permission)),
+);
 
 const userInitials = computed(() => {
     const name = authState.user?.name ?? 'M';

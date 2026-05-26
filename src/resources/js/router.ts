@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 import Login from '@/Pages/Auth/Login.vue';
 import Dashboard from '@/Pages/Merchant/Dashboard.vue';
+import PortalUsersIndex from '@/Pages/Merchant/PortalUsers/Index.vue';
 import { authState, ensureAuthLoaded, resetAuthBootPromise } from '@/stores/auth';
 
 declare module 'vue-router' {
@@ -21,6 +22,17 @@ const routes: RouteRecordRaw[] = [
         path: '/',
         name: 'merchant.dashboard',
         component: Dashboard,
+        meta: { requiresAuth: true },
+    },
+    {
+        // Portal Users — manage merchant's own team. Server-side
+        // permission middleware is the real gate; the SPA hides
+        // the sidebar entry when usePermissions().can() returns
+        // false but a curious user pasting the URL still hits the
+        // controller's authorize() check.
+        path: '/portal-users',
+        name: 'merchant.portal-users',
+        component: PortalUsersIndex,
         meta: { requiresAuth: true },
     },
     {

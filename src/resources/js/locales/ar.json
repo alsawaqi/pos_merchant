@@ -7,7 +7,7 @@
         "welcome_back": "أهلًا بعودتك",
         "sign_in_subtitle": "سجّل الدخول لإدارة حساب التاجر الخاص بك.",
         "email": "البريد الإلكتروني",
-        "email_placeholder": "you@example.com",
+        "email_placeholder": "you{'@'}example.com",
         "password": "كلمة المرور",
         "password_placeholder": "أدخل كلمة المرور",
         "remember_me": "تذكّرني على هذا الجهاز",
@@ -24,13 +24,15 @@
     },
     "nav": {
         "dashboard": "لوحة التحكم",
+        "portal_users": "مستخدمو البوابة",
         "sign_out": "تسجيل الخروج",
         "language": "اللغة"
     },
     "common": {
         "language_english": "English",
         "language_arabic": "العربية",
-        "loading": "جارٍ التحميل…"
+        "loading": "جارٍ التحميل…",
+        "cancel": "إلغاء"
     },
     "dashboard": {
         "title": "أهلًا بك",
@@ -43,5 +45,74 @@
             "العملاء وبرامج الولاء والخصومات",
             "التقارير وسجل التدقيق"
         ]
+    },
+    "portal_users": {
+        "section_label": "الفريق",
+        "title": "مستخدمو البوابة",
+        "subtitle": "أضف زملاء عمل إلى مساحة مِثقال، وحدد الفروع التي يمكنهم الوصول إليها، وأعد تعيين كلمات المرور عند الحاجة.",
+        "search_placeholder": "ابحث بالاسم أو البريد الإلكتروني…",
+        "empty_state": "لا يوجد زملاء بعد. أنشئ أول مستخدم للبدء.",
+        "never": "أبدًا",
+        "no_branches": "لا توجد فروع بعد — أنشئ فرعًا أولًا لتقييد الوصول.",
+        "validation_summary": "يرجى تصحيح الحقول المظللة.",
+        "table": {
+            "name": "الاسم",
+            "role": "الدور",
+            "scope": "نطاق الفروع",
+            "status": "الحالة",
+            "last_login": "آخر دخول",
+            "actions": "إجراءات"
+        },
+        "scope": {
+            "all": "جميع الفروع",
+            "restricted": "فرع {count} | فرعان {count} | {count} فروع | {count} فرعًا"
+        },
+        "statuses": {
+            "active": "نشط",
+            "inactive": "غير نشط",
+            "suspended": "موقوف"
+        },
+        "roles": {
+            "super_admin": "مسؤول عام",
+            "manager": "مدير",
+            "inventory_manager": "مدير المخزون",
+            "cashier_supervisor": "مشرف الكاشير",
+            "viewer": "مشاهد"
+        },
+        "actions": {
+            "edit": "تعديل",
+            "reset_password": "إعادة تعيين كلمة المرور",
+            "suspend": "إيقاف",
+            "reactivate": "إعادة تفعيل"
+        },
+        "create": {
+            "button": "إنشاء مستخدم",
+            "title": "إنشاء زميل جديد",
+            "subtitle": "سننشئ كلمة مرور لمرة واحدة يمكنك مشاركتها مع الزميل عبر قناة آمنة.",
+            "submit": "إنشاء المستخدم",
+            "submitting": "جارٍ الإنشاء…"
+        },
+        "edit": {
+            "title": "تعديل بيانات الزميل",
+            "submit": "حفظ التغييرات",
+            "submitting": "جارٍ الحفظ…"
+        },
+        "password_modal": {
+            "title": "كلمة المرور لمرة واحدة",
+            "subtitle": "انسخ هذه الكلمة وشاركها مع {name} ({email}) عبر قناة آمنة.",
+            "one_shot_warning": "تظهر كلمة المرور هذه مرة واحدة فقط. بعد إغلاق النافذة لا يمكن استرجاعها — فقط إعادة تعيينها.",
+            "password_label": "كلمة المرور المُنشأة",
+            "copy": "نسخ",
+            "copied": "تم النسخ",
+            "done": "تم"
+        },
+        "fields": {
+            "name": "الاسم الكامل",
+            "email": "البريد المهني",
+            "phone": "الهاتف (اختياري)",
+            "role": "الدور",
+            "branch_scope": "الوصول إلى الفروع",
+            "scope_all": "السماح بالوصول إلى جميع الفروع"
+        }
     }
 }

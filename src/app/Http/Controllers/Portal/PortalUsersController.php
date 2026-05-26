@@ -1,0 +1,194 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers\Portal;
+
+use App\Actions\Portal\CreatePortalUserAction;
+use App\Actions\Portal\ReactivatePortalUserAction;
+use App\Actions\Portal\ResetPortalUserPasswordAction;
+use App\Actions\Portal\SuspendPortalUserAction;
+use App\Actions\Portal\UpdatePortalUserAction;
+use App\Enums\MerchantPermission;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Portal\CreatePortalUserRequest;
+use App\Http\Requests\Portal\UpdatePortalUserRequest;
+use App\Http\Resources\Portal\PortalUserResource;
+use App\Models\User;
+use App\Support\MerchantTenantContext;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use RuntimeException;
+
+/**
+ * Merchant portal — manage YOUR OWN team's portal users.
+ *
+ *   GET    /api/portal-users                    → list
+ *   POST   /api/portal-users                    → create teammate
+ *   PATCH  /api/portal-users/{user}             → update (name/phone/role/scope)
+ *   POST   /api/portal-users/{user}/suspend     → suspend
+ *   POST   /api/portal-users/{user}/reactivate  → reactivate
+ *   POST   /api/portal-users/{user}/reset-password → mint a new pw
+ *
+ * All endpoints are auto-scoped to the signed-in user's
+ * company_id via MerchantTenantContext — there is no company
+ * uuid in the URL because the merchant only ever manages their
+ * own team.
+ *
+ * Permission gating uses MerchantPermission directly (no Policy
+ * class because the User model is shared with pos_admin's
+ * PortalUserPolicy and a second policy mapping would collide).
+ * The middleware has already pinned spatie's team_id to the
+ * actor's company_id, so $user->can(...) reads the right team.
+ *
+ * Cross-tenant safety: each mutation re-checks user->company_id
+ * matches the actor's tenant — defence in depth on top of the
+ * indexed WHERE clause that scopes the list.
+ */
+class PortalUsersController extends Controller
+{
+    public function __construct(
+        private readonly MerchantTenantContext $tenant,
+        private readonly CreatePortalUserAction $create,
+        private readonly UpdatePortalUserAction $update,
+        private readonly SuspendPortalUserAction $suspend,
+        private readonly ReactivatePortalUserAction $reactivate,
+        private readonly ResetPortalUserPasswordAction $resetPassword,
+    ) {}
+
+    /**
+     * GET /api/portal-users
+     *
+     * Lists every teammate in the actor's company, newest first.
+     * No pagination yet — most merchants will have < 20 portal
+     * users; pagination lands when any pilot tenant exceeds that.
+     */
+    public function index(Request $request): AnonymousResourceCollection
+    {
+        $this->ensure($request, MerchantPermission::PortalUsersView);
+
+        $users = User::query()
+            ->where('company_id', $this->tenant->requiredId())
+            ->where('user_type', 'merchant')
+            ->orderByDesc('created_at')
+            ->get();
+
+        return PortalUserResource::collection($users);
+    }
+
+    /**
+     * POST /api/portal-users
+     *
+     * Returns the new user + a one-shot plaintext password the
+     * SPA surfaces in a copy-once modal then forgets.
+     */
+    public function store(CreatePortalUserRequest $request): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::PortalUsersInvite);
+
+        try {
+            $result = $this->create->handle($request->validated(), $request->user());
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'data' => (new PortalUserResource($result['user']))->resolve($request),
+            'plaintext_password' => $result['plaintext_password'],
+        ], 201);
+    }
+
+    /**
+     * PATCH /api/portal-users/{user}
+     */
+    public function update(UpdatePortalUserRequest $request, User $portalUser): PortalUserResource
+    {
+        $this->ensure($request, MerchantPermission::PortalUsersUpdate);
+        $this->refuseIfNotInTenant($portalUser);
+
+        return PortalUserResource::make(
+            $this->update->handle($portalUser, $request->validated(), $request->user()),
+        );
+    }
+
+    /**
+     * POST /api/portal-users/{user}/suspend
+     *
+     * Action refuses self-suspension with a RuntimeException; we
+     * surface it as 422 with the inline message.
+     */
+    public function suspend(Request $request, User $portalUser): PortalUserResource | JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::PortalUsersRevoke);
+        $this->refuseIfNotInTenant($portalUser);
+
+        try {
+            $updated = $this->suspend->handle($portalUser, $request->user());
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return PortalUserResource::make($updated);
+    }
+
+    /**
+     * POST /api/portal-users/{user}/reactivate
+     */
+    public function reactivate(Request $request, User $portalUser): PortalUserResource
+    {
+        $this->ensure($request, MerchantPermission::PortalUsersRevoke);
+        $this->refuseIfNotInTenant($portalUser);
+
+        return PortalUserResource::make(
+            $this->reactivate->handle($portalUser, $request->user()),
+        );
+    }
+
+    /**
+     * POST /api/portal-users/{user}/reset-password
+     *
+     * Returns the new plaintext password ONCE — same envelope as
+     * the create response.
+     */
+    public function resetPassword(Request $request, User $portalUser): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::PortalUsersInvite);
+        $this->refuseIfNotInTenant($portalUser);
+
+        $result = $this->resetPassword->handle($portalUser, $request->user());
+
+        return response()->json([
+            'data' => (new PortalUserResource($result['user']))->resolve($request),
+            'plaintext_password' => $result['plaintext_password'],
+        ]);
+    }
+
+    /**
+     * Direct permission check — no Policy involved (User model is
+     * shared with pos_admin which owns the Policy mapping).
+     */
+    private function ensure(Request $request, MerchantPermission $permission): void
+    {
+        $user = $request->user();
+        if ($user === null || ! $user->can($permission->value)) {
+            abort(403);
+        }
+    }
+
+    /**
+     * Guard against operating on a teammate from a different
+     * merchant. The route binding resolves by `pos_users.id` (no
+     * uuid yet on this table); without this check an admin with
+     * the right permission could touch any user id.
+     */
+    private function refuseIfNotInTenant(User $portalUser): void
+    {
+        if ((int) $portalUser->company_id !== $this->tenant->requiredId()) {
+            abort(404);
+        }
+        if ($portalUser->user_type !== 'merchant') {
+            abort(404);
+        }
+    }
+}

@@ -158,10 +158,26 @@ class AuthenticatedSessionController extends Controller
     }
 
     /**
-     * @return array{id: int|string|null, name: string|null, email: string|null, user_type: string|null, status: string|null, company_id: int|null, locale: string|null}
+     * @return array{id: int|string|null, name: string|null, email: string|null, user_type: string|null, status: string|null, company_id: int|null, locale: string|null, roles: list<string>, permissions: list<string>}
      */
     private function userPayload(User $user): array
     {
+        // Pull roles + permissions under the user's company team
+        // scope so the SPA's can() / hasRole() helpers can mirror
+        // server-side gates without an extra round-trip.
+        $registrar = app(\Spatie\Permission\PermissionRegistrar::class);
+        $previousTeam = $registrar->getPermissionsTeamId();
+        if ($user->company_id !== null) {
+            $registrar->setPermissionsTeamId((int) $user->company_id);
+        }
+
+        try {
+            $roles = $user->getRoleNames()->all();
+            $permissions = $user->getAllPermissions()->pluck('name')->all();
+        } finally {
+            $registrar->setPermissionsTeamId($previousTeam);
+        }
+
         return [
             'id' => $user->getKey(),
             'name' => $user->name,
@@ -170,6 +186,8 @@ class AuthenticatedSessionController extends Controller
             'status' => $user->status,
             'company_id' => $user->company_id,
             'locale' => $user->locale,
+            'roles' => array_values($roles),
+            'permissions' => array_values($permissions),
         ];
     }
 

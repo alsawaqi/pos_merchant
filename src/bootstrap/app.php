@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Middleware\PreventBackHistoryCache;
 use App\Http\Middleware\SecurityHeaders;
+use App\Http\Middleware\SetMerchantTenantContext;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -22,6 +23,13 @@ return Application::configure(basePath: dirname(__DIR__))
         // logout can never restore the merchant shell.
         $middleware->append(SecurityHeaders::class);
         $middleware->append(PreventBackHistoryCache::class);
+
+        // Pin the merchant tenant scope + spatie team_id to the
+        // signed-in user's company_id on every web request. Guest
+        // requests short-circuit (no user → no scope change).
+        $middleware->web(append: [
+            SetMerchantTenantContext::class,
+        ]);
 
         // The merchant `web` guard redirects guests to /login —
         // matches the route name registered in routes/web.php.

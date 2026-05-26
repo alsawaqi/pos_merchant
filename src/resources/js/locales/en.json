@@ -7,7 +7,7 @@
         "welcome_back": "Welcome back",
         "sign_in_subtitle": "Sign in to manage your merchant account.",
         "email": "Email address",
-        "email_placeholder": "you@example.com",
+        "email_placeholder": "you{'@'}example.com",
         "password": "Password",
         "password_placeholder": "Enter your password",
         "remember_me": "Remember me on this device",
@@ -24,13 +24,15 @@
     },
     "nav": {
         "dashboard": "Dashboard",
+        "portal_users": "Portal Users",
         "sign_out": "Sign out",
         "language": "Language"
     },
     "common": {
         "language_english": "English",
         "language_arabic": "العربية",
-        "loading": "Loading…"
+        "loading": "Loading…",
+        "cancel": "Cancel"
     },
     "dashboard": {
         "title": "Welcome",
@@ -43,5 +45,74 @@
             "Customer + loyalty + discount management",
             "Reports + audit log"
         ]
+    },
+    "portal_users": {
+        "section_label": "Team",
+        "title": "Portal Users",
+        "subtitle": "Invite teammates into your MITHQAL workspace, decide which branches they can see, and rotate credentials when needed.",
+        "search_placeholder": "Search by name or email…",
+        "empty_state": "No teammates yet. Create your first one to get started.",
+        "never": "Never",
+        "no_branches": "No branches yet — create a branch first to restrict access.",
+        "validation_summary": "Please fix the highlighted fields.",
+        "table": {
+            "name": "Name",
+            "role": "Role",
+            "scope": "Branch scope",
+            "status": "Status",
+            "last_login": "Last login",
+            "actions": "Actions"
+        },
+        "scope": {
+            "all": "All branches",
+            "restricted": "{count} branch | {count} branches"
+        },
+        "statuses": {
+            "active": "Active",
+            "inactive": "Inactive",
+            "suspended": "Suspended"
+        },
+        "roles": {
+            "super_admin": "Super admin",
+            "manager": "Manager",
+            "inventory_manager": "Inventory manager",
+            "cashier_supervisor": "Cashier supervisor",
+            "viewer": "Viewer"
+        },
+        "actions": {
+            "edit": "Edit",
+            "reset_password": "Reset password",
+            "suspend": "Suspend",
+            "reactivate": "Reactivate"
+        },
+        "create": {
+            "button": "Create teammate",
+            "title": "Create a new teammate",
+            "subtitle": "We will generate a one-time password you can share with them out of band.",
+            "submit": "Create teammate",
+            "submitting": "Creating…"
+        },
+        "edit": {
+            "title": "Edit teammate",
+            "submit": "Save changes",
+            "submitting": "Saving…"
+        },
+        "password_modal": {
+            "title": "One-time password",
+            "subtitle": "Copy this password and share it with {name} ({email}) through a secure channel.",
+            "one_shot_warning": "This password is shown once. After you close this dialog it cannot be retrieved — only reset.",
+            "password_label": "Generated password",
+            "copy": "Copy",
+            "copied": "Copied",
+            "done": "Done"
+        },
+        "fields": {
+            "name": "Full name",
+            "email": "Work email",
+            "phone": "Phone (optional)",
+            "role": "Role",
+            "branch_scope": "Branch access",
+            "scope_all": "Allow access to all branches"
+        }
     }
 }
