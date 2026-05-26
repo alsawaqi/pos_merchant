@@ -1,0 +1,47 @@
+{
+    "app": {
+        "name": "MITHQAL Merchant Portal",
+        "tagline": "Run your business with confidence."
+    },
+    "auth": {
+        "welcome_back": "Welcome back",
+        "sign_in_subtitle": "Sign in to manage your merchant account.",
+        "email": "Email address",
+        "email_placeholder": "you@example.com",
+        "password": "Password",
+        "password_placeholder": "Enter your password",
+        "remember_me": "Remember me on this device",
+        "forgot_password": "Forgot your password?",
+        "forgot_password_hint": "Contact the MITHQAL admin who created your account to issue a new password.",
+        "sign_in": "Sign in",
+        "signing_in": "Signing in…",
+        "signing_out": "Signing out…",
+        "session_expired": "Your session expired. Please sign in again.",
+        "generic_error": "We could not sign you in. Please try again.",
+        "rate_limited": "Too many login attempts. Please wait a minute and try again.",
+        "hero_title": "Everything your merchant needs, in one portal.",
+        "hero_subtitle": "Configure branches, manage your POS staff, build your menu, and watch your sales — all from a workspace built for Oman."
+    },
+    "nav": {
+        "dashboard": "Dashboard",
+        "sign_out": "Sign out",
+        "language": "Language"
+    },
+    "common": {
+        "language_english": "English",
+        "language_arabic": "العربية",
+        "loading": "Loading…"
+    },
+    "dashboard": {
+        "title": "Welcome",
+        "subtitle": "This is your merchant control panel. As MITHQAL provisions more capabilities, they will appear here.",
+        "coming_soon_title": "Phase 4 features land soon",
+        "coming_soon_list": [
+            "Portal users + POS staff management",
+            "Floors + tables for each branch",
+            "Categories + products + add-ons",
+            "Customer + loyalty + discount management",
+            "Reports + audit log"
+        ]
+    }
+}
