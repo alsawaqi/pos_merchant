@@ -1,0 +1,59 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Resources\Pos\Catalogue;
+
+use App\Models\Product;
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+
+/**
+ * Projection of a {@see Product}. Money columns are
+ * strings (Laravel decimal cast) — the frontend treats
+ * them as exact-precision strings, never parses to float.
+ *
+ * cost_price is INTENTIONALLY exposed in the merchant
+ * portal payload (managers + inventory specialists need to
+ * see margins). The future POS-device payload will omit it
+ * — cashiers shouldn't see how much you paid for the cup.
+ *
+ * @mixin Product
+ */
+class ProductResource extends JsonResource
+{
+    /**
+     * @return array<string, mixed>
+     */
+    public function toArray(Request $request): array
+    {
+        return [
+            'id' => $this->id,
+            'uuid' => $this->uuid,
+            'category_id' => $this->category_id,
+            'category' => $this->whenLoaded('category', function () {
+                return $this->category === null ? null : [
+                    'id' => $this->category->id,
+                    'uuid' => $this->category->uuid,
+                    'name' => $this->category->name,
+                ];
+            }),
+            'sku' => $this->sku,
+            'barcode' => $this->barcode,
+            'name' => $this->name,
+            'name_ar' => $this->name_ar,
+            'description' => $this->description,
+            'image_url' => $this->image_url,
+            'base_price' => (string) $this->base_price,
+            'cost_price' => $this->cost_price !== null ? (string) $this->cost_price : null,
+            // Effective tax: column when set, NULL means
+            // "inherit company default". Frontend resolves
+            // the effective rate when needed.
+            'tax_rate' => $this->tax_rate !== null ? (string) $this->tax_rate : null,
+            'display_order' => $this->display_order,
+            'status' => $this->status?->value,
+            'created_at' => $this->created_at?->toIso8601String(),
+            'updated_at' => $this->updated_at?->toIso8601String(),
+        ];
+    }
+}

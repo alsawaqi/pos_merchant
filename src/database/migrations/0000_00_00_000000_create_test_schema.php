@@ -57,6 +57,9 @@ return new class extends Migration
             $table->string('status')->default('onboarding');
             $table->json('settings')->nullable();
             $table->text('notes')->nullable();
+            // Phase 6 — company-level default VAT rate (5.00 = 5%).
+            // pos_products.tax_rate overrides when set.
+            $table->decimal('default_tax_rate', 5, 2)->default(5.00);
             $table->timestamps();
             $table->softDeletes();
         });
@@ -162,6 +165,48 @@ return new class extends Migration
             // a faithful test mirror. Re-hires can reuse codes via
             // the soft-delete + (NULL vs NULL) trick.
             $table->unique(['company_id', 'staff_code'], 'pos_staff_company_code_unique');
+        });
+
+        // ---- pos_product_categories (Phase 6a) --------------------
+        Schema::create('pos_product_categories', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->string('name');
+            $table->string('name_ar')->nullable();
+            $table->text('description')->nullable();
+            $table->string('image_url', 500)->nullable();
+            $table->unsignedSmallInteger('display_order')->default(0);
+            $table->string('status', 32)->default('active');
+            $table->timestamps();
+            $table->softDeletes();
+            $table->unique(['company_id', 'name'], 'pos_product_categories_company_name_unique');
+        });
+
+        // ---- pos_products (Phase 6b) ------------------------------
+        Schema::create('pos_products', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('category_id')->nullable()->constrained('pos_product_categories')->nullOnDelete();
+            $table->string('sku', 64)->nullable();
+            $table->string('barcode', 64)->nullable();
+            $table->string('name');
+            $table->string('name_ar')->nullable();
+            $table->text('description')->nullable();
+            $table->string('image_url', 500)->nullable();
+            $table->decimal('base_price', 12, 3);
+            $table->decimal('cost_price', 12, 3)->nullable();
+            $table->decimal('tax_rate', 5, 2)->nullable();
+            $table->unsignedSmallInteger('display_order')->default(0);
+            $table->string('status', 32)->default('active');
+            $table->timestamps();
+            $table->softDeletes();
+            // Sqlite UNIQUE accepts multiple NULLs natively, so
+            // a plain unique is the faithful test mirror of the
+            // Postgres partial-unique-when-not-null index.
+            $table->unique(['company_id', 'sku'], 'pos_products_company_sku_unique');
+            $table->unique(['company_id', 'barcode'], 'pos_products_company_barcode_unique');
         });
 
         // ---- pos_floors (Phase 5) ---------------------------------

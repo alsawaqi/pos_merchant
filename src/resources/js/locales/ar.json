@@ -26,6 +26,7 @@
         "dashboard": "لوحة التحكم",
         "branches": "الفروع",
         "floor_plan": "مخطط القاعة",
+        "catalogue": "الكتالوج",
         "portal_users": "مستخدمو البوابة",
         "pos_staff": "موظفو نقاط البيع",
         "roles": "الأدوار والصلاحيات",
@@ -384,6 +385,84 @@
         "delete_table_dialog": {
             "title": "حذف الطاولة؟",
             "body": "حذف الطاولة «{label}»؟ الطلبات السابقة التي تشير إليها ستظل قابلة للحل.",
+            "confirm": "نعم، احذف",
+            "submitting": "جارٍ الحذف…"
+        }
+    },
+    "catalogue": {
+        "section_label": "القائمة",
+        "title": "الكتالوج",
+        "subtitle": "أدر فئات القائمة والمنتجات التابعة لها. الإضافات والخيارات تأتي في مرحلة لاحقة بعد تفعيل الطلبات.",
+        "validation_summary": "يرجى تصحيح الحقول المظللة.",
+        "uncategorized": "بدون فئة",
+        "delete_category_blocked": "انقل أو احذف منتجات الفئة قبل حذفها.",
+        "no_categories_hint": "أنشئ فئة أولًا.",
+        "empty_categories": "لا توجد فئات بعد. أضف واحدة لبدء بناء قائمتك.",
+        "empty_products": "لا توجد منتجات بعد. أضف واحدًا لبدء قائمتك.",
+        "product_count": "منتج {count} | منتجان {count} | {count} منتجات | {count} منتجًا",
+        "tabs": {
+            "categories": "الفئات",
+            "products": "المنتجات"
+        },
+        "filter": {
+            "category": "تصفية حسب الفئة",
+            "all": "كل الفئات"
+        },
+        "table": {
+            "product": "المنتج",
+            "category": "الفئة",
+            "sku": "SKU",
+            "price": "السعر",
+            "status": "الحالة",
+            "actions": "إجراءات"
+        },
+        "statuses": {
+            "active": "نشط",
+            "inactive": "غير نشط"
+        },
+        "actions": {
+            "add_category": "إضافة فئة",
+            "add_product": "إضافة منتج",
+            "edit": "تعديل",
+            "delete": "حذف"
+        },
+        "fields": {
+            "name": "الاسم",
+            "name_ar": "الاسم بالعربية",
+            "description": "الوصف",
+            "image_url": "رابط الصورة",
+            "display_order": "ترتيب العرض",
+            "status": "الحالة",
+            "category": "الفئة",
+            "sku": "SKU",
+            "barcode": "الباركود",
+            "base_price": "السعر",
+            "cost_price": "التكلفة",
+            "tax_rate": "نسبة الضريبة",
+            "tax_rate_placeholder": "افتراضية",
+            "tax_rate_hint": "اتركه فارغًا لاستخدام النسبة الافتراضية للشركة (5%)."
+        },
+        "cat_modal": {
+            "create_title": "إضافة فئة",
+            "edit_title": "تعديل الفئة",
+            "submit": "حفظ",
+            "submitting": "جارٍ الحفظ…"
+        },
+        "prod_modal": {
+            "create_title": "إضافة منتج",
+            "edit_title": "تعديل المنتج",
+            "submit": "حفظ",
+            "submitting": "جارٍ الحفظ…"
+        },
+        "delete_cat_dialog": {
+            "title": "حذف الفئة؟",
+            "body": "حذف «{name}»؟ لا يمكن التراجع.",
+            "confirm": "نعم، احذف",
+            "submitting": "جارٍ الحذف…"
+        },
+        "delete_prod_dialog": {
+            "title": "حذف المنتج؟",
+            "body": "حذف «{name}»؟ الطلبات السابقة التي تشير إليه ستظل قابلة للحل عبر السجل المؤرشف.",
             "confirm": "نعم، احذف",
             "submitting": "جارٍ الحذف…"
         }

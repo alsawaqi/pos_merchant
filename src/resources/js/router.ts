@@ -2,6 +2,7 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import Login from '@/Pages/Auth/Login.vue';
 import Dashboard from '@/Pages/Merchant/Dashboard.vue';
 import BranchesIndex from '@/Pages/Merchant/Branches/Index.vue';
+import CatalogueIndex from '@/Pages/Merchant/Catalogue/Index.vue';
 import FloorPlanIndex from '@/Pages/Merchant/FloorPlan/Index.vue';
 import PortalUsersIndex from '@/Pages/Merchant/PortalUsers/Index.vue';
 import PosStaffIndex from '@/Pages/Merchant/PosStaff/Index.vue';
@@ -72,6 +73,14 @@ const routes: RouteRecordRaw[] = [
         path: '/floor-plan',
         name: 'merchant.floor-plan',
         component: FloorPlanIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        // Catalogue — Phase 6. Tabbed page: categories + products.
+        // Server-side gates by catalogue.view.
+        path: '/catalogue',
+        name: 'merchant.catalogue',
+        component: CatalogueIndex,
         meta: { requiresAuth: true },
     },
     {

@@ -29,6 +29,11 @@ export const MerchantPermission = {
     // Phase 5 — floor plan. Both floors and tables.
     FloorPlanView: 'floor_plan.view',
     FloorPlanManage: 'floor_plan.manage',
+    // Phase 6 — catalogue (menu). Both categories and products
+    // under one gate; future add-ons / modifiers / price lists
+    // share the same key.
+    CatalogueView: 'catalogue.view',
+    CatalogueManage: 'catalogue.manage',
 } as const;
 
 export type MerchantPermissionValue =

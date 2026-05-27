@@ -64,6 +64,13 @@ enum MerchantPermission: string
     case FloorPlanView = 'floor_plan.view';
     case FloorPlanManage = 'floor_plan.manage';
 
+    // Phase 6 — catalogue. One catalog for both categories AND
+    // products (same rationale as floor plan — nobody manages
+    // products without also editing categories). Future add-on
+    // / modifier / price-list permissions land here too.
+    case CatalogueView = 'catalogue.view';
+    case CatalogueManage = 'catalogue.manage';
+
     /**
      * @return list<string>
      */

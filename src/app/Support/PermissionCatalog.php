@@ -147,6 +147,23 @@ final class PermissionCatalog
                 ],
             ],
             [
+                'key' => 'catalogue',
+                'label_en' => 'Catalogue (Menu)',
+                'label_ar' => 'الكتالوج (القائمة)',
+                'permissions' => [
+                    [
+                        'key' => MerchantPermission::CatalogueView->value,
+                        'label_en' => 'See categories + products',
+                        'label_ar' => 'عرض الفئات والمنتجات',
+                    ],
+                    [
+                        'key' => MerchantPermission::CatalogueManage->value,
+                        'label_en' => 'Create + edit + delete categories and products',
+                        'label_ar' => 'إنشاء وتعديل وحذف الفئات والمنتجات',
+                    ],
+                ],
+            ],
+            [
                 'key' => 'roles',
                 'label_en' => 'Roles & Permissions',
                 'label_ar' => 'الأدوار والصلاحيات',

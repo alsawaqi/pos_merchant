@@ -26,6 +26,7 @@
         "dashboard": "Dashboard",
         "branches": "Branches",
         "floor_plan": "Floor Plan",
+        "catalogue": "Catalogue",
         "portal_users": "Portal Users",
         "pos_staff": "POS Staff",
         "roles": "Roles & Permissions",
@@ -384,6 +385,84 @@
         "delete_table_dialog": {
             "title": "Delete table?",
             "body": "Delete table \"{label}\"? Past orders that reference it will still resolve.",
+            "confirm": "Yes, delete",
+            "submitting": "Deleting…"
+        }
+    },
+    "catalogue": {
+        "section_label": "Menu",
+        "title": "Catalogue",
+        "subtitle": "Manage menu categories and the products that belong to them. Modifiers and add-ons land in a future phase once orders are flowing.",
+        "validation_summary": "Please fix the highlighted fields.",
+        "uncategorized": "Uncategorized",
+        "delete_category_blocked": "Move or delete the category's products before deleting it.",
+        "no_categories_hint": "Create a category first.",
+        "empty_categories": "No categories yet. Add one to start building your menu.",
+        "empty_products": "No products yet. Add one to start your menu.",
+        "product_count": "{count} product | {count} products",
+        "tabs": {
+            "categories": "Categories",
+            "products": "Products"
+        },
+        "filter": {
+            "category": "Filter by category",
+            "all": "All categories"
+        },
+        "table": {
+            "product": "Product",
+            "category": "Category",
+            "sku": "SKU",
+            "price": "Price",
+            "status": "Status",
+            "actions": "Actions"
+        },
+        "statuses": {
+            "active": "Active",
+            "inactive": "Inactive"
+        },
+        "actions": {
+            "add_category": "Add category",
+            "add_product": "Add product",
+            "edit": "Edit",
+            "delete": "Delete"
+        },
+        "fields": {
+            "name": "Name",
+            "name_ar": "Arabic name",
+            "description": "Description",
+            "image_url": "Image URL",
+            "display_order": "Display order",
+            "status": "Status",
+            "category": "Category",
+            "sku": "SKU",
+            "barcode": "Barcode",
+            "base_price": "Price",
+            "cost_price": "Cost",
+            "tax_rate": "Tax rate",
+            "tax_rate_placeholder": "Inherit",
+            "tax_rate_hint": "Leave blank to inherit the company default (5%)."
+        },
+        "cat_modal": {
+            "create_title": "Add category",
+            "edit_title": "Edit category",
+            "submit": "Save",
+            "submitting": "Saving…"
+        },
+        "prod_modal": {
+            "create_title": "Add product",
+            "edit_title": "Edit product",
+            "submit": "Save",
+            "submitting": "Saving…"
+        },
+        "delete_cat_dialog": {
+            "title": "Delete category?",
+            "body": "Delete \"{name}\"? This cannot be undone.",
+            "confirm": "Yes, delete",
+            "submitting": "Deleting…"
+        },
+        "delete_prod_dialog": {
+            "title": "Delete product?",
+            "body": "Delete \"{name}\"? Past orders that reference it will still resolve via the soft-delete trail.",
             "confirm": "Yes, delete",
             "submitting": "Deleting…"
         }

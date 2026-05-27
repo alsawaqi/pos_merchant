@@ -7,8 +7,10 @@ use App\Http\Controllers\Auth\CsrfTokenController;
 use App\Http\Controllers\Portal\BranchesController;
 use App\Http\Controllers\Portal\PortalUsersController;
 use App\Http\Controllers\Pos\BranchesController as PosBranchesController;
+use App\Http\Controllers\Pos\CategoriesController;
 use App\Http\Controllers\Pos\FloorsController;
 use App\Http\Controllers\Pos\PosStaffController;
+use App\Http\Controllers\Pos\ProductsController;
 use App\Http\Controllers\Pos\RolesController;
 use App\Http\Controllers\Pos\TablesController;
 use App\Http\Controllers\SpaController;
@@ -152,6 +154,28 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('tables.destroy');
         Route::post('tables/{table:uuid}/regenerate-qr', [TablesController::class, 'regenerateQr'])
             ->name('tables.regenerate-qr');
+
+        // -------- Phase 6 — Catalogue (Categories + Products) ----
+        // Both gated by catalogue.{view,manage}. Categories
+        // and products both bound by uuid.
+        Route::get('categories', [CategoriesController::class, 'index'])
+            ->name('categories.index');
+        Route::post('categories', [CategoriesController::class, 'store'])
+            ->name('categories.store');
+        Route::patch('categories/{category:uuid}', [CategoriesController::class, 'update'])
+            ->name('categories.update');
+        Route::delete('categories/{category:uuid}', [CategoriesController::class, 'destroy'])
+            ->name('categories.destroy');
+
+        // Products list supports ?category={uuid} filter.
+        Route::get('products', [ProductsController::class, 'index'])
+            ->name('products.index');
+        Route::post('products', [ProductsController::class, 'store'])
+            ->name('products.store');
+        Route::patch('products/{product:uuid}', [ProductsController::class, 'update'])
+            ->name('products.update');
+        Route::delete('products/{product:uuid}', [ProductsController::class, 'destroy'])
+            ->name('products.destroy');
 
         // -------- Phase 4.6 — POS Staff (merchant's PIN-authed workforce) --
         // {posStaff} is bound by uuid (PosStaff::getRouteKeyName).
