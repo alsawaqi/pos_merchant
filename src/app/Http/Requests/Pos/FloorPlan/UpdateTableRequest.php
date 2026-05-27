@@ -27,6 +27,14 @@ class UpdateTableRequest extends FormRequest
             'notes' => ['sometimes', 'nullable', 'string', 'max:500'],
             'status' => ['sometimes', 'string', Rule::in(TableStatus::values())],
             'display_order' => ['sometimes', 'integer', 'between:0,999'],
+            // Phase 5.5 — pixel coords. 0..65535 matches the
+            // unsignedSmallInteger column. Sized way bigger
+            // than any sane floor canvas so we never have to
+            // grow the validator separately from the column.
+            'position_x' => ['sometimes', 'nullable', 'integer', 'between:0,65535'],
+            'position_y' => ['sometimes', 'nullable', 'integer', 'between:0,65535'],
+            'width' => ['sometimes', 'nullable', 'integer', 'between:1,65535'],
+            'height' => ['sometimes', 'nullable', 'integer', 'between:1,65535'],
         ];
     }
 

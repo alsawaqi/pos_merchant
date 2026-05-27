@@ -22,6 +22,7 @@ import {
     Building2,
     Copy,
     LayoutGrid,
+    Move,
     Pencil,
     Plus,
     QrCode,
@@ -31,6 +32,7 @@ import {
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
+import FloorPlanner from '@/Pages/Merchant/FloorPlan/FloorPlanner.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
 import { listBranches, type Branch } from '@/lib/api/branches';
@@ -111,6 +113,27 @@ const qrCopied = ref(false);
 const floorDeleteTarget = ref<Floor | null>(null);
 const tableDeleteTarget = ref<MerchantTable | null>(null);
 const deleting = ref(false);
+
+// ---- Phase 5.5 planner -----------------------------------------
+// One floor at a time can be in planner mode. NULL = nobody.
+// When set, that floor card swaps its tables grid for the
+// FloorPlanner canvas.
+const plannerFloorUuid = ref<string | null>(null);
+
+function openPlanner(floor: Floor): void {
+    plannerFloorUuid.value = floor.uuid;
+}
+
+async function onPlannerSaved(): Promise<void> {
+    // Refresh the floor data so the table cards in any other
+    // open view reflect the persisted positions. Planner stays
+    // open — saving shouldn't kick the merchant out mid-plan.
+    await fetchFloors();
+}
+
+function onPlannerClose(): void {
+    plannerFloorUuid.value = null;
+}
 
 const shapeOptions: { value: TableShape; key: string }[] = [
     { value: 'round', key: 'round' },
@@ -445,37 +468,65 @@ function statusBadgeClass(status: string | null): string {
                             </div>
                             <p class="text-xs text-slate-500">{{ t('floor_plan.table_count', { count: floor.tables_count }) }}</p>
                         </div>
-                        <div v-if="canManage" class="flex flex-wrap gap-2">
+                        <div class="flex flex-wrap gap-2">
+                            <!-- Planner toggle — visible to anyone with
+                                 FloorPlanView (the canvas itself
+                                 gates its drag interactions on
+                                 canManage). -->
                             <button
                                 type="button"
-                                class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-                                @click="openCreateTable(floor)"
+                                class="inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                :disabled="floor.tables_count === 0"
+                                :title="floor.tables_count === 0 ? t('floor_plan.planner.no_tables_hint') : ''"
+                                @click="openPlanner(floor)"
                             >
-                                <Plus class="size-3.5" />
-                                {{ t('floor_plan.actions.add_table') }}
+                                <Move class="size-3.5" />
+                                {{ plannerFloorUuid === floor.uuid ? t('floor_plan.planner.viewing') : t('floor_plan.actions.open_planner') }}
                             </button>
-                            <button
-                                type="button"
-                                class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-                                @click="openEditFloor(floor)"
-                            >
-                                <Pencil class="size-3.5" />
-                                {{ t('floor_plan.actions.edit_floor') }}
-                            </button>
-                            <button
-                                type="button"
-                                :disabled="floor.tables_count > 0"
-                                :title="floor.tables_count > 0 ? t('floor_plan.delete_floor_blocked') : ''"
-                                class="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                @click="floorDeleteTarget = floor"
-                            >
-                                <Trash2 class="size-3.5" />
-                                {{ t('floor_plan.actions.delete_floor') }}
-                            </button>
+                            <template v-if="canManage">
+                                <button
+                                    type="button"
+                                    class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                                    @click="openCreateTable(floor)"
+                                >
+                                    <Plus class="size-3.5" />
+                                    {{ t('floor_plan.actions.add_table') }}
+                                </button>
+                                <button
+                                    type="button"
+                                    class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                                    @click="openEditFloor(floor)"
+                                >
+                                    <Pencil class="size-3.5" />
+                                    {{ t('floor_plan.actions.edit_floor') }}
+                                </button>
+                                <button
+                                    type="button"
+                                    :disabled="floor.tables_count > 0"
+                                    :title="floor.tables_count > 0 ? t('floor_plan.delete_floor_blocked') : ''"
+                                    class="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    @click="floorDeleteTarget = floor"
+                                >
+                                    <Trash2 class="size-3.5" />
+                                    {{ t('floor_plan.actions.delete_floor') }}
+                                </button>
+                            </template>
                         </div>
                     </header>
 
-                    <div class="p-5">
+                    <!-- Phase 5.5 — planner mode replaces the grid
+                         for the currently-active floor. The list
+                         view continues to render for every other
+                         floor on the page. -->
+                    <div v-if="plannerFloorUuid === floor.uuid" class="p-0">
+                        <FloorPlanner
+                            :floor="floor"
+                            :can-manage="canManage"
+                            @close="onPlannerClose"
+                            @saved="onPlannerSaved"
+                        />
+                    </div>
+                    <div v-else class="p-5">
                         <div v-if="floor.tables.length === 0" class="rounded-lg border border-dashed border-slate-200 p-8 text-center text-sm italic text-slate-500">
                             {{ t('floor_plan.no_tables') }}
                         </div>

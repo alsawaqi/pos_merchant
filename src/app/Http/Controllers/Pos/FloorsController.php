@@ -6,12 +6,15 @@ namespace App\Http\Controllers\Pos;
 
 use App\Actions\Pos\FloorPlan\CreateFloorAction;
 use App\Actions\Pos\FloorPlan\DeleteFloorAction;
+use App\Actions\Pos\FloorPlan\SaveFloorLayoutAction;
 use App\Actions\Pos\FloorPlan\UpdateFloorAction;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Pos\FloorPlan\CreateFloorRequest;
+use App\Http\Requests\Pos\FloorPlan\SaveFloorLayoutRequest;
 use App\Http\Requests\Pos\FloorPlan\UpdateFloorRequest;
 use App\Http\Resources\Pos\FloorPlan\FloorResource;
+use App\Http\Resources\Pos\FloorPlan\TableResource;
 use App\Models\Branch;
 use App\Models\Floor;
 use App\Support\MerchantTenantContext;
@@ -44,6 +47,7 @@ class FloorsController extends Controller
         private readonly CreateFloorAction $create,
         private readonly UpdateFloorAction $update,
         private readonly DeleteFloorAction $delete,
+        private readonly SaveFloorLayoutAction $saveLayout,
     ) {}
 
     /**
@@ -113,6 +117,31 @@ class FloorsController extends Controller
         }
 
         return response()->json(['data' => null], 204);
+    }
+
+    /**
+     * POST /api/floors/{floor:uuid}/layout
+     *
+     * Bulk-save positions after a drag-and-drop session in
+     * the visual planner. One transaction, one audit row per
+     * save. Cross-tenant UUIDs in the payload → 422.
+     */
+    public function saveLayout(SaveFloorLayoutRequest $request, Floor $floor): JsonResponse | AnonymousResourceCollection
+    {
+        $this->ensure($request, MerchantPermission::FloorPlanManage);
+        $this->refuseIfNotInTenant($floor);
+
+        try {
+            $updated = $this->saveLayout->handle(
+                $floor,
+                $request->validated()['tables'],
+                $request->user(),
+            );
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return TableResource::collection($updated);
     }
 
     private function ensure(Request $request, MerchantPermission $permission): void

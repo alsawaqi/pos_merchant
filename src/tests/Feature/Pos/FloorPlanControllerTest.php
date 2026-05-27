@@ -402,3 +402,209 @@ it('forbids creating a table for a CashierSupervisor (view-only on floor plan)',
         'label' => 'X',
     ])->assertForbidden();
 });
+
+// =================== PHASE 5.5 — BULK LAYOUT SAVE ===================
+//
+// POST /api/floors/{floor:uuid}/layout drags every table on
+// the floor in one shot. Audit story: ONE floor.layout_saved
+// row per save (not N per table) so the log isn't drowned in
+// drag noise.
+
+it('bulk-saves a floor layout and writes exactly one audit row', function (): void {
+    $ctx = makeMerchantActor();
+    $floor = Floor::factory()
+        ->for($ctx['company'], 'company')
+        ->for($ctx['branch'], 'branch')
+        ->create();
+
+    $t1 = Table::factory()->for($ctx['company'], 'company')->for($floor, 'floor')
+        ->create(['label' => 'A1', 'position_x' => null, 'position_y' => null]);
+    $t2 = Table::factory()->for($ctx['company'], 'company')->for($floor, 'floor')
+        ->create(['label' => 'A2', 'position_x' => null, 'position_y' => null]);
+
+    $response = $this->postJson("/api/floors/{$floor->uuid}/layout", [
+        'tables' => [
+            ['uuid' => $t1->uuid, 'position_x' => 100, 'position_y' => 200, 'width' => 80, 'height' => 80],
+            ['uuid' => $t2->uuid, 'position_x' => 300, 'position_y' => 200, 'width' => 80, 'height' => 80],
+        ],
+    ])->assertOk();
+
+    expect($response->json('data'))->toHaveCount(2);
+
+    $t1->refresh();
+    $t2->refresh();
+    expect($t1->position_x)->toBe(100);
+    expect($t1->position_y)->toBe(200);
+    expect($t2->position_x)->toBe(300);
+    expect($t2->position_y)->toBe(200);
+
+    // Exactly one audit row for the whole save (not N).
+    $auditRows = \Illuminate\Support\Facades\DB::table('pos_audit_logs')
+        ->where('event', 'floor.layout_saved')
+        ->where('auditable_id', $floor->id)
+        ->get();
+    expect($auditRows)->toHaveCount(1);
+
+    $payload = json_decode($auditRows[0]->new_values, true);
+    expect($payload['moved_count'])->toBe(2);
+    expect($payload['tables'])->toHaveCount(2);
+});
+
+it('writes no audit row when the save is a no-op (nothing actually moved)', function (): void {
+    $ctx = makeMerchantActor();
+    $floor = Floor::factory()
+        ->for($ctx['company'], 'company')
+        ->for($ctx['branch'], 'branch')
+        ->create();
+    $t1 = Table::factory()->for($ctx['company'], 'company')->for($floor, 'floor')
+        ->create(['position_x' => 100, 'position_y' => 200, 'width' => 80, 'height' => 80]);
+
+    // Submit IDENTICAL positions — should write zero audit
+    // rows but still return 200 with the data.
+    $this->postJson("/api/floors/{$floor->uuid}/layout", [
+        'tables' => [
+            ['uuid' => $t1->uuid, 'position_x' => 100, 'position_y' => 200, 'width' => 80, 'height' => 80],
+        ],
+    ])->assertOk();
+
+    $rows = \Illuminate\Support\Facades\DB::table('pos_audit_logs')
+        ->where('event', 'floor.layout_saved')
+        ->where('auditable_id', $floor->id)
+        ->count();
+    expect($rows)->toBe(0);
+});
+
+it('returns 422 if any table uuid in the payload is bogus, rolling back the whole save', function (): void {
+    $ctx = makeMerchantActor();
+    $floor = Floor::factory()
+        ->for($ctx['company'], 'company')
+        ->for($ctx['branch'], 'branch')
+        ->create();
+    $real = Table::factory()->for($ctx['company'], 'company')->for($floor, 'floor')
+        ->create(['position_x' => null]);
+
+    $response = $this->postJson("/api/floors/{$floor->uuid}/layout", [
+        'tables' => [
+            ['uuid' => $real->uuid, 'position_x' => 100, 'position_y' => 200],
+            ['uuid' => '00000000-0000-0000-0000-000000000000', 'position_x' => 50, 'position_y' => 50],
+        ],
+    ])->assertStatus(422);
+    expect($response->json('message'))->toContain('not a table on this floor');
+
+    // The real table's position must NOT have been written
+    // (transaction rolled back).
+    $real->refresh();
+    expect($real->position_x)->toBeNull();
+});
+
+it('returns 422 when payload includes a table from a DIFFERENT floor on the same company', function (): void {
+    $ctx = makeMerchantActor();
+    $floorA = Floor::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->create();
+    $floorB = Floor::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->create();
+    $tableOnB = Table::factory()->for($ctx['company'], 'company')->for($floorB, 'floor')
+        ->create(['position_x' => null]);
+
+    // Post to floorA but include tableOnB — should 422.
+    $this->postJson("/api/floors/{$floorA->uuid}/layout", [
+        'tables' => [
+            ['uuid' => $tableOnB->uuid, 'position_x' => 100, 'position_y' => 200],
+        ],
+    ])->assertStatus(422);
+
+    $tableOnB->refresh();
+    expect($tableOnB->position_x)->toBeNull();
+});
+
+it('returns 404 when posting a layout to a floor owned by another company', function (): void {
+    makeMerchantActor();
+
+    $otherCompany = Company::factory()->create();
+    $otherBranch = Branch::factory()->for($otherCompany, 'company')->create();
+    $foreignFloor = Floor::factory()->for($otherCompany, 'company')->for($otherBranch, 'branch')->create();
+    $foreignTable = Table::factory()->for($otherCompany, 'company')->for($foreignFloor, 'floor')->create();
+
+    $this->postJson("/api/floors/{$foreignFloor->uuid}/layout", [
+        'tables' => [
+            ['uuid' => $foreignTable->uuid, 'position_x' => 100, 'position_y' => 100],
+        ],
+    ])->assertNotFound();
+});
+
+it('forbids the layout-save endpoint to a Viewer (read-only role)', function (): void {
+    $ctx = makeMerchantActor(MerchantRole::Viewer->value);
+    $floor = Floor::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->create();
+    $table = Table::factory()->for($ctx['company'], 'company')->for($floor, 'floor')->create();
+
+    $this->postJson("/api/floors/{$floor->uuid}/layout", [
+        'tables' => [
+            ['uuid' => $table->uuid, 'position_x' => 100, 'position_y' => 100],
+        ],
+    ])->assertForbidden();
+});
+
+it('rejects layout payloads with missing or out-of-range coordinates', function (): void {
+    $ctx = makeMerchantActor();
+    $floor = Floor::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->create();
+    $table = Table::factory()->for($ctx['company'], 'company')->for($floor, 'floor')->create();
+
+    // Missing position_x.
+    $this->postJson("/api/floors/{$floor->uuid}/layout", [
+        'tables' => [
+            ['uuid' => $table->uuid, 'position_y' => 100],
+        ],
+    ])->assertStatus(422)->assertJsonValidationErrors(['tables.0.position_x']);
+
+    // Out-of-range (negative — column is unsigned).
+    $this->postJson("/api/floors/{$floor->uuid}/layout", [
+        'tables' => [
+            ['uuid' => $table->uuid, 'position_x' => -5, 'position_y' => 100],
+        ],
+    ])->assertStatus(422)->assertJsonValidationErrors(['tables.0.position_x']);
+
+    // Out-of-range (above the smallint cap).
+    $this->postJson("/api/floors/{$floor->uuid}/layout", [
+        'tables' => [
+            ['uuid' => $table->uuid, 'position_x' => 70000, 'position_y' => 100],
+        ],
+    ])->assertStatus(422)->assertJsonValidationErrors(['tables.0.position_x']);
+});
+
+it('keeps width/height when payload omits them (only x/y move)', function (): void {
+    $ctx = makeMerchantActor();
+    $floor = Floor::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->create();
+    $table = Table::factory()->for($ctx['company'], 'company')->for($floor, 'floor')
+        ->create(['position_x' => 0, 'position_y' => 0, 'width' => 80, 'height' => 80]);
+
+    $this->postJson("/api/floors/{$floor->uuid}/layout", [
+        'tables' => [
+            ['uuid' => $table->uuid, 'position_x' => 200, 'position_y' => 300],
+        ],
+    ])->assertOk();
+
+    $table->refresh();
+    expect($table->position_x)->toBe(200);
+    expect($table->position_y)->toBe(300);
+    // Width / height preserved from the row.
+    expect($table->width)->toBe(80);
+    expect($table->height)->toBe(80);
+});
+
+// =================== PHASE 5.5 — single-table PATCH supports position ===================
+
+it('allows single-table PATCH to update position fields', function (): void {
+    $ctx = makeMerchantActor();
+    $floor = Floor::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->create();
+    $table = Table::factory()->for($ctx['company'], 'company')->for($floor, 'floor')->create();
+
+    $this->patchJson("/api/tables/{$table->uuid}", [
+        'position_x' => 250,
+        'position_y' => 175,
+        'width' => 100,
+        'height' => 100,
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.position_x', 250)
+        ->assertJsonPath('data.position_y', 175)
+        ->assertJsonPath('data.width', 100)
+        ->assertJsonPath('data.height', 100);
+});

@@ -40,6 +40,14 @@ class TableFactory extends Factory
             'qr_token' => Str::random(24),
             'status' => TableStatus::Active->value,
             'display_order' => 0,
+            // Default to NULL positions — most tests don't
+            // care about the visual layout, and the planner
+            // happily auto-arranges NULL-position tables.
+            // Tests that DO care use ->state(['position_x' => ...]).
+            'position_x' => null,
+            'position_y' => null,
+            'width' => null,
+            'height' => null,
         ];
     }
 

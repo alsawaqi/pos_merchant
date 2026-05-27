@@ -38,6 +38,13 @@ use Illuminate\Support\Str;
     'qr_token',
     'status',
     'display_order',
+    // Phase 5.5 — visual floor planner. NULL on these means
+    // "not placed yet" (frontend auto-arranges in a grid)
+    // or "use shape default size".
+    'position_x',
+    'position_y',
+    'width',
+    'height',
 ])]
 class Table extends Model
 {
@@ -65,6 +72,13 @@ class Table extends Model
             'display_order' => 'integer',
             'status' => TableStatus::class,
             'shape' => TableShape::class,
+            // Phase 5.5 — pixel positions. Cast so they come
+            // back as ints (not strings from the DB driver),
+            // and survive a JSON round-trip without quoting.
+            'position_x' => 'integer',
+            'position_y' => 'integer',
+            'width' => 'integer',
+            'height' => 'integer',
         ];
     }
 

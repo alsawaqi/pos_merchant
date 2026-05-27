@@ -341,7 +341,22 @@
             "add_table": "Add table",
             "edit": "Edit",
             "delete": "Delete",
-            "qr": "QR"
+            "qr": "QR",
+            "open_planner": "Planner"
+        },
+        "planner": {
+            "title": "Planner — {name}",
+            "table_count": "1 table | {count} tables",
+            "seats_n": "1 seat | {count} seats",
+            "viewing": "Viewing",
+            "unsaved": "Unsaved",
+            "save": "Save layout",
+            "saving": "Saving…",
+            "close": "Close planner",
+            "confirm_discard": "You have unsaved layout changes. Discard?",
+            "help_can_manage": "Drag tables to position them. Snaps to a 20px grid. Press Esc to cancel a drag in progress.",
+            "help_view_only": "Read-only view. Only users with floor-plan manage permission can move tables.",
+            "no_tables_hint": "Add a table to this floor before opening the planner."
         },
         "fields": {
             "floor_name": "Floor name",

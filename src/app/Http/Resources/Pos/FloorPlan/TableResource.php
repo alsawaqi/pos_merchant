@@ -40,6 +40,14 @@ class TableResource extends JsonResource
             'qr_token' => $this->qr_token,
             'status' => $this->status?->value,
             'display_order' => $this->display_order,
+            // Phase 5.5 — visual planner positions. NULL means
+            // "not placed yet" (the frontend grid-arranges
+            // those automatically until the merchant drags them)
+            // or "use shape default size".
+            'position_x' => $this->position_x,
+            'position_y' => $this->position_y,
+            'width' => $this->width,
+            'height' => $this->height,
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

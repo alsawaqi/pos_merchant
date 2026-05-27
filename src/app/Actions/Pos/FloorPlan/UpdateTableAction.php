@@ -31,6 +31,14 @@ final readonly class UpdateTableAction
         'notes',
         'status',
         'display_order',
+        // Phase 5.5 — single-table PATCH can update position
+        // too (used by drag-and-stop on the planner). For bulk
+        // layout saves prefer SaveFloorLayoutAction — one
+        // transaction + one audit row per floor.
+        'position_x',
+        'position_y',
+        'width',
+        'height',
     ];
 
     public function __construct(

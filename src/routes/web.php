@@ -143,6 +143,9 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('floors.update');
         Route::delete('floors/{floor:uuid}', [FloorsController::class, 'destroy'])
             ->name('floors.destroy');
+        // Phase 5.5 — bulk layout save from the visual planner.
+        Route::post('floors/{floor:uuid}/layout', [FloorsController::class, 'saveLayout'])
+            ->name('floors.save-layout');
 
         // Tables live under a floor for creation, then become
         // first-class once they have a uuid.

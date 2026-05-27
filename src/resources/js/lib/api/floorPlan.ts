@@ -29,6 +29,12 @@ export interface MerchantTable {
     qr_token: string;
     status: TableStatus | null;
     display_order: number;
+    /** Phase 5.5 — visual planner. NULL = not placed yet. */
+    position_x: number | null;
+    position_y: number | null;
+    /** NULL = use shape default size. */
+    width: number | null;
+    height: number | null;
     created_at: string | null;
     updated_at: string | null;
 }
@@ -91,6 +97,20 @@ export interface RegenerateQrResponse {
     qr_token: string;
 }
 
+// ---- Phase 5.5 — bulk layout save ------------------------------
+
+export interface LayoutTableItem {
+    uuid: string;
+    position_x: number;
+    position_y: number;
+    width?: number | null;
+    height?: number | null;
+}
+
+export interface SaveFloorLayoutPayload {
+    tables: LayoutTableItem[];
+}
+
 // ---- Floors ------------------------------------------------------
 
 export function listFloors(branchUuid: string): Promise<{ data: Floor[] }> {
@@ -149,4 +169,20 @@ export function deleteTable(tableUuid: string): Promise<void> {
 
 export function regenerateTableQr(tableUuid: string): Promise<RegenerateQrResponse> {
     return apiPost<RegenerateQrResponse>(`/api/tables/${tableUuid}/regenerate-qr`);
+}
+
+/**
+ * Phase 5.5 — bulk-save table positions for a floor after a
+ * drag-and-drop session. Returns the post-save MerchantTable
+ * rows so the caller can refresh local state in one round
+ * trip.
+ */
+export function saveFloorLayout(
+    floorUuid: string,
+    payload: SaveFloorLayoutPayload,
+): Promise<{ data: MerchantTable[] }> {
+    return apiPost<{ data: MerchantTable[] }>(
+        `/api/floors/${floorUuid}/layout`,
+        payload as unknown as JsonValue,
+    );
 }

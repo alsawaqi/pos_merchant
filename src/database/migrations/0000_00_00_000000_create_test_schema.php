@@ -224,7 +224,12 @@ return new class extends Migration
             $table->unique(['branch_id', 'name'], 'pos_floors_branch_name_unique');
         });
 
-        // ---- pos_tables (Phase 5) ---------------------------------
+        // ---- pos_tables (Phase 5 + 5.5 position columns) ----------
+        // position_x/y/width/height come from Phase 5.5 — visual
+        // floor planner. NULL = "not placed yet" / "use shape
+        // default". The list-view tests never read these so they
+        // stayed unread, but the planner tests assert round-trips
+        // through the new bulk-layout endpoint.
         Schema::create('pos_tables', function (Blueprint $table): void {
             $table->id();
             $table->uuid('uuid')->unique();
@@ -239,6 +244,10 @@ return new class extends Migration
             $table->string('qr_token', 64)->unique();
             $table->string('status', 32)->default('active');
             $table->unsignedSmallInteger('display_order')->default(0);
+            $table->unsignedSmallInteger('position_x')->nullable();
+            $table->unsignedSmallInteger('position_y')->nullable();
+            $table->unsignedSmallInteger('width')->nullable();
+            $table->unsignedSmallInteger('height')->nullable();
             $table->timestamps();
             $table->softDeletes();
             $table->unique(['floor_id', 'label'], 'pos_tables_floor_label_unique');
