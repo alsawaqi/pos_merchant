@@ -30,10 +30,16 @@ export const MerchantPermission = {
     FloorPlanView: 'floor_plan.view',
     FloorPlanManage: 'floor_plan.manage',
     // Phase 6 — catalogue (menu). Both categories and products
-    // under one gate; future add-ons / modifiers / price lists
-    // share the same key.
+    // under one gate; add-ons / modifiers (Phase 4.9) and
+    // future price lists share the same key.
     CatalogueView: 'catalogue.view',
     CatalogueManage: 'catalogue.manage',
+    // Phase 5a — inventory (ingredients, suppliers, branch
+    // stock, movements). Single gate for all four because in
+    // practice nobody manages stock without seeing ingredients
+    // and vice-versa.
+    InventoryView: 'inventory.view',
+    InventoryManage: 'inventory.manage',
 } as const;
 
 export type MerchantPermissionValue =

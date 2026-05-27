@@ -4,6 +4,7 @@ import Dashboard from '@/Pages/Merchant/Dashboard.vue';
 import BranchesIndex from '@/Pages/Merchant/Branches/Index.vue';
 import CatalogueIndex from '@/Pages/Merchant/Catalogue/Index.vue';
 import FloorPlanIndex from '@/Pages/Merchant/FloorPlan/Index.vue';
+import InventoryIndex from '@/Pages/Merchant/Inventory/Index.vue';
 import PortalUsersIndex from '@/Pages/Merchant/PortalUsers/Index.vue';
 import PosStaffIndex from '@/Pages/Merchant/PosStaff/Index.vue';
 import RolesIndex from '@/Pages/Merchant/Roles/Index.vue';
@@ -81,6 +82,15 @@ const routes: RouteRecordRaw[] = [
         path: '/catalogue',
         name: 'merchant.catalogue',
         component: CatalogueIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        // Inventory — Phase 5a. Tabbed page: ingredients,
+        // suppliers, per-branch stock, movement ledger.
+        // Server-side gates by inventory.view.
+        path: '/inventory',
+        name: 'merchant.inventory',
+        component: InventoryIndex,
         meta: { requiresAuth: true },
     },
     {

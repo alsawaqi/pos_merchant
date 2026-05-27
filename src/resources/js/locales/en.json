@@ -27,6 +27,7 @@
         "branches": "Branches",
         "floor_plan": "Floor Plan",
         "catalogue": "Catalogue",
+        "inventory": "Inventory",
         "portal_users": "Portal Users",
         "pos_staff": "POS Staff",
         "roles": "Roles & Permissions",
@@ -526,6 +527,147 @@
             "body": "Delete \"{name}\"? Past orders that reference it will still resolve via the soft-delete trail.",
             "confirm": "Yes, delete",
             "submitting": "Deleting…"
+        }
+    },
+    "inventory": {
+        "section_label": "Stock",
+        "title": "Inventory",
+        "subtitle": "Manage ingredients, suppliers, and per-branch stock balances. Every change writes to an append-only movement ledger.",
+        "validation_summary": "Please fix the highlighted fields.",
+        "branch": "Branch",
+        "no_branches": "Add a branch first to track stock.",
+        "tabs": {
+            "ingredients": "Ingredients",
+            "suppliers": "Suppliers",
+            "stock": "Branch Stock",
+            "movements": "Movements"
+        },
+        "actions": {
+            "add_ingredient": "Add ingredient",
+            "add_supplier": "Add supplier",
+            "edit": "Edit",
+            "delete": "Delete",
+            "adjust": "Adjust",
+            "restock": "Restock"
+        },
+        "table": {
+            "name": "Name",
+            "unit": "Unit",
+            "default_cost": "Default cost",
+            "min_threshold": "Min stock",
+            "supplier": "Primary supplier",
+            "status": "Status",
+            "actions": "Actions",
+            "contact": "Contact",
+            "ingredients": "Ingredients",
+            "quantity": "Quantity",
+            "health": "Status",
+            "last_movement": "Last movement",
+            "type": "Type",
+            "qty": "Qty",
+            "unit_cost": "Unit cost",
+            "note": "Note",
+            "when": "When",
+            "by": "By"
+        },
+        "fields": {
+            "name": "Name",
+            "name_ar": "Arabic name",
+            "unit": "Unit",
+            "default_unit_cost": "Default unit cost",
+            "min_stock_threshold": "Minimum stock threshold",
+            "min_stock_threshold_hint": "Below this quantity the stock is flagged as Low. Leave blank to never flag.",
+            "primary_supplier": "Primary supplier",
+            "primary_supplier_none": "None",
+            "status": "Status",
+            "contact": "Contact",
+            "notes": "Notes",
+            "ingredient": "Ingredient",
+            "quantity": "Quantity",
+            "signed_quantity": "Signed quantity",
+            "signed_quantity_hint": "Positive = found more than expected, negative = found less.",
+            "note_required": "Reason (required)",
+            "note_required_hint": "Explain why the stock count changed. This shows in the audit log.",
+            "supplier": "Supplier (optional)",
+            "unit_cost_override": "Unit cost (optional override)",
+            "unit_cost_hint": "Leave blank to use the ingredient's default cost."
+        },
+        "units": {
+            "kg": "Kilograms (kg)",
+            "g": "Grams (g)",
+            "l": "Litres (l)",
+            "ml": "Millilitres (ml)",
+            "piece": "Pieces",
+            "pack": "Packs",
+            "box": "Boxes"
+        },
+        "statuses": {
+            "active": "Active",
+            "inactive": "Inactive"
+        },
+        "health": {
+            "healthy": "Healthy",
+            "low": "Low",
+            "critical": "Critical"
+        },
+        "movement_types": {
+            "initial": "Initial stock",
+            "restock": "Restock",
+            "sale_consumption": "Sale",
+            "addon_consumption": "Add-on",
+            "waste": "Waste",
+            "loss": "Loss",
+            "adjustment": "Adjustment",
+            "transfer_in": "Transfer in",
+            "transfer_out": "Transfer out"
+        },
+        "empty_ingredients": "No ingredients yet. Add one to start tracking stock.",
+        "empty_suppliers": "No suppliers yet. Add one so ingredients can reference them.",
+        "empty_stock": "No stock recorded at this branch yet. Use Restock above to log your opening inventory.",
+        "empty_movements": "No movements at this branch yet.",
+        "delete_ingredient_blocked": "Adjust stock to zero in every branch before deleting this ingredient.",
+        "delete_supplier_blocked": "Re-assign or clear ingredients that name this supplier before deleting.",
+        "ing_modal": {
+            "create_title": "Add ingredient",
+            "edit_title": "Edit ingredient",
+            "submit": "Save",
+            "submitting": "Saving…"
+        },
+        "sup_modal": {
+            "create_title": "Add supplier",
+            "edit_title": "Edit supplier",
+            "submit": "Save",
+            "submitting": "Saving…"
+        },
+        "adjust_modal": {
+            "title": "Adjust stock — {ingredient}",
+            "subtitle": "Records an Adjustment movement. Use a positive quantity if a physical count shows more than the system says; use negative if it shows less.",
+            "submit": "Record adjustment",
+            "submitting": "Saving…"
+        },
+        "restock_modal": {
+            "title": "Restock — {ingredient}",
+            "subtitle": "Logs a positive inflow at the chosen unit cost. Optional supplier reference helps the future supplier-performance report.",
+            "submit": "Record restock",
+            "submitting": "Saving…"
+        },
+        "delete_ing_dialog": {
+            "title": "Delete ingredient?",
+            "body": "Delete \"{name}\"? This cannot be undone. Historical stock movements will still resolve via the soft-delete trail.",
+            "confirm": "Yes, delete",
+            "submitting": "Deleting…"
+        },
+        "delete_sup_dialog": {
+            "title": "Delete supplier?",
+            "body": "Delete \"{name}\"? Historical movements that referenced this supplier will show \"no longer on file\" instead.",
+            "confirm": "Yes, delete",
+            "submitting": "Deleting…"
+        },
+        "movements_filter": {
+            "ingredient": "Filter by ingredient",
+            "all_ingredients": "All ingredients",
+            "type": "Filter by type",
+            "all_types": "All types"
         }
     }
 }
