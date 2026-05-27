@@ -1,0 +1,246 @@
+<?php
+
+declare(strict_types=1);
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+/**
+ * Consolidated test-only schema for pos_merchant.
+ *
+ * WHY THIS FILE EXISTS
+ * --------------------
+ * Production schema is owned exclusively by pos_admin's
+ * `database/migrations/` — both apps share `charity_db` on the
+ * deployed Postgres and pos_merchant intentionally has no
+ * migrations of its own there (running it would risk drifting the
+ * shared schema). But the test suite uses RefreshDatabase against
+ * an in-memory sqlite, which needs SOMETHING to migrate.
+ *
+ * Rather than symlink or duplicate the dozen+ pos_admin migrations
+ * (and their later ALTER TABLEs), this single file is the
+ * "test fixture" of the schema — only the columns the test suite
+ * actually reads, only the tables the test suite actually touches,
+ * shaped as the FINAL state after every prod migration has run.
+ *
+ * The filename starts with `0000_00_00_000000` so it sorts BEFORE
+ * any future migrations and so prod deployments (which run
+ * `migrate` against Postgres) skip it via the IF NOT EXISTS
+ * semantics in `Schema::create`. This file should never run
+ * against the prod DB — but the structural guard is still nice.
+ *
+ * WHEN TO EDIT
+ * ------------
+ * Add a column / table here when:
+ *   - pos_admin lands a new prod migration AND
+ *   - a pos_merchant test reads or writes that column/table.
+ *
+ * If pos_admin adds a column you don't need in tests, leave this
+ * file alone — divergence is fine for unread columns.
+ */
+return new class extends Migration
+{
+    public function up(): void
+    {
+        // ---- pos_companies ----------------------------------------
+        Schema::create('pos_companies', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->string('name');
+            $table->string('legal_name')->nullable();
+            $table->string('commercial_registration_number')->nullable();
+            $table->string('tax_number')->nullable();
+            $table->string('contact_name')->nullable();
+            $table->string('contact_phone')->nullable();
+            $table->string('contact_email')->nullable();
+            $table->string('status')->default('onboarding');
+            $table->json('settings')->nullable();
+            $table->text('notes')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        // ---- pos_users ----------------------------------------------
+        // pos_users carries BOTH populations (platform_admin and
+        // merchant) and the portal-user extension columns. Phone is
+        // TEXT to absorb the encrypted ciphertext (~3x plaintext).
+        Schema::create('pos_users', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('company_id')->nullable()->constrained('pos_companies')->nullOnDelete();
+            $table->string('name');
+            $table->string('email')->unique();
+            $table->text('phone')->nullable();
+            $table->timestamp('email_verified_at')->nullable();
+            // Nullable to match the post-2026_05_24_050000 prod
+            // state (portal-invite flow could create a row with no
+            // password until setup). The create-with-password flow
+            // populates it on insert.
+            $table->string('password')->nullable();
+            $table->string('setup_token_hash', 64)->nullable()->unique();
+            $table->timestamp('setup_token_expires_at')->nullable();
+            $table->string('user_type')->default('merchant');
+            $table->json('branch_scope_json')->nullable();
+            $table->timestamp('invited_at')->nullable();
+            // Self-FK — invited_by_admin_id references pos_users(id).
+            // Created here without the FK constraint to avoid sqlite's
+            // restriction on forward-references during create; we add
+            // the FK in a follow-up Schema::table call below.
+            $table->unsignedBigInteger('invited_by_admin_id')->nullable();
+            $table->string('status')->default('active');
+            $table->rememberToken();
+            $table->timestamp('last_login_at')->nullable();
+            $table->string('timezone')->default('Asia/Muscat');
+            $table->string('locale', 10)->default('en');
+            $table->json('metadata')->nullable();
+            $table->timestamps();
+        });
+
+        // ---- pos_branches -----------------------------------------
+        Schema::create('pos_branches', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->string('name');
+            $table->string('name_ar')->nullable();
+            $table->string('code')->nullable();
+            $table->string('manager_name')->nullable();
+            $table->string('phone')->nullable();
+            $table->string('email')->nullable();
+            $table->string('address')->nullable();
+            $table->decimal('latitude', 10, 7)->nullable();
+            $table->decimal('longitude', 10, 7)->nullable();
+            $table->string('status')->default('active');
+            $table->json('settings')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+
+            $table->unique(['company_id', 'code'], 'pos_branches_company_code_unique');
+        });
+
+        // ---- pos_audit_logs ---------------------------------------
+        // Both apps write here. The (nullable) actor + company + branch
+        // foreign keys exist so tests that assert event provenance can
+        // assertDatabaseHas without a fancy join.
+        Schema::create('pos_audit_logs', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('actor_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->foreignId('company_id')->nullable()->constrained('pos_companies')->nullOnDelete();
+            $table->foreignId('branch_id')->nullable()->constrained('pos_branches')->nullOnDelete();
+            $table->string('event')->index();
+            $table->nullableMorphs('auditable');
+            $table->string('ip_address', 45)->nullable();
+            $table->text('user_agent')->nullable();
+            $table->json('old_values')->nullable();
+            $table->json('new_values')->nullable();
+            $table->json('metadata')->nullable();
+            $table->timestamp('created_at')->useCurrent();
+        });
+
+        // ---- pos_staff (Phase 4.6) --------------------------------
+        Schema::create('pos_staff', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->string('name');
+            $table->text('phone')->nullable();
+            $table->string('staff_code', 64)->nullable();
+            $table->string('pin_hash');
+            $table->string('position', 32);
+            $table->string('status', 32)->default('active');
+            $table->date('hired_at')->nullable();
+            $table->timestamp('terminated_at')->nullable();
+            $table->timestamp('last_login_at')->nullable();
+            $table->foreignId('created_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->timestamps();
+            $table->softDeletes();
+
+            // Sqlite's UNIQUE behaviour treats multiple NULLs as
+            // distinct, which is exactly what the partial-unique
+            // index does on Postgres — so a plain unique here is
+            // a faithful test mirror. Re-hires can reuse codes via
+            // the soft-delete + (NULL vs NULL) trick.
+            $table->unique(['company_id', 'staff_code'], 'pos_staff_company_code_unique');
+        });
+
+        // ---- Spatie permission tables -----------------------------
+        // Table names + team-scoping must match config/permission.php
+        // exactly. Without `team_id`, every $user->can() call would
+        // look up roles in the wrong scope.
+        Schema::create('pos_permissions', function (Blueprint $table): void {
+            $table->id();
+            $table->string('name');
+            $table->string('guard_name');
+            $table->timestamps();
+            $table->unique(['name', 'guard_name']);
+        });
+
+        Schema::create('pos_roles', function (Blueprint $table): void {
+            $table->id();
+            // teams=true: roles are scoped by team_id. Nullable so
+            // platform-team roles can use team_id=0 vs merchant roles
+            // team_id=company_id.
+            $table->unsignedBigInteger('team_id')->nullable()->index();
+            $table->string('name');
+            $table->string('guard_name');
+            $table->timestamps();
+            $table->unique(['team_id', 'name', 'guard_name']);
+        });
+
+        Schema::create('pos_model_has_permissions', function (Blueprint $table): void {
+            $table->foreignId('permission_id')->constrained('pos_permissions')->cascadeOnDelete();
+            $table->unsignedBigInteger('team_id')->nullable()->index();
+            $table->string('model_type');
+            $table->unsignedBigInteger('model_id');
+            $table->index(['model_id', 'model_type']);
+            $table->primary(['team_id', 'permission_id', 'model_id', 'model_type'], 'pos_model_has_permissions_primary');
+        });
+
+        Schema::create('pos_model_has_roles', function (Blueprint $table): void {
+            $table->foreignId('role_id')->constrained('pos_roles')->cascadeOnDelete();
+            $table->unsignedBigInteger('team_id')->nullable()->index();
+            $table->string('model_type');
+            $table->unsignedBigInteger('model_id');
+            $table->index(['model_id', 'model_type']);
+            $table->primary(['team_id', 'role_id', 'model_id', 'model_type'], 'pos_model_has_roles_primary');
+        });
+
+        Schema::create('pos_role_has_permissions', function (Blueprint $table): void {
+            $table->foreignId('permission_id')->constrained('pos_permissions')->cascadeOnDelete();
+            $table->foreignId('role_id')->constrained('pos_roles')->cascadeOnDelete();
+            $table->primary(['permission_id', 'role_id'], 'pos_role_has_permissions_primary');
+        });
+
+        // ---- Sessions (used by some auth integration tests) -------
+        // Mirrors the Laravel default sessions table — pos_merchant
+        // is configured to use session driver=array in tests so this
+        // is rarely consulted, but creating it avoids surprises if a
+        // future test flips to database sessions.
+        Schema::create('sessions', function (Blueprint $table): void {
+            $table->string('id')->primary();
+            $table->foreignId('user_id')->nullable()->index();
+            $table->string('ip_address', 45)->nullable();
+            $table->text('user_agent')->nullable();
+            $table->longText('payload');
+            $table->integer('last_activity')->index();
+        });
+    }
+
+    public function down(): void
+    {
+        // Drop in reverse dependency order. Tests use :memory: so
+        // this is essentially never called, but symmetry is cheap.
+        Schema::dropIfExists('sessions');
+        Schema::dropIfExists('pos_role_has_permissions');
+        Schema::dropIfExists('pos_model_has_roles');
+        Schema::dropIfExists('pos_model_has_permissions');
+        Schema::dropIfExists('pos_roles');
+        Schema::dropIfExists('pos_permissions');
+        Schema::dropIfExists('pos_staff');
+        Schema::dropIfExists('pos_audit_logs');
+        Schema::dropIfExists('pos_branches');
+        Schema::dropIfExists('pos_users');
+        Schema::dropIfExists('pos_companies');
+    }
+};

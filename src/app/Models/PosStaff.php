@@ -6,9 +6,11 @@ namespace App\Models;
 
 use App\Enums\StaffPosition;
 use App\Enums\StaffStatus;
+use Database\Factories\PosStaffFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -45,7 +47,8 @@ use Illuminate\Support\Str;
 #[Hidden(['pin_hash'])]
 class PosStaff extends Model
 {
-    use SoftDeletes;
+    /** @use HasFactory<PosStaffFactory> */
+    use HasFactory, SoftDeletes;
 
     protected $table = 'pos_staff';
 
