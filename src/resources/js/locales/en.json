@@ -527,30 +527,5 @@
             "confirm": "Yes, delete",
             "submitting": "Deleting…"
         }
-    },
-        "cat_modal": {
-            "create_title": "Add category",
-            "edit_title": "Edit category",
-            "submit": "Save",
-            "submitting": "Saving…"
-        },
-        "prod_modal": {
-            "create_title": "Add product",
-            "edit_title": "Edit product",
-            "submit": "Save",
-            "submitting": "Saving…"
-        },
-        "delete_cat_dialog": {
-            "title": "Delete category?",
-            "body": "Delete \"{name}\"? This cannot be undone.",
-            "confirm": "Yes, delete",
-            "submitting": "Deleting…"
-        },
-        "delete_prod_dialog": {
-            "title": "Delete product?",
-            "body": "Delete \"{name}\"? Past orders that reference it will still resolve via the soft-delete trail.",
-            "confirm": "Yes, delete",
-            "submitting": "Deleting…"
-        }
     }
 }
