@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
@@ -184,5 +185,85 @@ class Product extends Model
         }
 
         return (string) $this->base_price;
+    }
+
+    // ===================== Phase 5b — Recipes =====================
+
+    /**
+     * Current recipe lines (one per ingredient). Empty = "no
+     * recipe / pre-made goods, no inventory deduction on sale".
+     *
+     * @return HasMany<ProductRecipe, $this>
+     */
+    public function recipeLines(): HasMany
+    {
+        return $this->hasMany(ProductRecipe::class)
+            ->orderBy('sort_order')
+            ->orderBy('id');
+    }
+
+    /**
+     * Append-only pre-edit recipe snapshots. Newest first —
+     * the UI shows them as a history timeline in the product
+     * edit modal.
+     *
+     * @return HasMany<ProductRecipeVersion, $this>
+     */
+    public function recipeVersions(): HasMany
+    {
+        return $this->hasMany(ProductRecipeVersion::class)
+            ->orderByDesc('edited_at')
+            ->orderByDesc('id');
+    }
+
+    /**
+     * Phase 5b — true when the product has at least one recipe
+     * line. Used by the Phase 8 order pipeline to decide
+     * whether to write sale_consumption stock movements (no
+     * recipe = nothing to deduct). The Phase 5b UI shows a
+     * "has recipe" badge on products that return true here.
+     *
+     * Reads the loaded relation if available (no extra query
+     * when callers eager-loaded recipeLines); falls back to a
+     * count query otherwise.
+     */
+    public function hasRecipe(): bool
+    {
+        if ($this->relationLoaded('recipeLines')) {
+            return $this->recipeLines->isNotEmpty();
+        }
+        return $this->recipeLines()->exists();
+    }
+
+    /**
+     * Phase 5b — theoretical recipe cost at the CURRENT
+     * ingredient default_unit_cost. Σ over all recipe lines of
+     * (quantity × ingredient.default_unit_cost).
+     *
+     * Returns "0.000" for products with no recipe.
+     *
+     * IMPORTANT: this is the *current* cost — not the historical
+     * cost at order time. Phase 8 order lines snapshot the
+     * recipe + cost so historical COGS stays accurate. This
+     * helper is for the merchant-portal cost display and
+     * margin calculation only.
+     *
+     * Returns a string with 3 decimals to keep precision
+     * parity with base_price / cost_price.
+     */
+    public function theoreticalCost(): string
+    {
+        $lines = $this->relationLoaded('recipeLines')
+            ? $this->recipeLines
+            : $this->recipeLines()->with('ingredient')->get();
+
+        $total = 0.0;
+        foreach ($lines as $line) {
+            $cost = (float) ($line->ingredient?->default_unit_cost ?? 0);
+            $qty = (float) $line->quantity;
+            $total += $qty * $cost;
+        }
+
+        return number_format($total, 3, '.', '');
     }
 }

@@ -8,10 +8,12 @@ use App\Actions\Pos\Catalogue\CreateProductAction;
 use App\Actions\Pos\Catalogue\DeleteProductAction;
 use App\Actions\Pos\Catalogue\SyncProductAddOnGroupsAction;
 use App\Actions\Pos\Catalogue\UpdateProductAction;
+use App\Actions\Pos\Catalogue\UpdateProductRecipeAction;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Pos\Catalogue\CreateProductRequest;
 use App\Http\Requests\Pos\Catalogue\SyncProductAddOnGroupsRequest;
+use App\Http\Requests\Pos\Catalogue\UpdateProductRecipeRequest;
 use App\Http\Requests\Pos\Catalogue\UpdateProductRequest;
 use App\Http\Resources\Pos\Catalogue\AddOnGroupResource;
 use App\Http\Resources\Pos\Catalogue\ProductResource;
@@ -46,6 +48,7 @@ class ProductsController extends Controller
         private readonly UpdateProductAction $update,
         private readonly DeleteProductAction $delete,
         private readonly SyncProductAddOnGroupsAction $syncAddOnGroups,
+        private readonly UpdateProductRecipeAction $updateRecipe,
     ) {}
 
     public function index(Request $request): AnonymousResourceCollection
@@ -60,7 +63,10 @@ class ProductsController extends Controller
             // groups so the edit modal's picker can pre-populate
             // without an extra round-trip. Globals are NOT included
             // here (they apply via the resolver, not the pivot).
-            ->with(['category', 'addOnGroups']);
+            // Phase 5b — recipeLines + ingredient so the cost +
+            // has_recipe + edit-modal pre-populate without extra
+            // round-trips.
+            ->with(['category', 'addOnGroups', 'recipeLines.ingredient']);
 
         // Optional ?category=<uuid> filter. Unknown / cross-
         // tenant uuid silently yields zero results (no leak).
@@ -94,7 +100,7 @@ class ProductsController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $product->load(['category', 'addOnGroups']);
+        $product->load(['category', 'addOnGroups', 'recipeLines.ingredient']);
 
         return response()->json([
             'data' => (new ProductResource($product))->resolve($request),
@@ -112,7 +118,7 @@ class ProductsController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $updated->load(['category', 'addOnGroups']);
+        $updated->load(['category', 'addOnGroups', 'recipeLines.ingredient']);
 
         return ProductResource::make($updated);
     }
@@ -125,6 +131,37 @@ class ProductsController extends Controller
         $this->delete->handle($product, $request->user());
 
         return response()->json(['data' => null], 204);
+    }
+
+    /**
+     * PUT /api/products/{product:uuid}/recipe
+     *
+     * Phase 5b — atomically replace the product's recipe.
+     * Caller PUTs the full desired set of lines. Empty array =
+     * "no recipe / no inventory deduction on sale". The Action
+     * snapshots the pre-edit recipe to a version row, then
+     * wipes + re-inserts the new lines, all in one transaction.
+     * No-op when the recipe is identical to disk.
+     */
+    public function updateRecipe(UpdateProductRecipeRequest $request, Product $product): ProductResource | JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::CatalogueManage);
+        $this->refuseIfNotInTenant($product);
+
+        try {
+            $updated = $this->updateRecipe->handle(
+                $product,
+                $request->validated()['lines'] ?? [],
+                $request->user(),
+                $request->validated()['note'] ?? null,
+            );
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        $updated->load(['category', 'addOnGroups', 'recipeLines.ingredient']);
+
+        return ProductResource::make($updated);
     }
 
     /**

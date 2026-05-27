@@ -8,6 +8,7 @@ use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
 use App\Models\BranchStock;
 use App\Models\Ingredient;
+use App\Models\ProductRecipe;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
@@ -16,17 +17,22 @@ use RuntimeException;
 /**
  * Phase 5a — soft-delete an ingredient.
  *
- * Refuses if ANY branch still holds non-zero stock of this
- * ingredient — the merchant must first adjust the stock to
- * zero (waste it / transfer it / sell it). Otherwise the
- * deletion would orphan a real physical asset on the books.
+ * Two guards before any write:
  *
- * Phase 5b will add a second guard: refuse when the ingredient
- * is referenced by any product recipe. That check lives in
- * the Phase 5b action because Recipes doesn't exist yet.
+ *   1. Refuses if ANY branch still holds non-zero stock of
+ *      this ingredient — the merchant must first adjust the
+ *      stock to zero (waste it / transfer it / sell it).
+ *      Otherwise the deletion would orphan a real physical
+ *      asset on the books.
+ *
+ *   2. Phase 5b: refuses if any product recipe references
+ *      this ingredient. The merchant must edit those recipes
+ *      first. Soft-deleting mid-recipe would break the Phase
+ *      8 sale-consumption pipeline (the snapshot still writes
+ *      but the live deduction would silently fail).
  *
  * Soft delete keeps historical stock_movements + recipe
- * references resolvable via withTrashed().
+ * version snapshots resolvable via withTrashed().
  *
  * Audit event: inventory.ingredient.deleted with snapshot.
  */
@@ -52,6 +58,18 @@ final readonly class DeleteIngredientAction
             throw new RuntimeException(sprintf(
                 'Cannot delete ingredient — %d branch(es) still hold stock. Adjust the stock to zero first.',
                 $branchesWithStock,
+            ));
+        }
+
+        // Phase 5b — recipe-reference guard. Active product
+        // recipes that name this ingredient block deletion.
+        $recipeCount = ProductRecipe::query()
+            ->where('ingredient_id', $ingredient->id)
+            ->count();
+        if ($recipeCount > 0) {
+            throw new RuntimeException(sprintf(
+                'Cannot delete ingredient — %d product recipe(s) still reference it. Edit those recipes first.',
+                $recipeCount,
             ));
         }
 

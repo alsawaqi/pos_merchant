@@ -215,6 +215,14 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         Route::put('products/{product:uuid}/addon-groups', [ProductsController::class, 'syncAddOnGroups'])
             ->name('products.sync-addon-groups');
 
+        // Phase 5b — product recipe replace. Idempotent — caller
+        // PUTs the full desired list of recipe lines. Empty = no
+        // recipe (pre-made goods, no inventory deduction on sale).
+        // Snapshots the pre-edit state to pos_product_recipe_versions
+        // on every change so historical COGS stays accurate.
+        Route::put('products/{product:uuid}/recipe', [ProductsController::class, 'updateRecipe'])
+            ->name('products.update-recipe');
+
         // -------- Phase 5a — Inventory (Ingredients + Suppliers + Stock) --
         // All gated by inventory.{view,manage}. Branch-nested
         // stock endpoints take the branch by uuid + verify

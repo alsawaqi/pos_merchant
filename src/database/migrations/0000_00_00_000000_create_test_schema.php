@@ -467,6 +467,29 @@ return new class extends Migration
             $table->index(['ingredient_id', 'occurred_at'], 'pos_stock_movements_ingredient_occurred_idx');
         });
 
+        // ---- pos_product_recipes + pos_product_recipe_versions (Phase 5b) ---
+        // Recipe lines unique per (product, ingredient).
+        // Versions append-only snapshots of the PRE-edit state.
+        Schema::create('pos_product_recipes', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('product_id')->constrained('pos_products')->cascadeOnDelete();
+            $table->foreignId('ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
+            $table->decimal('quantity', 12, 3);
+            $table->string('unit_at_set', 16);
+            $table->unsignedSmallInteger('sort_order')->default(0);
+            $table->timestamps();
+            $table->unique(['product_id', 'ingredient_id'], 'pos_product_recipes_product_ingredient_unique');
+        });
+
+        Schema::create('pos_product_recipe_versions', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('product_id')->constrained('pos_products')->cascadeOnDelete();
+            $table->text('recipe_json');
+            $table->foreignId('edited_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->text('note')->nullable();
+            $table->timestamp('edited_at')->useCurrent();
+        });
+
         // ---- Sessions (used by some auth integration tests) -------
         // Mirrors the Laravel default sessions table — pos_merchant
         // is configured to use session driver=array in tests so this

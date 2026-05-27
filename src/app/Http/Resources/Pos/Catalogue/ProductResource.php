@@ -62,6 +62,22 @@ class ProductResource extends JsonResource
             // them. Global groups are NOT included here — the
             // resolver handles them at POS-render time.
             'addon_groups' => AddOnGroupResource::collection($this->whenLoaded('addOnGroups')),
+            // Phase 5b — recipe metadata.
+            //   has_recipe: cheap boolean for the list-view
+            //               badge column.
+            //   theoretical_cost: CURRENT recipe cost (sum of
+            //               quantity × ingredient.default_unit_cost
+            //               at current prices). Useful for the
+            //               margin display in the product modal.
+            //               Phase 8 sale orders snapshot the
+            //               historical cost — this is the live
+            //               number, not historical.
+            //   recipe_lines: inlined when the controller eager-
+            //               loaded recipeLines + ingredient. Edit
+            //               modal pre-populates from this.
+            'has_recipe' => $this->hasRecipe(),
+            'theoretical_cost' => $this->theoreticalCost(),
+            'recipe_lines' => ProductRecipeResource::collection($this->whenLoaded('recipeLines')),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];
