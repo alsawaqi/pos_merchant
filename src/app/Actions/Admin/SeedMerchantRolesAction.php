@@ -85,20 +85,38 @@ final class SeedMerchantRolesAction
             // Managers can see + invite portal users + update
             // them but cannot revoke (suspend/delete) — that's
             // a more sensitive action reserved for SuperAdmin.
+            // POS staff: full lifecycle (hire/fire is a normal
+            // manager responsibility, no SuperAdmin needed).
             MerchantRole::Manager->value => [
                 MerchantPermission::PortalUsersView->value,
                 MerchantPermission::PortalUsersInvite->value,
                 MerchantPermission::PortalUsersUpdate->value,
+                MerchantPermission::PosStaffView->value,
+                MerchantPermission::PosStaffCreate->value,
+                MerchantPermission::PosStaffUpdate->value,
+                MerchantPermission::PosStaffRevoke->value,
             ],
 
-            // Inventory / cashier-supervisor / viewer: no portal-
-            // user privileges in Phase 4.5. They will pick up
-            // domain-specific permissions in subsequent phases
-            // (inventory.*, products.*, reports.*) — listed here
-            // as empty so the role still exists in the catalogue.
+            // Cashier Supervisor sees the staff roster + can edit
+            // schedules / positions, but can't hire, fire, or
+            // reset PINs. Those are budget / payroll-adjacent and
+            // belong to the Manager tier.
+            MerchantRole::CashierSupervisor->value => [
+                MerchantPermission::PosStaffView->value,
+                MerchantPermission::PosStaffUpdate->value,
+            ],
+
+            // Viewer can see the staff roster (for shift planning
+            // / "who's working today" boards) but cannot mutate
+            // anything.
+            MerchantRole::Viewer->value => [
+                MerchantPermission::PosStaffView->value,
+            ],
+
+            // Inventory manager: domain is products + stock; they
+            // don't need staff visibility in Phase 4.6. Catalogue
+            // permissions arrive in Phase 6.
             MerchantRole::InventoryManager->value => [],
-            MerchantRole::CashierSupervisor->value => [],
-            MerchantRole::Viewer->value => [],
         ];
     }
 }

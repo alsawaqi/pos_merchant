@@ -2,6 +2,7 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import Login from '@/Pages/Auth/Login.vue';
 import Dashboard from '@/Pages/Merchant/Dashboard.vue';
 import PortalUsersIndex from '@/Pages/Merchant/PortalUsers/Index.vue';
+import PosStaffIndex from '@/Pages/Merchant/PosStaff/Index.vue';
 import { authState, ensureAuthLoaded, resetAuthBootPromise } from '@/stores/auth';
 
 declare module 'vue-router' {
@@ -33,6 +34,15 @@ const routes: RouteRecordRaw[] = [
         path: '/portal-users',
         name: 'merchant.portal-users',
         component: PortalUsersIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        // POS Staff — PIN-authenticated workforce. Same gate
+        // story as /portal-users: server-side middleware is the
+        // real check, the SPA just hides the nav entry.
+        path: '/pos-staff',
+        name: 'merchant.pos-staff',
+        component: PosStaffIndex,
         meta: { requiresAuth: true },
     },
     {

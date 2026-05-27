@@ -8,6 +8,12 @@ export const MerchantPermission = {
     PortalUsersInvite: 'portal_users.invite',
     PortalUsersUpdate: 'portal_users.update',
     PortalUsersRevoke: 'portal_users.revoke',
+    // Phase 4.6 — PIN-authenticated POS staff. Revoke covers
+    // suspend / reactivate / terminate as one risk class.
+    PosStaffView: 'pos_staff.view',
+    PosStaffCreate: 'pos_staff.create',
+    PosStaffUpdate: 'pos_staff.update',
+    PosStaffRevoke: 'pos_staff.revoke',
 } as const;
 
 export type MerchantPermissionValue =

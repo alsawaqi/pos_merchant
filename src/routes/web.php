@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\CsrfTokenController;
 use App\Http\Controllers\Portal\BranchesController;
 use App\Http\Controllers\Portal\PortalUsersController;
+use App\Http\Controllers\Pos\PosStaffController;
 use App\Http\Controllers\SpaController;
 use App\Http\Middleware\EnsureMerchantSessionIsFresh;
 use App\Http\Middleware\EnsureUserIsAuthenticated;
@@ -84,6 +85,26 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // Read-only branches list for the scope multi-select.
         Route::get('branches', [BranchesController::class, 'index'])
             ->name('branches.index');
+
+        // -------- Phase 4.6 — POS Staff (merchant's PIN-authed workforce) --
+        // {posStaff} is bound by uuid (PosStaff::getRouteKeyName).
+        // refuseIfNotInTenant inside the controller is what
+        // actually keeps cross-merchant lookups from leaking
+        // through.
+        Route::get('pos-staff', [PosStaffController::class, 'index'])
+            ->name('pos-staff.index');
+        Route::post('pos-staff', [PosStaffController::class, 'store'])
+            ->name('pos-staff.store');
+        Route::patch('pos-staff/{posStaff}', [PosStaffController::class, 'update'])
+            ->name('pos-staff.update');
+        Route::post('pos-staff/{posStaff}/suspend', [PosStaffController::class, 'suspend'])
+            ->name('pos-staff.suspend');
+        Route::post('pos-staff/{posStaff}/reactivate', [PosStaffController::class, 'reactivate'])
+            ->name('pos-staff.reactivate');
+        Route::post('pos-staff/{posStaff}/terminate', [PosStaffController::class, 'terminate'])
+            ->name('pos-staff.terminate');
+        Route::post('pos-staff/{posStaff}/reset-pin', [PosStaffController::class, 'resetPin'])
+            ->name('pos-staff.reset-pin');
     });
 
     // SPA fallback — every authenticated path that isn't an API

@@ -25,6 +25,17 @@ enum MerchantPermission: string
     case PortalUsersUpdate = 'portal_users.update';
     case PortalUsersRevoke = 'portal_users.revoke';
 
+    // POS staff — the PIN-authenticated workforce that uses the
+    // Android device (cashiers, waiters, kitchen, supervisors,
+    // on-floor managers). Distinct from portal users above.
+    // `revoke` is the umbrella for suspend / reactivate /
+    // terminate — three actions but one risk class (taking the
+    // PIN offline), reflected by one permission.
+    case PosStaffView = 'pos_staff.view';
+    case PosStaffCreate = 'pos_staff.create';
+    case PosStaffUpdate = 'pos_staff.update';
+    case PosStaffRevoke = 'pos_staff.revoke';
+
     /**
      * @return list<string>
      */

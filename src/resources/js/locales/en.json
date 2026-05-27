@@ -25,6 +25,7 @@
     "nav": {
         "dashboard": "Dashboard",
         "portal_users": "Portal Users",
+        "pos_staff": "POS Staff",
         "sign_out": "Sign out",
         "language": "Language"
     },
@@ -113,6 +114,80 @@
             "role": "Role",
             "branch_scope": "Branch access",
             "scope_all": "Allow access to all branches"
+        }
+    },
+    "pos_staff": {
+        "section_label": "Workforce",
+        "title": "POS Staff",
+        "subtitle": "Hire the cashiers, waiters, kitchen, and supervisors who run your registers. Each one gets a 6-digit PIN they use to unlock the POS device.",
+        "search_placeholder": "Search by name, staff code, or branch…",
+        "empty_state": "No staff yet. Hire your first teammate to get started.",
+        "no_branches_hint": "Add at least one branch before hiring staff — every staff member belongs to a branch.",
+        "never": "Never",
+        "validation_summary": "Please fix the highlighted fields.",
+        "table": {
+            "name": "Name",
+            "position": "Position",
+            "branch": "Branch",
+            "status": "Status",
+            "hired": "Hired",
+            "last_login": "Last login",
+            "actions": "Actions"
+        },
+        "statuses": {
+            "active": "Active",
+            "suspended": "Suspended",
+            "terminated": "Terminated"
+        },
+        "positions": {
+            "cashier": "Cashier",
+            "waiter": "Waiter",
+            "kitchen": "Kitchen",
+            "supervisor": "Supervisor",
+            "manager": "Manager"
+        },
+        "actions": {
+            "edit": "Edit",
+            "reset_pin": "Reset PIN",
+            "suspend": "Suspend",
+            "reactivate": "Reactivate",
+            "terminate": "Terminate"
+        },
+        "create": {
+            "button": "Hire teammate",
+            "title": "Hire a new staff member",
+            "subtitle": "We will generate a 6-digit PIN you can share with them.",
+            "submit": "Hire staff",
+            "submitting": "Hiring…"
+        },
+        "edit": {
+            "title": "Edit staff",
+            "submit": "Save changes",
+            "submitting": "Saving…"
+        },
+        "pin_modal": {
+            "title": "One-time PIN",
+            "subtitle": "Share this PIN with {name} through a secure channel. They will type it into the POS device to unlock their shift.",
+            "one_shot_warning": "This PIN is shown once. After you close this dialog it cannot be retrieved — only reset.",
+            "pin_label": "Generated PIN",
+            "copy": "Copy",
+            "copied": "Copied",
+            "done": "Done"
+        },
+        "terminate_dialog": {
+            "title": "Terminate employment?",
+            "body": "{name} will be removed from the roster and their PIN will stop working immediately.",
+            "note": "The record stays in your audit trail so past order history still attributes correctly.",
+            "confirm": "Yes, terminate",
+            "submitting": "Terminating…"
+        },
+        "fields": {
+            "name": "Full name",
+            "branch": "Branch",
+            "position": "Position",
+            "phone": "Phone (optional)",
+            "staff_code": "Staff code (optional)",
+            "hired_at": "Hired on"
         }
     }
 }
