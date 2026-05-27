@@ -164,6 +164,41 @@ return new class extends Migration
             $table->unique(['company_id', 'staff_code'], 'pos_staff_company_code_unique');
         });
 
+        // ---- pos_floors (Phase 5) ---------------------------------
+        Schema::create('pos_floors', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->string('name');
+            $table->string('name_ar')->nullable();
+            $table->unsignedSmallInteger('display_order')->default(0);
+            $table->string('status', 32)->default('active');
+            $table->timestamps();
+            $table->softDeletes();
+            $table->unique(['branch_id', 'name'], 'pos_floors_branch_name_unique');
+        });
+
+        // ---- pos_tables (Phase 5) ---------------------------------
+        Schema::create('pos_tables', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('floor_id')->constrained('pos_floors')->cascadeOnDelete();
+            $table->string('label', 32);
+            $table->unsignedSmallInteger('seats')->default(4);
+            $table->unsignedSmallInteger('min_party')->nullable();
+            $table->unsignedSmallInteger('max_party')->nullable();
+            $table->string('shape', 24)->default('square');
+            $table->text('notes')->nullable();
+            $table->string('qr_token', 64)->unique();
+            $table->string('status', 32)->default('active');
+            $table->unsignedSmallInteger('display_order')->default(0);
+            $table->timestamps();
+            $table->softDeletes();
+            $table->unique(['floor_id', 'label'], 'pos_tables_floor_label_unique');
+        });
+
         // ---- Spatie permission tables -----------------------------
         // Table names + team-scoping must match config/permission.php
         // exactly. Without `team_id`, every $user->can() call would

@@ -57,6 +57,13 @@ enum MerchantPermission: string
     case RolesView = 'roles.view';
     case RolesManage = 'roles.manage';
 
+    // Phase 5 — floor plan. One catalog for both floors AND
+    // tables (the survey concluded splitting them would create
+    // permission keys nobody ever assigns separately —
+    // you can't edit a table without seeing its floor).
+    case FloorPlanView = 'floor_plan.view';
+    case FloorPlanManage = 'floor_plan.manage';
+
     /**
      * @return list<string>
      */

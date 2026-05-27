@@ -25,6 +25,7 @@
     "nav": {
         "dashboard": "لوحة التحكم",
         "branches": "الفروع",
+        "floor_plan": "مخطط القاعة",
         "portal_users": "مستخدمو البوابة",
         "pos_staff": "موظفو نقاط البيع",
         "roles": "الأدوار والصلاحيات",
@@ -305,6 +306,86 @@
             "name": "اسم الدور",
             "description": "الوصف",
             "permissions": "الصلاحيات"
+        }
+    },
+    "floor_plan": {
+        "section_label": "التخطيط",
+        "title": "مخطط القاعة",
+        "subtitle": "حدّد القاعات في كل فرع والطاولات داخل كل قاعة. كل طاولة تحصل على رمز QR فريد يمكن للعملاء مسحه لفتح القائمة على هواتفهم.",
+        "branch": "الفرع",
+        "no_branches": "أضف فرعًا أولًا لبناء مخطط القاعة.",
+        "empty_state": "لا توجد قاعات بعد لهذا الفرع.",
+        "empty_hint": "أضف أول قاعة (القاعة الرئيسية، الباحة، VIP، إلخ) للبدء.",
+        "no_tables": "لا توجد طاولات بعد في هذه القاعة. أضف واحدة للبدء.",
+        "table_count": "طاولة {count} | طاولتان {count} | {count} طاولات | {count} طاولة",
+        "seats_n": "مقعد {count} | مقعدان {count} | {count} مقاعد | {count} مقعدًا",
+        "party_range": "مجموعة {min}–{max}",
+        "validation_summary": "يرجى تصحيح الحقول المظللة.",
+        "delete_floor_blocked": "احذف أو انقل طاولات هذه القاعة قبل حذف القاعة.",
+        "statuses": {
+            "active": "نشط",
+            "inactive": "غير نشط"
+        },
+        "shapes": {
+            "round": "دائري",
+            "square": "مربع",
+            "rectangle": "مستطيل",
+            "oval": "بيضاوي",
+            "counter": "كاونتر / مقعد بار"
+        },
+        "actions": {
+            "add_floor": "إضافة قاعة",
+            "edit_floor": "تعديل القاعة",
+            "delete_floor": "حذف القاعة",
+            "add_table": "إضافة طاولة",
+            "edit": "تعديل",
+            "delete": "حذف",
+            "qr": "QR"
+        },
+        "fields": {
+            "floor_name": "اسم القاعة",
+            "floor_name_ar": "الاسم بالعربية",
+            "display_order": "ترتيب العرض",
+            "label": "التسمية",
+            "seats": "المقاعد",
+            "min_party": "الحد الأدنى",
+            "max_party": "الحد الأقصى",
+            "shape": "الشكل",
+            "notes": "ملاحظات"
+        },
+        "floor_modal": {
+            "create_title": "إضافة قاعة",
+            "edit_title": "تعديل القاعة",
+            "submit": "حفظ",
+            "submitting": "جارٍ الحفظ…"
+        },
+        "table_modal": {
+            "create_title": "إضافة طاولة",
+            "edit_title": "تعديل الطاولة",
+            "submit": "حفظ",
+            "submitting": "جارٍ الحفظ…"
+        },
+        "qr_modal": {
+            "title": "رمز QR للطاولة {label}",
+            "subtitle": "يمسح العملاء هذا الرمز لفتح القائمة على هواتفهم. اطبع الرمز على بطاقة وضعها على الطاولة.",
+            "token_label": "الرمز",
+            "copy": "نسخ",
+            "copied": "تم النسخ",
+            "menu_url_hint": "سيكون رابط القائمة /menu?t={token} بمجرد إطلاق تطبيق العميل.",
+            "regenerate": "إعادة توليد (إبطال القديم)",
+            "done": "تم"
+        },
+        "delete_floor_dialog": {
+            "title": "حذف القاعة؟",
+            "body": "حذف «{name}»؟ لا يمكن التراجع.",
+            "confirm": "نعم، احذف",
+            "submitting": "جارٍ الحذف…"
+        },
+        "delete_table_dialog": {
+            "title": "حذف الطاولة؟",
+            "body": "حذف الطاولة «{label}»؟ الطلبات السابقة التي تشير إليها ستظل قابلة للحل.",
+            "confirm": "نعم، احذف",
+            "submitting": "جارٍ الحذف…"
         }
     }
 }

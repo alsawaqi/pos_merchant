@@ -134,7 +134,7 @@ final class SeedMerchantRolesAction
             ],
 
             MerchantRole::Manager->value => [
-                'description' => 'Day-to-day operations — hire staff, edit branches, manage portal teammates. Cannot deactivate branches or manage roles.',
+                'description' => 'Day-to-day operations — hire staff, edit branches, manage portal teammates + floor plan. Cannot deactivate branches or manage roles.',
                 'permissions' => [
                     MerchantPermission::PortalUsersView->value,
                     MerchantPermission::PortalUsersInvite->value,
@@ -146,30 +146,36 @@ final class SeedMerchantRolesAction
                     MerchantPermission::BranchesView->value,
                     MerchantPermission::BranchesUpdate->value,
                     MerchantPermission::RolesView->value,
+                    // Floor plan: full CRUD — adding tables /
+                    // floors is a normal manager task.
+                    MerchantPermission::FloorPlanView->value,
+                    MerchantPermission::FloorPlanManage->value,
                 ],
             ],
 
             MerchantRole::CashierSupervisor->value => [
-                'description' => 'Shift supervisor — view staff + branch list, edit staff details. Cannot hire / fire / reset PINs.',
+                'description' => 'Shift supervisor — view staff + branch list + floor plan, edit staff details. Cannot hire / fire / reset PINs or change the floor plan.',
                 'permissions' => [
                     MerchantPermission::PosStaffView->value,
                     MerchantPermission::PosStaffUpdate->value,
                     MerchantPermission::BranchesView->value,
                     MerchantPermission::RolesView->value,
+                    MerchantPermission::FloorPlanView->value,
                 ],
             ],
 
             MerchantRole::Viewer->value => [
-                'description' => 'Read-only — see the staff roster and the branch list. No write access.',
+                'description' => 'Read-only — see the staff roster, branch list, and floor plan. No write access.',
                 'permissions' => [
                     MerchantPermission::PosStaffView->value,
                     MerchantPermission::BranchesView->value,
                     MerchantPermission::RolesView->value,
+                    MerchantPermission::FloorPlanView->value,
                 ],
             ],
 
             MerchantRole::InventoryManager->value => [
-                'description' => 'Inventory specialist — branch list + (future) catalogue + stock. No HR or roles.',
+                'description' => 'Inventory specialist — branch list + (future) catalogue + stock. No HR, no floor plan, no roles.',
                 'permissions' => [
                     MerchantPermission::BranchesView->value,
                     MerchantPermission::RolesView->value,

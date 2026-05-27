@@ -2,6 +2,7 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import Login from '@/Pages/Auth/Login.vue';
 import Dashboard from '@/Pages/Merchant/Dashboard.vue';
 import BranchesIndex from '@/Pages/Merchant/Branches/Index.vue';
+import FloorPlanIndex from '@/Pages/Merchant/FloorPlan/Index.vue';
 import PortalUsersIndex from '@/Pages/Merchant/PortalUsers/Index.vue';
 import PosStaffIndex from '@/Pages/Merchant/PosStaff/Index.vue';
 import RolesIndex from '@/Pages/Merchant/Roles/Index.vue';
@@ -62,6 +63,15 @@ const routes: RouteRecordRaw[] = [
         path: '/roles',
         name: 'merchant.roles',
         component: RolesIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        // Floor Plan — Phase 5. Branch selector at top picks
+        // which branch to manage; floors + tables for that
+        // branch render below.
+        path: '/floor-plan',
+        name: 'merchant.floor-plan',
+        component: FloorPlanIndex,
         meta: { requiresAuth: true },
     },
     {

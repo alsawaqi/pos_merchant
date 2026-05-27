@@ -25,6 +25,7 @@
     "nav": {
         "dashboard": "Dashboard",
         "branches": "Branches",
+        "floor_plan": "Floor Plan",
         "portal_users": "Portal Users",
         "pos_staff": "POS Staff",
         "roles": "Roles & Permissions",
@@ -305,6 +306,86 @@
             "name": "Role name",
             "description": "Description",
             "permissions": "Permissions"
+        }
+    },
+    "floor_plan": {
+        "section_label": "Layout",
+        "title": "Floor Plan",
+        "subtitle": "Define the floors at each branch and the tables on each floor. Tables get a unique QR code customers can scan to open the menu on their phone.",
+        "branch": "Branch",
+        "no_branches": "Add a branch first to build a floor plan.",
+        "empty_state": "No floors yet for this branch.",
+        "empty_hint": "Add your first floor (Main Hall, Patio, VIP, etc.) to get started.",
+        "no_tables": "No tables yet on this floor. Add one to get started.",
+        "table_count": "{count} table | {count} tables",
+        "seats_n": "1 seat | {count} seats",
+        "party_range": "Party {min}–{max}",
+        "validation_summary": "Please fix the highlighted fields.",
+        "delete_floor_blocked": "Move or delete this floor's tables before deleting the floor.",
+        "statuses": {
+            "active": "Active",
+            "inactive": "Inactive"
+        },
+        "shapes": {
+            "round": "Round",
+            "square": "Square",
+            "rectangle": "Rectangle",
+            "oval": "Oval",
+            "counter": "Counter / bar seat"
+        },
+        "actions": {
+            "add_floor": "Add floor",
+            "edit_floor": "Edit floor",
+            "delete_floor": "Delete floor",
+            "add_table": "Add table",
+            "edit": "Edit",
+            "delete": "Delete",
+            "qr": "QR"
+        },
+        "fields": {
+            "floor_name": "Floor name",
+            "floor_name_ar": "Arabic name",
+            "display_order": "Display order",
+            "label": "Label",
+            "seats": "Seats",
+            "min_party": "Min party",
+            "max_party": "Max party",
+            "shape": "Shape",
+            "notes": "Notes"
+        },
+        "floor_modal": {
+            "create_title": "Add floor",
+            "edit_title": "Edit floor",
+            "submit": "Save",
+            "submitting": "Saving…"
+        },
+        "table_modal": {
+            "create_title": "Add table",
+            "edit_title": "Edit table",
+            "submit": "Save",
+            "submitting": "Saving…"
+        },
+        "qr_modal": {
+            "title": "QR code for {label}",
+            "subtitle": "Customers scan this to open your menu on their phone. Print the token onto a card and place it at the table.",
+            "token_label": "Token",
+            "copy": "Copy",
+            "copied": "Copied",
+            "menu_url_hint": "Menu URL will be /menu?t={token} once the customer-facing app ships.",
+            "regenerate": "Regenerate (invalidate old)",
+            "done": "Done"
+        },
+        "delete_floor_dialog": {
+            "title": "Delete floor?",
+            "body": "Delete \"{name}\"? This cannot be undone.",
+            "confirm": "Yes, delete",
+            "submitting": "Deleting…"
+        },
+        "delete_table_dialog": {
+            "title": "Delete table?",
+            "body": "Delete table \"{label}\"? Past orders that reference it will still resolve.",
+            "confirm": "Yes, delete",
+            "submitting": "Deleting…"
         }
     }
 }

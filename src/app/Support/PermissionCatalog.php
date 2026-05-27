@@ -130,6 +130,23 @@ final class PermissionCatalog
                 ],
             ],
             [
+                'key' => 'floor_plan',
+                'label_en' => 'Floor Plan',
+                'label_ar' => 'مخطط القاعة',
+                'permissions' => [
+                    [
+                        'key' => MerchantPermission::FloorPlanView->value,
+                        'label_en' => 'See floors + tables',
+                        'label_ar' => 'عرض القاعات والطاولات',
+                    ],
+                    [
+                        'key' => MerchantPermission::FloorPlanManage->value,
+                        'label_en' => 'Create + edit + delete floors and tables',
+                        'label_ar' => 'إنشاء وتعديل وحذف القاعات والطاولات',
+                    ],
+                ],
+            ],
+            [
                 'key' => 'roles',
                 'label_en' => 'Roles & Permissions',
                 'label_ar' => 'الأدوار والصلاحيات',

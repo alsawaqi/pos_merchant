@@ -7,8 +7,10 @@ use App\Http\Controllers\Auth\CsrfTokenController;
 use App\Http\Controllers\Portal\BranchesController;
 use App\Http\Controllers\Portal\PortalUsersController;
 use App\Http\Controllers\Pos\BranchesController as PosBranchesController;
+use App\Http\Controllers\Pos\FloorsController;
 use App\Http\Controllers\Pos\PosStaffController;
 use App\Http\Controllers\Pos\RolesController;
+use App\Http\Controllers\Pos\TablesController;
 use App\Http\Controllers\SpaController;
 use App\Http\Middleware\EnsureMerchantSessionIsFresh;
 use App\Http\Middleware\EnsureUserIsAuthenticated;
@@ -125,6 +127,31 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('roles.update');
         Route::delete('roles/{role}', [RolesController::class, 'destroy'])
             ->name('roles.destroy');
+
+        // -------- Phase 5 — Floor Plan (floors + tables) -----
+        // Floors are branch-nested for the list + create; the
+        // flat /floors/{floor:uuid} routes handle PATCH/DELETE
+        // once the floor exists (no need to repeat the branch
+        // uuid).
+        Route::get('branches/{branch:uuid}/floors', [FloorsController::class, 'index'])
+            ->name('floors.index');
+        Route::post('branches/{branch:uuid}/floors', [FloorsController::class, 'store'])
+            ->name('floors.store');
+        Route::patch('floors/{floor:uuid}', [FloorsController::class, 'update'])
+            ->name('floors.update');
+        Route::delete('floors/{floor:uuid}', [FloorsController::class, 'destroy'])
+            ->name('floors.destroy');
+
+        // Tables live under a floor for creation, then become
+        // first-class once they have a uuid.
+        Route::post('floors/{floor:uuid}/tables', [TablesController::class, 'store'])
+            ->name('tables.store');
+        Route::patch('tables/{table:uuid}', [TablesController::class, 'update'])
+            ->name('tables.update');
+        Route::delete('tables/{table:uuid}', [TablesController::class, 'destroy'])
+            ->name('tables.destroy');
+        Route::post('tables/{table:uuid}/regenerate-qr', [TablesController::class, 'regenerateQr'])
+            ->name('tables.regenerate-qr');
 
         // -------- Phase 4.6 — POS Staff (merchant's PIN-authed workforce) --
         // {posStaff} is bound by uuid (PosStaff::getRouteKeyName).

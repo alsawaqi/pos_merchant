@@ -26,6 +26,9 @@ export const MerchantPermission = {
     // user flow. Defaults to SuperAdmin-only.
     RolesView: 'roles.view',
     RolesManage: 'roles.manage',
+    // Phase 5 — floor plan. Both floors and tables.
+    FloorPlanView: 'floor_plan.view',
+    FloorPlanManage: 'floor_plan.manage',
 } as const;
 
 export type MerchantPermissionValue =
