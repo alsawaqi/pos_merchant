@@ -95,28 +95,40 @@ final class SeedMerchantRolesAction
                 MerchantPermission::PosStaffCreate->value,
                 MerchantPermission::PosStaffUpdate->value,
                 MerchantPermission::PosStaffRevoke->value,
+                // Branches: Manager can edit details + hours +
+                // contact info but NOT flip the activation
+                // status — that's reserved for SuperAdmin
+                // because it stops POS orders + billing.
+                MerchantPermission::BranchesView->value,
+                MerchantPermission::BranchesUpdate->value,
             ],
 
             // Cashier Supervisor sees the staff roster + can edit
             // schedules / positions, but can't hire, fire, or
             // reset PINs. Those are budget / payroll-adjacent and
-            // belong to the Manager tier.
+            // belong to the Manager tier. Branches: read-only so
+            // the supervisor can navigate the locations dropdown
+            // when assigning shifts but can't mutate anything.
             MerchantRole::CashierSupervisor->value => [
                 MerchantPermission::PosStaffView->value,
                 MerchantPermission::PosStaffUpdate->value,
+                MerchantPermission::BranchesView->value,
             ],
 
             // Viewer can see the staff roster (for shift planning
-            // / "who's working today" boards) but cannot mutate
-            // anything.
+            // / "who's working today" boards) and the branch
+            // roster, but cannot mutate anything.
             MerchantRole::Viewer->value => [
                 MerchantPermission::PosStaffView->value,
+                MerchantPermission::BranchesView->value,
             ],
 
-            // Inventory manager: domain is products + stock; they
-            // don't need staff visibility in Phase 4.6. Catalogue
-            // permissions arrive in Phase 6.
-            MerchantRole::InventoryManager->value => [],
+            // Inventory manager: domain is products + stock + the
+            // branch list (need to know WHERE the stock lives).
+            // Catalogue permissions arrive in Phase 6.
+            MerchantRole::InventoryManager->value => [
+                MerchantPermission::BranchesView->value,
+            ],
         ];
     }
 }

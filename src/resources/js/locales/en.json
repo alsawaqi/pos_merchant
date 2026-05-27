@@ -24,6 +24,7 @@
     },
     "nav": {
         "dashboard": "Dashboard",
+        "branches": "Branches",
         "portal_users": "Portal Users",
         "pos_staff": "POS Staff",
         "sign_out": "Sign out",
@@ -188,6 +189,74 @@
             "phone": "Phone (optional)",
             "staff_code": "Staff code (optional)",
             "hired_at": "Hired on"
+        }
+    },
+    "branches": {
+        "section_label": "Locations",
+        "title": "Branches",
+        "subtitle": "Rename your locations, fix manager contact details, set opening hours, and tune POS defaults for each branch.",
+        "search_placeholder": "Search by name, code, or manager…",
+        "empty_state": "No branches yet. Contact your MITHQAL account manager to onboard a new location.",
+        "add_branch_hint": "Need a new branch? Adding or removing a branch is an admin operation — file a support ticket and your MITHQAL account manager will provision it for you.",
+        "validation_summary": "Please fix the highlighted fields.",
+        "permission_error": "You do not have permission to perform that action.",
+        "table": {
+            "name": "Name",
+            "manager": "Manager",
+            "phone": "Phone",
+            "order_type": "Default order type",
+            "status": "Status",
+            "actions": "Actions"
+        },
+        "statuses": {
+            "active": "Active",
+            "inactive": "Inactive"
+        },
+        "order_types": {
+            "quick": "Quick service",
+            "dine_in": "Dine in",
+            "to_go": "Takeaway",
+            "delivery": "Delivery",
+            "car": "Car / drive-thru"
+        },
+        "weekdays": {
+            "mon": "Monday",
+            "tue": "Tuesday",
+            "wed": "Wednesday",
+            "thu": "Thursday",
+            "fri": "Friday",
+            "sat": "Saturday",
+            "sun": "Sunday"
+        },
+        "actions": {
+            "edit": "Edit"
+        },
+        "edit": {
+            "title": "Edit branch",
+            "submit": "Save changes",
+            "submitting": "Saving…"
+        },
+        "fieldset": {
+            "identity": "Identity",
+            "contact": "Contact",
+            "geo": "Location",
+            "operational": "Operational",
+            "hours": "Opening hours"
+        },
+        "fields": {
+            "name": "Branch name",
+            "name_ar": "Arabic name",
+            "manager_name": "Branch manager",
+            "phone": "Phone",
+            "email": "Email",
+            "address": "Address",
+            "latitude": "Latitude",
+            "longitude": "Longitude",
+            "geofence_radius_m": "Geofence radius (m)",
+            "default_order_type": "Default order type",
+            "status": "Status",
+            "status_disabled_hint": "Only an account super admin can activate or deactivate a branch.",
+            "closed_day": "Closed"
         }
     }
 }

@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 import Login from '@/Pages/Auth/Login.vue';
 import Dashboard from '@/Pages/Merchant/Dashboard.vue';
+import BranchesIndex from '@/Pages/Merchant/Branches/Index.vue';
 import PortalUsersIndex from '@/Pages/Merchant/PortalUsers/Index.vue';
 import PosStaffIndex from '@/Pages/Merchant/PosStaff/Index.vue';
 import { authState, ensureAuthLoaded, resetAuthBootPromise } from '@/stores/auth';
@@ -43,6 +44,15 @@ const routes: RouteRecordRaw[] = [
         path: '/pos-staff',
         name: 'merchant.pos-staff',
         component: PosStaffIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        // Branches — Phase 4.7. Server enforces the
+        // branches.view permission; SPA hides the nav entry
+        // for users without it.
+        path: '/branches',
+        name: 'merchant.branches',
+        component: BranchesIndex,
         meta: { requiresAuth: true },
     },
     {

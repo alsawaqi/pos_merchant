@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\CsrfTokenController;
 use App\Http\Controllers\Portal\BranchesController;
 use App\Http\Controllers\Portal\PortalUsersController;
+use App\Http\Controllers\Pos\BranchesController as PosBranchesController;
 use App\Http\Controllers\Pos\PosStaffController;
 use App\Http\Controllers\SpaController;
 use App\Http\Middleware\EnsureMerchantSessionIsFresh;
@@ -82,9 +83,23 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         Route::post('portal-users/{portalUser}/reset-password', [PortalUsersController::class, 'resetPassword'])
             ->name('portal-users.reset-password');
 
-        // Read-only branches list for the scope multi-select.
+        // Read-only branches list for the Portal Users branch-
+        // scope picker. Lean payload — no permission gate, every
+        // authed merchant user needs this to render UI.
         Route::get('branches', [BranchesController::class, 'index'])
             ->name('branches.index');
+
+        // -------- Phase 4.7 — Merchant Branches CRUD (no create/delete) ----
+        // Different controller from the Portal one above — full
+        // payload, permission-gated, supports show + update.
+        // UUID-bound routes; refuseIfNotInTenant inside the
+        // controller keeps cross-merchant lookups from leaking.
+        Route::get('pos/branches', [PosBranchesController::class, 'index'])
+            ->name('pos.branches.index');
+        Route::get('pos/branches/{branch:uuid}', [PosBranchesController::class, 'show'])
+            ->name('pos.branches.show');
+        Route::patch('pos/branches/{branch:uuid}', [PosBranchesController::class, 'update'])
+            ->name('pos.branches.update');
 
         // -------- Phase 4.6 — POS Staff (merchant's PIN-authed workforce) --
         // {posStaff} is bound by uuid (PosStaff::getRouteKeyName).

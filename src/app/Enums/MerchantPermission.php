@@ -36,6 +36,18 @@ enum MerchantPermission: string
     case PosStaffUpdate = 'pos_staff.update';
     case PosStaffRevoke = 'pos_staff.revoke';
 
+    // Branches — merchant-side CRUD on their OWN company's
+    // branches (rename, edit hours, change contact details). No
+    // create / delete on the merchant side; those are admin
+    // operations because they have CR/regulatory implications
+    // and downstream device-fleet effects. `transition_status`
+    // is split out from `update` because deactivating a branch
+    // stops POS orders + bills, a much sharper blast radius
+    // than renaming or fixing the manager phone.
+    case BranchesView = 'branches.view';
+    case BranchesUpdate = 'branches.update';
+    case BranchesTransitionStatus = 'branches.transition_status';
+
     /**
      * @return list<string>
      */

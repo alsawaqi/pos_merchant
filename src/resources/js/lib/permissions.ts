@@ -14,6 +14,13 @@ export const MerchantPermission = {
     PosStaffCreate: 'pos_staff.create',
     PosStaffUpdate: 'pos_staff.update',
     PosStaffRevoke: 'pos_staff.revoke',
+    // Phase 4.7 — merchant-side branches CRUD. Status flip is
+    // split because deactivating a branch has billing + fleet
+    // blast radius separate from a rename / hours / contact
+    // edit.
+    BranchesView: 'branches.view',
+    BranchesUpdate: 'branches.update',
+    BranchesTransitionStatus: 'branches.transition_status',
 } as const;
 
 export type MerchantPermissionValue =
