@@ -516,6 +516,24 @@
             "submit": "Save",
             "submitting": "Saving…"
         },
+        "recipe": {
+            "section_title": "Recipe",
+            "section_hint": "Map ingredients consumed per sale. A latte might use 0.180 L milk + 0.018 kg espresso beans. Empty recipe = pre-made goods, no inventory deduction on sale.",
+            "no_lines": "No recipe yet — this product is treated as pre-made.",
+            "add_line": "Add ingredient",
+            "remove_line": "Remove",
+            "pick_ingredient": "Pick an ingredient…",
+            "quantity": "Quantity",
+            "no_ingredients_hint": "Create an ingredient on the Inventory page first, then come back to build the recipe.",
+            "live_cost": "Recipe cost (live)",
+            "live_cost_hint": "Sum of (quantity × ingredient default cost) at current prices. Phase 8 sale orders snapshot the historical cost separately.",
+            "margin": "Margin",
+            "margin_hint": "Computed as (base price − recipe cost) ÷ base price.",
+            "duplicate_ingredient": "Each ingredient can appear at most once in the recipe.",
+            "badge": "{count} ingredient | {count} ingredients"
+        },
+        "table_cost_col": "Cost",
+        "table_recipe_col": "Recipe",
         "delete_cat_dialog": {
             "title": "Delete category?",
             "body": "Delete \"{name}\"? This cannot be undone.",

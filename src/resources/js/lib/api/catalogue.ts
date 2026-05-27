@@ -57,8 +57,56 @@ export interface Product {
     status: ProductStatus | null;
     /** Phase 4.9 — product-specific add-on groups when eager-loaded. */
     addon_groups?: AddOnGroup[];
+    /**
+     * Phase 5b — has at least one recipe line. Drives the
+     * "Recipe" badge on the product list + decides whether
+     * a sale will trigger inventory deduction (Phase 8).
+     */
+    has_recipe: boolean;
+    /**
+     * Phase 5b — Σ over recipe lines of (quantity × current
+     * ingredient.default_unit_cost). String for precision.
+     * "0.000" for products with no recipe. This is the
+     * CURRENT cost (live ingredient prices) — Phase 8 orders
+     * snapshot historical cost separately.
+     */
+    theoretical_cost: string;
+    /** Phase 5b — recipe lines when eager-loaded by the controller. */
+    recipe_lines?: ProductRecipeLine[];
     created_at: string | null;
     updated_at: string | null;
+}
+
+// ---- Phase 5b — Recipe types -----------------------------------
+
+export interface ProductRecipeLine {
+    id: number;
+    product_id: number;
+    ingredient_id: number;
+    /** decimal:3 string — never parseFloat. */
+    quantity: string;
+    /** Denormalised from ingredient at line-set time. */
+    unit_at_set: string;
+    sort_order: number;
+    ingredient?: {
+        id: number;
+        uuid: string;
+        name: string;
+        name_ar: string | null;
+        unit: string;
+        /** Current default cost — used by the live cost preview. */
+        default_unit_cost: string;
+    };
+}
+
+export interface RecipeLinePayload {
+    ingredient_uuid: string;
+    quantity: string | number;
+}
+
+export interface UpdateProductRecipePayload {
+    lines: RecipeLinePayload[];
+    note?: string | null;
 }
 
 // ---- Phase 4.9 — Add-ons ---------------------------------------
@@ -293,5 +341,23 @@ export function syncProductAddOnGroups(
     return apiPut<{ data: AddOnGroup[] }>(
         `/api/products/${productUuid}/addon-groups`,
         { group_uuids: groupUuids } as unknown as JsonValue,
+    );
+}
+
+// ---- Phase 5b — Product Recipe ---------------------------------
+
+/**
+ * Idempotent replace of the full recipe. Empty array = "no
+ * recipe / pre-made goods". Server snapshots the pre-edit
+ * recipe to a version row + audits when the recipe actually
+ * changes (no-op otherwise).
+ */
+export function updateProductRecipe(
+    productUuid: string,
+    payload: UpdateProductRecipePayload,
+): Promise<{ data: Product }> {
+    return apiPut<{ data: Product }>(
+        `/api/products/${productUuid}/recipe`,
+        payload as unknown as JsonValue,
     );
 }

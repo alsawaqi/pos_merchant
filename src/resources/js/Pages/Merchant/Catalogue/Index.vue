@@ -12,7 +12,7 @@
  *   - Create / edit / delete buttons only when CatalogueManage
  */
 
-import { Boxes, Globe2, Image, Layers, Package, Pencil, Plus, Sparkles, Tag, Trash2, Truck } from 'lucide-vue-next';
+import { Beaker, Boxes, Globe2, Image, Layers, Minus, Package, Pencil, Plus, Sparkles, Tag, Trash2, Truck } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
@@ -35,6 +35,7 @@ import {
     updateAddOnGroup,
     updateCategory,
     updateProduct,
+    updateProductRecipe,
     type AddOn,
     type AddOnGroup,
     type AddOnSelectionMode,
@@ -44,7 +45,9 @@ import {
     type CreateProductPayload,
     type Product,
     type ProductStatus,
+    type RecipeLinePayload,
 } from '@/lib/api/catalogue';
+import { listIngredients, type Ingredient } from '@/lib/api/inventory';
 import { MerchantPermission } from '@/lib/permissions';
 
 const { t, locale } = useI18n();
@@ -63,6 +66,11 @@ const products = ref<Product[]>([]);
 // options eager-loaded. Drives both the Add-ons tab and the
 // product modal's picker (filtered to non-global groups there).
 const addOnGroups = ref<AddOnGroup[]>([]);
+// Phase 5b — ingredients power the product Recipe section's
+// dropdown. Fetched from the inventory API; merchants without
+// inventory.view get an empty list and a disabled recipe
+// editor (which the UI explains via a hint).
+const ingredients = ref<Ingredient[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
 
@@ -129,6 +137,10 @@ const prodForm = reactive<{
     // to this product. Mirrored from product.addon_groups on
     // edit, posted to syncProductAddOnGroups on save.
     addon_group_uuids: string[];
+    // Phase 5b — recipe lines. Empty array on submit = "no
+    // recipe / pre-made goods". Each row is mirrored to a
+    // RecipeLinePayload at submitProduct time.
+    recipe_lines: { ingredient_uuid: string; quantity: string }[];
 }>({
     name: '',
     name_ar: '',
@@ -144,6 +156,7 @@ const prodForm = reactive<{
     display_order: 0,
     status: 'active',
     addon_group_uuids: [],
+    recipe_lines: [],
 });
 
 // ---- Add-on group modal (Phase 4.9) -----------------------------
@@ -224,6 +237,18 @@ async function fetchProducts(): Promise<void> {
     }
 }
 
+async function fetchIngredients(): Promise<void> {
+    // Soft-fail when the user lacks inventory.view — the recipe
+    // editor degrades gracefully (Add Ingredient stays disabled,
+    // hint asks them to visit Inventory first).
+    try {
+        const response = await listIngredients();
+        ingredients.value = response.data;
+    } catch {
+        ingredients.value = [];
+    }
+}
+
 async function fetchAddOnGroups(): Promise<void> {
     try {
         const response = await listAddOnGroups();
@@ -236,7 +261,7 @@ async function fetchAddOnGroups(): Promise<void> {
 async function fetchAll(): Promise<void> {
     loading.value = true;
     error.value = null;
-    await Promise.all([fetchCategories(), fetchProducts(), fetchAddOnGroups()]);
+    await Promise.all([fetchCategories(), fetchProducts(), fetchAddOnGroups(), fetchIngredients()]);
     loading.value = false;
 }
 
@@ -342,6 +367,7 @@ function openCreateProduct(): void {
     prodForm.display_order = products.value.length;
     prodForm.status = 'active';
     prodForm.addon_group_uuids = [];
+    prodForm.recipe_lines = [];
     prodModalErrors.value = {};
     prodModalError.value = null;
     prodModalOpen.value = true;
@@ -368,9 +394,84 @@ function openEditProduct(product: Product): void {
     // addon_groups, so editing relies on the resource emitting
     // them. Falls back to [] safely when undefined.
     prodForm.addon_group_uuids = (product.addon_groups ?? []).map((g) => g.uuid);
+    // Phase 5b — pre-populate recipe lines from the eager-
+    // loaded relation. Falls back to [] when none.
+    prodForm.recipe_lines = (product.recipe_lines ?? []).map((line) => ({
+        ingredient_uuid: line.ingredient?.uuid ?? '',
+        quantity: line.quantity,
+    }));
     prodModalErrors.value = {};
     prodModalError.value = null;
     prodModalOpen.value = true;
+}
+
+// ===================== Phase 5b — Recipe helpers =====================
+
+function addRecipeLine(): void {
+    // Default empty row — the merchant picks the ingredient
+    // then enters a quantity. Validation at submit time.
+    prodForm.recipe_lines.push({ ingredient_uuid: '', quantity: '' });
+}
+
+function removeRecipeLine(idx: number): void {
+    prodForm.recipe_lines.splice(idx, 1);
+}
+
+/**
+ * Live theoretical-cost preview: Σ (quantity × ingredient.default_unit_cost)
+ * across the current form's recipe lines. Returns a string with
+ * 3-decimal precision. Used inline to show the merchant what
+ * the recipe will cost without waiting for the server round-trip.
+ *
+ * Skips rows with missing ingredient / quantity (a half-edited
+ * row contributes zero).
+ */
+const recipeLiveCost = computed<string>(() => {
+    let total = 0;
+    for (const line of prodForm.recipe_lines) {
+        if (!line.ingredient_uuid || line.quantity === '') continue;
+        const ingredient = ingredients.value.find((i) => i.uuid === line.ingredient_uuid);
+        if (!ingredient) continue;
+        const qty = parseFloat(line.quantity);
+        const cost = parseFloat(ingredient.default_unit_cost);
+        if (!isFinite(qty) || !isFinite(cost)) continue;
+        total += qty * cost;
+    }
+    return total.toFixed(3);
+});
+
+/**
+ * Live margin preview: (base_price − recipe cost) / base_price
+ * as a percentage. Returns null when base_price is 0 or blank
+ * (division-by-zero) — UI hides the row in that case.
+ */
+const recipeLiveMargin = computed<string | null>(() => {
+    const basePrice = parseFloat(prodForm.base_price);
+    const cost = parseFloat(recipeLiveCost.value);
+    if (!isFinite(basePrice) || basePrice <= 0) return null;
+    if (!isFinite(cost)) return null;
+    const margin = ((basePrice - cost) / basePrice) * 100;
+    return margin.toFixed(1);
+});
+
+/**
+ * True when the current recipe lines contain at least one
+ * duplicate ingredient_uuid. Surfaces as an inline error +
+ * disables the Save button (the server would 422 anyway).
+ */
+const recipeHasDuplicates = computed<boolean>(() => {
+    const seen = new Set<string>();
+    for (const line of prodForm.recipe_lines) {
+        if (!line.ingredient_uuid) continue;
+        if (seen.has(line.ingredient_uuid)) return true;
+        seen.add(line.ingredient_uuid);
+    }
+    return false;
+});
+
+function ingredientUnitLabel(uuid: string): string {
+    const ingredient = ingredients.value.find((i) => i.uuid === uuid);
+    return ingredient?.unit ?? '';
 }
 
 async function submitProduct(): Promise<void> {
@@ -413,6 +514,20 @@ async function submitProduct(): Promise<void> {
         // writes one audit row. Safe to call even when the
         // picker wasn't touched (empty change set = no-op).
         await syncProductAddOnGroups(productUuid, prodForm.addon_group_uuids);
+
+        // Step 3 (Phase 5b): replace the product's recipe.
+        // Skip empty / incomplete rows on the client so a
+        // half-edited row doesn't trip the server validator.
+        // Server-side is still the source of truth — also no-op
+        // safe (returns 200 with no audit when recipe matches
+        // disk).
+        const cleanLines: RecipeLinePayload[] = prodForm.recipe_lines
+            .filter((l) => l.ingredient_uuid && l.quantity !== '')
+            .map((l) => ({
+                ingredient_uuid: l.ingredient_uuid,
+                quantity: l.quantity,
+            }));
+        await updateProductRecipe(productUuid, { lines: cleanLines });
 
         prodModalOpen.value = false;
         await fetchProducts();
@@ -775,6 +890,9 @@ function statusLabel(status: string | null): string {
                                 <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.table.category') }}</th>
                                 <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.table.sku') }}</th>
                                 <th class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.table.price') }}</th>
+                                <!-- Phase 5b — recipe cost + has-recipe badge columns. -->
+                                <th class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.table_cost_col') }}</th>
+                                <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.table_recipe_col') }}</th>
                                 <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.table.status') }}</th>
                                 <th class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.table.actions') }}</th>
                             </tr>
@@ -790,6 +908,28 @@ function statusLabel(status: string | null): string {
                                 <td class="px-5 py-4 text-end text-sm font-semibold tabular-nums text-slate-950">
                                     {{ prod.base_price }}
                                     <span class="ms-1 text-[10px] font-normal text-slate-500">OMR</span>
+                                </td>
+                                <!-- Phase 5b — cost column. Dash for no-recipe
+                                     products; otherwise the live theoretical
+                                     cost at current ingredient prices. -->
+                                <td class="px-5 py-4 text-end text-xs tabular-nums text-slate-600">
+                                    <template v-if="prod.has_recipe">
+                                        {{ prod.theoretical_cost }}
+                                        <span class="ms-1 text-[10px] font-normal text-slate-400">OMR</span>
+                                    </template>
+                                    <template v-else>—</template>
+                                </td>
+                                <!-- Phase 5b — recipe badge. Shows ingredient
+                                     count when set; dash otherwise. -->
+                                <td class="px-5 py-4">
+                                    <span
+                                        v-if="prod.has_recipe"
+                                        class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700"
+                                    >
+                                        <Beaker class="size-3" />
+                                        {{ t('catalogue.recipe.badge', { count: (prod.recipe_lines ?? []).length }) }}
+                                    </span>
+                                    <span v-else class="text-xs text-slate-400">—</span>
                                 </td>
                                 <td class="px-5 py-4">
                                     <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider" :class="statusBadgeClass(prod.status)">
@@ -1111,9 +1251,109 @@ function statusLabel(status: string | null): string {
                         </div>
                     </fieldset>
 
+                    <!-- Phase 5b — Recipe section. Each line is an
+                         (ingredient, quantity) pair. Empty array
+                         on save = "no recipe / pre-made goods, no
+                         inventory deduction on sale". Live cost
+                         + margin update as the merchant edits. -->
+                    <fieldset class="rounded-lg border border-slate-200 p-3">
+                        <legend class="px-2 text-sm font-semibold text-slate-700">
+                            <Beaker class="me-1 inline size-3.5 text-amber-600" />
+                            {{ t('catalogue.recipe.section_title') }}
+                        </legend>
+                        <p class="mb-3 text-xs text-slate-500">{{ t('catalogue.recipe.section_hint') }}</p>
+
+                        <!-- Ingredients available hint when none exist -->
+                        <div v-if="ingredients.length === 0" class="rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
+                            {{ t('catalogue.recipe.no_ingredients_hint') }}
+                        </div>
+
+                        <!-- Recipe lines + add button -->
+                        <template v-else>
+                            <div v-if="prodForm.recipe_lines.length === 0" class="rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
+                                {{ t('catalogue.recipe.no_lines') }}
+                            </div>
+                            <ul v-else class="space-y-2">
+                                <li
+                                    v-for="(line, idx) in prodForm.recipe_lines"
+                                    :key="idx"
+                                    class="flex flex-wrap items-end gap-2 rounded border border-slate-200 bg-slate-50/50 p-2"
+                                >
+                                    <label class="flex-1 min-w-xs block">
+                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.fields.ingredient') }}</span>
+                                        <select
+                                            v-model="line.ingredient_uuid"
+                                            class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                                        >
+                                            <option value="">{{ t('catalogue.recipe.pick_ingredient') }}</option>
+                                            <option v-for="ing in ingredients" :key="ing.id" :value="ing.uuid">
+                                                {{ ing.name }} ({{ ing.unit }})
+                                            </option>
+                                        </select>
+                                    </label>
+                                    <label class="block w-32">
+                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.recipe.quantity') }}</span>
+                                        <div class="mt-1 flex items-center gap-1">
+                                            <input
+                                                v-model="line.quantity"
+                                                type="number"
+                                                step="0.001"
+                                                min="0.001"
+                                                placeholder="0.000"
+                                                class="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                                            >
+                                            <span class="text-[10px] font-medium text-slate-500 min-w-[2ch]">{{ ingredientUnitLabel(line.ingredient_uuid) }}</span>
+                                        </div>
+                                    </label>
+                                    <button
+                                        type="button"
+                                        class="grid size-9 place-items-center rounded-lg border border-rose-200 text-rose-700 transition hover:bg-rose-50"
+                                        :title="t('catalogue.recipe.remove_line')"
+                                        @click="removeRecipeLine(idx)"
+                                    >
+                                        <Minus class="size-4" />
+                                    </button>
+                                </li>
+                            </ul>
+                            <button
+                                type="button"
+                                class="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100"
+                                @click="addRecipeLine"
+                            >
+                                <Plus class="size-3.5" />
+                                {{ t('catalogue.recipe.add_line') }}
+                            </button>
+
+                            <!-- Duplicate-ingredient warning -->
+                            <p v-if="recipeHasDuplicates" class="mt-2 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700">
+                                {{ t('catalogue.recipe.duplicate_ingredient') }}
+                            </p>
+
+                            <!-- Live cost + margin preview -->
+                            <div v-if="prodForm.recipe_lines.length > 0" class="mt-3 grid gap-2 sm:grid-cols-2">
+                                <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                                    <p class="text-[10px] font-semibold uppercase tracking-wide text-amber-700">{{ t('catalogue.recipe.live_cost') }}</p>
+                                    <p class="text-base font-semibold tabular-nums text-amber-900">
+                                        {{ recipeLiveCost }} <span class="text-[10px] font-normal text-amber-600">OMR</span>
+                                    </p>
+                                </div>
+                                <div v-if="recipeLiveMargin !== null" class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+                                    <p class="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">{{ t('catalogue.recipe.margin') }}</p>
+                                    <p class="text-base font-semibold tabular-nums text-emerald-900">
+                                        {{ recipeLiveMargin }}<span class="text-[10px] font-normal text-emerald-600">%</span>
+                                    </p>
+                                </div>
+                            </div>
+                        </template>
+                    </fieldset>
+
                     <div class="flex justify-end gap-2 pt-2">
                         <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="prodModalOpen = false">{{ t('common.cancel') }}</button>
-                        <button type="submit" :disabled="prodModalBusy" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
+                        <button
+                            type="submit"
+                            :disabled="prodModalBusy || recipeHasDuplicates"
+                            class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
                             {{ prodModalBusy ? t('catalogue.prod_modal.submitting') : t('catalogue.prod_modal.submit') }}
                         </button>
                     </div>
