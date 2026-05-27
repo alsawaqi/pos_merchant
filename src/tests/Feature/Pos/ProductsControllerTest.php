@@ -341,3 +341,127 @@ it('lets an InventoryManager create + edit + delete products', function (): void
     $this->patchJson("/api/products/{$uuid}", ['base_price' => '4.000'])->assertOk();
     $this->deleteJson("/api/products/{$uuid}")->assertNoContent();
 });
+
+// =================== PHASE 4.9 — DELIVERY_PRICE ===================
+//
+// delivery_price is a nullable per-product override. NULL means
+// "use base_price for delivery orders too"; non-null is the
+// markup. Product::priceFor(orderType) is the resolver POS hits
+// at order-create time.
+
+it('creates a product with delivery_price stored at decimal:3 precision', function (): void {
+    makeMerchantActor();
+
+    $response = $this->postJson('/api/products', [
+        'name' => 'Latte',
+        'base_price' => '1.500',
+        'delivery_price' => '2.000',
+    ])->assertCreated();
+
+    expect($response->json('data.base_price'))->toBe('1.500');
+    expect($response->json('data.delivery_price'))->toBe('2.000');
+});
+
+it('returns delivery_price as null when not set on create', function (): void {
+    makeMerchantActor();
+
+    $this->postJson('/api/products', [
+        'name' => 'Espresso',
+        'base_price' => '0.800',
+    ])
+        ->assertCreated()
+        ->assertJsonPath('data.delivery_price', null);
+});
+
+it('updates delivery_price and writes a diff-aware audit', function (): void {
+    $ctx = makeMerchantActor();
+    $product = \App\Models\Product::factory()->for($ctx['company'], 'company')
+        ->create(['base_price' => '2.000', 'delivery_price' => null]);
+
+    $this->patchJson("/api/products/{$product->uuid}", [
+        'delivery_price' => '2.500',
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.delivery_price', '2.500');
+
+    $this->assertDatabaseHas('pos_audit_logs', [
+        'event' => 'catalogue.product.updated',
+        'auditable_id' => $product->id,
+    ]);
+});
+
+it('clears delivery_price when PATCH sends null', function (): void {
+    $ctx = makeMerchantActor();
+    $product = \App\Models\Product::factory()->for($ctx['company'], 'company')
+        ->create(['base_price' => '2.000', 'delivery_price' => '2.500']);
+
+    $this->patchJson("/api/products/{$product->uuid}", [
+        'delivery_price' => null,
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.delivery_price', null);
+
+    $product->refresh();
+    expect($product->delivery_price)->toBeNull();
+});
+
+it('rejects negative or out-of-range delivery_price', function (): void {
+    makeMerchantActor();
+
+    $this->postJson('/api/products', [
+        'name' => 'Bad',
+        'base_price' => '1.000',
+        'delivery_price' => '-1.000',
+    ])->assertStatus(422)->assertJsonValidationErrors(['delivery_price']);
+
+    $this->postJson('/api/products', [
+        'name' => 'TooBig',
+        'base_price' => '1.000',
+        'delivery_price' => '9999999.999',
+    ])->assertStatus(422)->assertJsonValidationErrors(['delivery_price']);
+});
+
+// =================== Product::priceFor() unit-level coverage ===================
+
+it('priceFor returns delivery_price when order_type is delivery and delivery_price is set', function (): void {
+    $ctx = makeMerchantActor();
+    $product = \App\Models\Product::factory()->for($ctx['company'], 'company')
+        ->create(['base_price' => '2.000', 'delivery_price' => '2.500']);
+
+    expect($product->priceFor('delivery'))->toBe('2.500');
+});
+
+it('priceFor falls back to base_price when delivery_price is null', function (): void {
+    $ctx = makeMerchantActor();
+    $product = \App\Models\Product::factory()->for($ctx['company'], 'company')
+        ->create(['base_price' => '2.000', 'delivery_price' => null]);
+
+    expect($product->priceFor('delivery'))->toBe('2.000');
+});
+
+it('priceFor always returns base_price for non-delivery order types', function (): void {
+    $ctx = makeMerchantActor();
+    $product = \App\Models\Product::factory()->for($ctx['company'], 'company')
+        ->create(['base_price' => '2.000', 'delivery_price' => '5.000']);
+
+    expect($product->priceFor('dine_in'))->toBe('2.000');
+    expect($product->priceFor('quick_order'))->toBe('2.000');
+    expect($product->priceFor('to_go'))->toBe('2.000');
+});
+
+// =================== Add-on groups eager-loaded on edit ===================
+
+it('eager-loads addon_groups on product list so the picker can pre-populate', function (): void {
+    $ctx = makeMerchantActor();
+    $product = \App\Models\Product::factory()->for($ctx['company'], 'company')->create();
+    $group = \App\Models\AddOnGroup::factory()->for($ctx['company'], 'company')->create();
+    $product->addOnGroups()->attach($group->id);
+
+    $response = $this->getJson('/api/products')->assertOk();
+
+    $rows = $response->json('data');
+    $found = collect($rows)->firstWhere('uuid', $product->uuid);
+    expect($found)->not->toBeNull();
+    expect($found['addon_groups'])->toHaveCount(1);
+    expect($found['addon_groups'][0]['uuid'])->toBe($group->uuid);
+});

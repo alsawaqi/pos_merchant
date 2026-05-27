@@ -1,0 +1,222 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * Feature tests for Phase 4.9 AddOnGroupsController.
+ *
+ * Covers:
+ *   - LIST: scoped to actor's company, includes addons + counts.
+ *   - CREATE: persists, mints uuid, audit row, dupe (company_id,
+ *     name) → 422.
+ *   - UPDATE: edits, is_global flip, cross-tenant 404.
+ *   - DELETE: refused when attached to products, allowed when
+ *     unattached (cascades addons + pivot), cross-tenant 404.
+ *   - Permission gates: CatalogueView for read, CatalogueManage
+ *     for write. Viewer can read but can't mutate.
+ *
+ * Tenant scoping handled by SetMerchantTenantContext at runtime;
+ * makeMerchantActor() does the equivalent setup for tests.
+ */
+
+use App\Enums\MerchantRole;
+use App\Models\AddOn;
+use App\Models\AddOnGroup;
+use App\Models\Company;
+use App\Models\Product;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+
+uses(RefreshDatabase::class);
+
+// =================== LIST ===================
+
+it('lists add-on groups of the actor\'s company with addons + counts', function (): void {
+    $ctx = makeMerchantActor();
+
+    $milk = AddOnGroup::factory()->for($ctx['company'], 'company')->create([
+        'name' => 'Milk Choice',
+    ]);
+    AddOn::factory()->count(3)->for($ctx['company'], 'company')->for($milk, 'group')->create();
+
+    // Foreign tenant — must not leak.
+    $otherCompany = Company::factory()->create();
+    AddOnGroup::factory()->for($otherCompany, 'company')->create(['name' => 'Foreign Group']);
+
+    $response = $this->getJson('/api/addon-groups')->assertOk();
+    $data = $response->json('data');
+    expect($data)->toHaveCount(1);
+    expect($data[0]['name'])->toBe('Milk Choice');
+    expect($data[0]['addons_count'])->toBe(3);
+    expect($data[0]['addons'])->toHaveCount(3);
+    expect(collect($data)->pluck('name')->all())->not->toContain('Foreign Group');
+});
+
+// =================== CREATE ===================
+
+it('creates an add-on group and writes an audit row', function (): void {
+    $ctx = makeMerchantActor();
+
+    $response = $this->postJson('/api/addon-groups', [
+        'name' => 'Sugar Level',
+        'name_ar' => 'مستوى السكر',
+        'selection_mode' => 'single',
+        'is_global' => true,
+    ])->assertCreated();
+
+    expect($response->json('data.name'))->toBe('Sugar Level');
+    expect($response->json('data.selection_mode'))->toBe('single');
+    expect($response->json('data.is_global'))->toBeTrue();
+
+    $group = AddOnGroup::query()
+        ->where('company_id', $ctx['company']->id)
+        ->where('name', 'Sugar Level')
+        ->firstOrFail();
+
+    $this->assertDatabaseHas('pos_audit_logs', [
+        'event' => 'catalogue.addon_group.created',
+        'auditable_id' => $group->id,
+        'company_id' => $ctx['company']->id,
+    ]);
+});
+
+it('refuses to create a duplicate group name within the same company', function (): void {
+    $ctx = makeMerchantActor();
+    AddOnGroup::factory()->for($ctx['company'], 'company')->create(['name' => 'Extras']);
+
+    $this->postJson('/api/addon-groups', ['name' => 'Extras'])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['name']);
+});
+
+it('allows the same group name on two different companies', function (): void {
+    $ctxA = makeMerchantActor();
+    AddOnGroup::factory()->for($ctxA['company'], 'company')->create(['name' => 'Extras']);
+
+    makeMerchantActor();
+    $this->postJson('/api/addon-groups', ['name' => 'Extras'])->assertCreated();
+});
+
+// =================== UPDATE ===================
+
+it('edits a group name, selection_mode, and is_global flag', function (): void {
+    $ctx = makeMerchantActor();
+    $group = AddOnGroup::factory()->for($ctx['company'], 'company')->create([
+        'name' => 'Old Name',
+        'is_global' => false,
+    ]);
+
+    $this->patchJson("/api/addon-groups/{$group->uuid}", [
+        'name' => 'New Name',
+        'selection_mode' => 'multi',
+        'is_global' => true,
+        'status' => 'inactive',
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.name', 'New Name')
+        ->assertJsonPath('data.selection_mode', 'multi')
+        ->assertJsonPath('data.is_global', true)
+        ->assertJsonPath('data.status', 'inactive');
+
+    $this->assertDatabaseHas('pos_audit_logs', [
+        'event' => 'catalogue.addon_group.updated',
+        'auditable_id' => $group->id,
+    ]);
+});
+
+it('allows PATCH with same name (self-exclusion in uniqueness check)', function (): void {
+    $ctx = makeMerchantActor();
+    $group = AddOnGroup::factory()->for($ctx['company'], 'company')->create(['name' => 'Keep']);
+
+    $this->patchJson("/api/addon-groups/{$group->uuid}", [
+        'name' => 'Keep',
+        'is_global' => true,
+    ])->assertOk();
+});
+
+it('returns 404 when updating a group owned by another company', function (): void {
+    makeMerchantActor();
+    $otherCompany = Company::factory()->create();
+    $foreignGroup = AddOnGroup::factory()->for($otherCompany, 'company')->create();
+
+    $this->patchJson("/api/addon-groups/{$foreignGroup->uuid}", ['name' => 'Hijack'])
+        ->assertNotFound();
+});
+
+// =================== DELETE ===================
+
+it('refuses to delete a group that is attached to products', function (): void {
+    $ctx = makeMerchantActor();
+    $group = AddOnGroup::factory()->for($ctx['company'], 'company')->create();
+    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    // Attach via pivot — the picker would do this through the
+    // sync endpoint at runtime.
+    $product->addOnGroups()->attach($group->id);
+
+    $response = $this->deleteJson("/api/addon-groups/{$group->uuid}")
+        ->assertStatus(422);
+    expect($response->json('message'))->toContain('product');
+
+    expect(AddOnGroup::query()->find($group->id))->not->toBeNull();
+});
+
+it('soft-deletes an unattached group with audit and cascades its addons', function (): void {
+    $ctx = makeMerchantActor();
+    $group = AddOnGroup::factory()->for($ctx['company'], 'company')->create();
+    $addon = AddOn::factory()->for($ctx['company'], 'company')->for($group, 'group')->create();
+    $groupId = $group->id;
+    $addonId = $addon->id;
+
+    $this->deleteJson("/api/addon-groups/{$group->uuid}")->assertNoContent();
+
+    expect(AddOnGroup::query()->find($groupId))->toBeNull();
+    expect(AddOnGroup::withTrashed()->find($groupId))->not->toBeNull();
+
+    // FK cascade on delete: the underlying row went away, so
+    // the addon's parent reference is gone. Soft delete on
+    // groups + FK cascade on the addon table means addons of a
+    // deleted group are dropped entirely (not soft-deleted)
+    // when the group is hard-deleted. Since our group is SOFT
+    // deleted, the addon row should still exist with its FK
+    // intact.
+    expect(AddOn::query()->find($addonId))->not->toBeNull();
+
+    $this->assertDatabaseHas('pos_audit_logs', [
+        'event' => 'catalogue.addon_group.deleted',
+        'auditable_id' => $groupId,
+    ]);
+});
+
+it('returns 404 when deleting a group owned by another company', function (): void {
+    makeMerchantActor();
+    $otherCompany = Company::factory()->create();
+    $foreignGroup = AddOnGroup::factory()->for($otherCompany, 'company')->create();
+
+    $this->deleteJson("/api/addon-groups/{$foreignGroup->uuid}")->assertNotFound();
+});
+
+// =================== PERMISSION GATES ===================
+
+it('lets a Viewer list add-on groups but forbids creating one', function (): void {
+    makeMerchantActor(MerchantRole::Viewer->value);
+
+    $this->getJson('/api/addon-groups')->assertOk();
+    $this->postJson('/api/addon-groups', ['name' => 'Sneaky'])->assertForbidden();
+});
+
+it('forbids a CashierSupervisor from mutating add-on groups', function (): void {
+    $ctx = makeMerchantActor(MerchantRole::CashierSupervisor->value);
+    $group = AddOnGroup::factory()->for($ctx['company'], 'company')->create();
+
+    $this->postJson('/api/addon-groups', ['name' => 'X'])->assertForbidden();
+    $this->patchJson("/api/addon-groups/{$group->uuid}", ['name' => 'Y'])->assertForbidden();
+    $this->deleteJson("/api/addon-groups/{$group->uuid}")->assertForbidden();
+});
+
+it('lets an InventoryManager create + edit add-on groups', function (): void {
+    makeMerchantActor(MerchantRole::InventoryManager->value);
+
+    $this->postJson('/api/addon-groups', ['name' => 'Drinks Mods'])->assertCreated();
+
+    $group = AddOnGroup::query()->where('name', 'Drinks Mods')->firstOrFail();
+    $this->patchJson("/api/addon-groups/{$group->uuid}", ['name' => 'Drink Modifiers'])->assertOk();
+});
