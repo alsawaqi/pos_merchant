@@ -204,7 +204,13 @@ it('rotates a staff PIN and returns the new 6-digit plaintext once', function ()
     ]);
 });
 
-it('refuses to reset PIN on a terminated staff member', function (): void {
+it('cannot reach a terminated staff member through the public API', function (): void {
+    // Termination soft-deletes the row, which is exactly what we
+    // want — the UUID route binding's default scope excludes
+    // trashed rows and returns 404. The action layer's "refuse
+    // reset-PIN on terminated" guard is therefore unreachable
+    // from a real HTTP request (it's belt-and-braces for an
+    // internal caller bypassing the controller).
     $ctx = makeMerchantActor();
     $staff = PosStaff::factory()
         ->for($ctx['company'], 'company')
@@ -213,5 +219,5 @@ it('refuses to reset PIN on a terminated staff member', function (): void {
         ->create();
 
     $this->postJson("/api/pos-staff/{$staff->uuid}/reset-pin")
-        ->assertStatus(422);
+        ->assertNotFound();
 });
