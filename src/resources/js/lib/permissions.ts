@@ -37,9 +37,17 @@ export const MerchantPermission = {
     // Phase 5a — inventory (ingredients, suppliers, branch
     // stock, movements). Single gate for all four because in
     // practice nobody manages stock without seeing ingredients
-    // and vice-versa.
+    // and vice-versa. Waste recording also falls under manage.
     InventoryView: 'inventory.view',
     InventoryManage: 'inventory.manage',
+    // Phase 5c — restock workflow. Deliberately split:
+    //   create → branch staff submit requests
+    //   review → HQ approves/rejects/cancels/allocates
+    // Allocation writes stock movements at the requesting
+    // branch, gated by 'review' (not inventory.manage) so the
+    // restock workflow stays independently controllable.
+    RestockRequestCreate: 'inventory.restock_request.create',
+    RestockRequestReview: 'inventory.restock_request.review',
 } as const;
 
 export type MerchantPermissionValue =

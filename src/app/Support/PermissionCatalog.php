@@ -175,8 +175,22 @@ final class PermissionCatalog
                     ],
                     [
                         'key' => MerchantPermission::InventoryManage->value,
-                        'label_en' => 'Create + edit + delete inventory items, adjust + restock branch stock',
-                        'label_ar' => 'إنشاء وتعديل وحذف عناصر المخزون وتعديل وتجديد رصيد الفروع',
+                        'label_en' => 'Create + edit + delete inventory items, adjust + restock branch stock, record waste',
+                        'label_ar' => 'إنشاء وتعديل وحذف عناصر المخزون وتعديل وتجديد رصيد الفروع وتسجيل الهدر',
+                    ],
+                    // Phase 5c — restock-request workflow keys.
+                    // Kept in the Inventory domain block so the
+                    // role-builder UI groups them with the rest
+                    // of the stock controls.
+                    [
+                        'key' => MerchantPermission::RestockRequestCreate->value,
+                        'label_en' => 'Submit a restock request from a branch',
+                        'label_ar' => 'إرسال طلب تجديد المخزون من الفرع',
+                    ],
+                    [
+                        'key' => MerchantPermission::RestockRequestReview->value,
+                        'label_en' => 'Approve, reject, cancel, or allocate a restock request',
+                        'label_ar' => 'الموافقة على طلبات التجديد أو رفضها أو إلغاؤها أو تخصيصها',
                     ],
                 ],
             ],

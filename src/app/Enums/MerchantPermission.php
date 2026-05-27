@@ -81,6 +81,19 @@ enum MerchantPermission: string
     case InventoryView = 'inventory.view';
     case InventoryManage = 'inventory.manage';
 
+    // Phase 5c — restock-request workflow. Two keys, deliberately
+    // separated:
+    //   create: branch-level staff (incl. branch manager) submit
+    //           requests for what they need from HQ.
+    //   review: HQ-level staff (incl. inventory manager) approve,
+    //           reject, cancel, or allocate submitted requests.
+    // Allocation writes stock movements at the requesting branch
+    // — gated by 'review' rather than 'inventory.manage' so the
+    // restock workflow stays independently controllable from raw
+    // stock adjustments.
+    case RestockRequestCreate = 'inventory.restock_request.create';
+    case RestockRequestReview = 'inventory.restock_request.review';
+
     /**
      * @return list<string>
      */

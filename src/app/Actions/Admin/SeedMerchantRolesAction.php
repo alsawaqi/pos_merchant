@@ -158,6 +158,12 @@ final class SeedMerchantRolesAction
                     // reporting.
                     MerchantPermission::InventoryView->value,
                     MerchantPermission::InventoryManage->value,
+                    // Restock workflow (Phase 5c): managers
+                    // sit on both sides — they can both submit
+                    // a request when they're at a branch AND
+                    // review one when they're at HQ.
+                    MerchantPermission::RestockRequestCreate->value,
+                    MerchantPermission::RestockRequestReview->value,
                 ],
             ],
 
@@ -200,6 +206,11 @@ final class SeedMerchantRolesAction
                     MerchantPermission::CatalogueManage->value,
                     MerchantPermission::InventoryView->value,
                     MerchantPermission::InventoryManage->value,
+                    // Restock workflow (Phase 5c): the
+                    // inventory specialist owns both sides of
+                    // the request flow.
+                    MerchantPermission::RestockRequestCreate->value,
+                    MerchantPermission::RestockRequestReview->value,
                 ],
             ],
         ];
