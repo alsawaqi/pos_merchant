@@ -153,13 +153,30 @@ final class PermissionCatalog
                 'permissions' => [
                     [
                         'key' => MerchantPermission::CatalogueView->value,
-                        'label_en' => 'See categories + products',
-                        'label_ar' => 'عرض الفئات والمنتجات',
+                        'label_en' => 'See categories + products + add-ons',
+                        'label_ar' => 'عرض الفئات والمنتجات والإضافات',
                     ],
                     [
                         'key' => MerchantPermission::CatalogueManage->value,
-                        'label_en' => 'Create + edit + delete categories and products',
-                        'label_ar' => 'إنشاء وتعديل وحذف الفئات والمنتجات',
+                        'label_en' => 'Create + edit + delete catalogue items',
+                        'label_ar' => 'إنشاء وتعديل وحذف عناصر الكتالوج',
+                    ],
+                ],
+            ],
+            [
+                'key' => 'inventory',
+                'label_en' => 'Inventory',
+                'label_ar' => 'المخزون',
+                'permissions' => [
+                    [
+                        'key' => MerchantPermission::InventoryView->value,
+                        'label_en' => 'See ingredients + suppliers + branch stock + movements',
+                        'label_ar' => 'عرض المكونات والموردين ومخزون الفروع والحركات',
+                    ],
+                    [
+                        'key' => MerchantPermission::InventoryManage->value,
+                        'label_en' => 'Create + edit + delete inventory items, adjust + restock branch stock',
+                        'label_ar' => 'إنشاء وتعديل وحذف عناصر المخزون وتعديل وتجديد رصيد الفروع',
                     ],
                 ],
             ],

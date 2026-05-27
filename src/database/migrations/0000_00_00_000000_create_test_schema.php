@@ -409,6 +409,64 @@ return new class extends Migration
             $table->timestamps();
         });
 
+        // ---- pos_suppliers + pos_ingredients + pos_branch_stock + pos_stock_movements (Phase 5a) ---
+        Schema::create('pos_suppliers', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->string('name');
+            $table->string('contact')->nullable();
+            $table->text('notes')->nullable();
+            $table->string('status', 32)->default('active');
+            $table->timestamps();
+            $table->softDeletes();
+            $table->unique(['company_id', 'name'], 'pos_suppliers_company_name_unique');
+        });
+
+        Schema::create('pos_ingredients', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->string('name');
+            $table->string('name_ar')->nullable();
+            $table->string('unit', 16);
+            $table->decimal('default_unit_cost', 12, 3)->default(0);
+            $table->decimal('min_stock_threshold', 12, 3)->nullable();
+            $table->foreignId('primary_supplier_id')->nullable()->constrained('pos_suppliers')->nullOnDelete();
+            $table->string('status', 32)->default('active');
+            $table->timestamps();
+            $table->softDeletes();
+            $table->unique(['company_id', 'name'], 'pos_ingredients_company_name_unique');
+        });
+
+        Schema::create('pos_branch_stock', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->foreignId('ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
+            $table->decimal('quantity', 12, 3)->default(0);
+            $table->timestamp('last_movement_at')->nullable();
+            $table->timestamps();
+            $table->unique(['branch_id', 'ingredient_id'], 'pos_branch_stock_branch_ingredient_unique');
+        });
+
+        Schema::create('pos_stock_movements', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->foreignId('ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
+            $table->string('movement_type', 32);
+            $table->decimal('quantity', 12, 3);
+            $table->decimal('unit_cost_at_time', 12, 3)->default(0);
+            $table->string('reference_type')->nullable();
+            $table->unsignedBigInteger('reference_id')->nullable();
+            $table->foreignId('recorded_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->foreignId('recorded_by_pos_staff_id')->nullable()->constrained('pos_staff')->nullOnDelete();
+            $table->text('note')->nullable();
+            $table->timestamp('occurred_at')->useCurrent();
+            $table->timestamp('created_at')->useCurrent();
+            $table->index(['branch_id', 'occurred_at'], 'pos_stock_movements_branch_occurred_idx');
+            $table->index(['ingredient_id', 'occurred_at'], 'pos_stock_movements_ingredient_occurred_idx');
+        });
+
         // ---- Sessions (used by some auth integration tests) -------
         // Mirrors the Laravel default sessions table — pos_merchant
         // is configured to use session driver=array in tests so this

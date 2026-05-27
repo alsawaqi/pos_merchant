@@ -11,9 +11,12 @@ use App\Http\Controllers\Pos\AddOnsController;
 use App\Http\Controllers\Pos\BranchesController as PosBranchesController;
 use App\Http\Controllers\Pos\CategoriesController;
 use App\Http\Controllers\Pos\FloorsController;
+use App\Http\Controllers\Pos\IngredientsController;
 use App\Http\Controllers\Pos\PosStaffController;
 use App\Http\Controllers\Pos\ProductsController;
 use App\Http\Controllers\Pos\RolesController;
+use App\Http\Controllers\Pos\StockController;
+use App\Http\Controllers\Pos\SuppliersController;
 use App\Http\Controllers\Pos\TablesController;
 use App\Http\Controllers\SpaController;
 use App\Http\Middleware\EnsureMerchantSessionIsFresh;
@@ -211,6 +214,39 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // caller PUTs the full desired list of group uuids.
         Route::put('products/{product:uuid}/addon-groups', [ProductsController::class, 'syncAddOnGroups'])
             ->name('products.sync-addon-groups');
+
+        // -------- Phase 5a — Inventory (Ingredients + Suppliers + Stock) --
+        // All gated by inventory.{view,manage}. Branch-nested
+        // stock endpoints take the branch by uuid + verify
+        // tenant ownership; movement ledger is paginated.
+        Route::get('ingredients', [IngredientsController::class, 'index'])
+            ->name('ingredients.index');
+        Route::post('ingredients', [IngredientsController::class, 'store'])
+            ->name('ingredients.store');
+        Route::patch('ingredients/{ingredient:uuid}', [IngredientsController::class, 'update'])
+            ->name('ingredients.update');
+        Route::delete('ingredients/{ingredient:uuid}', [IngredientsController::class, 'destroy'])
+            ->name('ingredients.destroy');
+
+        Route::get('suppliers', [SuppliersController::class, 'index'])
+            ->name('suppliers.index');
+        Route::post('suppliers', [SuppliersController::class, 'store'])
+            ->name('suppliers.store');
+        Route::patch('suppliers/{supplier:uuid}', [SuppliersController::class, 'update'])
+            ->name('suppliers.update');
+        Route::delete('suppliers/{supplier:uuid}', [SuppliersController::class, 'destroy'])
+            ->name('suppliers.destroy');
+
+        // Per-branch stock: current balances, adjust, restock,
+        // and paginated movement ledger.
+        Route::get('branches/{branch:uuid}/stock', [StockController::class, 'index'])
+            ->name('stock.index');
+        Route::post('branches/{branch:uuid}/stock/adjust', [StockController::class, 'adjust'])
+            ->name('stock.adjust');
+        Route::post('branches/{branch:uuid}/stock/restock', [StockController::class, 'restock'])
+            ->name('stock.restock');
+        Route::get('branches/{branch:uuid}/stock-movements', [StockController::class, 'movements'])
+            ->name('stock.movements');
 
         // -------- Phase 4.6 — POS Staff (merchant's PIN-authed workforce) --
         // {posStaff} is bound by uuid (PosStaff::getRouteKeyName).

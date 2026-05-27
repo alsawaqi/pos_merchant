@@ -66,10 +66,20 @@ enum MerchantPermission: string
 
     // Phase 6 — catalogue. One catalog for both categories AND
     // products (same rationale as floor plan — nobody manages
-    // products without also editing categories). Future add-on
-    // / modifier / price-list permissions land here too.
+    // products without also editing categories). Add-on /
+    // modifier permissions (Phase 4.9) reuse these keys rather
+    // than getting granular ones.
     case CatalogueView = 'catalogue.view';
     case CatalogueManage = 'catalogue.manage';
+
+    // Phase 5a — inventory. One catalog for ingredients,
+    // suppliers, branch stock + movements (manage covers all
+    // four). Same rationale as the others: splitting into
+    // sub-permissions would create keys nobody ever assigns
+    // separately. Adjust / Restock / Waste / Loss all gate on
+    // inventory.manage.
+    case InventoryView = 'inventory.view';
+    case InventoryManage = 'inventory.manage';
 
     /**
      * @return list<string>

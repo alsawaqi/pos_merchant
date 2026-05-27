@@ -153,11 +153,16 @@ final class SeedMerchantRolesAction
                     // changes, new SKUs).
                     MerchantPermission::CatalogueView->value,
                     MerchantPermission::CatalogueManage->value,
+                    // Inventory (Phase 5a): managers run the
+                    // day-to-day buying, adjusting, and waste
+                    // reporting.
+                    MerchantPermission::InventoryView->value,
+                    MerchantPermission::InventoryManage->value,
                 ],
             ],
 
             MerchantRole::CashierSupervisor->value => [
-                'description' => 'Shift supervisor — view staff + branch list + floor plan + menu, edit staff details. Cannot hire / fire / reset PINs or change the menu.',
+                'description' => 'Shift supervisor — view staff + branch list + floor plan + menu + inventory. Cannot hire / fire / reset PINs, change the menu, or adjust stock.',
                 'permissions' => [
                     MerchantPermission::PosStaffView->value,
                     MerchantPermission::PosStaffUpdate->value,
@@ -165,29 +170,36 @@ final class SeedMerchantRolesAction
                     MerchantPermission::RolesView->value,
                     MerchantPermission::FloorPlanView->value,
                     MerchantPermission::CatalogueView->value,
+                    // Inventory read-only: useful for spotting
+                    // low-stock items mid-shift without authority
+                    // to restock.
+                    MerchantPermission::InventoryView->value,
                 ],
             ],
 
             MerchantRole::Viewer->value => [
-                'description' => 'Read-only — see the staff roster, branch list, floor plan, and menu. No write access.',
+                'description' => 'Read-only — see staff, branch list, floor plan, menu, and inventory. No write access.',
                 'permissions' => [
                     MerchantPermission::PosStaffView->value,
                     MerchantPermission::BranchesView->value,
                     MerchantPermission::RolesView->value,
                     MerchantPermission::FloorPlanView->value,
                     MerchantPermission::CatalogueView->value,
+                    MerchantPermission::InventoryView->value,
                 ],
             ],
 
             MerchantRole::InventoryManager->value => [
-                'description' => 'Inventory specialist — owns the menu catalogue (categories + products + pricing) and the branch list. Phase 6 onwards this role finally earns its keep.',
+                'description' => 'Inventory specialist — owns the menu catalogue (Phase 6) AND ingredients + stock (Phase 5a). The role finally lives up to its name.',
                 'permissions' => [
                     MerchantPermission::BranchesView->value,
                     MerchantPermission::RolesView->value,
-                    // Catalogue is THE inventory-manager
-                    // surface — full ownership.
+                    // Catalogue + Inventory are THE
+                    // inventory-manager surfaces.
                     MerchantPermission::CatalogueView->value,
                     MerchantPermission::CatalogueManage->value,
+                    MerchantPermission::InventoryView->value,
+                    MerchantPermission::InventoryManage->value,
                 ],
             ],
         ];
