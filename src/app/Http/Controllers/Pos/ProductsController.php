@@ -56,7 +56,11 @@ class ProductsController extends Controller
 
         $query = Product::query()
             ->where('company_id', $companyId)
-            ->with('category');
+            // Phase 4.9 — eager-load the product-specific add-on
+            // groups so the edit modal's picker can pre-populate
+            // without an extra round-trip. Globals are NOT included
+            // here (they apply via the resolver, not the pivot).
+            ->with(['category', 'addOnGroups']);
 
         // Optional ?category=<uuid> filter. Unknown / cross-
         // tenant uuid silently yields zero results (no leak).
@@ -90,7 +94,7 @@ class ProductsController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $product->load('category');
+        $product->load(['category', 'addOnGroups']);
 
         return response()->json([
             'data' => (new ProductResource($product))->resolve($request),
@@ -108,7 +112,7 @@ class ProductsController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $updated->load('category');
+        $updated->load(['category', 'addOnGroups']);
 
         return ProductResource::make($updated);
     }
