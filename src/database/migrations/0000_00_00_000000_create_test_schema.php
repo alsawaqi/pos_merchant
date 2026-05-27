@@ -305,6 +305,60 @@ return new class extends Migration
             $table->primary(['permission_id', 'role_id'], 'pos_role_has_permissions_primary');
         });
 
+        // ---- personal_access_tokens (Lane A — Android bridge) -----
+        // Sanctum's DEFAULT table name (unprefixed). The project
+        // intentionally collapsed onto the shared
+        // `personal_access_tokens` table in charity_db so multiple
+        // apps can share it via polymorphic `tokenable_type`.
+        // See pos_admin AppServiceProvider for the original
+        // architectural note.
+        Schema::create('personal_access_tokens', function (Blueprint $table): void {
+            $table->id();
+            $table->morphs('tokenable');
+            $table->string('name');
+            $table->string('token', 64)->unique();
+            $table->text('abilities')->nullable();
+            $table->timestamp('last_used_at')->nullable();
+            $table->timestamp('expires_at')->nullable()->index();
+            $table->timestamps();
+        });
+
+        // ---- pos_devices (Lane A — Android bridge, read-only on merchant) -
+        // Schema owned by pos_admin. The merchant test mirror only
+        // carries the columns pos_merchant actually reads (resolving
+        // the device from a Sanctum token → tenant context).
+        Schema::create('pos_devices', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->nullable()->constrained('pos_companies')->nullOnDelete();
+            $table->foreignId('branch_id')->nullable()->constrained('pos_branches')->nullOnDelete();
+            $table->string('name')->nullable();
+            $table->string('serial_number')->nullable();
+            $table->string('kiosk_id')->nullable();
+            $table->string('device_type', 32)->default('cashier');
+            $table->string('status', 32)->default('registered');
+            $table->timestamp('assigned_at')->nullable();
+            $table->timestamp('last_seen_at')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        // ---- pos_device_activation_tokens (Lane A — Android bridge) -
+        // One-shot codes the admin generates for a registered
+        // device; the Android app exchanges one for a Sanctum PAT
+        // at activation time. Soft-revoke via revoked_at, single-use
+        // via used_at.
+        Schema::create('pos_device_activation_tokens', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('device_id')->constrained('pos_devices')->cascadeOnDelete();
+            $table->string('token_hash', 64)->unique();
+            $table->foreignId('created_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->timestamp('expires_at');
+            $table->timestamp('used_at')->nullable();
+            $table->timestamp('revoked_at')->nullable();
+            $table->timestamps();
+        });
+
         // ---- Sessions (used by some auth integration tests) -------
         // Mirrors the Laravel default sessions table — pos_merchant
         // is configured to use session driver=array in tests so this
