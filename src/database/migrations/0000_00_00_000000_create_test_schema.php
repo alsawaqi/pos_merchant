@@ -490,6 +490,59 @@ return new class extends Migration
             $table->timestamp('edited_at')->useCurrent();
         });
 
+        // ---- pos_waste_records + pos_restock_requests +
+        //      pos_restock_request_lines (Phase 5c) ---
+        // Waste rows mirror to stock_movements via polymorphic
+        // reference. Restock requests + lines drive the branch ↔
+        // HQ replenishment workflow; allocation writes stock
+        // movements of type=restock referencing the request.
+        Schema::create('pos_waste_records', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->foreignId('ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
+            // Always POSITIVE here; the mirrored stock_movement is signed-negative.
+            $table->decimal('quantity', 12, 3);
+            $table->string('reason', 32);
+            $table->string('unit_at_set', 16);
+            $table->decimal('unit_cost_at_time', 12, 3)->default(0);
+            $table->text('notes')->nullable();
+            $table->foreignId('recorded_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->timestamp('occurred_at')->useCurrent();
+            $table->timestamps();
+        });
+
+        Schema::create('pos_restock_requests', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            // company_id denormalised so tenant-wide list queries
+            // skip the join through branches.
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->string('status', 32)->default('draft');
+            $table->foreignId('requested_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->timestamp('submitted_at')->nullable();
+            $table->foreignId('reviewed_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->timestamp('reviewed_at')->nullable();
+            $table->text('review_note')->nullable();
+            $table->timestamp('fulfilled_at')->nullable();
+            $table->text('note')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('pos_restock_request_lines', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('restock_request_id')->constrained('pos_restock_requests')->cascadeOnDelete();
+            $table->foreignId('ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
+            $table->decimal('quantity_requested', 12, 3);
+            $table->decimal('quantity_allocated', 12, 3)->default(0);
+            $table->string('unit_at_set', 16);
+            $table->text('note')->nullable();
+            $table->unsignedSmallInteger('sort_order')->default(0);
+            $table->timestamps();
+            $table->unique(['restock_request_id', 'ingredient_id'], 'pos_restock_request_lines_request_ingredient_unique');
+        });
+
         // ---- Sessions (used by some auth integration tests) -------
         // Mirrors the Laravel default sessions table — pos_merchant
         // is configured to use session driver=array in tests so this
