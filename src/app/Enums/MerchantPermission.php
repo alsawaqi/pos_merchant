@@ -48,6 +48,15 @@ enum MerchantPermission: string
     case BranchesUpdate = 'branches.update';
     case BranchesTransitionStatus = 'branches.transition_status';
 
+    // Roles & permissions — the meta-control. `view` lets a
+    // user browse the role list (e.g. to know what role to
+    // request); `manage` is the sharp tool that lets them
+    // create / edit / delete roles AND assign roles to portal
+    // users. Defaults to SuperAdmin-only; merchant SuperAdmin
+    // can hand it out to a deputy by editing a custom role.
+    case RolesView = 'roles.view';
+    case RolesManage = 'roles.manage';
+
     /**
      * @return list<string>
      */

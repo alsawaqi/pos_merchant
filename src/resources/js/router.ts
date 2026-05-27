@@ -4,6 +4,7 @@ import Dashboard from '@/Pages/Merchant/Dashboard.vue';
 import BranchesIndex from '@/Pages/Merchant/Branches/Index.vue';
 import PortalUsersIndex from '@/Pages/Merchant/PortalUsers/Index.vue';
 import PosStaffIndex from '@/Pages/Merchant/PosStaff/Index.vue';
+import RolesIndex from '@/Pages/Merchant/Roles/Index.vue';
 import { authState, ensureAuthLoaded, resetAuthBootPromise } from '@/stores/auth';
 
 declare module 'vue-router' {
@@ -53,6 +54,14 @@ const routes: RouteRecordRaw[] = [
         path: '/branches',
         name: 'merchant.branches',
         component: BranchesIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        // Roles & Permissions — Phase 4.8. Server enforces
+        // roles.view; SPA hides nav entry for users without it.
+        path: '/roles',
+        name: 'merchant.roles',
+        component: RolesIndex,
         meta: { requiresAuth: true },
     },
     {

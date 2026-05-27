@@ -17,7 +17,7 @@
 import { computed, onMounted, ref, type Component } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { RouterLink } from 'vue-router';
-import { BadgeCheck, Building2, ChevronDown, Gauge, Globe, LogOut, Menu, Users, X } from 'lucide-vue-next';
+import { BadgeCheck, Building2, ChevronDown, Gauge, Globe, KeyRound, LogOut, Menu, Users, X } from 'lucide-vue-next';
 import { authState } from '@/stores/auth';
 import { setLocale, type SupportedLocale } from '@/lib/i18n';
 import { usePermissions } from '@/composables/usePermissions';
@@ -50,6 +50,7 @@ const navigationCatalog: readonly NavItem[] = [
     { key: 'branches', to: '/branches', icon: Building2, permission: MerchantPermission.BranchesView },
     { key: 'portal_users', to: '/portal-users', icon: Users, permission: MerchantPermission.PortalUsersView },
     { key: 'pos_staff', to: '/pos-staff', icon: BadgeCheck, permission: MerchantPermission.PosStaffView },
+    { key: 'roles', to: '/roles', icon: KeyRound, permission: MerchantPermission.RolesView },
 ];
 
 const visibleNavigation = computed(() =>

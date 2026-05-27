@@ -21,6 +21,11 @@ export const MerchantPermission = {
     BranchesView: 'branches.view',
     BranchesUpdate: 'branches.update',
     BranchesTransitionStatus: 'branches.transition_status',
+    // Phase 4.8 — role builder. RolesManage gates the
+    // create/edit/delete role flows AND the assign-roles-to-
+    // user flow. Defaults to SuperAdmin-only.
+    RolesView: 'roles.view',
+    RolesManage: 'roles.manage',
 } as const;
 
 export type MerchantPermissionValue =

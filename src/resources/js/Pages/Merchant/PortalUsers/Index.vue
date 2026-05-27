@@ -20,7 +20,7 @@
  * branch_scope=null, otherwise the multi-select array.
  */
 
-import { Copy, Pencil, Plus, RotateCw, ShieldCheck, ShieldOff, Users } from 'lucide-vue-next';
+import { Copy, KeyRound, Pencil, Plus, RotateCw, ShieldCheck, ShieldOff, Users } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
@@ -38,6 +38,7 @@ import {
     type PortalUserStatus,
 } from '@/lib/api/portalUsers';
 import { listBranches, type Branch } from '@/lib/api/branches';
+import { assignRolesToPortalUser, listRoles, type Role } from '@/lib/api/roles';
 import { MerchantPermission, MerchantRole, type MerchantRoleValue } from '@/lib/permissions';
 import { authState } from '@/stores/auth';
 
@@ -57,6 +58,16 @@ const rowBusy = ref<Record<number, boolean>>({});
 
 // ---- Branches (for scope picker) --------------------------------
 const branches = ref<Branch[]>([]);
+
+// ---- Available roles (for the assign-roles modal) ---------------
+const availableRoles = ref<Role[]>([]);
+
+// ---- Assign roles modal -----------------------------------------
+const assignRolesOpen = ref(false);
+const assignRolesBusy = ref(false);
+const assignRolesError = ref<string | null>(null);
+const assignRolesTarget = ref<PortalUser | null>(null);
+const assignRolesSelection = ref<Set<string>>(new Set());
 
 // ---- Create modal -----------------------------------------------
 const createOpen = ref(false);
@@ -186,9 +197,25 @@ async function fetchBranches(): Promise<void> {
     }
 }
 
+async function fetchAvailableRoles(): Promise<void> {
+    // Roles list is only relevant to actors who can manage them.
+    // Skip the round-trip for everyone else — they get the old
+    // single-role dropdown sourced from the MerchantRole enum.
+    if (!can(MerchantPermission.RolesView) && !can(MerchantPermission.RolesManage)) {
+        return;
+    }
+    try {
+        const response = await listRoles();
+        availableRoles.value = response.data;
+    } catch {
+        availableRoles.value = [];
+    }
+}
+
 onMounted(() => {
     void fetchUsers();
     void fetchBranches();
+    void fetchAvailableRoles();
 });
 
 // ---- Create flow ------------------------------------------------
@@ -336,6 +363,47 @@ async function onResetPassword(row: PortalUser): Promise<void> {
     }
 }
 
+// ---- Assign roles flow ------------------------------------------
+
+function openAssignRoles(row: PortalUser): void {
+    assignRolesTarget.value = row;
+    assignRolesSelection.value = new Set(row.roles ?? []);
+    assignRolesError.value = null;
+    assignRolesOpen.value = true;
+}
+
+function toggleRoleAssignment(roleName: string): void {
+    const next = new Set(assignRolesSelection.value);
+    if (next.has(roleName)) {
+        next.delete(roleName);
+    } else {
+        next.add(roleName);
+    }
+    assignRolesSelection.value = next;
+}
+
+async function submitAssignRoles(): Promise<void> {
+    if (!assignRolesTarget.value) return;
+    assignRolesBusy.value = true;
+    assignRolesError.value = null;
+    try {
+        await assignRolesToPortalUser(
+            assignRolesTarget.value.id,
+            Array.from(assignRolesSelection.value),
+        );
+        assignRolesOpen.value = false;
+        await fetchUsers();
+    } catch (err) {
+        if (err instanceof ApiError && err.payload && typeof err.payload === 'object' && 'message' in err.payload) {
+            assignRolesError.value = String((err.payload as { message?: unknown }).message ?? 'Failed');
+        } else {
+            assignRolesError.value = err instanceof Error ? err.message : 'Failed';
+        }
+    } finally {
+        assignRolesBusy.value = false;
+    }
+}
+
 // ---- Scope chip helpers ------------------------------------------
 
 function scopeLabel(row: PortalUser): string {
@@ -434,7 +502,20 @@ function toggleBranchInCreate(branchId: number): void {
                                     <span class="block text-sm font-semibold text-slate-950">{{ row.name }}</span>
                                     <span class="block text-xs text-slate-500">{{ row.email }}</span>
                                 </td>
-                                <td class="px-5 py-4 text-sm font-medium text-slate-700">{{ roleLabel(row.role) }}</td>
+                                <td class="px-5 py-4">
+                                    <div class="flex flex-wrap gap-1">
+                                        <span
+                                            v-for="roleName in (row.roles ?? [])"
+                                            :key="roleName"
+                                            class="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700"
+                                        >
+                                            {{ roleName }}
+                                        </span>
+                                        <span v-if="(row.roles ?? []).length === 0" class="text-xs italic text-slate-400">
+                                            {{ t('portal_users.no_roles') }}
+                                        </span>
+                                    </div>
+                                </td>
                                 <td class="px-5 py-4">
                                     <span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
                                         {{ scopeLabel(row) }}
@@ -466,6 +547,15 @@ function toggleBranchInCreate(branchId: number): void {
                                         >
                                             <RotateCw class="size-3.5" :class="{ 'animate-spin': rowBusy[row.id] }" />
                                             {{ t('portal_users.actions.reset_password') }}
+                                        </button>
+                                        <button
+                                            v-if="can(MerchantPermission.RolesManage)"
+                                            type="button"
+                                            class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                                            @click="openAssignRoles(row)"
+                                        >
+                                            <KeyRound class="size-3.5" />
+                                            {{ t('portal_users.actions.assign_roles') }}
                                         </button>
                                         <button
                                             v-if="can(MerchantPermission.PortalUsersRevoke) && !isSelf(row)"
@@ -665,6 +755,54 @@ function toggleBranchInCreate(branchId: number): void {
                         </button>
                     </div>
                 </form>
+            </div>
+        </div>
+
+        <!-- ============== ASSIGN ROLES MODAL ============== -->
+        <div v-if="assignRolesOpen && assignRolesTarget" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
+            <div class="w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
+                <div class="border-b border-slate-200 px-6 py-5">
+                    <h2 class="text-lg font-semibold text-slate-950">{{ t('portal_users.assign_roles.title') }}</h2>
+                    <p class="mt-1 text-sm text-slate-500">{{ assignRolesTarget.name }} ({{ assignRolesTarget.email }})</p>
+                </div>
+
+                <div class="space-y-3 p-6">
+                    <div v-if="assignRolesError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                        {{ assignRolesError }}
+                    </div>
+
+                    <p class="text-xs text-slate-500">{{ t('portal_users.assign_roles.hint') }}</p>
+
+                    <div v-if="availableRoles.length === 0" class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-4 text-center text-sm text-slate-500">
+                        {{ t('portal_users.assign_roles.no_roles') }}
+                    </div>
+
+                    <label
+                        v-for="role in availableRoles"
+                        :key="role.id"
+                        class="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3 transition hover:bg-slate-50"
+                    >
+                        <input
+                            type="checkbox"
+                            :checked="assignRolesSelection.has(role.name)"
+                            class="mt-1 size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                            @change="toggleRoleAssignment(role.name)"
+                        >
+                        <span class="flex-1">
+                            <span class="block text-sm font-semibold text-slate-950">{{ role.name }}</span>
+                            <span v-if="role.description" class="block text-xs text-slate-500">{{ role.description }}</span>
+                        </span>
+                    </label>
+                </div>
+
+                <div class="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-6 py-4">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="assignRolesOpen = false">
+                        {{ t('common.cancel') }}
+                    </button>
+                    <button type="button" :disabled="assignRolesBusy" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60" @click="submitAssignRoles">
+                        {{ assignRolesBusy ? t('portal_users.assign_roles.submitting') : t('portal_users.assign_roles.submit') }}
+                    </button>
+                </div>
             </div>
         </div>
     </MerchantLayout>

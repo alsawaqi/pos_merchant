@@ -9,6 +9,7 @@ use App\Actions\Portal\ReactivatePortalUserAction;
 use App\Actions\Portal\ResetPortalUserPasswordAction;
 use App\Actions\Portal\SuspendPortalUserAction;
 use App\Actions\Portal\UpdatePortalUserAction;
+use App\Actions\Pos\Role\AssignRolesToUserAction;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Portal\CreatePortalUserRequest;
@@ -55,6 +56,7 @@ class PortalUsersController extends Controller
         private readonly SuspendPortalUserAction $suspend,
         private readonly ReactivatePortalUserAction $reactivate,
         private readonly ResetPortalUserPasswordAction $resetPassword,
+        private readonly AssignRolesToUserAction $assignRoles,
     ) {}
 
     /**
@@ -162,6 +164,44 @@ class PortalUsersController extends Controller
             'data' => (new PortalUserResource($result['user']))->resolve($request),
             'plaintext_password' => $result['plaintext_password'],
         ]);
+    }
+
+    /**
+     * PATCH /api/portal-users/{user}/roles
+     *
+     * Phase 4.8 — replace the user's role list with the
+     * requested set. The Action layer enforces the
+     * self-rescue invariant (actor can't remove their own
+     * SuperAdmin role).
+     *
+     * Gated by RolesManage rather than PortalUsersUpdate
+     * because role assignment is a meta-control that bypasses
+     * the normal "what can this user do" boundary —
+     * a Manager who has PortalUsersUpdate can rename a
+     * teammate, but should NOT be able to promote them to
+     * SuperAdmin.
+     */
+    public function assignRoles(Request $request, User $portalUser): PortalUserResource | JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::RolesManage);
+        $this->refuseIfNotInTenant($portalUser);
+
+        $validated = $request->validate([
+            'roles' => ['present', 'array'],
+            'roles.*' => ['string', 'max:64'],
+        ]);
+
+        try {
+            $updated = $this->assignRoles->handle(
+                $portalUser,
+                $validated['roles'],
+                $request->user(),
+            );
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return PortalUserResource::make($updated);
     }
 
     /**

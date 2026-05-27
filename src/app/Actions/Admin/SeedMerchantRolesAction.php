@@ -6,6 +6,7 @@ namespace App\Actions\Admin;
 
 use App\Enums\MerchantPermission;
 use App\Enums\MerchantRole;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -15,15 +16,31 @@ use Spatie\Permission\PermissionRegistrar;
  * exist under a given company's spatie team scope.
  *
  * Idempotent — safe to call on every CreateMerchantUserAction
- * invocation. Each role is firstOrCreate'd, then synced to its
- * permission set. Existing custom permissions added to a role
- * via a future role-builder UI are preserved because syncPermissions
- * only touches the rows we know about (no, wait — syncPermissions
- * IS destructive: it replaces the pivot. So if a custom permission
- * has been granted, this would wipe it. Use Role::give Permission
- * To if we want a non-destructive merge. For v1, we re-sync on
- * every call because there are no custom permissions yet. Revisit
- * when role-builder lands.)
+ * invocation.
+ *
+ * Phase 4.8 changes vs the original 4.5 version:
+ *
+ *   - Each default role is stamped `is_system=true` so the
+ *     role-builder UI hides the delete button + locks rename.
+ *     A merchant SuperAdmin can still mutate which permissions
+ *     a system role holds (so they can tighten or loosen
+ *     "Manager" to taste), but the canonical name + the row's
+ *     existence are guaranteed.
+ *
+ *   - We do NOT call syncPermissions on every run any more —
+ *     that would wipe a user's custom edits. Instead, on first
+ *     creation the role gets its seeded permission set; on
+ *     subsequent runs only the row's metadata (is_system,
+ *     description) is refreshed. If a new permission key lands
+ *     in a later phase and a user wants their system "Manager"
+ *     role to pick it up, they edit it in the UI. The role
+ *     never silently drifts back to the seeder's idea of what
+ *     it should hold.
+ *
+ *   - SuperAdmin is a special case: it always gets the FULL
+ *     permission set on every run. This protects against the
+ *     "merchant accidentally removed a permission from the
+ *     owner role and now nobody can fix it" footgun.
  *
  * The PermissionRegistrar team_id switch is critical: spatie's
  * pivot tables include team_id, so without setting it correctly,
@@ -49,15 +66,47 @@ final class SeedMerchantRolesAction
                 ]);
             }
 
-            foreach ($this->roleMatrix() as $roleName => $permissions) {
-                /** @var Role $role */
-                $role = Role::query()->firstOrCreate([
-                    'name' => $roleName,
-                    'guard_name' => 'web',
-                    'team_id' => $companyId,
-                ]);
+            foreach ($this->roleCatalogue() as $roleName => $meta) {
+                $existing = Role::query()
+                    ->where('name', $roleName)
+                    ->where('guard_name', 'web')
+                    ->where('team_id', $companyId)
+                    ->first();
 
-                $role->syncPermissions($permissions);
+                if ($existing === null) {
+                    // First-time seed — create + assign the
+                    // initial permission set.
+                    /** @var Role $role */
+                    $role = Role::query()->create([
+                        'name' => $roleName,
+                        'guard_name' => 'web',
+                        'team_id' => $companyId,
+                        'is_system' => true,
+                        'description' => $meta['description'],
+                    ]);
+                    $role->syncPermissions($meta['permissions']);
+
+                    continue;
+                }
+
+                // Existing row — refresh metadata via a direct
+                // DB update (avoids triggering observer hooks)
+                // but DO NOT touch the permission pivot. Custom
+                // edits stay intact.
+                DB::table('pos_roles')
+                    ->where('id', $existing->id)
+                    ->update([
+                        'is_system' => true,
+                        'description' => $meta['description'],
+                    ]);
+
+                // SuperAdmin gets force-resynced to the full
+                // permission set on every run — guarantees the
+                // owner can never lock themselves out by
+                // editing this role.
+                if ($roleName === MerchantRole::SuperAdmin->value) {
+                    $existing->syncPermissions(MerchantPermission::values());
+                }
             }
 
             $registrar->forgetCachedPermissions();
@@ -67,67 +116,64 @@ final class SeedMerchantRolesAction
     }
 
     /**
-     * Phase 4.5 matrix. SuperAdmin gets every permission; the
-     * other roles get progressively narrower slices. New
-     * permission keys land here too as future phases add them.
+     * The 5 seeded defaults. Each has a description shown in
+     * the UI + an initial permission set used ONLY on first
+     * creation (subsequent runs preserve user edits, except
+     * for SuperAdmin which is always force-resynced).
      *
-     * @return array<string, list<string>>
+     * @return array<string, array{description: string, permissions: list<string>}>
      */
-    private function roleMatrix(): array
+    private function roleCatalogue(): array
     {
-        $all = MerchantPermission::values();
-
         return [
-            // Owner-tier — every permission, including future ones
-            // added to the enum.
-            MerchantRole::SuperAdmin->value => $all,
+            MerchantRole::SuperAdmin->value => [
+                'description' => 'Full access to every feature. Cannot be deleted.',
+                // Computed at call time so any future permission
+                // additions to the enum land here automatically.
+                'permissions' => MerchantPermission::values(),
+            ],
 
-            // Managers can see + invite portal users + update
-            // them but cannot revoke (suspend/delete) — that's
-            // a more sensitive action reserved for SuperAdmin.
-            // POS staff: full lifecycle (hire/fire is a normal
-            // manager responsibility, no SuperAdmin needed).
             MerchantRole::Manager->value => [
-                MerchantPermission::PortalUsersView->value,
-                MerchantPermission::PortalUsersInvite->value,
-                MerchantPermission::PortalUsersUpdate->value,
-                MerchantPermission::PosStaffView->value,
-                MerchantPermission::PosStaffCreate->value,
-                MerchantPermission::PosStaffUpdate->value,
-                MerchantPermission::PosStaffRevoke->value,
-                // Branches: Manager can edit details + hours +
-                // contact info but NOT flip the activation
-                // status — that's reserved for SuperAdmin
-                // because it stops POS orders + billing.
-                MerchantPermission::BranchesView->value,
-                MerchantPermission::BranchesUpdate->value,
+                'description' => 'Day-to-day operations — hire staff, edit branches, manage portal teammates. Cannot deactivate branches or manage roles.',
+                'permissions' => [
+                    MerchantPermission::PortalUsersView->value,
+                    MerchantPermission::PortalUsersInvite->value,
+                    MerchantPermission::PortalUsersUpdate->value,
+                    MerchantPermission::PosStaffView->value,
+                    MerchantPermission::PosStaffCreate->value,
+                    MerchantPermission::PosStaffUpdate->value,
+                    MerchantPermission::PosStaffRevoke->value,
+                    MerchantPermission::BranchesView->value,
+                    MerchantPermission::BranchesUpdate->value,
+                    MerchantPermission::RolesView->value,
+                ],
             ],
 
-            // Cashier Supervisor sees the staff roster + can edit
-            // schedules / positions, but can't hire, fire, or
-            // reset PINs. Those are budget / payroll-adjacent and
-            // belong to the Manager tier. Branches: read-only so
-            // the supervisor can navigate the locations dropdown
-            // when assigning shifts but can't mutate anything.
             MerchantRole::CashierSupervisor->value => [
-                MerchantPermission::PosStaffView->value,
-                MerchantPermission::PosStaffUpdate->value,
-                MerchantPermission::BranchesView->value,
+                'description' => 'Shift supervisor — view staff + branch list, edit staff details. Cannot hire / fire / reset PINs.',
+                'permissions' => [
+                    MerchantPermission::PosStaffView->value,
+                    MerchantPermission::PosStaffUpdate->value,
+                    MerchantPermission::BranchesView->value,
+                    MerchantPermission::RolesView->value,
+                ],
             ],
 
-            // Viewer can see the staff roster (for shift planning
-            // / "who's working today" boards) and the branch
-            // roster, but cannot mutate anything.
             MerchantRole::Viewer->value => [
-                MerchantPermission::PosStaffView->value,
-                MerchantPermission::BranchesView->value,
+                'description' => 'Read-only — see the staff roster and the branch list. No write access.',
+                'permissions' => [
+                    MerchantPermission::PosStaffView->value,
+                    MerchantPermission::BranchesView->value,
+                    MerchantPermission::RolesView->value,
+                ],
             ],
 
-            // Inventory manager: domain is products + stock + the
-            // branch list (need to know WHERE the stock lives).
-            // Catalogue permissions arrive in Phase 6.
             MerchantRole::InventoryManager->value => [
-                MerchantPermission::BranchesView->value,
+                'description' => 'Inventory specialist — branch list + (future) catalogue + stock. No HR or roles.',
+                'permissions' => [
+                    MerchantPermission::BranchesView->value,
+                    MerchantPermission::RolesView->value,
+                ],
             ],
         ];
     }

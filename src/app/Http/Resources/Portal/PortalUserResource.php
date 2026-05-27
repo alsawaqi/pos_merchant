@@ -12,13 +12,22 @@ use Spatie\Permission\PermissionRegistrar;
 
 /**
  * Projection of a merchant teammate {@see User} for the Portal
- * Users tab. The role is resolved under the company team scope
- * explicitly so it doesn't accidentally read from whatever team
- * was active when the resource serialised.
+ * Users tab.
  *
- * branch_scope is mirrored verbatim: NULL = all branches, array =
- * restricted to those ids. The frontend renders a chip + the count
- * accordingly.
+ * Phase 4.8 change: `role` (single string) is replaced with
+ * `roles` (array of strings) — users can now hold any number
+ * of merchant roles, and the SPA's role chips render that
+ * union. Backward-compatible `role` field is also returned for
+ * one release as the first role for any frontend that hasn't
+ * updated yet (purge it later when nothing reads it).
+ *
+ * Role resolution explicitly switches the spatie team_id to
+ * this user's company before reading, so the response doesn't
+ * accidentally pick up roles from whatever team was active at
+ * serialise time.
+ *
+ * branch_scope is mirrored verbatim: NULL = all branches, array
+ * = restricted to those ids.
  *
  * @mixin User
  */
@@ -29,13 +38,19 @@ class PortalUserResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $roles = $this->resolveRoles();
+
         return [
             'id' => $this->id,
             'name' => $this->name,
             'email' => $this->email,
             'phone' => $this->phone,
             'status' => $this->status,
-            'role' => $this->resolveRole(),
+            // Backward-compatible single role — first one for
+            // anyone still consuming the old shape. New
+            // consumers should read `roles` instead.
+            'role' => $roles[0] ?? null,
+            'roles' => $roles,
             'branch_scope' => $this->branch_scope_json,
             'last_login_at' => $this->last_login_at?->toIso8601String(),
             'invited_at' => $this->invited_at?->toIso8601String(),
@@ -44,18 +59,21 @@ class PortalUserResource extends JsonResource
         ];
     }
 
-    private function resolveRole(): ?string
+    /**
+     * @return list<string>
+     */
+    private function resolveRoles(): array
     {
         $registrar = app(PermissionRegistrar::class);
         $companyId = app(MerchantTenantContext::class)->id();
         if ($companyId === null) {
-            return null;
+            return [];
         }
 
         $previousTeam = $registrar->getPermissionsTeamId();
         $registrar->setPermissionsTeamId($companyId);
         try {
-            return $this->getRoleNames()->first();
+            return $this->getRoleNames()->values()->all();
         } finally {
             $registrar->setPermissionsTeamId($previousTeam);
         }

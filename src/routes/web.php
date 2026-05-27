@@ -8,6 +8,7 @@ use App\Http\Controllers\Portal\BranchesController;
 use App\Http\Controllers\Portal\PortalUsersController;
 use App\Http\Controllers\Pos\BranchesController as PosBranchesController;
 use App\Http\Controllers\Pos\PosStaffController;
+use App\Http\Controllers\Pos\RolesController;
 use App\Http\Controllers\SpaController;
 use App\Http\Middleware\EnsureMerchantSessionIsFresh;
 use App\Http\Middleware\EnsureUserIsAuthenticated;
@@ -82,6 +83,13 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('portal-users.reactivate');
         Route::post('portal-users/{portalUser}/reset-password', [PortalUsersController::class, 'resetPassword'])
             ->name('portal-users.reset-password');
+        // Phase 4.8 — replace the role list. Permission-gated
+        // on RolesManage inside the controller (not the same
+        // gate as the portal-users.update PATCH which is
+        // PortalUsersUpdate — a Manager can edit names but
+        // shouldn't be able to grant SuperAdmin).
+        Route::patch('portal-users/{portalUser}/roles', [PortalUsersController::class, 'assignRoles'])
+            ->name('portal-users.assign-roles');
 
         // Read-only branches list for the Portal Users branch-
         // scope picker. Lean payload — no permission gate, every
@@ -100,6 +108,23 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('pos.branches.show');
         Route::patch('pos/branches/{branch:uuid}', [PosBranchesController::class, 'update'])
             ->name('pos.branches.update');
+
+        // -------- Phase 4.8 — Roles & Permissions ----------
+        // Role builder for merchant SuperAdmins. The catalog
+        // endpoint returns the grouped permission tree used by
+        // the editor checkbox grid; the CRUD endpoints manage
+        // custom + system roles. System roles can be edited
+        // (permissions) but not renamed or deleted.
+        Route::get('roles/catalog', [RolesController::class, 'catalog'])
+            ->name('roles.catalog');
+        Route::get('roles', [RolesController::class, 'index'])
+            ->name('roles.index');
+        Route::post('roles', [RolesController::class, 'store'])
+            ->name('roles.store');
+        Route::patch('roles/{role}', [RolesController::class, 'update'])
+            ->name('roles.update');
+        Route::delete('roles/{role}', [RolesController::class, 'destroy'])
+            ->name('roles.destroy');
 
         // -------- Phase 4.6 — POS Staff (merchant's PIN-authed workforce) --
         // {posStaff} is bound by uuid (PosStaff::getRouteKeyName).

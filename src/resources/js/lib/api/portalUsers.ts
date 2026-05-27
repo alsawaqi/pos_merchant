@@ -22,7 +22,14 @@ export interface PortalUser {
     email: string;
     phone: string | null;
     status: PortalUserStatus | null;
+    /**
+     * Backward-compatible single role — first entry of `roles`,
+     * or null when the user has no roles. New consumers should
+     * read `roles` directly.
+     */
     role: MerchantRoleValue | null;
+    /** All roles the user holds (system + custom). Phase 4.8+. */
+    roles: string[];
     /** null = all branches; number[] = restricted to those ids. */
     branch_scope: number[] | null;
     last_login_at: string | null;

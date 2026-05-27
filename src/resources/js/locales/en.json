@@ -27,6 +27,7 @@
         "branches": "Branches",
         "portal_users": "Portal Users",
         "pos_staff": "POS Staff",
+        "roles": "Roles & Permissions",
         "sign_out": "Sign out",
         "language": "Language"
     },
@@ -84,8 +85,17 @@
         "actions": {
             "edit": "Edit",
             "reset_password": "Reset password",
+            "assign_roles": "Roles",
             "suspend": "Suspend",
             "reactivate": "Reactivate"
+        },
+        "no_roles": "No roles assigned",
+        "assign_roles": {
+            "title": "Assign roles",
+            "hint": "Pick one or more roles. The user gets the union of every assigned role's permissions.",
+            "no_roles": "No roles available yet. Create one in Roles & Permissions first.",
+            "submit": "Save",
+            "submitting": "Saving…"
         },
         "create": {
             "button": "Create teammate",
@@ -257,6 +267,44 @@
             "status": "Status",
             "status_disabled_hint": "Only an account super admin can activate or deactivate a branch.",
             "closed_day": "Closed"
+        }
+    },
+    "roles": {
+        "section_label": "Access control",
+        "title": "Roles & Permissions",
+        "subtitle": "Define which features each role can access, then assign those roles to your portal users.",
+        "system_badge": "System",
+        "system_hint": "System roles are part of MITHQAL's defaults. You can edit which permissions they hold but can't rename or delete them.",
+        "no_description": "No description.",
+        "no_permissions": "No permissions assigned.",
+        "user_count": "{count} user | {count} users",
+        "empty_state": "No roles yet.",
+        "delete_blocked_hint": "Re-assign the users holding this role before deleting it.",
+        "validation_summary": "Please fix the highlighted fields.",
+        "actions": {
+            "edit": "Edit",
+            "delete": "Delete"
+        },
+        "create": {
+            "button": "New role"
+        },
+        "editor": {
+            "create_title": "Create role",
+            "edit_title": "Edit role",
+            "system_role_hint": "This is a system role — the name cannot be changed but you can edit which permissions it holds.",
+            "submit": "Save",
+            "submitting": "Saving…"
+        },
+        "delete_dialog": {
+            "title": "Delete role?",
+            "body": "The role \"{name}\" will be removed. This cannot be undone.",
+            "confirm": "Yes, delete",
+            "submitting": "Deleting…"
+        },
+        "fields": {
+            "name": "Role name",
+            "description": "Description",
+            "permissions": "Permissions"
         }
     }
 }

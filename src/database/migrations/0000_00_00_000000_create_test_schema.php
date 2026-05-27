@@ -183,6 +183,10 @@ return new class extends Migration
             // team_id=company_id.
             $table->unsignedBigInteger('team_id')->nullable()->index();
             $table->string('name');
+            // Phase 4.8 — flag the seeder-created defaults so the
+            // role-builder UI hides delete + lock rename.
+            $table->boolean('is_system')->default(false);
+            $table->text('description')->nullable();
             $table->string('guard_name');
             $table->timestamps();
             $table->unique(['team_id', 'name', 'guard_name']);
