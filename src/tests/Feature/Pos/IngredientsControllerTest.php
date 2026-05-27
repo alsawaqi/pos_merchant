@@ -23,6 +23,8 @@ use App\Enums\MerchantRole;
 use App\Models\BranchStock;
 use App\Models\Company;
 use App\Models\Ingredient;
+use App\Models\Product;
+use App\Models\ProductRecipe;
 use App\Models\StockMovement;
 use App\Models\Supplier;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -184,6 +186,28 @@ it('returns 404 when deleting an ingredient owned by another company', function 
     $foreignIngredient = Ingredient::factory()->for($otherCompany, 'company')->create();
 
     $this->deleteJson("/api/ingredients/{$foreignIngredient->uuid}")->assertNotFound();
+});
+
+// Phase 5b — ingredient can't be deleted while any product
+// recipe still references it. The merchant must edit those
+// recipes first. Without this guard the Phase 8 sale-
+// consumption pipeline would try to deduct stock from a
+// soft-deleted ingredient and silently fail.
+it('refuses to delete an ingredient that is referenced by a product recipe', function (): void {
+    $ctx = makeMerchantActor();
+    $ingredient = Ingredient::factory()->for($ctx['company'], 'company')->create();
+    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    ProductRecipe::factory()
+        ->for($product, 'product')
+        ->for($ingredient, 'ingredient')
+        ->create(['quantity' => '0.250']);
+
+    $response = $this->deleteJson("/api/ingredients/{$ingredient->uuid}")
+        ->assertStatus(422);
+    expect($response->json('message'))->toContain('recipe');
+
+    // Ingredient still alive — the recipe line still references it.
+    expect(Ingredient::query()->find($ingredient->id))->not->toBeNull();
 });
 
 // =================== PERMISSION GATES ===================
