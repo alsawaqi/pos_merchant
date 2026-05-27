@@ -65,6 +65,8 @@ final readonly class CreateProductAction
                 'description' => $attributes['description'] ?? null,
                 'image_url' => $attributes['image_url'] ?? null,
                 'base_price' => $attributes['base_price'],
+                // Phase 4.9 — per-product delivery override.
+                'delivery_price' => $attributes['delivery_price'] ?? null,
                 'cost_price' => $attributes['cost_price'] ?? null,
                 'tax_rate' => $attributes['tax_rate'] ?? null,
                 'display_order' => $attributes['display_order'] ?? 0,

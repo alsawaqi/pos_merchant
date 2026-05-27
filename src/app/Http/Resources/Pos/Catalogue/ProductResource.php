@@ -45,6 +45,11 @@ class ProductResource extends JsonResource
             'description' => $this->description,
             'image_url' => $this->image_url,
             'base_price' => (string) $this->base_price,
+            // Phase 4.9 — per-product delivery override. NULL
+            // means "no markup, use base_price for delivery too".
+            // The POS / sync endpoint uses Product::priceFor()
+            // to resolve the right price at order time.
+            'delivery_price' => $this->delivery_price !== null ? (string) $this->delivery_price : null,
             'cost_price' => $this->cost_price !== null ? (string) $this->cost_price : null,
             // Effective tax: column when set, NULL means
             // "inherit company default". Frontend resolves
@@ -52,6 +57,11 @@ class ProductResource extends JsonResource
             'tax_rate' => $this->tax_rate !== null ? (string) $this->tax_rate : null,
             'display_order' => $this->display_order,
             'status' => $this->status?->value,
+            // Phase 4.9 — attached add-on groups (product-specific,
+            // not global) inlined when the controller eager-loads
+            // them. Global groups are NOT included here — the
+            // resolver handles them at POS-render time.
+            'addon_groups' => AddOnGroupResource::collection($this->whenLoaded('addOnGroups')),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

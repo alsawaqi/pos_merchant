@@ -8,9 +8,11 @@ use App\Enums\ProductStatus;
 use Database\Factories\ProductFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
@@ -42,6 +44,9 @@ use Illuminate\Support\Str;
     'description',
     'image_url',
     'base_price',
+    // Phase 4.9 — per-product delivery override. NULL = use
+    // base_price for delivery orders too.
+    'delivery_price',
     'cost_price',
     'tax_rate',
     'display_order',
@@ -61,6 +66,10 @@ class Product extends Model
     {
         return [
             'base_price' => 'decimal:3',
+            // Phase 4.9 — same shape as base_price so OMR-baisa
+            // precision stays consistent through the channel-aware
+            // price resolver below.
+            'delivery_price' => 'decimal:3',
             'cost_price' => 'decimal:3',
             'tax_rate' => 'decimal:2',
             'display_order' => 'integer',
@@ -105,5 +114,75 @@ class Product extends Model
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('status', ProductStatus::Active->value);
+    }
+
+    /**
+     * Phase 4.9 — Product-specific add-on groups attached via
+     * the pivot. Does NOT include global groups (is_global=true)
+     * — use {@see resolvedAddOnGroups()} when you want both
+     * sources unioned for POS rendering.
+     *
+     * @return BelongsToMany<AddOnGroup, $this>
+     */
+    public function addOnGroups(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            AddOnGroup::class,
+            'pos_addon_group_products',
+            'product_id',
+            'add_on_group_id',
+        )->withPivot('display_order')->withTimestamps();
+    }
+
+    /**
+     * Resolves every add-on group that should appear for this
+     * product on the POS — global groups for the same company
+     * UNION explicit pivot attachments. Returns an eager-
+     * loaded collection of AddOnGroup with their addOns
+     * relation hydrated.
+     *
+     * Used by Phase 8's device config bundle endpoint so the
+     * POS doesn't have to know about the global-vs-pivot
+     * distinction.
+     *
+     * @return EloquentCollection<int, AddOnGroup>
+     */
+    public function resolvedAddOnGroups(): EloquentCollection
+    {
+        return AddOnGroup::query()
+            ->where('company_id', $this->company_id)
+            ->where('status', 'active')
+            ->where(function (Builder $q): void {
+                $q->where('is_global', true)
+                    ->orWhereIn(
+                        'id',
+                        $this->addOnGroups()->select('pos_addon_groups.id')->getQuery(),
+                    );
+            })
+            ->with(['addOns' => function ($q): void {
+                $q->where('status', 'active');
+            }])
+            ->orderBy('display_order')
+            ->orderBy('name')
+            ->get();
+    }
+
+    /**
+     * Phase 4.9 — channel-aware price resolver. Returns the
+     * correct base price for an order context.
+     *
+     *   delivery order + delivery_price set → delivery_price
+     *   anything else                       → base_price
+     *
+     * Returns a string (decimal cast preserves precision —
+     * NEVER cast to float for money math).
+     */
+    public function priceFor(string $orderType): string
+    {
+        if ($orderType === 'delivery' && $this->delivery_price !== null) {
+            return (string) $this->delivery_price;
+        }
+
+        return (string) $this->base_price;
     }
 }

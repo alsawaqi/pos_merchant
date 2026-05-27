@@ -28,6 +28,8 @@ class UpdateProductRequest extends FormRequest
             'sku' => ['sometimes', 'nullable', 'string', 'max:64'],
             'barcode' => ['sometimes', 'nullable', 'string', 'max:64'],
             'base_price' => ['sometimes', 'numeric', 'min:0', 'max:999999.999'],
+            // Phase 4.9 — per-product delivery override.
+            'delivery_price' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:999999.999'],
             'cost_price' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:999999.999'],
             'tax_rate' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:100'],
             'display_order' => ['sometimes', 'integer', 'between:0,999'],

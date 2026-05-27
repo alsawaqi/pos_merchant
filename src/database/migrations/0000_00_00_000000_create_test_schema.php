@@ -183,7 +183,10 @@ return new class extends Migration
             $table->unique(['company_id', 'name'], 'pos_product_categories_company_name_unique');
         });
 
-        // ---- pos_products (Phase 6b) ------------------------------
+        // ---- pos_products (Phase 6b + 4.9 delivery_price) ---------
+        // delivery_price added by Phase 4.9 — NULL means "no
+        // delivery markup, use base_price". Product::priceFor()
+        // centralises the channel-aware lookup.
         Schema::create('pos_products', function (Blueprint $table): void {
             $table->id();
             $table->uuid('uuid')->unique();
@@ -196,6 +199,7 @@ return new class extends Migration
             $table->text('description')->nullable();
             $table->string('image_url', 500)->nullable();
             $table->decimal('base_price', 12, 3);
+            $table->decimal('delivery_price', 12, 3)->nullable();
             $table->decimal('cost_price', 12, 3)->nullable();
             $table->decimal('tax_rate', 5, 2)->nullable();
             $table->unsignedSmallInteger('display_order')->default(0);
@@ -207,6 +211,52 @@ return new class extends Migration
             // Postgres partial-unique-when-not-null index.
             $table->unique(['company_id', 'sku'], 'pos_products_company_sku_unique');
             $table->unique(['company_id', 'barcode'], 'pos_products_company_barcode_unique');
+        });
+
+        // ---- pos_addon_groups + pos_addons + pivot (Phase 4.9) ---
+        // Blueprint §5.5.4 + §10.4. selection_mode = single|multi.
+        // is_global=true means the group applies to every product;
+        // pivot table covers product-specific attachments.
+        // ingredient_id is a placeholder until Phase 5 wires the FK.
+        Schema::create('pos_addon_groups', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->string('name');
+            $table->string('name_ar')->nullable();
+            $table->string('selection_mode', 16)->default('single');
+            $table->boolean('is_global')->default(false);
+            $table->unsignedSmallInteger('display_order')->default(0);
+            $table->string('status', 32)->default('active');
+            $table->timestamps();
+            $table->softDeletes();
+            $table->unique(['company_id', 'name'], 'pos_addon_groups_company_name_unique');
+        });
+
+        Schema::create('pos_addons', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('add_on_group_id')->constrained('pos_addon_groups')->cascadeOnDelete();
+            $table->string('name');
+            $table->string('name_ar')->nullable();
+            $table->decimal('price_delta', 12, 3)->default(0);
+            $table->unsignedBigInteger('ingredient_id')->nullable();
+            $table->decimal('ingredient_qty', 10, 3)->nullable();
+            $table->string('ingredient_unit', 16)->nullable();
+            $table->unsignedSmallInteger('display_order')->default(0);
+            $table->string('status', 32)->default('active');
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('pos_addon_group_products', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('add_on_group_id')->constrained('pos_addon_groups')->cascadeOnDelete();
+            $table->foreignId('product_id')->constrained('pos_products')->cascadeOnDelete();
+            $table->unsignedSmallInteger('display_order')->default(0);
+            $table->timestamps();
+            $table->unique(['add_on_group_id', 'product_id'], 'pos_addon_group_products_unique');
         });
 
         // ---- pos_floors (Phase 5) ---------------------------------

@@ -6,11 +6,14 @@ namespace App\Http\Controllers\Pos;
 
 use App\Actions\Pos\Catalogue\CreateProductAction;
 use App\Actions\Pos\Catalogue\DeleteProductAction;
+use App\Actions\Pos\Catalogue\SyncProductAddOnGroupsAction;
 use App\Actions\Pos\Catalogue\UpdateProductAction;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Pos\Catalogue\CreateProductRequest;
+use App\Http\Requests\Pos\Catalogue\SyncProductAddOnGroupsRequest;
 use App\Http\Requests\Pos\Catalogue\UpdateProductRequest;
+use App\Http\Resources\Pos\Catalogue\AddOnGroupResource;
 use App\Http\Resources\Pos\Catalogue\ProductResource;
 use App\Models\Product;
 use App\Models\ProductCategory;
@@ -42,6 +45,7 @@ class ProductsController extends Controller
         private readonly CreateProductAction $create,
         private readonly UpdateProductAction $update,
         private readonly DeleteProductAction $delete,
+        private readonly SyncProductAddOnGroupsAction $syncAddOnGroups,
     ) {}
 
     public function index(Request $request): AnonymousResourceCollection
@@ -117,6 +121,33 @@ class ProductsController extends Controller
         $this->delete->handle($product, $request->user());
 
         return response()->json(['data' => null], 204);
+    }
+
+    /**
+     * PUT /api/products/{product:uuid}/addon-groups
+     *
+     * Phase 4.9 — idempotent sync of product-specific add-on
+     * group attachments. Caller passes the full desired list of
+     * group uuids; the Action attaches what's missing, detaches
+     * what's no longer wanted, and writes ONE audit row for the
+     * delta (rather than N attach/detach rows).
+     */
+    public function syncAddOnGroups(SyncProductAddOnGroupsRequest $request, Product $product): JsonResponse | AnonymousResourceCollection
+    {
+        $this->ensure($request, MerchantPermission::CatalogueManage);
+        $this->refuseIfNotInTenant($product);
+
+        try {
+            $groups = $this->syncAddOnGroups->handle(
+                $product,
+                $request->validated()['group_uuids'] ?? [],
+                $request->user(),
+            );
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return AddOnGroupResource::collection(collect($groups));
     }
 
     private function ensure(Request $request, MerchantPermission $permission): void

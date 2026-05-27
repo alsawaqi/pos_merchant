@@ -199,6 +199,13 @@ export function apiPatch<T>(url: string, body?: JsonValue, options: Omit<ApiRequ
     return apiRequest<T>('PATCH', url, { ...options, body });
 }
 
+// PUT for idempotent full-state replacements (e.g. Phase 4.9
+// product addon-group sync). PATCH would imply partial update;
+// PUT here means "this is the complete desired set".
+export function apiPut<T>(url: string, body?: JsonValue, options: Omit<ApiRequestOptions, 'body' | 'method'> = {}): Promise<T> {
+    return apiRequest<T>('PUT', url, { ...options, body });
+}
+
 export function apiDelete<T>(url: string, options: Omit<ApiRequestOptions, 'body' | 'method'> = {}): Promise<T> {
     return apiRequest<T>('DELETE', url, options);
 }

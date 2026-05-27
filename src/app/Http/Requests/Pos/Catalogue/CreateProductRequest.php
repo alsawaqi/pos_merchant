@@ -36,6 +36,9 @@ class CreateProductRequest extends FormRequest
             // OMR uses 3 decimals; min 0 allows free items
             // (loyalty redemptions, comps); max generous.
             'base_price' => ['required', 'numeric', 'min:0', 'max:999999.999'],
+            // Phase 4.9 — per-product delivery override. NULL
+            // means inherit base_price for delivery orders.
+            'delivery_price' => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
             'cost_price' => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
             // Per-product tax override. 0 = zero-rated.
             'tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],

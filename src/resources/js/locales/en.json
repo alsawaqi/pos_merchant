@@ -407,17 +407,20 @@
     "catalogue": {
         "section_label": "Menu",
         "title": "Catalogue",
-        "subtitle": "Manage menu categories and the products that belong to them. Modifiers and add-ons land in a future phase once orders are flowing.",
+        "subtitle": "Manage menu categories, products, and add-on options. Recipes and inventory mapping arrive in the next phase.",
         "validation_summary": "Please fix the highlighted fields.",
         "uncategorized": "Uncategorized",
         "delete_category_blocked": "Move or delete the category's products before deleting it.",
         "no_categories_hint": "Create a category first.",
         "empty_categories": "No categories yet. Add one to start building your menu.",
         "empty_products": "No products yet. Add one to start your menu.",
+        "empty_addon_groups": "No add-on groups yet. Add one to let cashiers attach modifiers like milk choice, sugar level, or extras.",
         "product_count": "{count} product | {count} products",
+        "addon_count": "{count} option | {count} options",
         "tabs": {
             "categories": "Categories",
-            "products": "Products"
+            "products": "Products",
+            "addons": "Add-ons"
         },
         "filter": {
             "category": "Filter by category",
@@ -438,8 +441,11 @@
         "actions": {
             "add_category": "Add category",
             "add_product": "Add product",
+            "add_addon_group": "Add add-on group",
+            "add_addon": "Add option",
             "edit": "Edit",
-            "delete": "Delete"
+            "delete": "Delete",
+            "manage_addons": "Manage add-ons"
         },
         "fields": {
             "name": "Name",
@@ -452,11 +458,76 @@
             "sku": "SKU",
             "barcode": "Barcode",
             "base_price": "Price",
+            "delivery_price": "Delivery price",
+            "delivery_price_hint": "Leave blank to use the base price. Set when delivery orders need a higher price (to absorb aggregator commissions, etc.).",
             "cost_price": "Cost",
             "tax_rate": "Tax rate",
             "tax_rate_placeholder": "Inherit",
-            "tax_rate_hint": "Leave blank to inherit the company default (5%)."
+            "tax_rate_hint": "Leave blank to inherit the company default (5%).",
+            "selection_mode": "Selection mode",
+            "is_global": "Apply to every product",
+            "is_global_hint": "Global groups attach automatically to every product. Otherwise pick which products use this group from each product's edit screen.",
+            "price_delta": "Price",
+            "addon_groups": "Add-on groups",
+            "addon_groups_hint": "Pick which add-on groups appear when this product is selected on the POS. Global groups are always included and not shown here."
         },
+        "selection_modes": {
+            "single": "Single (radio)",
+            "multi": "Multi (checkbox)"
+        },
+        "addon_group_card": {
+            "global_badge": "Global"
+        },
+        "addon_group_modal": {
+            "create_title": "Add add-on group",
+            "edit_title": "Edit add-on group",
+            "submit": "Save",
+            "submitting": "Saving…"
+        },
+        "addon_modal": {
+            "create_title": "Add option to {group}",
+            "edit_title": "Edit option",
+            "submit": "Save",
+            "submitting": "Saving…"
+        },
+        "delete_addon_group_blocked": "Detach this add-on group from all products before deleting it.",
+        "delete_addon_group_dialog": {
+            "title": "Delete add-on group?",
+            "body": "Delete \"{name}\" and all its options? This cannot be undone.",
+            "confirm": "Yes, delete",
+            "submitting": "Deleting…"
+        },
+        "delete_addon_dialog": {
+            "title": "Delete option?",
+            "body": "Delete \"{name}\"? Past orders that reference it will still resolve via the soft-delete trail.",
+            "confirm": "Yes, delete",
+            "submitting": "Deleting…"
+        },
+        "cat_modal": {
+            "create_title": "Add category",
+            "edit_title": "Edit category",
+            "submit": "Save",
+            "submitting": "Saving…"
+        },
+        "prod_modal": {
+            "create_title": "Add product",
+            "edit_title": "Edit product",
+            "submit": "Save",
+            "submitting": "Saving…"
+        },
+        "delete_cat_dialog": {
+            "title": "Delete category?",
+            "body": "Delete \"{name}\"? This cannot be undone.",
+            "confirm": "Yes, delete",
+            "submitting": "Deleting…"
+        },
+        "delete_prod_dialog": {
+            "title": "Delete product?",
+            "body": "Delete \"{name}\"? Past orders that reference it will still resolve via the soft-delete trail.",
+            "confirm": "Yes, delete",
+            "submitting": "Deleting…"
+        }
+    },
         "cat_modal": {
             "create_title": "Add category",
             "edit_title": "Edit category",

@@ -36,6 +36,8 @@ final readonly class UpdateProductAction
         'description',
         'image_url',
         'base_price',
+        // Phase 4.9 — per-product delivery override.
+        'delivery_price',
         'cost_price',
         'tax_rate',
         'display_order',
@@ -86,7 +88,7 @@ final readonly class UpdateProductAction
                 // Money columns come back as strings via the
                 // decimal cast — normalize both sides for the
                 // comparison.
-                if (in_array($field, ['base_price', 'cost_price', 'tax_rate'], true)) {
+                if (in_array($field, ['base_price', 'delivery_price', 'cost_price', 'tax_rate'], true)) {
                     $sameValue = (string) $oldComparable === (string) $newValue;
                 } else {
                     $sameValue = $oldComparable == $newValue;

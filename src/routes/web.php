@@ -6,6 +6,8 @@ use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\CsrfTokenController;
 use App\Http\Controllers\Portal\BranchesController;
 use App\Http\Controllers\Portal\PortalUsersController;
+use App\Http\Controllers\Pos\AddOnGroupsController;
+use App\Http\Controllers\Pos\AddOnsController;
 use App\Http\Controllers\Pos\BranchesController as PosBranchesController;
 use App\Http\Controllers\Pos\CategoriesController;
 use App\Http\Controllers\Pos\FloorsController;
@@ -179,6 +181,36 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('products.update');
         Route::delete('products/{product:uuid}', [ProductsController::class, 'destroy'])
             ->name('products.destroy');
+
+        // -------- Phase 4.9 — Modifiers / Add-on Groups ----
+        // Add-on groups are catalog-tier config (a "Milk Choice"
+        // group exists once per company, attaches to many
+        // products via the pivot below or applies globally).
+        // Read-gated on catalogue.view, mutations on
+        // catalogue.manage (no separate modifier-permission per
+        // the design note in MerchantPermission.php).
+        Route::get('addon-groups', [AddOnGroupsController::class, 'index'])
+            ->name('addon-groups.index');
+        Route::post('addon-groups', [AddOnGroupsController::class, 'store'])
+            ->name('addon-groups.store');
+        Route::patch('addon-groups/{addonGroup:uuid}', [AddOnGroupsController::class, 'update'])
+            ->name('addon-groups.update');
+        Route::delete('addon-groups/{addonGroup:uuid}', [AddOnGroupsController::class, 'destroy'])
+            ->name('addon-groups.destroy');
+
+        // Add-ons (options inside a group). Create is nested under
+        // the parent group; update + delete are flat-keyed.
+        Route::post('addon-groups/{addonGroup:uuid}/addons', [AddOnsController::class, 'store'])
+            ->name('addons.store');
+        Route::patch('addons/{addon:uuid}', [AddOnsController::class, 'update'])
+            ->name('addons.update');
+        Route::delete('addons/{addon:uuid}', [AddOnsController::class, 'destroy'])
+            ->name('addons.destroy');
+
+        // Product ↔ add-on-group attachments. Idempotent sync —
+        // caller PUTs the full desired list of group uuids.
+        Route::put('products/{product:uuid}/addon-groups', [ProductsController::class, 'syncAddOnGroups'])
+            ->name('products.sync-addon-groups');
 
         // -------- Phase 4.6 — POS Staff (merchant's PIN-authed workforce) --
         // {posStaff} is bound by uuid (PosStaff::getRouteKeyName).
