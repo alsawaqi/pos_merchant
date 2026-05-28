@@ -187,6 +187,58 @@ class Product extends Model
         return (string) $this->base_price;
     }
 
+    // ===================== Phase 6c — Provider pricing =====================
+
+    /**
+     * Per-provider price overrides for this product.
+     *
+     * @return HasMany<ProductDeliveryPrice, $this>
+     */
+    public function deliveryPrices(): HasMany
+    {
+        return $this->hasMany(ProductDeliveryPrice::class);
+    }
+
+    /**
+     * Phase 6c — resolve the price for a specific delivery
+     * provider, with the 3-step fallback chain:
+     *
+     *   1. Override row in pos_product_delivery_prices for the
+     *      (product, provider) pair → use it
+     *   2. Else this->delivery_price (Phase 4.9, in-house
+     *      delivery default) → use it
+     *   3. Else this->base_price (regular menu price)
+     *
+     * Reads the loaded `deliveryPrices` relation if available
+     * (no extra query when callers eager-loaded); falls back
+     * to a one-row query otherwise.
+     *
+     * Returns a decimal-3 string. NEVER float — OMR baisas
+     * precision matters end-to-end.
+     */
+    public function resolvedDeliveryPriceFor(int $providerId): string
+    {
+        $override = null;
+        if ($this->relationLoaded('deliveryPrices')) {
+            /** @var ProductDeliveryPrice|null $override */
+            $override = $this->deliveryPrices->firstWhere('delivery_provider_id', $providerId);
+        } else {
+            $override = $this->deliveryPrices()
+                ->where('delivery_provider_id', $providerId)
+                ->first();
+        }
+
+        if ($override !== null) {
+            return (string) $override->price;
+        }
+
+        if ($this->delivery_price !== null) {
+            return (string) $this->delivery_price;
+        }
+
+        return (string) $this->base_price;
+    }
+
     // ===================== Phase 5b — Recipes =====================
 
     /**
