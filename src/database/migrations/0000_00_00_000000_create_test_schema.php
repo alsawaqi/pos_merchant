@@ -792,6 +792,28 @@ return new class extends Migration
             $table->timestamps();
         });
 
+        // ---- Expenses (Phase 6 backfill — blueprint §5.10 / §10.8) --
+        // POS-captured expenses; the merchant portal reviews them.
+        // Schema owned by pos_admin's 2026_06_07_010000 migration.
+        Schema::create('pos_expenses', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->string('category', 32);
+            $table->decimal('amount', 12, 3);
+            $table->text('note')->nullable();
+            $table->string('receipt_photo_path')->nullable();
+            $table->foreignId('logged_by_pos_staff_id')->nullable()->constrained('pos_staff')->nullOnDelete();
+            $table->foreignId('logged_by_portal_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->timestamp('logged_at')->useCurrent();
+            $table->string('status', 32)->default('recorded');
+            $table->foreignId('reviewed_by_portal_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->timestamp('reviewed_at')->nullable();
+            $table->text('review_note')->nullable();
+            $table->timestamps();
+        });
+
         // ---- Sessions (used by some auth integration tests) -------
         // Mirrors the Laravel default sessions table — pos_merchant
         // is configured to use session driver=array in tests so this

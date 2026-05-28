@@ -14,6 +14,7 @@ use App\Http\Controllers\Pos\CustomersController;
 use App\Http\Controllers\Pos\DashboardController;
 use App\Http\Controllers\Pos\DeliveryProvidersController;
 use App\Http\Controllers\Pos\DiscountsController;
+use App\Http\Controllers\Pos\ExpensesController;
 use App\Http\Controllers\Pos\FloorsController;
 use App\Http\Controllers\Pos\IngredientsController;
 use App\Http\Controllers\Pos\LoyaltyController;
@@ -382,6 +383,19 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('discounts.resume');
         Route::put('discounts/{discount:uuid}/targets', [DiscountsController::class, 'syncTargets'])
             ->name('discounts.targets.sync');
+
+        // -------- Phase 6 backfill — Expenses (blueprint §5.10) --
+        // POS-captured expenses the merchant reviews. index gated
+        // expenses.view; log/review/reject gated expenses.manage.
+        // The POS sync feed (Phase 8) is the other writer.
+        Route::get('expenses', [ExpensesController::class, 'index'])
+            ->name('expenses.index');
+        Route::post('expenses', [ExpensesController::class, 'store'])
+            ->name('expenses.store');
+        Route::post('expenses/{expense:uuid}/review', [ExpensesController::class, 'review'])
+            ->name('expenses.review');
+        Route::post('expenses/{expense:uuid}/reject', [ExpensesController::class, 'reject'])
+            ->name('expenses.reject');
 
         // -------- Phase 7b-7 — Dashboard summary --
         // One GET that the landing page hits on mount. Gated

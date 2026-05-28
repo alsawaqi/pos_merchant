@@ -123,6 +123,15 @@ enum MerchantPermission: string
     case DiscountsView = 'discounts.view';
     case DiscountsManage = 'discounts.manage';
 
+    // Phase 6 backfill — Expenses (blueprint §5.10).
+    //   ExpensesView   gates the review-queue list + detail.
+    //   ExpensesManage gates log / approve (review) / reject /
+    //                  annotate. Tighter than view because it
+    //                  touches money that feeds the net-profit
+    //                  line of the Sales Report.
+    case ExpensesView = 'expenses.view';
+    case ExpensesManage = 'expenses.manage';
+
     // Phase 7b — reports + audit viewer (blueprint §13 Phase 7).
     //   ReportsView   gates the 10 reports + landing
     //   ReportsExport gates the queued Excel/PDF export flow

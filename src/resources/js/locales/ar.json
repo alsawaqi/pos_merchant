@@ -30,6 +30,7 @@
         "inventory": "المخزون",
         "customers": "العملاء",
         "discounts": "الخصومات",
+        "expenses": "المصروفات",
         "reports": "التقارير",
         "audit_log": "سجل التدقيق",
         "portal_users": "مستخدمو البوابة",
@@ -1205,6 +1206,69 @@
             },
             "by_charity": "حسب الجمعية"
         }
+    },
+    "expenses": {
+        "section_label": "المرحلة 6 · §5.10",
+        "title": "المصروفات",
+        "subtitle": "راجع المصروفات الملتقطة من نقاط البيع (والمسجلة هنا من المكتب الخلفي). اعتمد أو ارفض مع ذكر السبب أو أضف ملاحظة. المصروفات المسجلة والمعتمدة تُحتسب في صافي الربح بتقرير المبيعات.",
+        "filters": {
+            "status": "الحالة",
+            "category": "الفئة",
+            "branch": "الفرع",
+            "all": "الكل",
+            "date_from": "من",
+            "date_to": "إلى",
+            "apply": "تطبيق"
+        },
+        "status": {
+            "recorded": "مسجّل",
+            "reviewed": "معتمد",
+            "rejected": "مرفوض"
+        },
+        "category": {
+            "utilities": "مرافق",
+            "supplies": "مستلزمات",
+            "maintenance": "صيانة",
+            "salaries": "رواتب",
+            "other": "أخرى"
+        },
+        "columns": {
+            "date": "التاريخ",
+            "branch": "الفرع",
+            "category": "الفئة",
+            "amount": "المبلغ (ر.ع)",
+            "logged_by": "سجّله",
+            "status": "الحالة",
+            "actions": "الإجراءات"
+        },
+        "actions": {
+            "log": "تسجيل مصروف",
+            "review": "اعتماد",
+            "reject": "رفض"
+        },
+        "log_modal": {
+            "title": "تسجيل مصروف",
+            "branch": "الفرع",
+            "branch_required": "اختر فرعًا.",
+            "category": "الفئة",
+            "amount": "المبلغ (ر.ع)",
+            "note": "ملاحظة",
+            "submit": "تسجيل المصروف"
+        },
+        "review_modal": {
+            "title": "اعتماد المصروف",
+            "note_optional": "ملاحظة (اختياري)",
+            "submit": "اعتماد"
+        },
+        "reject_modal": {
+            "title": "رفض المصروف",
+            "reason": "السبب",
+            "reason_required": "سبب الرفض مطلوب.",
+            "submit": "رفض"
+        },
+        "empty": "لا توجد مصروفات تطابق المرشحات الحالية.",
+        "load_failed": "تعذر تحميل المصروفات.",
+        "save_failed": "تعذر حفظ المصروف."
     },
     "dashboard_widgets": {
         "today": "اليوم",

@@ -65,6 +65,10 @@ export const MerchantPermission = {
     // is Manager / InventoryManager / SuperAdmin.
     DiscountsView: 'discounts.view',
     DiscountsManage: 'discounts.manage',
+    // Phase 6 backfill — expenses (§5.10). View generous;
+    // manage (log / review / reject) is Manager / InventoryManager.
+    ExpensesView: 'expenses.view',
+    ExpensesManage: 'expenses.manage',
     // Phase 7b — reports + audit log viewer. View generous;
     // export + audit log are Manager+ tools.
     ReportsView: 'reports.view',

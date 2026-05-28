@@ -30,6 +30,7 @@
         "inventory": "Inventory",
         "customers": "Customers",
         "discounts": "Discounts",
+        "expenses": "Expenses",
         "reports": "Reports",
         "audit_log": "Audit Log",
         "portal_users": "Portal Users",
@@ -1205,6 +1206,69 @@
             },
             "by_charity": "By charity"
         }
+    },
+    "expenses": {
+        "section_label": "Phase 6 · §5.10",
+        "title": "Expenses",
+        "subtitle": "Review expenses captured from the POS (and logged here in the back office). Approve, reject with a reason, or annotate. Reviewed + recorded expenses feed the net-profit line of the Sales Report.",
+        "filters": {
+            "status": "Status",
+            "category": "Category",
+            "branch": "Branch",
+            "all": "All",
+            "date_from": "From",
+            "date_to": "To",
+            "apply": "Apply"
+        },
+        "status": {
+            "recorded": "Recorded",
+            "reviewed": "Reviewed",
+            "rejected": "Rejected"
+        },
+        "category": {
+            "utilities": "Utilities",
+            "supplies": "Supplies",
+            "maintenance": "Maintenance",
+            "salaries": "Salaries",
+            "other": "Other"
+        },
+        "columns": {
+            "date": "Date",
+            "branch": "Branch",
+            "category": "Category",
+            "amount": "Amount (OMR)",
+            "logged_by": "Logged by",
+            "status": "Status",
+            "actions": "Actions"
+        },
+        "actions": {
+            "log": "Log expense",
+            "review": "Approve",
+            "reject": "Reject"
+        },
+        "log_modal": {
+            "title": "Log an expense",
+            "branch": "Branch",
+            "branch_required": "Select a branch.",
+            "category": "Category",
+            "amount": "Amount (OMR)",
+            "note": "Note",
+            "submit": "Log expense"
+        },
+        "review_modal": {
+            "title": "Approve expense",
+            "note_optional": "Annotation (optional)",
+            "submit": "Approve"
+        },
+        "reject_modal": {
+            "title": "Reject expense",
+            "reason": "Reason",
+            "reason_required": "A rejection reason is required.",
+            "submit": "Reject"
+        },
+        "empty": "No expenses match the current filters.",
+        "load_failed": "Could not load expenses.",
+        "save_failed": "Could not save the expense."
     },
     "dashboard_widgets": {
         "today": "Today",

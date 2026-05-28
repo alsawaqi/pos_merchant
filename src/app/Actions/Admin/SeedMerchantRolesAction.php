@@ -174,6 +174,10 @@ final class SeedMerchantRolesAction
                     // Phase 6d: managers configure discount rules.
                     MerchantPermission::DiscountsView->value,
                     MerchantPermission::DiscountsManage->value,
+                    // Phase 6 backfill: managers own the expense
+                    // review queue (approve / reject / annotate).
+                    MerchantPermission::ExpensesView->value,
+                    MerchantPermission::ExpensesManage->value,
                     // Phase 7b: managers run the daily review --
                     // reports + exports + audit log.
                     MerchantPermission::ReportsView->value,
@@ -207,6 +211,10 @@ final class SeedMerchantRolesAction
                     // to understand what the POS auto-applied
                     // mid-shift.
                     MerchantPermission::DiscountsView->value,
+                    // Phase 6 backfill: supervisors see expenses
+                    // logged during their shift but don't review
+                    // them (that's a Manager call).
+                    MerchantPermission::ExpensesView->value,
                     // Phase 7b: supervisors see today's sales
                     // numbers + recent activity. No export, no
                     // audit log -- those are Manager+ tools.
@@ -226,6 +234,8 @@ final class SeedMerchantRolesAction
                     MerchantPermission::CustomersView->value,
                     MerchantPermission::LoyaltyView->value,
                     MerchantPermission::DiscountsView->value,
+                    // Phase 6 backfill: read-only expense visibility.
+                    MerchantPermission::ExpensesView->value,
                     // Phase 7b: viewers see reports but can't
                     // export or read the audit log.
                     MerchantPermission::ReportsView->value,
@@ -262,6 +272,11 @@ final class SeedMerchantRolesAction
                     // ingredient costs, so both view + manage.
                     MerchantPermission::DiscountsView->value,
                     MerchantPermission::DiscountsManage->value,
+                    // Phase 6 backfill: supplier cash payments are
+                    // inventory-adjacent, so the specialist reviews
+                    // expenses too.
+                    MerchantPermission::ExpensesView->value,
+                    MerchantPermission::ExpensesManage->value,
                     // Phase 7b: inventory specialist runs the
                     // inventory-side reports (Loss/Waste,
                     // Consumption, Restock/Purchasing,

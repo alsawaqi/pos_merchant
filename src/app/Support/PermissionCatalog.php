@@ -256,6 +256,26 @@ final class PermissionCatalog
                 ],
             ],
             [
+                // Phase 6 backfill — Expenses (§5.10). POS-captured
+                // expenses the merchant reviews; manage is the
+                // tighter gate (it feeds net-profit).
+                'key' => 'expenses',
+                'label_en' => 'Expenses',
+                'label_ar' => 'المصروفات',
+                'permissions' => [
+                    [
+                        'key' => MerchantPermission::ExpensesView->value,
+                        'label_en' => 'See the expenses review queue + detail',
+                        'label_ar' => 'عرض قائمة مراجعة المصروفات والتفاصيل',
+                    ],
+                    [
+                        'key' => MerchantPermission::ExpensesManage->value,
+                        'label_en' => 'Log + approve + reject + annotate expenses',
+                        'label_ar' => 'تسجيل واعتماد ورفض وإضافة ملاحظات للمصروفات',
+                    ],
+                ],
+            ],
+            [
                 // Phase 7b — reports + audit log viewer. Export +
                 // audit log gates are tighter because exports
                 // can run 30s+ (queue protection) and the audit

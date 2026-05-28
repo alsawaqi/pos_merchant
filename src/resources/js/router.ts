@@ -5,6 +5,7 @@ import BranchesIndex from '@/Pages/Merchant/Branches/Index.vue';
 import CatalogueIndex from '@/Pages/Merchant/Catalogue/Index.vue';
 import CustomersIndex from '@/Pages/Merchant/Customers/Index.vue';
 import DiscountsIndex from '@/Pages/Merchant/Discounts/Index.vue';
+import ExpensesIndex from '@/Pages/Merchant/Expenses/Index.vue';
 import FloorPlanIndex from '@/Pages/Merchant/FloorPlan/Index.vue';
 import InventoryIndex from '@/Pages/Merchant/Inventory/Index.vue';
 import PortalUsersIndex from '@/Pages/Merchant/PortalUsers/Index.vue';
@@ -123,6 +124,15 @@ const routes: RouteRecordRaw[] = [
         path: '/discounts',
         name: 'merchant.discounts',
         component: DiscountsIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        // Expenses — Phase 6 backfill (§5.10). POS-captured
+        // expense review queue. Server enforces expenses.view;
+        // SPA hides the nav entry for users without it.
+        path: '/expenses',
+        name: 'merchant.expenses',
+        component: ExpensesIndex,
         meta: { requiresAuth: true },
     },
 
