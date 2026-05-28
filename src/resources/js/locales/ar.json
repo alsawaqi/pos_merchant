@@ -557,16 +557,26 @@
         "tabs": {
             "ingredients": "المكونات",
             "suppliers": "الموردون",
-            "stock": "مخزون الفرع",
-            "movements": "الحركات"
+            "stock": "مخزون الفروع",
+            "movements": "الحركات",
+            "waste": "الهدر",
+            "restock_requests": "طلبات التجديد"
         },
         "actions": {
-            "add_ingredient": "إضافة مكون",
-            "add_supplier": "إضافة مورد",
+            "add_ingredient": "إضافة مكوّن",
+            "add_supplier": "إضافة مورّد",
             "edit": "تعديل",
             "delete": "حذف",
-            "adjust": "تعديل الرصيد",
-            "restock": "تجديد"
+            "adjust": "تعديل المخزون",
+            "restock": "تجديد المخزون",
+            "record_waste": "تسجيل هدر",
+            "new_request": "طلب جديد",
+            "submit": "إرسال",
+            "approve": "موافقة",
+            "reject": "رفض",
+            "cancel_request": "إلغاء",
+            "allocate": "تخصيص",
+            "view": "عرض"
         },
         "table": {
             "name": "الاسم",
@@ -686,6 +696,139 @@
             "all_ingredients": "كل المكونات",
             "type": "تصفية حسب النوع",
             "all_types": "كل الأنواع"
+        },
+        "waste": {
+            "empty": "لا توجد سجلات هدر حتى الآن. استخدم \"تسجيل هدر\" لإضافة أول سجل.",
+            "no_branch": "اختر فرعًا من الأعلى لعرض سجلات الهدر.",
+            "reason": "السبب",
+            "qty": "الكمية",
+            "cost": "التكلفة",
+            "notes": "ملاحظات",
+            "occurred_at": "التاريخ",
+            "recorded_by": "سجّلها",
+            "filter_reason": "تصفية حسب السبب",
+            "filter_reason_all": "كل الأسباب",
+            "filter_ingredient": "تصفية حسب المكوّن",
+            "filter_ingredient_all": "كل المكوّنات",
+            "reasons": {
+                "expired": "منتهي الصلاحية",
+                "spoiled": "تالف",
+                "broken": "مكسور",
+                "dropped": "سقط",
+                "contamination": "تلوث",
+                "other": "أخرى"
+            },
+            "modal": {
+                "title": "تسجيل هدر في {branch}",
+                "ingredient": "المكوّن",
+                "ingredient_placeholder": "اختر مكوّنًا",
+                "quantity": "الكمية (موجبة)",
+                "reason": "السبب",
+                "notes": "ملاحظات",
+                "notes_help_other": "الملاحظات مطلوبة عندما يكون السبب \"أخرى\".",
+                "occurred_at": "متى حدث؟",
+                "occurred_at_help": "اتركها فارغة لاعتبارها الآن.",
+                "cost_preview": "التكلفة التقديرية",
+                "cost_preview_hint": "الكمية × سعر الوحدة الحالي — يثبّتها الخادم وقت التسجيل.",
+                "current_balance": "الرصيد الحالي للفرع",
+                "insufficient_warning": "المخزون غير كافٍ لاستيعاب هذا الهدر — عدّل المخزون أولًا.",
+                "submit": "تسجيل الهدر",
+                "submitting": "جارٍ التسجيل…",
+                "cancel": "إلغاء"
+            }
+        },
+        "restock": {
+            "empty": "لا توجد طلبات تجديد بعد. يمكن للفروع تقديم طلب من تبويب مخزون الفروع — أو إنشاء مسودة هنا.",
+            "filter_status": "تصفية حسب الحالة",
+            "filter_status_all": "كل الحالات",
+            "filter_branch": "تصفية حسب الفرع",
+            "filter_branch_all": "كل الفروع",
+            "branch": "الفرع",
+            "status": "الحالة",
+            "requested_by": "قدّم الطلب",
+            "lines": "البنود",
+            "requested": "المطلوب",
+            "allocated": "المخصص",
+            "cost": "تكلفة المخصص",
+            "created_at": "تاريخ الإنشاء",
+            "submitted_at": "تاريخ الإرسال",
+            "reviewed_at": "تاريخ المراجعة",
+            "fulfilled_at": "تاريخ الإنجاز",
+            "review_note": "ملاحظة المراجعة",
+            "note": "ملاحظة",
+            "statuses": {
+                "draft": "مسودة",
+                "submitted": "مُرسَل",
+                "approved": "موافَق عليه",
+                "fulfilled": "مُنجَز",
+                "rejected": "مرفوض",
+                "cancelled": "ملغى"
+            },
+            "show_modal": {
+                "title": "طلب تجديد — {branch}",
+                "lifecycle": "مراحل الطلب",
+                "lines_header": "البنود",
+                "ingredient": "المكوّن",
+                "requested": "المطلوب",
+                "allocated": "المخصص",
+                "line_note": "ملاحظة",
+                "close": "إغلاق"
+            },
+            "create_modal": {
+                "title_create": "طلب تجديد جديد",
+                "title_edit": "تعديل طلب التجديد",
+                "branch": "الفرع طالب التجديد",
+                "branch_placeholder": "اختر فرعًا",
+                "note": "ملاحظة للمقر (اختيارية)",
+                "note_placeholder": "مثال: لزحمة نهاية الأسبوع",
+                "lines_header": "البنود المطلوبة",
+                "add_line": "إضافة بند",
+                "remove_line": "حذف",
+                "ingredient": "المكوّن",
+                "ingredient_placeholder": "اختر مكوّنًا",
+                "quantity": "الكمية",
+                "line_note": "ملاحظة على البند (اختيارية)",
+                "duplicate_warning": "ظهر المكوّن أكثر من مرة — ادمجه في بند واحد.",
+                "no_lines": "أضف بندًا واحدًا على الأقل.",
+                "submit_create": "حفظ المسودة",
+                "submit_edit": "حفظ التعديلات",
+                "submitting": "جارٍ الحفظ…",
+                "cancel": "إلغاء"
+            },
+            "review_modal": {
+                "title_approve": "الموافقة على الطلب",
+                "title_reject": "رفض الطلب",
+                "approve_hint": "ملاحظة اختيارية (يراها مقدّم الطلب).",
+                "reject_hint": "سبب الرفض مطلوب — يحتاج مقدّم الطلب أن يعرف السبب.",
+                "note": "ملاحظة",
+                "submit_approve": "موافقة",
+                "submit_reject": "رفض",
+                "submitting": "جارٍ الحفظ…",
+                "cancel": "إلغاء"
+            },
+            "cancel_modal": {
+                "title": "إلغاء الطلب",
+                "hint": "سبب اختياري (يحفظ على الطلب للتدقيق).",
+                "note": "السبب",
+                "submit": "إلغاء الطلب",
+                "submitting": "جارٍ الإلغاء…",
+                "back": "رجوع"
+            },
+            "allocate_modal": {
+                "title": "تخصيص الطلب",
+                "hint": "افتراضيًا = إرسال الكمية المطلوبة كاملة لكل بند. عدّل البند لتخصيص جزئي، أو ضع 0 لتخطّيه.",
+                "ingredient": "المكوّن",
+                "requested": "المطلوب",
+                "allocated": "المخصص",
+                "submit": "تخصيص وإنجاز",
+                "submitting": "جارٍ التخصيص…",
+                "cancel": "إلغاء",
+                "over_warning": "لا يمكن تخصيص أكثر من المطلوب."
+            },
+            "row": {
+                "open": "فتح",
+                "no_lines": "لا توجد بنود"
+            }
         }
     }
 }

@@ -558,7 +558,9 @@
             "ingredients": "Ingredients",
             "suppliers": "Suppliers",
             "stock": "Branch Stock",
-            "movements": "Movements"
+            "movements": "Movements",
+            "waste": "Waste",
+            "restock_requests": "Restock Requests"
         },
         "actions": {
             "add_ingredient": "Add ingredient",
@@ -566,7 +568,15 @@
             "edit": "Edit",
             "delete": "Delete",
             "adjust": "Adjust",
-            "restock": "Restock"
+            "restock": "Restock",
+            "record_waste": "Record waste",
+            "new_request": "New request",
+            "submit": "Submit",
+            "approve": "Approve",
+            "reject": "Reject",
+            "cancel_request": "Cancel",
+            "allocate": "Allocate",
+            "view": "View"
         },
         "table": {
             "name": "Name",
@@ -686,6 +696,139 @@
             "all_ingredients": "All ingredients",
             "type": "Filter by type",
             "all_types": "All types"
+        },
+        "waste": {
+            "empty": "No waste recorded yet. Use Record waste to log the first event.",
+            "no_branch": "Pick a branch above to see its waste history.",
+            "reason": "Reason",
+            "qty": "Quantity",
+            "cost": "Cost",
+            "notes": "Notes",
+            "occurred_at": "When",
+            "recorded_by": "Recorded by",
+            "filter_reason": "Filter by reason",
+            "filter_reason_all": "All reasons",
+            "filter_ingredient": "Filter by ingredient",
+            "filter_ingredient_all": "All ingredients",
+            "reasons": {
+                "expired": "Expired",
+                "spoiled": "Spoiled",
+                "broken": "Broken",
+                "dropped": "Dropped",
+                "contamination": "Contamination",
+                "other": "Other"
+            },
+            "modal": {
+                "title": "Record waste at {branch}",
+                "ingredient": "Ingredient",
+                "ingredient_placeholder": "Select an ingredient",
+                "quantity": "Quantity (positive)",
+                "reason": "Reason",
+                "notes": "Notes",
+                "notes_help_other": "Notes are required when reason is Other.",
+                "occurred_at": "When did this happen?",
+                "occurred_at_help": "Leave blank to record as now.",
+                "cost_preview": "Estimated cost",
+                "cost_preview_hint": "Quantity × current unit cost — server freezes this at record time.",
+                "current_balance": "Current branch balance",
+                "insufficient_warning": "Not enough stock at this branch to absorb this waste — adjust first.",
+                "submit": "Record waste",
+                "submitting": "Recording…",
+                "cancel": "Cancel"
+            }
+        },
+        "restock": {
+            "empty": "No restock requests yet. Branches can submit one from the Branch Stock tab — or create a draft here.",
+            "filter_status": "Filter by status",
+            "filter_status_all": "All statuses",
+            "filter_branch": "Filter by branch",
+            "filter_branch_all": "All branches",
+            "branch": "Branch",
+            "status": "Status",
+            "requested_by": "Requested by",
+            "lines": "Lines",
+            "requested": "Requested",
+            "allocated": "Allocated",
+            "cost": "Allocated cost",
+            "created_at": "Created",
+            "submitted_at": "Submitted",
+            "reviewed_at": "Reviewed",
+            "fulfilled_at": "Fulfilled",
+            "review_note": "Review note",
+            "note": "Note",
+            "statuses": {
+                "draft": "Draft",
+                "submitted": "Submitted",
+                "approved": "Approved",
+                "fulfilled": "Fulfilled",
+                "rejected": "Rejected",
+                "cancelled": "Cancelled"
+            },
+            "show_modal": {
+                "title": "Restock request — {branch}",
+                "lifecycle": "Lifecycle",
+                "lines_header": "Items",
+                "ingredient": "Ingredient",
+                "requested": "Requested",
+                "allocated": "Allocated",
+                "line_note": "Note",
+                "close": "Close"
+            },
+            "create_modal": {
+                "title_create": "New restock request",
+                "title_edit": "Edit restock request",
+                "branch": "Requesting branch",
+                "branch_placeholder": "Select a branch",
+                "note": "Note for HQ (optional)",
+                "note_placeholder": "e.g. for the weekend rush",
+                "lines_header": "Items to request",
+                "add_line": "Add line",
+                "remove_line": "Remove",
+                "ingredient": "Ingredient",
+                "ingredient_placeholder": "Select an ingredient",
+                "quantity": "Quantity",
+                "line_note": "Per-line note (optional)",
+                "duplicate_warning": "An ingredient appears more than once — merge them into a single line.",
+                "no_lines": "Add at least one line.",
+                "submit_create": "Save draft",
+                "submit_edit": "Save changes",
+                "submitting": "Saving…",
+                "cancel": "Cancel"
+            },
+            "review_modal": {
+                "title_approve": "Approve request",
+                "title_reject": "Reject request",
+                "approve_hint": "Optional note (visible to the requester).",
+                "reject_hint": "A rejection reason is required — the requester needs to know why.",
+                "note": "Note",
+                "submit_approve": "Approve",
+                "submit_reject": "Reject",
+                "submitting": "Saving…",
+                "cancel": "Cancel"
+            },
+            "cancel_modal": {
+                "title": "Cancel request",
+                "hint": "Optional reason (stored on the request for audit).",
+                "note": "Reason",
+                "submit": "Cancel request",
+                "submitting": "Cancelling…",
+                "back": "Back"
+            },
+            "allocate_modal": {
+                "title": "Allocate request",
+                "hint": "Default = send the full requested amount of every line. Override per line for partial fulfillment, or set 0 to skip a line.",
+                "ingredient": "Ingredient",
+                "requested": "Requested",
+                "allocated": "Allocate",
+                "submit": "Allocate + fulfill",
+                "submitting": "Allocating…",
+                "cancel": "Cancel",
+                "over_warning": "Cannot allocate more than requested."
+            },
+            "row": {
+                "open": "Open",
+                "no_lines": "No lines"
+            }
         }
     }
 }

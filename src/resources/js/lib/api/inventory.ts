@@ -247,3 +247,290 @@ export function listStockMovements(
         `/api/branches/${branchUuid}/stock-movements${qs ? `?${qs}` : ''}`,
     );
 }
+
+// ============================================================
+// Phase 5c — Waste records + Restock-request workflow
+// ============================================================
+//
+// Both domains live under "inventory" — waste is a special
+// signed-negative movement with reason taxonomy; restock
+// requests are the branch→HQ replenishment workflow whose
+// fulfilment writes positive stock movements at the requesting
+// branch. Permissions live in lib/permissions.ts:
+//   - InventoryManage gates RecordWaste (same trust class as
+//     Adjustment — both mutate stock outside the sale path)
+//   - RestockRequestCreate gates create/update/submit/cancel
+//   - RestockRequestReview gates approve/reject/allocate
+
+export type WasteReason =
+    | 'expired'
+    | 'spoiled'
+    | 'broken'
+    | 'dropped'
+    | 'contamination'
+    | 'other';
+
+export type RestockRequestStatus =
+    | 'draft'
+    | 'submitted'
+    | 'approved'
+    | 'fulfilled'
+    | 'rejected'
+    | 'cancelled';
+
+// ---- Domain types -----------------------------------------------
+
+export interface WasteRecord {
+    id: number;
+    uuid: string;
+    branch_id: number;
+    ingredient_id: number;
+    /** Always POSITIVE — the matching stock movement is negative. */
+    quantity: string;
+    reason: WasteReason;
+    unit_at_set: IngredientUnit;
+    /** Frozen at the moment of recording. */
+    unit_cost_at_time: string;
+    /** Pre-computed per-event cost (quantity × unit_cost_at_time). */
+    total_cost: string;
+    notes: string | null;
+    occurred_at: string | null;
+    created_at: string | null;
+    ingredient?: {
+        id: number;
+        uuid: string;
+        name: string;
+        name_ar: string | null;
+        unit: IngredientUnit;
+    };
+    branch?: {
+        id: number;
+        uuid: string;
+        name: string;
+    };
+    recorded_by?: { id: number; name: string } | null;
+}
+
+export interface PaginatedWaste {
+    data: WasteRecord[];
+    meta: {
+        current_page: number;
+        last_page: number;
+        per_page: number;
+        total: number;
+    };
+}
+
+export interface RestockRequestLine {
+    id: number;
+    restock_request_id: number;
+    ingredient_id: number;
+    quantity_requested: string;
+    quantity_allocated: string;
+    unit_at_set: IngredientUnit;
+    note: string | null;
+    sort_order: number;
+    ingredient?: {
+        id: number;
+        uuid: string;
+        name: string;
+        name_ar: string | null;
+        unit: IngredientUnit;
+        default_unit_cost: string;
+    } | null;
+}
+
+export interface RestockRequest {
+    id: number;
+    uuid: string;
+    company_id: number;
+    branch_id: number;
+    status: RestockRequestStatus;
+    /** Derived from RestockRequestStatus->isTerminal() server-side. */
+    is_terminal: boolean;
+    submitted_at: string | null;
+    reviewed_at: string | null;
+    review_note: string | null;
+    fulfilled_at: string | null;
+    note: string | null;
+    created_at: string | null;
+    updated_at: string | null;
+    branch?: { id: number; uuid: string; name: string };
+    requested_by?: { id: number; name: string } | null;
+    reviewed_by?: { id: number; name: string } | null;
+    lines?: RestockRequestLine[];
+    totals?: {
+        line_count: number;
+        quantity_requested: string;
+        quantity_allocated: string;
+        allocated_cost: string;
+    };
+}
+
+// ---- Payloads ---------------------------------------------------
+
+export interface RecordWastePayload {
+    ingredient_uuid: string;
+    /** Positive only — server enforces. */
+    quantity: string | number;
+    reason: WasteReason;
+    notes?: string | null;
+    /** ISO8601; defaults to now when omitted. */
+    occurred_at?: string | null;
+}
+
+export interface RestockLinePayload {
+    ingredient_uuid: string;
+    quantity_requested: string | number;
+    note?: string | null;
+}
+
+export interface CreateRestockRequestPayload {
+    lines: RestockLinePayload[];
+    note?: string | null;
+}
+
+export interface UpdateRestockRequestPayload {
+    lines: RestockLinePayload[];
+    note?: string | null;
+}
+
+export interface ReviewRestockRequestPayload {
+    /** Required on reject (server enforces non-empty). */
+    note?: string | null;
+}
+
+export interface CancelRestockRequestPayload {
+    note?: string | null;
+}
+
+export interface AllocateRestockRequestPayload {
+    /**
+     * Optional per-line override, keyed by line.id. Omitting it
+     * means "send the full requested amount of every line".
+     * 0 is a legitimate value — skip that line.
+     */
+    allocations?: Record<number, string | number>;
+}
+
+// ---- Waste ------------------------------------------------------
+
+export function listWaste(
+    branchUuid: string,
+    filters?: {
+        ingredient?: string;
+        reason?: WasteReason;
+        from?: string;
+        to?: string;
+        page?: number;
+        per_page?: number;
+    },
+): Promise<PaginatedWaste> {
+    const params = new URLSearchParams();
+    if (filters?.ingredient) params.set('ingredient', filters.ingredient);
+    if (filters?.reason) params.set('reason', filters.reason);
+    if (filters?.from) params.set('from', filters.from);
+    if (filters?.to) params.set('to', filters.to);
+    if (filters?.page) params.set('page', String(filters.page));
+    if (filters?.per_page) params.set('per_page', String(filters.per_page));
+    const qs = params.toString();
+    return apiGet<PaginatedWaste>(
+        `/api/branches/${branchUuid}/waste${qs ? `?${qs}` : ''}`,
+    );
+}
+
+export function recordWaste(
+    branchUuid: string,
+    payload: RecordWastePayload,
+): Promise<{ data: WasteRecord }> {
+    return apiPost<{ data: WasteRecord }>(
+        `/api/branches/${branchUuid}/waste`,
+        payload as unknown as JsonValue,
+    );
+}
+
+// ---- Restock requests ------------------------------------------
+
+export function listRestockRequests(filters?: {
+    status?: RestockRequestStatus;
+    branch?: string;
+}): Promise<{ data: RestockRequest[] }> {
+    const params = new URLSearchParams();
+    if (filters?.status) params.set('status', filters.status);
+    if (filters?.branch) params.set('branch', filters.branch);
+    const qs = params.toString();
+    return apiGet<{ data: RestockRequest[] }>(
+        `/api/restock-requests${qs ? `?${qs}` : ''}`,
+    );
+}
+
+export function getRestockRequest(uuid: string): Promise<{ data: RestockRequest }> {
+    return apiGet<{ data: RestockRequest }>(`/api/restock-requests/${uuid}`);
+}
+
+export function createRestockRequest(
+    branchUuid: string,
+    payload: CreateRestockRequestPayload,
+): Promise<{ data: RestockRequest }> {
+    return apiPost<{ data: RestockRequest }>(
+        `/api/branches/${branchUuid}/restock-requests`,
+        payload as unknown as JsonValue,
+    );
+}
+
+export function updateRestockRequest(
+    uuid: string,
+    payload: UpdateRestockRequestPayload,
+): Promise<{ data: RestockRequest }> {
+    return apiPatch<{ data: RestockRequest }>(
+        `/api/restock-requests/${uuid}`,
+        payload as unknown as JsonValue,
+    );
+}
+
+export function submitRestockRequest(uuid: string): Promise<{ data: RestockRequest }> {
+    return apiPost<{ data: RestockRequest }>(
+        `/api/restock-requests/${uuid}/submit`,
+        {} as JsonValue,
+    );
+}
+
+export function approveRestockRequest(
+    uuid: string,
+    payload: ReviewRestockRequestPayload = {},
+): Promise<{ data: RestockRequest }> {
+    return apiPost<{ data: RestockRequest }>(
+        `/api/restock-requests/${uuid}/approve`,
+        payload as unknown as JsonValue,
+    );
+}
+
+export function rejectRestockRequest(
+    uuid: string,
+    payload: ReviewRestockRequestPayload,
+): Promise<{ data: RestockRequest }> {
+    return apiPost<{ data: RestockRequest }>(
+        `/api/restock-requests/${uuid}/reject`,
+        payload as unknown as JsonValue,
+    );
+}
+
+export function cancelRestockRequest(
+    uuid: string,
+    payload: CancelRestockRequestPayload = {},
+): Promise<{ data: RestockRequest }> {
+    return apiPost<{ data: RestockRequest }>(
+        `/api/restock-requests/${uuid}/cancel`,
+        payload as unknown as JsonValue,
+    );
+}
+
+export function allocateRestockRequest(
+    uuid: string,
+    payload: AllocateRestockRequestPayload = {},
+): Promise<{ data: RestockRequest }> {
+    return apiPost<{ data: RestockRequest }>(
+        `/api/restock-requests/${uuid}/allocate`,
+        payload as unknown as JsonValue,
+    );
+}
