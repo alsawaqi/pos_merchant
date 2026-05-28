@@ -426,7 +426,8 @@
         "tabs": {
             "categories": "Categories",
             "products": "Products",
-            "addons": "Add-ons"
+            "addons": "Add-ons",
+            "providers": "Delivery providers"
         },
         "filter": {
             "category": "Filter by category",
@@ -926,6 +927,48 @@
             "point_adjust_failed": "Could not adjust point balance.",
             "wallet_topup_failed": "Could not top up wallet.",
             "wallet_adjust_failed": "Could not adjust wallet balance."
+        }
+    },
+    "delivery_providers": {
+        "subtitle": "Manage the third-party aggregators your branches deliver through. Per-product prices live on each product (see the Provider Pricing section in the product modal).",
+        "empty_state": "No providers yet. Add Talabat, Otlob, or any aggregator you use.",
+        "table": {
+            "name": "Name",
+            "prices_count": "Products priced",
+            "status": "Status",
+            "actions": "Actions"
+        },
+        "statuses": {
+            "active": "Active",
+            "inactive": "Inactive"
+        },
+        "fields": {
+            "name": "Provider name",
+            "color": "Chip color",
+            "color_hint": "Used by the POS picker to distinguish providers at a glance.",
+            "sort_order": "Sort order",
+            "is_active": "Active (visible in the POS picker)"
+        },
+        "actions": {
+            "add": "Add provider",
+            "edit": "Edit",
+            "delete": "Delete"
+        },
+        "modal": {
+            "create_title": "Add a delivery provider",
+            "edit_title": "Edit delivery provider"
+        },
+        "delete": {
+            "title": "Delete provider?",
+            "confirm": "Soft-delete {name}? Per-product price overrides stay in place for historical orders, and the provider can be restored from the audit log."
+        },
+        "product_grid": {
+            "title": "Provider pricing",
+            "hint": "Set a per-provider override. Empty = fall back to the product's delivery price, then to the base price."
+        },
+        "errors": {
+            "save_failed": "Could not save the provider.",
+            "prices_load_failed": "Could not load this product's provider prices."
         }
     }
 }

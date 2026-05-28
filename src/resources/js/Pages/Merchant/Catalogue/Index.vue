@@ -48,6 +48,17 @@ import {
     type RecipeLinePayload,
 } from '@/lib/api/catalogue';
 import { listIngredients, type Ingredient } from '@/lib/api/inventory';
+import {
+    createDeliveryProvider,
+    deleteDeliveryProvider,
+    listDeliveryProviders,
+    listProductDeliveryPrices,
+    removeProductDeliveryPrice,
+    setProductDeliveryPrice,
+    updateDeliveryProvider,
+    type DeliveryProvider,
+    type ProductDeliveryPrice,
+} from '@/lib/api/deliveryProviders';
 import { MerchantPermission } from '@/lib/permissions';
 
 const { t, locale } = useI18n();
@@ -56,7 +67,7 @@ const { can } = usePermissions();
 const isArabic = computed(() => locale.value === 'ar');
 const canManage = computed(() => can(MerchantPermission.CatalogueManage));
 
-type TabKey = 'categories' | 'products' | 'addons';
+type TabKey = 'categories' | 'products' | 'addons' | 'providers';
 const activeTab = ref<TabKey>('categories');
 
 // ---- Data --------------------------------------------------------
@@ -71,6 +82,11 @@ const addOnGroups = ref<AddOnGroup[]>([]);
 // inventory.view get an empty list and a disabled recipe
 // editor (which the UI explains via a hint).
 const ingredients = ref<Ingredient[]>([]);
+// Phase 6c — delivery providers used by the Providers tab AND
+// the per-product price grid in the product modal. We always
+// fetch them so the product modal can render its price grid
+// against the active list, not a stale snapshot.
+const deliveryProviders = ref<DeliveryProvider[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
 
@@ -258,10 +274,25 @@ async function fetchAddOnGroups(): Promise<void> {
     }
 }
 
+async function fetchDeliveryProviders(): Promise<void> {
+    try {
+        const response = await listDeliveryProviders();
+        deliveryProviders.value = response.data;
+    } catch (err) {
+        error.value = err instanceof Error ? err.message : 'Failed to load delivery providers';
+    }
+}
+
 async function fetchAll(): Promise<void> {
     loading.value = true;
     error.value = null;
-    await Promise.all([fetchCategories(), fetchProducts(), fetchAddOnGroups(), fetchIngredients()]);
+    await Promise.all([
+        fetchCategories(),
+        fetchProducts(),
+        fetchAddOnGroups(),
+        fetchIngredients(),
+        fetchDeliveryProviders(),
+    ]);
     loading.value = false;
 }
 
@@ -371,6 +402,8 @@ function openCreateProduct(): void {
     prodModalErrors.value = {};
     prodModalError.value = null;
     prodModalOpen.value = true;
+    // Phase 6c — clear the provider-price grid for the create flow.
+    void loadProductProviderPrices(null);
 }
 
 function openEditProduct(product: Product): void {
@@ -403,6 +436,8 @@ function openEditProduct(product: Product): void {
     prodModalErrors.value = {};
     prodModalError.value = null;
     prodModalOpen.value = true;
+    // Phase 6c — load existing provider prices for the grid.
+    void loadProductProviderPrices(product.uuid);
 }
 
 // ===================== Phase 5b — Recipe helpers =====================
@@ -528,6 +563,12 @@ async function submitProduct(): Promise<void> {
                 quantity: l.quantity,
             }));
         await updateProductRecipe(productUuid, { lines: cleanLines });
+
+        // Step 4 (Phase 6c): sync per-provider price overrides.
+        // Iterates the touched provider prices and fires
+        // PUT (set) or DELETE (remove) per changed row. Same
+        // idempotent semantics on the server.
+        await syncProductProviderPrices(productUuid);
 
         prodModalOpen.value = false;
         await fetchProducts();
@@ -734,6 +775,158 @@ function statusLabel(status: string | null): string {
     if (!status) return '—';
     return t(`catalogue.statuses.${status}`);
 }
+
+// =================== Phase 6c — Delivery providers tab ===================
+
+// ---- Provider modal --------------------------------------------
+const providerModalOpen = ref(false);
+const providerModalMode = ref<'create' | 'edit'>('create');
+const providerModalBusy = ref(false);
+const providerModalError = ref<string | null>(null);
+const providerModalTarget = ref<DeliveryProvider | null>(null);
+const providerForm = reactive<{ name: string; color: string; is_active: boolean; sort_order: number }>({
+    name: '',
+    color: '',
+    is_active: true,
+    sort_order: 0,
+});
+
+function openCreateProvider(): void {
+    providerModalMode.value = 'create';
+    providerModalTarget.value = null;
+    providerForm.name = '';
+    providerForm.color = '';
+    providerForm.is_active = true;
+    providerForm.sort_order = (deliveryProviders.value.length + 1) * 10;
+    providerModalError.value = null;
+    providerModalOpen.value = true;
+}
+
+function openEditProvider(p: DeliveryProvider): void {
+    providerModalMode.value = 'edit';
+    providerModalTarget.value = p;
+    providerForm.name = p.name;
+    providerForm.color = p.color ?? '';
+    providerForm.is_active = p.is_active;
+    providerForm.sort_order = p.sort_order;
+    providerModalError.value = null;
+    providerModalOpen.value = true;
+}
+
+async function submitProvider(): Promise<void> {
+    providerModalBusy.value = true;
+    providerModalError.value = null;
+    const payload = {
+        name: providerForm.name,
+        color: providerForm.color || null,
+        is_active: providerForm.is_active,
+        sort_order: providerForm.sort_order,
+    };
+    try {
+        if (providerModalMode.value === 'create') {
+            const response = await createDeliveryProvider(payload);
+            deliveryProviders.value = [...deliveryProviders.value, response.data]
+                .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+        } else if (providerModalTarget.value) {
+            const response = await updateDeliveryProvider(providerModalTarget.value.uuid, payload);
+            const idx = deliveryProviders.value.findIndex((p) => p.uuid === response.data.uuid);
+            if (idx >= 0) deliveryProviders.value[idx] = response.data;
+        }
+        providerModalOpen.value = false;
+    } catch (err) {
+        if (err instanceof ApiError) {
+            const p = err.payload as { message?: string } | null;
+            providerModalError.value = p?.message ?? t('delivery_providers.errors.save_failed');
+        } else {
+            providerModalError.value = t('delivery_providers.errors.save_failed');
+        }
+    } finally {
+        providerModalBusy.value = false;
+    }
+}
+
+// ---- Provider delete ----------------------------------------
+const providerToDelete = ref<DeliveryProvider | null>(null);
+const providerDeleteBusy = ref(false);
+
+async function performProviderDelete(): Promise<void> {
+    if (!providerToDelete.value) return;
+    providerDeleteBusy.value = true;
+    try {
+        await deleteDeliveryProvider(providerToDelete.value.uuid);
+        deliveryProviders.value = deliveryProviders.value.filter(
+            (p) => p.uuid !== providerToDelete.value!.uuid,
+        );
+        providerToDelete.value = null;
+    } catch {
+        // best-effort UI; the server's 422 (none defined yet)
+        // would surface here. Keep the modal open for retry.
+    } finally {
+        providerDeleteBusy.value = false;
+    }
+}
+
+// =================== Phase 6c — Product provider-price grid ===================
+
+// Map of provider_uuid -> string price input. Populated when
+// the product modal opens (from product.delivery_provider_prices
+// if loaded, else fetched). Empty string = "no override" (will
+// fall back to delivery_price or base_price at POS time).
+const productProviderPrices = ref<Record<string, string>>({});
+const productProviderPricesLoading = ref(false);
+const productProviderPricesError = ref<string | null>(null);
+const productProviderPricesTouched = ref<Record<string, boolean>>({});
+
+async function loadProductProviderPrices(productUuid: string | null): Promise<void> {
+    productProviderPrices.value = {};
+    productProviderPricesTouched.value = {};
+    productProviderPricesError.value = null;
+    if (productUuid === null) return; // create flow — no prices yet
+    productProviderPricesLoading.value = true;
+    try {
+        const response = await listProductDeliveryPrices(productUuid);
+        for (const row of response.data) {
+            const providerUuid = row.delivery_provider?.uuid;
+            if (providerUuid) {
+                productProviderPrices.value[providerUuid] = row.price;
+            }
+        }
+    } catch (err) {
+        productProviderPricesError.value = err instanceof Error
+            ? err.message
+            : t('delivery_providers.errors.prices_load_failed');
+    } finally {
+        productProviderPricesLoading.value = false;
+    }
+}
+
+function markProviderPriceTouched(providerUuid: string): void {
+    productProviderPricesTouched.value[providerUuid] = true;
+}
+
+/**
+ * After the product update PATCH succeeds, fire one round-trip
+ * per TOUCHED provider price. The Action layer's idempotent
+ * skip avoids no-op writes server-side; we still skip them
+ * here to reduce network chatter.
+ */
+async function syncProductProviderPrices(productUuid: string): Promise<void> {
+    for (const provider of deliveryProviders.value) {
+        if (!productProviderPricesTouched.value[provider.uuid]) continue;
+        const value = (productProviderPrices.value[provider.uuid] ?? '').trim();
+        try {
+            if (value === '') {
+                await removeProductDeliveryPrice(productUuid, provider.uuid);
+            } else {
+                await setProductDeliveryPrice(productUuid, provider.uuid, { price: value });
+            }
+        } catch {
+            // Don't fail the parent flow on a single price
+            // sync error -- the modal will still close. The
+            // merchant can retry the specific row.
+        }
+    }
+}
 </script>
 
 <template>
@@ -785,6 +978,16 @@ function statusLabel(status: string | null): string {
                     <Sparkles class="size-4" />
                     {{ t('catalogue.tabs.addons') }}
                     <span class="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">{{ addOnGroups.length }}</span>
+                </button>
+                <button
+                    type="button"
+                    class="flex-1 inline-flex items-center justify-center gap-2 rounded px-3 py-2 text-sm font-semibold transition"
+                    :class="activeTab === 'providers' ? 'bg-slate-950 text-white shadow' : 'text-slate-700 hover:bg-slate-50'"
+                    @click="activeTab = 'providers'"
+                >
+                    <Truck class="size-4" />
+                    {{ t('catalogue.tabs.providers') }}
+                    <span class="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">{{ deliveryProviders.length }}</span>
                 </button>
             </div>
 
@@ -1064,7 +1267,128 @@ function statusLabel(status: string | null): string {
                     </article>
                 </div>
             </section>
+
+            <!-- =============== Phase 6c — PROVIDERS TAB =============== -->
+            <section v-if="activeTab === 'providers'" class="space-y-4">
+                <div class="flex items-center justify-between">
+                    <p class="text-sm text-slate-600">{{ t('delivery_providers.subtitle') }}</p>
+                    <button
+                        v-if="canManage"
+                        type="button"
+                        class="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-700"
+                        @click="openCreateProvider"
+                    >
+                        <Plus class="size-4" />
+                        {{ t('delivery_providers.actions.add') }}
+                    </button>
+                </div>
+
+                <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <div v-if="deliveryProviders.length === 0" class="flex flex-col items-center gap-3 p-12 text-center text-slate-500">
+                        <Truck class="size-10 text-slate-300" />
+                        <p class="text-sm font-semibold">{{ t('delivery_providers.empty_state') }}</p>
+                    </div>
+                    <table v-else class="min-w-full divide-y divide-slate-200">
+                        <thead class="bg-slate-50">
+                            <tr>
+                                <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('delivery_providers.table.name') }}</th>
+                                <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('delivery_providers.table.prices_count') }}</th>
+                                <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('delivery_providers.table.status') }}</th>
+                                <th class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('delivery_providers.table.actions') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 bg-white">
+                            <tr v-for="p in deliveryProviders" :key="p.id" class="transition hover:bg-slate-50">
+                                <td class="px-5 py-4">
+                                    <span class="inline-flex items-center gap-2">
+                                        <span v-if="p.color" class="inline-block size-3 rounded-full border border-slate-200" :style="{ backgroundColor: p.color }"></span>
+                                        <span class="text-sm font-semibold text-slate-950">{{ p.name }}</span>
+                                    </span>
+                                </td>
+                                <td class="px-5 py-4 text-sm text-slate-600">{{ p.prices_count ?? 0 }}</td>
+                                <td class="px-5 py-4">
+                                    <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold" :class="p.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'">
+                                        {{ p.is_active ? t('delivery_providers.statuses.active') : t('delivery_providers.statuses.inactive') }}
+                                    </span>
+                                </td>
+                                <td class="px-5 py-4 text-end">
+                                    <div class="inline-flex items-center gap-2">
+                                        <button v-if="canManage" type="button" class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="openEditProvider(p)">
+                                            <Pencil class="size-3.5" />
+                                            {{ t('delivery_providers.actions.edit') }}
+                                        </button>
+                                        <button v-if="canManage" type="button" class="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50" @click="providerToDelete = p">
+                                            <Trash2 class="size-3.5" />
+                                            {{ t('delivery_providers.actions.delete') }}
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
         </section>
+
+        <!-- =============== Phase 6c — PROVIDER CREATE/EDIT MODAL =============== -->
+        <div v-if="providerModalOpen" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
+            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
+                <div class="border-b border-slate-200 px-6 py-5">
+                    <h2 class="text-lg font-semibold text-slate-950">
+                        {{ providerModalMode === 'create' ? t('delivery_providers.modal.create_title') : t('delivery_providers.modal.edit_title') }}
+                    </h2>
+                </div>
+                <form class="space-y-4 p-6" @submit.prevent="submitProvider">
+                    <div v-if="providerModalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                        {{ providerModalError }}
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700">{{ t('delivery_providers.fields.name') }}</label>
+                        <input v-model="providerForm.name" type="text" required class="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700">{{ t('delivery_providers.fields.color') }}</label>
+                        <div class="mt-1 flex items-center gap-2">
+                            <input v-model="providerForm.color" type="text" placeholder="#FF6B00" maxlength="7" class="block w-32 rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                            <input v-model="providerForm.color" type="color" class="size-9 cursor-pointer rounded border border-slate-200">
+                        </div>
+                        <p class="mt-1 text-xs text-slate-500">{{ t('delivery_providers.fields.color_hint') }}</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700">{{ t('delivery_providers.fields.sort_order') }}</label>
+                        <input v-model.number="providerForm.sort_order" type="number" min="0" max="65535" class="mt-1 block w-32 rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                    </div>
+                    <label class="flex items-center gap-2">
+                        <input v-model="providerForm.is_active" type="checkbox" class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500">
+                        <span class="text-sm font-medium text-slate-700">{{ t('delivery_providers.fields.is_active') }}</span>
+                    </label>
+                    <div class="flex justify-end gap-2 border-t border-slate-200 pt-4">
+                        <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="providerModalOpen = false">{{ t('common.cancel') }}</button>
+                        <button type="submit" :disabled="providerModalBusy" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 disabled:opacity-50">
+                            {{ providerModalBusy ? t('common.saving') : t('common.save') }}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- =============== Phase 6c — PROVIDER DELETE CONFIRM =============== -->
+        <div v-if="providerToDelete" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
+            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
+                <div class="border-b border-slate-200 px-6 py-5">
+                    <h2 class="text-lg font-semibold text-slate-950">{{ t('delivery_providers.delete.title') }}</h2>
+                </div>
+                <div class="p-6 space-y-4">
+                    <p class="text-sm text-slate-600">{{ t('delivery_providers.delete.confirm', { name: providerToDelete.name }) }}</p>
+                    <div class="flex justify-end gap-2">
+                        <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="providerToDelete = null">{{ t('common.cancel') }}</button>
+                        <button type="button" :disabled="providerDeleteBusy" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-700 disabled:opacity-50" @click="performProviderDelete">
+                            {{ providerDeleteBusy ? t('common.deleting') : t('delivery_providers.actions.delete') }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- =============== CATEGORY MODAL =============== -->
         <div v-if="catModalOpen" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
@@ -1345,6 +1669,38 @@ function statusLabel(status: string | null): string {
                                 </div>
                             </div>
                         </template>
+                    </fieldset>
+
+                    <!-- Phase 6c — Provider pricing section -->
+                    <fieldset v-if="deliveryProviders.length > 0" class="rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+                        <legend class="px-2 text-sm font-semibold text-slate-700 inline-flex items-center gap-2">
+                            <Truck class="size-4 text-teal-700" />
+                            {{ t('delivery_providers.product_grid.title') }}
+                        </legend>
+                        <p class="text-xs text-slate-500">
+                            {{ t('delivery_providers.product_grid.hint') }}
+                        </p>
+                        <div v-if="productProviderPricesError" class="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+                            {{ productProviderPricesError }}
+                        </div>
+                        <div v-if="productProviderPricesLoading" class="text-xs text-slate-500">{{ t('common.loading') }}</div>
+                        <div v-else class="grid gap-2 sm:grid-cols-2">
+                            <div v-for="provider in deliveryProviders.filter((p) => p.is_active)" :key="provider.id" class="rounded-lg border border-slate-200 bg-white px-3 py-2 flex items-center gap-3">
+                                <span class="inline-flex items-center gap-2 min-w-[7rem] text-sm font-medium text-slate-700">
+                                    <span v-if="provider.color" class="inline-block size-3 rounded-full border border-slate-200" :style="{ backgroundColor: provider.color }"></span>
+                                    {{ provider.name }}
+                                </span>
+                                <input
+                                    :value="productProviderPrices[provider.uuid] ?? ''"
+                                    type="text"
+                                    inputmode="decimal"
+                                    :placeholder="prodForm.delivery_price || prodForm.base_price || '0.000'"
+                                    class="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-mono shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                                    :disabled="!canManage"
+                                    @input="(e) => { productProviderPrices[provider.uuid] = (e.target as HTMLInputElement).value; markProviderPriceTouched(provider.uuid); }"
+                                >
+                            </div>
+                        </div>
                     </fieldset>
 
                     <div class="flex justify-end gap-2 pt-2">
