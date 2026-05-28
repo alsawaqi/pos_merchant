@@ -55,6 +55,11 @@ export const MerchantPermission = {
     // auth pipeline; those writes don't pass through this gate.
     CustomersView: 'customers.view',
     CustomersManage: 'customers.manage',
+    // Phase 6b — loyalty + wallet. Manage is a tighter gate
+    // than customers.manage (it moves money / earned points).
+    // View matches the customers.view audience for reporting.
+    LoyaltyView: 'loyalty.view',
+    LoyaltyManage: 'loyalty.manage',
 } as const;
 
 export type MerchantPermissionValue =

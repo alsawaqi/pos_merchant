@@ -106,6 +106,15 @@ enum MerchantPermission: string
     case CustomersView = 'customers.view';
     case CustomersManage = 'customers.manage';
 
+    // Phase 6b — loyalty + wallet. Loyalty is money-adjacent
+    // (points convert to OMR off the bill via the config; the
+    // wallet IS OMR), so manage is deliberately tighter than
+    // customers.manage. View is generous so reporting roles can
+    // see balances at a glance; manage is the actual lever for
+    // changing balances + editing the earn/redemption rates.
+    case LoyaltyView = 'loyalty.view';
+    case LoyaltyManage = 'loyalty.manage';
+
     /**
      * @return list<string>
      */

@@ -215,6 +215,27 @@ final class PermissionCatalog
                 ],
             ],
             [
+                // Phase 6b — loyalty + wallet. Its own block
+                // because manage is a tighter gate than
+                // customers.manage (it moves money / earned
+                // points, not just contact details).
+                'key' => 'loyalty',
+                'label_en' => 'Loyalty & Wallet',
+                'label_ar' => 'الولاء والمحفظة',
+                'permissions' => [
+                    [
+                        'key' => MerchantPermission::LoyaltyView->value,
+                        'label_en' => 'See point + wallet balances + ledger history',
+                        'label_ar' => 'عرض رصيد النقاط والمحفظة وسجل الحركات',
+                    ],
+                    [
+                        'key' => MerchantPermission::LoyaltyManage->value,
+                        'label_en' => 'Configure earn / redemption rates + manually adjust balances + top up wallets',
+                        'label_ar' => 'تعديل معدلات الكسب والاسترداد وتسوية الأرصدة وشحن المحافظ',
+                    ],
+                ],
+            ],
+            [
                 'key' => 'roles',
                 'label_en' => 'Roles & Permissions',
                 'label_ar' => 'الأدوار والصلاحيات',

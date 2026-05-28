@@ -167,6 +167,10 @@ final class SeedMerchantRolesAction
                     // Phase 6a: managers own the customer book.
                     MerchantPermission::CustomersView->value,
                     MerchantPermission::CustomersManage->value,
+                    // Phase 6b: managers configure loyalty rates
+                    // + grant manual point/wallet adjustments.
+                    MerchantPermission::LoyaltyView->value,
+                    MerchantPermission::LoyaltyManage->value,
                 ],
             ],
 
@@ -188,11 +192,14 @@ final class SeedMerchantRolesAction
                     // POS terminal handles in-flight create on
                     // its own (Phase 7+).
                     MerchantPermission::CustomersView->value,
+                    // Phase 6b: supervisors see balances during
+                    // a shift but don't move money around.
+                    MerchantPermission::LoyaltyView->value,
                 ],
             ],
 
             MerchantRole::Viewer->value => [
-                'description' => 'Read-only — see staff, branch list, floor plan, menu, inventory, and customers. No write access.',
+                'description' => 'Read-only — see staff, branch list, floor plan, menu, inventory, customers, and loyalty balances. No write access.',
                 'permissions' => [
                     MerchantPermission::PosStaffView->value,
                     MerchantPermission::BranchesView->value,
@@ -201,6 +208,7 @@ final class SeedMerchantRolesAction
                     MerchantPermission::CatalogueView->value,
                     MerchantPermission::InventoryView->value,
                     MerchantPermission::CustomersView->value,
+                    MerchantPermission::LoyaltyView->value,
                 ],
             ],
 
@@ -226,6 +234,9 @@ final class SeedMerchantRolesAction
                     // one. They get View so they can correlate a
                     // request with the customer who triggered it.
                     MerchantPermission::CustomersView->value,
+                    // Phase 6b: same logic — see balances for
+                    // context, but don't adjust them.
+                    MerchantPermission::LoyaltyView->value,
                 ],
             ],
         ];
