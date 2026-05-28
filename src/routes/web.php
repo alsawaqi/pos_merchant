@@ -13,6 +13,7 @@ use App\Http\Controllers\Pos\CategoriesController;
 use App\Http\Controllers\Pos\CustomersController;
 use App\Http\Controllers\Pos\FloorsController;
 use App\Http\Controllers\Pos\IngredientsController;
+use App\Http\Controllers\Pos\LoyaltyController;
 use App\Http\Controllers\Pos\PosStaffController;
 use App\Http\Controllers\Pos\ProductsController;
 use App\Http\Controllers\Pos\RestockRequestsController;
@@ -329,6 +330,33 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('customers.plates.attach');
         Route::delete('customer-plates/{plate:uuid}', [CustomersController::class, 'detachPlate'])
             ->name('customers.plates.detach');
+
+        // -------- Phase 6b — Loyalty + wallet --
+        // The merchant-side gates:
+        //   loyalty.view   GET endpoints
+        //   loyalty.manage every write (config edit + balance
+        //                   adjust + wallet top-up)
+        //
+        // The Phase 7+ POS terminal will write to the ledgers
+        // via a different surface (device-auth + the sale
+        // pipeline), not these routes.
+        Route::get('loyalty/config', [LoyaltyController::class, 'showConfig'])
+            ->name('loyalty.config.show');
+        Route::patch('loyalty/config', [LoyaltyController::class, 'upsertConfig'])
+            ->name('loyalty.config.upsert');
+
+        Route::get('customers/{customer:uuid}/loyalty', [LoyaltyController::class, 'showCustomer'])
+            ->name('loyalty.customer.show');
+        Route::post('customers/{customer:uuid}/points/adjust', [LoyaltyController::class, 'adjustPoints'])
+            ->name('loyalty.points.adjust');
+        Route::post('customers/{customer:uuid}/wallet/topup', [LoyaltyController::class, 'topUpWallet'])
+            ->name('loyalty.wallet.topup');
+        Route::post('customers/{customer:uuid}/wallet/adjust', [LoyaltyController::class, 'adjustWallet'])
+            ->name('loyalty.wallet.adjust');
+        Route::get('customers/{customer:uuid}/points/ledger', [LoyaltyController::class, 'pointLedger'])
+            ->name('loyalty.points.ledger');
+        Route::get('customers/{customer:uuid}/wallet/ledger', [LoyaltyController::class, 'walletLedger'])
+            ->name('loyalty.wallet.ledger');
 
         // -------- Phase 4.6 — POS Staff (merchant's PIN-authed workforce) --
         // {posStaff} is bound by uuid (PosStaff::getRouteKeyName).
