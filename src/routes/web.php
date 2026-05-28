@@ -380,11 +380,21 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // on first call, updates on subsequent. The two-uuid
         // URL captures both tenancy checks (product + provider
         // ownership) before the Action runs.
+        //
+        // withoutScopedBindings() opts out of Laravel's nested-
+        // resource scoping: with two parameter bindings in one
+        // route, Laravel by default tries to resolve the second
+        // (provider) via $product->providers() — a relation we
+        // deliberately don't define. The controller does its
+        // own cross-tenant + cross-ownership checks against the
+        // independently resolved models.
         Route::get('products/{product:uuid}/delivery-prices', [DeliveryProvidersController::class, 'listPrices'])
             ->name('products.delivery-prices.index');
         Route::put('products/{product:uuid}/delivery-prices/{provider:uuid}', [DeliveryProvidersController::class, 'setPrice'])
+            ->withoutScopedBindings()
             ->name('products.delivery-prices.set');
         Route::delete('products/{product:uuid}/delivery-prices/{provider:uuid}', [DeliveryProvidersController::class, 'removePrice'])
+            ->withoutScopedBindings()
             ->name('products.delivery-prices.remove');
 
         // -------- Phase 4.6 — POS Staff (merchant's PIN-authed workforce) --
