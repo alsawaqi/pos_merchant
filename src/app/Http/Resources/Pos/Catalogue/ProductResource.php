@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Resources\Pos\Catalogue;
 
+use App\Http\Resources\Pos\DeliveryProviders\ProductDeliveryPriceResource;
 use App\Models\Product;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -78,6 +79,11 @@ class ProductResource extends JsonResource
             'has_recipe' => $this->hasRecipe(),
             'theoretical_cost' => $this->theoreticalCost(),
             'recipe_lines' => ProductRecipeResource::collection($this->whenLoaded('recipeLines')),
+            // Phase 6c — per-provider price overrides inlined
+            // when the controller eager-loaded `deliveryPrices`
+            // + the provider relation. Product edit modal uses
+            // this to pre-populate the provider-price grid.
+            'delivery_provider_prices' => ProductDeliveryPriceResource::collection($this->whenLoaded('deliveryPrices')),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

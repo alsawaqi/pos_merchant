@@ -11,6 +11,7 @@ use App\Http\Controllers\Pos\AddOnsController;
 use App\Http\Controllers\Pos\BranchesController as PosBranchesController;
 use App\Http\Controllers\Pos\CategoriesController;
 use App\Http\Controllers\Pos\CustomersController;
+use App\Http\Controllers\Pos\DeliveryProvidersController;
 use App\Http\Controllers\Pos\FloorsController;
 use App\Http\Controllers\Pos\IngredientsController;
 use App\Http\Controllers\Pos\LoyaltyController;
@@ -357,6 +358,34 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('loyalty.points.ledger');
         Route::get('customers/{customer:uuid}/wallet/ledger', [LoyaltyController::class, 'walletLedger'])
             ->name('loyalty.wallet.ledger');
+
+        // -------- Phase 6c — Delivery providers + per-product prices --
+        // Per-merchant 3rd-party delivery aggregators (Talabat,
+        // Otlob, etc.) with per-product price overrides.
+        // Gated under the existing CatalogueView / CatalogueManage
+        // -- setting provider prices IS product pricing.
+        //
+        // Price-resolution chain at POS time (Phase 8+):
+        //   override -> products.delivery_price -> products.base_price
+        Route::get('delivery-providers', [DeliveryProvidersController::class, 'index'])
+            ->name('delivery-providers.index');
+        Route::post('delivery-providers', [DeliveryProvidersController::class, 'store'])
+            ->name('delivery-providers.store');
+        Route::patch('delivery-providers/{provider:uuid}', [DeliveryProvidersController::class, 'update'])
+            ->name('delivery-providers.update');
+        Route::delete('delivery-providers/{provider:uuid}', [DeliveryProvidersController::class, 'destroy'])
+            ->name('delivery-providers.destroy');
+
+        // Per-product price overrides. PUT is upsert: creates
+        // on first call, updates on subsequent. The two-uuid
+        // URL captures both tenancy checks (product + provider
+        // ownership) before the Action runs.
+        Route::get('products/{product:uuid}/delivery-prices', [DeliveryProvidersController::class, 'listPrices'])
+            ->name('products.delivery-prices.index');
+        Route::put('products/{product:uuid}/delivery-prices/{provider:uuid}', [DeliveryProvidersController::class, 'setPrice'])
+            ->name('products.delivery-prices.set');
+        Route::delete('products/{product:uuid}/delivery-prices/{provider:uuid}', [DeliveryProvidersController::class, 'removePrice'])
+            ->name('products.delivery-prices.remove');
 
         // -------- Phase 4.6 — POS Staff (merchant's PIN-authed workforce) --
         // {posStaff} is bound by uuid (PosStaff::getRouteKeyName).
