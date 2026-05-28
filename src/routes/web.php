@@ -14,9 +14,11 @@ use App\Http\Controllers\Pos\FloorsController;
 use App\Http\Controllers\Pos\IngredientsController;
 use App\Http\Controllers\Pos\PosStaffController;
 use App\Http\Controllers\Pos\ProductsController;
+use App\Http\Controllers\Pos\RestockRequestsController;
 use App\Http\Controllers\Pos\RolesController;
 use App\Http\Controllers\Pos\StockController;
 use App\Http\Controllers\Pos\SuppliersController;
+use App\Http\Controllers\Pos\WasteController;
 use App\Http\Controllers\Pos\TablesController;
 use App\Http\Controllers\SpaController;
 use App\Http\Middleware\EnsureMerchantSessionIsFresh;
@@ -255,6 +257,47 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('stock.restock');
         Route::get('branches/{branch:uuid}/stock-movements', [StockController::class, 'movements'])
             ->name('stock.movements');
+
+        // -------- Phase 5c — Waste records --
+        // Branch-scoped. List paginated + filterable by
+        // ingredient / reason / occurred_at range. Store writes
+        // the WasteRecord + signed-negative stock_movement
+        // atomically (via WriteStockMovementAction inside
+        // RecordWasteAction).
+        Route::get('branches/{branch:uuid}/waste', [WasteController::class, 'index'])
+            ->name('waste.index');
+        Route::post('branches/{branch:uuid}/waste', [WasteController::class, 'store'])
+            ->name('waste.store');
+
+        // -------- Phase 5c — Restock request workflow --
+        // Most routes are NOT branch-nested because HQ reviewers
+        // see + act on requests from every branch through a
+        // single inbox. Creation IS branch-nested because the
+        // requesting branch is the meaningful parent. UUID-bound
+        // for stable URLs across status transitions.
+        //
+        // create + update + submit + cancel gate on
+        // RestockRequestCreate (the requester side).
+        // approve + reject + allocate gate on
+        // RestockRequestReview (the HQ side).
+        Route::get('restock-requests', [RestockRequestsController::class, 'index'])
+            ->name('restock-requests.index');
+        Route::get('restock-requests/{restockRequest:uuid}', [RestockRequestsController::class, 'show'])
+            ->name('restock-requests.show');
+        Route::post('branches/{branch:uuid}/restock-requests', [RestockRequestsController::class, 'store'])
+            ->name('restock-requests.store');
+        Route::patch('restock-requests/{restockRequest:uuid}', [RestockRequestsController::class, 'update'])
+            ->name('restock-requests.update');
+        Route::post('restock-requests/{restockRequest:uuid}/submit', [RestockRequestsController::class, 'submit'])
+            ->name('restock-requests.submit');
+        Route::post('restock-requests/{restockRequest:uuid}/approve', [RestockRequestsController::class, 'approve'])
+            ->name('restock-requests.approve');
+        Route::post('restock-requests/{restockRequest:uuid}/reject', [RestockRequestsController::class, 'reject'])
+            ->name('restock-requests.reject');
+        Route::post('restock-requests/{restockRequest:uuid}/cancel', [RestockRequestsController::class, 'cancel'])
+            ->name('restock-requests.cancel');
+        Route::post('restock-requests/{restockRequest:uuid}/allocate', [RestockRequestsController::class, 'allocate'])
+            ->name('restock-requests.allocate');
 
         // -------- Phase 4.6 — POS Staff (merchant's PIN-authed workforce) --
         // {posStaff} is bound by uuid (PosStaff::getRouteKeyName).
