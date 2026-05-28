@@ -6,8 +6,11 @@ namespace App\Http\Controllers\Pos;
 
 use App\Actions\Pos\Reports\CustomerReportAction;
 use App\Actions\Pos\Reports\DiscountReportAction;
+use App\Actions\Pos\Reports\InventoryConsumptionReportAction;
+use App\Actions\Pos\Reports\LossWasteReportAction;
 use App\Actions\Pos\Reports\ProductPerformanceReportAction;
 use App\Actions\Pos\Reports\RecipeCostReportAction;
+use App\Actions\Pos\Reports\RestockPurchasingReportAction;
 use App\Actions\Pos\Reports\SalesReportAction;
 use App\Actions\Pos\Reports\StaffActivityReportAction;
 use App\Data\Reports\ReportFilter;
@@ -41,6 +44,9 @@ class ReportsController extends Controller
         private readonly ProductPerformanceReportAction $productPerformanceReport,
         private readonly RecipeCostReportAction $recipeCostReport,
         private readonly StaffActivityReportAction $staffActivityReport,
+        private readonly InventoryConsumptionReportAction $inventoryConsumptionReport,
+        private readonly LossWasteReportAction $lossWasteReport,
+        private readonly RestockPurchasingReportAction $restockPurchasingReport,
     ) {}
 
     public function sales(ReportFilterRequest $request): JsonResponse
@@ -99,6 +105,36 @@ class ReportsController extends Controller
 
         $filter = ReportFilter::fromArray($request->validated());
         $payload = $this->staffActivityReport->handle($filter);
+
+        return response()->json(['data' => $payload]);
+    }
+
+    public function inventoryConsumption(ReportFilterRequest $request): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::ReportsView);
+
+        $filter = ReportFilter::fromArray($request->validated());
+        $payload = $this->inventoryConsumptionReport->handle($filter);
+
+        return response()->json(['data' => $payload]);
+    }
+
+    public function lossWaste(ReportFilterRequest $request): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::ReportsView);
+
+        $filter = ReportFilter::fromArray($request->validated());
+        $payload = $this->lossWasteReport->handle($filter);
+
+        return response()->json(['data' => $payload]);
+    }
+
+    public function restockPurchasing(ReportFilterRequest $request): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::ReportsView);
+
+        $filter = ReportFilter::fromArray($request->validated());
+        $payload = $this->restockPurchasingReport->handle($filter);
 
         return response()->json(['data' => $payload]);
     }
