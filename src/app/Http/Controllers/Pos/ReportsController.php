@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Pos;
 
+use App\Actions\Pos\Reports\CustomerReportAction;
+use App\Actions\Pos\Reports\DiscountReportAction;
 use App\Actions\Pos\Reports\SalesReportAction;
 use App\Data\Reports\ReportFilter;
 use App\Enums\MerchantPermission;
@@ -31,6 +33,8 @@ class ReportsController extends Controller
 {
     public function __construct(
         private readonly SalesReportAction $salesReport,
+        private readonly CustomerReportAction $customerReport,
+        private readonly DiscountReportAction $discountReport,
     ) {}
 
     public function sales(ReportFilterRequest $request): JsonResponse
@@ -39,6 +43,26 @@ class ReportsController extends Controller
 
         $filter = ReportFilter::fromArray($request->validated());
         $payload = $this->salesReport->handle($filter);
+
+        return response()->json(['data' => $payload]);
+    }
+
+    public function customers(ReportFilterRequest $request): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::ReportsView);
+
+        $filter = ReportFilter::fromArray($request->validated());
+        $payload = $this->customerReport->handle($filter);
+
+        return response()->json(['data' => $payload]);
+    }
+
+    public function discounts(ReportFilterRequest $request): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::ReportsView);
+
+        $filter = ReportFilter::fromArray($request->validated());
+        $payload = $this->discountReport->handle($filter);
 
         return response()->json(['data' => $payload]);
     }

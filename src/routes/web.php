@@ -388,6 +388,10 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // ReportsController. Permission gate: reports.view.
         Route::get('reports/sales', [ReportsController::class, 'sales'])
             ->name('reports.sales');
+        Route::get('reports/customers', [ReportsController::class, 'customers'])
+            ->name('reports.customers');
+        Route::get('reports/discounts', [ReportsController::class, 'discounts'])
+            ->name('reports.discounts');
 
         // -------- Phase 6c — Delivery providers + per-product prices --
         // Per-merchant 3rd-party delivery aggregators (Talabat,
