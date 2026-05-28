@@ -556,6 +556,10 @@ return new class extends Migration
             $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
             $table->string('name');
             $table->string('phone', 32);
+            // Phase 6b -- denormalised running balances kept in
+            // lock-step with SUM(point_ledger) + SUM(wallet_ledger).
+            $table->integer('points_balance')->default(0);
+            $table->decimal('wallet_balance', 12, 3)->default(0);
             $table->timestamps();
             $table->softDeletes();
             $table->unique(['company_id', 'phone'], 'pos_customers_company_phone_unique');
@@ -572,6 +576,54 @@ return new class extends Migration
             $table->string('plate_number', 32);
             $table->timestamps();
             $table->unique(['company_id', 'plate_number'], 'pos_customer_vehicle_plates_company_plate_unique');
+        });
+
+        // ---- pos_customer_loyalty_configs + point_ledger + wallet_ledger (Phase 6b) ---
+        // Per-company loyalty config (singleton). Two append-only
+        // ledgers (points + wallet) with balance_after columns so
+        // a history view doesn't re-sum prior entries per row, and
+        // ledger-balance drift is caught instantly.
+        Schema::create('pos_customer_loyalty_configs', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('company_id')->unique()->constrained('pos_companies')->cascadeOnDelete();
+            $table->unsignedInteger('points_per_omr')->default(0);
+            $table->unsignedInteger('baisas_per_point')->default(10);
+            $table->boolean('is_active')->default(false);
+            $table->timestamps();
+        });
+
+        Schema::create('pos_customer_point_ledger', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('customer_id')->constrained('pos_customers')->cascadeOnDelete();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->string('entry_type', 32);
+            // SIGNED integer points.
+            $table->integer('points_delta');
+            $table->integer('balance_after');
+            $table->text('reason')->nullable();
+            $table->string('reference_type')->nullable();
+            $table->unsignedBigInteger('reference_id')->nullable();
+            $table->foreignId('recorded_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->timestamp('occurred_at')->useCurrent();
+            $table->timestamp('created_at')->useCurrent();
+        });
+
+        Schema::create('pos_customer_wallet_ledger', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('customer_id')->constrained('pos_customers')->cascadeOnDelete();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->string('entry_type', 32);
+            // SIGNED OMR decimal:3.
+            $table->decimal('amount_delta', 12, 3);
+            $table->decimal('balance_after', 12, 3);
+            $table->text('reason')->nullable();
+            $table->string('reference_type')->nullable();
+            $table->unsignedBigInteger('reference_id')->nullable();
+            $table->foreignId('recorded_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->timestamp('occurred_at')->useCurrent();
+            $table->timestamp('created_at')->useCurrent();
         });
 
         // ---- Sessions (used by some auth integration tests) -------
