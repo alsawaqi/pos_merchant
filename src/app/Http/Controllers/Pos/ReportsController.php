@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Pos;
 
+use App\Actions\Pos\Reports\AuditLogReportAction;
 use App\Actions\Pos\Reports\CustomerReportAction;
 use App\Actions\Pos\Reports\DiscountReportAction;
 use App\Actions\Pos\Reports\InventoryConsumptionReportAction;
@@ -11,11 +12,13 @@ use App\Actions\Pos\Reports\LossWasteReportAction;
 use App\Actions\Pos\Reports\ProductPerformanceReportAction;
 use App\Actions\Pos\Reports\RecipeCostReportAction;
 use App\Actions\Pos\Reports\RestockPurchasingReportAction;
+use App\Actions\Pos\Reports\RoundUpDonationReportAction;
 use App\Actions\Pos\Reports\SalesReportAction;
 use App\Actions\Pos\Reports\StaffActivityReportAction;
 use App\Data\Reports\ReportFilter;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Pos\Reports\AuditLogFilterRequest;
 use App\Http\Requests\Pos\Reports\ReportFilterRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -47,6 +50,8 @@ class ReportsController extends Controller
         private readonly InventoryConsumptionReportAction $inventoryConsumptionReport,
         private readonly LossWasteReportAction $lossWasteReport,
         private readonly RestockPurchasingReportAction $restockPurchasingReport,
+        private readonly RoundUpDonationReportAction $roundUpDonationReport,
+        private readonly AuditLogReportAction $auditLogReport,
     ) {}
 
     public function sales(ReportFilterRequest $request): JsonResponse
@@ -135,6 +140,37 @@ class ReportsController extends Controller
 
         $filter = ReportFilter::fromArray($request->validated());
         $payload = $this->restockPurchasingReport->handle($filter);
+
+        return response()->json(['data' => $payload]);
+    }
+
+    public function roundUpDonation(ReportFilterRequest $request): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::ReportsView);
+
+        $filter = ReportFilter::fromArray($request->validated());
+        $payload = $this->roundUpDonationReport->handle($filter);
+
+        return response()->json(['data' => $payload]);
+    }
+
+    /**
+     * Audit Log viewer (blueprint §5.12). Gated under the
+     * AuditLogView permission (NOT ReportsView) so merchants
+     * can grant reporting broadly while keeping the audit log
+     * restricted to managers.
+     */
+    public function auditLog(AuditLogFilterRequest $request): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::AuditLogView);
+
+        $filter = ReportFilter::fromArray($request->validated());
+        $payload = $this->auditLogReport->handle($filter, [
+            'event' => $request->input('event'),
+            'actor_id' => $request->input('actor_id'),
+            'page' => (int) $request->input('page', 1),
+            'per_page' => (int) $request->input('per_page', 50),
+        ]);
 
         return response()->json(['data' => $payload]);
     }

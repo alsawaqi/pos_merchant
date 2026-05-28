@@ -404,6 +404,12 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('reports.loss-waste');
         Route::get('reports/restock-purchasing', [ReportsController::class, 'restockPurchasing'])
             ->name('reports.restock-purchasing');
+        Route::get('reports/round-up-donation', [ReportsController::class, 'roundUpDonation'])
+            ->name('reports.round-up-donation');
+        // Audit log viewer (§5.12). Gated under audit_log.view
+        // rather than reports.view -- see controller note.
+        Route::get('reports/audit-log', [ReportsController::class, 'auditLog'])
+            ->name('reports.audit-log');
 
         // -------- Phase 6c — Delivery providers + per-product prices --
         // Per-merchant 3rd-party delivery aggregators (Talabat,
