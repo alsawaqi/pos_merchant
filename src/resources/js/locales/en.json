@@ -30,6 +30,8 @@
         "inventory": "Inventory",
         "customers": "Customers",
         "discounts": "Discounts",
+        "reports": "Reports",
+        "audit_log": "Audit Log",
         "portal_users": "Portal Users",
         "pos_staff": "POS Staff",
         "roles": "Roles & Permissions",
@@ -1050,5 +1052,179 @@
         "errors": {
             "save_failed": "Could not save the discount."
         }
+    },
+    "reports": {
+        "section_label": "Phase 7b",
+        "title": "Reports",
+        "subtitle": "Tenant reports across sales, customers, inventory, staff, and more. Filter by date window and (optionally) branch.",
+        "filters": {
+            "date_from": "From",
+            "date_to": "To",
+            "branch_all": "All branches",
+            "branch_label": "Branch",
+            "run": "Run report",
+            "running": "Running…"
+        },
+        "errors": {
+            "fetch_failed": "Could not load the report."
+        },
+        "shared": {
+            "window": "Window",
+            "headline": "Headline",
+            "by_branch": "By branch",
+            "branch": "Branch",
+            "value": "Value",
+            "cost": "Cost",
+            "qty": "Qty",
+            "event_count": "Events",
+            "no_data": "No data in this window."
+        },
+        "landing": {
+            "tile": {
+                "sales": { "title": "Sales", "desc": "Gross + net + discounts + tax + refunds by hour, weekday, payment, type, branch." },
+                "customers": { "title": "Customers", "desc": "Top customers, new vs returning, loyalty points issued + redeemed + liability." },
+                "discounts": { "title": "Discounts", "desc": "Total discount value, share of gross, by branch (rule + staff land in Phase 8)." },
+                "product_performance": { "title": "Product Performance", "desc": "Top sellers by revenue + qty, slow movers, top add-ons." },
+                "recipe_cost": { "title": "Recipe & Cost", "desc": "Per-product theoretical cost, profit, margin (trend lands in Phase 8)." },
+                "staff_activity": { "title": "Staff Activity", "desc": "Per-staff orders paid, revenue, avg ticket, voids, discounts, hours logged." },
+                "inventory_consumption": { "title": "Inventory Consumption", "desc": "Per-ingredient consumed in window, days of stock, low-stock flag." },
+                "loss_waste": { "title": "Loss / Waste", "desc": "Total waste value, by branch, by reason, top wasted ingredients." },
+                "restock_purchasing": { "title": "Restock / Purchasing", "desc": "Restock spend by supplier, by branch, top purchased ingredients." },
+                "round_up_donation": { "title": "Round-Up Donations", "desc": "Total raised, by charity, by branch (lands in Phase 9 — currently zeroed)." }
+            }
+        },
+        "sales": {
+            "page_title": "Sales Report",
+            "headline_labels": {
+                "gross_sales": "Gross sales",
+                "net_sales": "Net sales",
+                "discounts": "Discounts",
+                "tax": "Tax",
+                "refunds": "Refunds",
+                "order_count": "Orders",
+                "average_ticket": "Avg ticket"
+            },
+            "by_hour": "By hour",
+            "by_weekday": "By weekday",
+            "by_payment_method": "By payment method",
+            "by_order_type": "By order type"
+        },
+        "customers": {
+            "page_title": "Customer Report",
+            "top_customers": "Top customers (by spend)",
+            "cohort": "Cohort",
+            "new_count": "New customers",
+            "returning_count": "Returning customers",
+            "loyalty": "Loyalty",
+            "points_issued": "Points issued",
+            "points_redeemed": "Points redeemed",
+            "net_change": "Net change",
+            "outstanding_liability": "Outstanding liability (today)"
+        },
+        "discounts": {
+            "page_title": "Discount Report",
+            "headline_labels": {
+                "total_discount": "Total discount",
+                "gross_sales": "Gross sales",
+                "discount_pct": "Discount % of gross",
+                "order_count": "Orders",
+                "discounted_orders": "Discounted orders"
+            },
+            "by_rule": "By rule",
+            "by_staff": "By staff"
+        },
+        "product_performance": {
+            "page_title": "Product Performance Report",
+            "top_by_revenue": "Top by revenue",
+            "top_by_qty": "Top by quantity",
+            "slow_movers": "Slow movers",
+            "top_addons": "Top add-ons"
+        },
+        "recipe_cost": {
+            "page_title": "Recipe & Cost Report",
+            "columns": {
+                "product": "Product",
+                "base_price": "Base price",
+                "theoretical_cost": "Theoretical cost",
+                "profit_per_unit": "Profit / unit",
+                "margin_pct": "Margin %",
+                "lines": "Recipe lines"
+            }
+        },
+        "staff_activity": {
+            "page_title": "Staff Activity Report",
+            "columns": {
+                "staff": "Staff",
+                "orders_paid": "Orders paid",
+                "revenue": "Revenue",
+                "avg_ticket": "Avg ticket",
+                "voids": "Voids",
+                "discounts": "Discounts",
+                "hours_logged": "Hours"
+            }
+        },
+        "inventory_consumption": {
+            "page_title": "Inventory Consumption Report",
+            "columns": {
+                "ingredient": "Ingredient",
+                "unit": "Unit",
+                "consumed": "Consumed",
+                "balance": "Current balance",
+                "per_day": "Per day",
+                "days_of_stock": "Days of stock",
+                "below_min": "Low"
+            }
+        },
+        "loss_waste": {
+            "page_title": "Loss / Waste Report",
+            "headline_labels": {
+                "total_value": "Total value",
+                "total_qty": "Total qty",
+                "event_count": "Events"
+            },
+            "by_reason": "By reason",
+            "top_wasted": "Top wasted ingredients"
+        },
+        "restock_purchasing": {
+            "page_title": "Restock / Purchasing Report",
+            "headline_labels": {
+                "total_cost": "Total cost",
+                "total_qty": "Total qty",
+                "event_count": "Events"
+            },
+            "by_supplier": "By supplier",
+            "top_purchased": "Top purchased ingredients"
+        },
+        "round_up_donation": {
+            "page_title": "Round-Up Donation Report",
+            "stub_banner": "Round-Up donations land with Phase 9. This report renders zeroed values today and will start filling in once the donation infrastructure ships.",
+            "headline_labels": {
+                "total_raised": "Total raised",
+                "donation_count": "Donations",
+                "opt_in_rate_pct": "Opt-in rate %"
+            },
+            "by_charity": "By charity"
+        }
+    },
+    "audit_log": {
+        "section_label": "Phase 7b",
+        "title": "Audit Log",
+        "subtitle": "Every audit-able action by your team, with actor, target, and before/after snapshots. Restricted to roles with the audit_log.view permission.",
+        "filters": {
+            "event": "Event",
+            "event_placeholder": "e.g. discount.created",
+            "actor": "Actor user ID",
+            "per_page": "Per page"
+        },
+        "columns": {
+            "time": "Time",
+            "event": "Event",
+            "actor": "Actor",
+            "branch": "Branch",
+            "target": "Target",
+            "ip": "IP"
+        },
+        "no_rows": "No audit events match the current filters.",
+        "load_failed": "Could not load the audit log."
     }
 }

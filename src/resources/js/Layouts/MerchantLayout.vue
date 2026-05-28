@@ -17,7 +17,7 @@
 import { computed, onMounted, ref, type Component } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { RouterLink } from 'vue-router';
-import { BadgeCheck, Book, Boxes, Building2, ChevronDown, Contact, Gauge, Globe, KeyRound, LayoutGrid, LogOut, Menu, Tags, Users, X } from 'lucide-vue-next';
+import { BadgeCheck, Book, Boxes, Building2, ChevronDown, Contact, Gauge, Globe, KeyRound, LayoutGrid, LineChart, LogOut, Menu, ShieldAlert, Tags, Users, X } from 'lucide-vue-next';
 import { authState } from '@/stores/auth';
 import { setLocale, type SupportedLocale } from '@/lib/i18n';
 import { usePermissions } from '@/composables/usePermissions';
@@ -53,6 +53,8 @@ const navigationCatalog: readonly NavItem[] = [
     { key: 'inventory', to: '/inventory', icon: Boxes, permission: MerchantPermission.InventoryView },
     { key: 'customers', to: '/customers', icon: Contact, permission: MerchantPermission.CustomersView },
     { key: 'discounts', to: '/discounts', icon: Tags, permission: MerchantPermission.DiscountsView },
+    { key: 'reports', to: '/reports', icon: LineChart, permission: MerchantPermission.ReportsView },
+    { key: 'audit_log', to: '/audit-log', icon: ShieldAlert, permission: MerchantPermission.AuditLogView },
     { key: 'portal_users', to: '/portal-users', icon: Users, permission: MerchantPermission.PortalUsersView },
     { key: 'pos_staff', to: '/pos-staff', icon: BadgeCheck, permission: MerchantPermission.PosStaffView },
     { key: 'roles', to: '/roles', icon: KeyRound, permission: MerchantPermission.RolesView },

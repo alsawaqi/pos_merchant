@@ -10,6 +10,18 @@ import InventoryIndex from '@/Pages/Merchant/Inventory/Index.vue';
 import PortalUsersIndex from '@/Pages/Merchant/PortalUsers/Index.vue';
 import PosStaffIndex from '@/Pages/Merchant/PosStaff/Index.vue';
 import RolesIndex from '@/Pages/Merchant/Roles/Index.vue';
+import ReportsIndex from '@/Pages/Merchant/Reports/Index.vue';
+import ReportsSales from '@/Pages/Merchant/Reports/Sales.vue';
+import ReportsCustomers from '@/Pages/Merchant/Reports/Customers.vue';
+import ReportsDiscounts from '@/Pages/Merchant/Reports/Discounts.vue';
+import ReportsProductPerformance from '@/Pages/Merchant/Reports/ProductPerformance.vue';
+import ReportsRecipeCost from '@/Pages/Merchant/Reports/RecipeCost.vue';
+import ReportsStaffActivity from '@/Pages/Merchant/Reports/StaffActivity.vue';
+import ReportsInventoryConsumption from '@/Pages/Merchant/Reports/InventoryConsumption.vue';
+import ReportsLossWaste from '@/Pages/Merchant/Reports/LossWaste.vue';
+import ReportsRestockPurchasing from '@/Pages/Merchant/Reports/RestockPurchasing.vue';
+import ReportsRoundUpDonation from '@/Pages/Merchant/Reports/RoundUpDonation.vue';
+import AuditLogIndex from '@/Pages/Merchant/AuditLog/Index.vue';
 import { authState, ensureAuthLoaded, resetAuthBootPromise } from '@/stores/auth';
 
 declare module 'vue-router' {
@@ -113,6 +125,29 @@ const routes: RouteRecordRaw[] = [
         component: DiscountsIndex,
         meta: { requiresAuth: true },
     },
+
+    // -------- Phase 7b-6 — Reports landing + per-report pages --
+    // The landing page lists every blueprint report (§5.11.1–10)
+    // as a tile; each tile routes to a dedicated /reports/<key>
+    // page. Server-side reports.view gates every fetch; the SPA
+    // hides the sidebar entry too.
+    { path: '/reports', name: 'merchant.reports', component: ReportsIndex, meta: { requiresAuth: true } },
+    { path: '/reports/sales', name: 'merchant.reports.sales', component: ReportsSales, meta: { requiresAuth: true } },
+    { path: '/reports/customers', name: 'merchant.reports.customers', component: ReportsCustomers, meta: { requiresAuth: true } },
+    { path: '/reports/discounts', name: 'merchant.reports.discounts', component: ReportsDiscounts, meta: { requiresAuth: true } },
+    { path: '/reports/product-performance', name: 'merchant.reports.product-performance', component: ReportsProductPerformance, meta: { requiresAuth: true } },
+    { path: '/reports/recipe-cost', name: 'merchant.reports.recipe-cost', component: ReportsRecipeCost, meta: { requiresAuth: true } },
+    { path: '/reports/staff-activity', name: 'merchant.reports.staff-activity', component: ReportsStaffActivity, meta: { requiresAuth: true } },
+    { path: '/reports/inventory-consumption', name: 'merchant.reports.inventory-consumption', component: ReportsInventoryConsumption, meta: { requiresAuth: true } },
+    { path: '/reports/loss-waste', name: 'merchant.reports.loss-waste', component: ReportsLossWaste, meta: { requiresAuth: true } },
+    { path: '/reports/restock-purchasing', name: 'merchant.reports.restock-purchasing', component: ReportsRestockPurchasing, meta: { requiresAuth: true } },
+    { path: '/reports/round-up-donation', name: 'merchant.reports.round-up-donation', component: ReportsRoundUpDonation, meta: { requiresAuth: true } },
+
+    // Audit log viewer (§5.12). Server-side audit_log.view gates
+    // this; the sidebar entry is independently gated on the same
+    // permission.
+    { path: '/audit-log', name: 'merchant.audit-log', component: AuditLogIndex, meta: { requiresAuth: true } },
+
     {
         // Catch-all → bounce to the dashboard (server-side guard
         // handles the auth check). Mirrors pos_admin's pattern.
