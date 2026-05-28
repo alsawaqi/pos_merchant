@@ -25,6 +25,8 @@ use App\Models\Company;
 use App\Models\Ingredient;
 use App\Models\Product;
 use App\Models\ProductRecipe;
+use App\Models\RestockRequest;
+use App\Models\RestockRequestLine;
 use App\Models\StockMovement;
 use App\Models\Supplier;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -208,6 +210,70 @@ it('refuses to delete an ingredient that is referenced by a product recipe', fun
 
     // Ingredient still alive — the recipe line still references it.
     expect(Ingredient::query()->find($ingredient->id))->not->toBeNull();
+});
+
+// Phase 5c — open restock requests block deletion the same
+// way recipe references do. The merchant must cancel or fulfil
+// the requests first so a soft-deleted ingredient can't leave
+// a flight-in-progress allocation pointing at a ghost. Terminal-
+// state requests (fulfilled / rejected / cancelled) are
+// historical and OK to retain a stale reference — the line
+// snapshot preserves the data and the UI tolerates a missing
+// ingredient relation.
+it('refuses to delete an ingredient referenced by an open restock request', function (): void {
+    $ctx = makeMerchantActor();
+    $ingredient = Ingredient::factory()->for($ctx['company'], 'company')->create();
+
+    // Test each open state — a Draft / Submitted / Approved
+    // request with a line on this ingredient must each block
+    // deletion individually.
+    foreach (['draft', 'submitted', 'approved'] as $status) {
+        $factory = RestockRequest::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch');
+        $req = match ($status) {
+            'draft' => $factory->create(),
+            'submitted' => $factory->submitted()->create(),
+            'approved' => $factory->approved()->create(),
+        };
+        RestockRequestLine::factory()->for($req, 'request')->for($ingredient, 'ingredient')->create();
+
+        $response = $this->deleteJson("/api/ingredients/{$ingredient->uuid}")
+            ->assertStatus(422);
+        expect($response->json('message'))->toContain('restock request');
+
+        // Ingredient still alive (the action threw before the
+        // soft-delete touched the row).
+        expect(Ingredient::query()->find($ingredient->id))->not->toBeNull();
+
+        // Clean up for the next iteration so each status starts
+        // from a known state with no lingering open lines.
+        $req->lines()->delete();
+        $req->delete();
+    }
+});
+
+it('allows deletion when only terminal-state restock requests reference the ingredient', function (): void {
+    $ctx = makeMerchantActor();
+    $ingredient = Ingredient::factory()->for($ctx['company'], 'company')->create();
+
+    // Three terminal-state requests, each with a line on this
+    // ingredient. None of them should block the deletion — the
+    // snapshot preserves enough data for a historical view to
+    // render correctly even after the ingredient is gone.
+    $fulfilled = RestockRequest::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->fulfilled()->create();
+    RestockRequestLine::factory()->for($fulfilled, 'request')->for($ingredient, 'ingredient')->create();
+    $rejected = RestockRequest::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->rejected()->create();
+    RestockRequestLine::factory()->for($rejected, 'request')->for($ingredient, 'ingredient')->create();
+    $cancelled = RestockRequest::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->cancelled()->create();
+    RestockRequestLine::factory()->for($cancelled, 'request')->for($ingredient, 'ingredient')->create();
+
+    $ingredientId = $ingredient->id;
+    $this->deleteJson("/api/ingredients/{$ingredient->uuid}")->assertNoContent();
+
+    // Soft-deleted (gone from default query but withTrashed
+    // finds it). The terminal-state lines still point at it
+    // — that's by design.
+    expect(Ingredient::query()->find($ingredientId))->toBeNull();
+    expect(Ingredient::withTrashed()->find($ingredientId))->not->toBeNull();
 });
 
 // =================== PERMISSION GATES ===================
