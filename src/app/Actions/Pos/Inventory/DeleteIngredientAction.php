@@ -6,9 +6,11 @@ namespace App\Actions\Pos\Inventory;
 
 use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
+use App\Enums\RestockRequestStatus;
 use App\Models\BranchStock;
 use App\Models\Ingredient;
 use App\Models\ProductRecipe;
+use App\Models\RestockRequestLine;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
@@ -17,7 +19,7 @@ use RuntimeException;
 /**
  * Phase 5a — soft-delete an ingredient.
  *
- * Two guards before any write:
+ * Three guards before any write:
  *
  *   1. Refuses if ANY branch still holds non-zero stock of
  *      this ingredient — the merchant must first adjust the
@@ -30,6 +32,15 @@ use RuntimeException;
  *      first. Soft-deleting mid-recipe would break the Phase
  *      8 sale-consumption pipeline (the snapshot still writes
  *      but the live deduction would silently fail).
+ *
+ *   3. Phase 5c: refuses if any non-terminal restock request
+ *      (draft / submitted / approved) has a line for this
+ *      ingredient. The merchant must cancel or fulfil those
+ *      requests first. Terminal-state requests
+ *      (fulfilled / rejected / cancelled) are historical and
+ *      OK to retain a stale reference (the line snapshot
+ *      preserves ingredient_id but the UI rendering tolerates
+ *      a missing ingredient relation).
  *
  * Soft delete keeps historical stock_movements + recipe
  * version snapshots resolvable via withTrashed().
@@ -70,6 +81,29 @@ final readonly class DeleteIngredientAction
             throw new RuntimeException(sprintf(
                 'Cannot delete ingredient — %d product recipe(s) still reference it. Edit those recipes first.',
                 $recipeCount,
+            ));
+        }
+
+        // Phase 5c — active-restock-request guard. Lines on
+        // requests still in flight (draft / submitted / approved)
+        // would lose their meaning if the ingredient vanished;
+        // Fulfilled / Rejected / Cancelled requests are
+        // historical and are fine to keep referencing a deleted
+        // ingredient (the snapshot lines preserve the data).
+        $openRequestLineCount = RestockRequestLine::query()
+            ->where('ingredient_id', $ingredient->id)
+            ->whereHas('request', static function ($q): void {
+                $q->whereIn('status', [
+                    RestockRequestStatus::Draft->value,
+                    RestockRequestStatus::Submitted->value,
+                    RestockRequestStatus::Approved->value,
+                ]);
+            })
+            ->count();
+        if ($openRequestLineCount > 0) {
+            throw new RuntimeException(sprintf(
+                'Cannot delete ingredient — %d open restock request(s) still reference it. Cancel or fulfil those first.',
+                $openRequestLineCount,
             ));
         }
 
