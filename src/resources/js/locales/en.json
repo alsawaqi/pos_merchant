@@ -39,7 +39,11 @@
         "language_english": "English",
         "language_arabic": "العربية",
         "loading": "Loading…",
-        "cancel": "Cancel"
+        "cancel": "Cancel",
+        "save": "Save",
+        "saving": "Saving…",
+        "deleting": "Deleting…",
+        "close": "Close"
     },
     "dashboard": {
         "title": "Welcome",
@@ -878,6 +882,50 @@
             "attach_failed": "Could not attach the plate.",
             "detach_failed": "Could not detach the plate.",
             "delete_failed": "Could not delete the customer."
+        }
+    },
+    "loyalty": {
+        "table": {
+            "balances": "Balances"
+        },
+        "actions": {
+            "settings": "Loyalty settings",
+            "open": "Loyalty",
+            "apply": "Apply",
+            "topup": "Top up",
+            "adjust": "Adjust"
+        },
+        "config": {
+            "title": "Loyalty configuration",
+            "hint": "Configure how customers earn + redeem points across this company.",
+            "points_per_omr": "Points earned per 1 OMR",
+            "points_per_omr_hint": "0 disables auto-earn on sales.",
+            "baisas_per_point": "Baisas per point on redemption",
+            "baisas_per_point_hint": "1 OMR = 1000 baisas. e.g. 10 means 100 points = 1.000 OMR.",
+            "is_active": "Activate loyalty (POS will write earn entries on sales)"
+        },
+        "customer": {
+            "title": "Loyalty & wallet",
+            "points_balance": "Points balance",
+            "wallet_balance": "Wallet balance",
+            "adjust_points": "Adjust point balance",
+            "wallet_actions": "Wallet",
+            "delta_placeholder": "+10 or -5",
+            "amount_placeholder": "5.000",
+            "reason_placeholder": "Reason (required for adjust)",
+            "points_hint": "Signed integer. Reason is required for the audit trail.",
+            "wallet_hint": "Top up takes a positive amount with optional reason. Adjust takes a signed amount + required reason.",
+            "recent_points": "Recent point entries",
+            "recent_wallet": "Recent wallet entries",
+            "no_entries": "No entries yet."
+        },
+        "errors": {
+            "config_load_failed": "Could not load loyalty config.",
+            "config_save_failed": "Could not save loyalty config.",
+            "summary_failed": "Could not load loyalty summary.",
+            "point_adjust_failed": "Could not adjust point balance.",
+            "wallet_topup_failed": "Could not top up wallet.",
+            "wallet_adjust_failed": "Could not adjust wallet balance."
         }
     }
 }

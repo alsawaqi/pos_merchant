@@ -23,6 +23,12 @@ class CustomerResource extends JsonResource
             'uuid' => $this->uuid,
             'name' => $this->name,
             'phone' => $this->phone,
+            // Phase 6b — denormalised running totals. Integer
+            // points + decimal:3 OMR string. Frontend treats
+            // wallet_balance as opaque string (never parseFloat
+            // for OMR — baisas precision matters).
+            'points_balance' => (int) $this->points_balance,
+            'wallet_balance' => (string) $this->wallet_balance,
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
             // vehicle_plates surfaces when the controller did

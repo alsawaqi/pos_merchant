@@ -18,7 +18,7 @@
  * server-side in one transaction.
  */
 
-import { Car, Pencil, Plus, Trash2, Users } from 'lucide-vue-next';
+import { Car, Coins, Gift, Pencil, Plus, Settings, Trash2, Users, Wallet } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
@@ -34,6 +34,16 @@ import {
     type Customer,
     type CustomerVehiclePlate,
 } from '@/lib/api/customers';
+import {
+    adjustPoints,
+    adjustWallet,
+    getCustomerLoyalty,
+    getLoyaltyConfig,
+    topUpWallet,
+    upsertLoyaltyConfig,
+    type CustomerLoyaltySummary,
+    type LoyaltyConfig,
+} from '@/lib/api/loyalty';
 import { MerchantPermission } from '@/lib/permissions';
 
 const { t } = useI18n();
@@ -270,6 +280,184 @@ async function performDelete(): Promise<void> {
 }
 
 const canManage = computed(() => can(MerchantPermission.CustomersManage));
+
+// ---- Phase 6b — Loyalty -----------------------------------------
+const canLoyaltyView = computed(() => can(MerchantPermission.LoyaltyView));
+const canLoyaltyManage = computed(() => can(MerchantPermission.LoyaltyManage));
+
+// ---- Loyalty config modal --------------------------------------
+const configModalOpen = ref(false);
+const configBusy = ref(false);
+const configError = ref<string | null>(null);
+const configForm = reactive<{ points_per_omr: number; baisas_per_point: number; is_active: boolean }>({
+    points_per_omr: 0,
+    baisas_per_point: 10,
+    is_active: false,
+});
+const configLoaded = ref(false);
+
+async function openLoyaltyConfig(): Promise<void> {
+    configError.value = null;
+    configModalOpen.value = true;
+    if (!configLoaded.value) {
+        try {
+            const response = await getLoyaltyConfig();
+            configForm.points_per_omr = response.data.points_per_omr;
+            configForm.baisas_per_point = response.data.baisas_per_point;
+            configForm.is_active = response.data.is_active;
+            configLoaded.value = true;
+        } catch (err) {
+            configError.value = err instanceof Error ? err.message : t('loyalty.errors.config_load_failed');
+        }
+    }
+}
+
+async function submitLoyaltyConfig(): Promise<void> {
+    configBusy.value = true;
+    configError.value = null;
+    try {
+        await upsertLoyaltyConfig({
+            points_per_omr: configForm.points_per_omr,
+            baisas_per_point: configForm.baisas_per_point,
+            is_active: configForm.is_active,
+        });
+        configModalOpen.value = false;
+    } catch (err) {
+        if (err instanceof ApiError) {
+            const payload = err.payload as { message?: string } | null;
+            configError.value = payload?.message ?? t('loyalty.errors.config_save_failed');
+        } else {
+            configError.value = t('loyalty.errors.config_save_failed');
+        }
+    } finally {
+        configBusy.value = false;
+    }
+}
+
+// ---- Customer loyalty modal -------------------------------------
+const loyaltyModalOpen = ref(false);
+const loyaltyTarget = ref<Customer | null>(null);
+const loyaltyBusy = ref(false);
+const loyaltyError = ref<string | null>(null);
+const loyaltySummary = ref<CustomerLoyaltySummary | null>(null);
+
+// Point adjust form. Sign is encoded by the +/- prefix in the
+// signed input; the API expects signed integer.
+const pointForm = reactive<{ delta: number; reason: string }>({ delta: 0, reason: '' });
+// Wallet form covers BOTH topup and adjust; the action button
+// at submit time chooses which endpoint to call.
+const walletForm = reactive<{ amount: string; reason: string }>({ amount: '0.000', reason: '' });
+
+async function openLoyaltyForCustomer(customer: Customer): Promise<void> {
+    loyaltyTarget.value = customer;
+    loyaltyBusy.value = false;
+    loyaltyError.value = null;
+    loyaltySummary.value = null;
+    pointForm.delta = 0;
+    pointForm.reason = '';
+    walletForm.amount = '0.000';
+    walletForm.reason = '';
+    loyaltyModalOpen.value = true;
+
+    try {
+        const response = await getCustomerLoyalty(customer.uuid);
+        loyaltySummary.value = response.data;
+    } catch (err) {
+        loyaltyError.value = err instanceof Error ? err.message : t('loyalty.errors.summary_failed');
+    }
+}
+
+async function submitPointAdjust(): Promise<void> {
+    if (!loyaltyTarget.value || pointForm.delta === 0) return;
+    loyaltyBusy.value = true;
+    loyaltyError.value = null;
+    try {
+        const response = await adjustPoints(loyaltyTarget.value.uuid, {
+            points_delta: pointForm.delta,
+            reason: pointForm.reason,
+        });
+        // Refresh the summary in-place from the new balance +
+        // entry. Cheaper than re-fetching the whole summary.
+        if (loyaltySummary.value) {
+            loyaltySummary.value.customer.points_balance = response.data.points_balance;
+            loyaltySummary.value.recent_points = [
+                response.data.entry,
+                ...loyaltySummary.value.recent_points,
+            ].slice(0, 5);
+        }
+        pointForm.delta = 0;
+        pointForm.reason = '';
+    } catch (err) {
+        if (err instanceof ApiError) {
+            const payload = err.payload as { message?: string } | null;
+            loyaltyError.value = payload?.message ?? t('loyalty.errors.point_adjust_failed');
+        } else {
+            loyaltyError.value = t('loyalty.errors.point_adjust_failed');
+        }
+    } finally {
+        loyaltyBusy.value = false;
+    }
+}
+
+async function submitWalletTopup(): Promise<void> {
+    if (!loyaltyTarget.value || parseFloat(walletForm.amount) <= 0) return;
+    loyaltyBusy.value = true;
+    loyaltyError.value = null;
+    try {
+        const response = await topUpWallet(loyaltyTarget.value.uuid, {
+            amount: walletForm.amount,
+            reason: walletForm.reason || undefined,
+        });
+        if (loyaltySummary.value) {
+            loyaltySummary.value.customer.wallet_balance = response.data.wallet_balance;
+            loyaltySummary.value.recent_wallet = [
+                response.data.entry,
+                ...loyaltySummary.value.recent_wallet,
+            ].slice(0, 5);
+        }
+        walletForm.amount = '0.000';
+        walletForm.reason = '';
+    } catch (err) {
+        if (err instanceof ApiError) {
+            const payload = err.payload as { message?: string } | null;
+            loyaltyError.value = payload?.message ?? t('loyalty.errors.wallet_topup_failed');
+        } else {
+            loyaltyError.value = t('loyalty.errors.wallet_topup_failed');
+        }
+    } finally {
+        loyaltyBusy.value = false;
+    }
+}
+
+async function submitWalletAdjust(): Promise<void> {
+    if (!loyaltyTarget.value || parseFloat(walletForm.amount) === 0 || !walletForm.reason) return;
+    loyaltyBusy.value = true;
+    loyaltyError.value = null;
+    try {
+        const response = await adjustWallet(loyaltyTarget.value.uuid, {
+            amount_delta: walletForm.amount,
+            reason: walletForm.reason,
+        });
+        if (loyaltySummary.value) {
+            loyaltySummary.value.customer.wallet_balance = response.data.wallet_balance;
+            loyaltySummary.value.recent_wallet = [
+                response.data.entry,
+                ...loyaltySummary.value.recent_wallet,
+            ].slice(0, 5);
+        }
+        walletForm.amount = '0.000';
+        walletForm.reason = '';
+    } catch (err) {
+        if (err instanceof ApiError) {
+            const payload = err.payload as { message?: string } | null;
+            loyaltyError.value = payload?.message ?? t('loyalty.errors.wallet_adjust_failed');
+        } else {
+            loyaltyError.value = t('loyalty.errors.wallet_adjust_failed');
+        }
+    } finally {
+        loyaltyBusy.value = false;
+    }
+}
 </script>
 
 <template>
@@ -288,8 +476,18 @@ const canManage = computed(() => can(MerchantPermission.CustomersManage));
                         {{ t('customers.subtitle') }}
                     </p>
                 </div>
-                <div v-if="canManage">
+                <div class="flex items-center gap-2">
                     <button
+                        v-if="canLoyaltyManage"
+                        type="button"
+                        class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                        @click="openLoyaltyConfig"
+                    >
+                        <Settings class="size-4" />
+                        {{ t('loyalty.actions.settings') }}
+                    </button>
+                    <button
+                        v-if="canManage"
                         type="button"
                         class="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700"
                         @click="openCreate"
@@ -330,6 +528,7 @@ const canManage = computed(() => can(MerchantPermission.CustomersManage));
                                 <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('customers.table.name') }}</th>
                                 <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('customers.table.phone') }}</th>
                                 <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('customers.table.plates') }}</th>
+                                <th v-if="canLoyaltyView" class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('loyalty.table.balances') }}</th>
                                 <th class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('customers.table.actions') }}</th>
                             </tr>
                         </thead>
@@ -354,8 +553,29 @@ const canManage = computed(() => can(MerchantPermission.CustomersManage));
                                         </span>
                                     </div>
                                 </td>
+                                <td v-if="canLoyaltyView" class="px-5 py-4">
+                                    <div class="flex flex-wrap items-center gap-1.5">
+                                        <span class="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">
+                                            <Coins class="size-3" />
+                                            {{ row.points_balance ?? 0 }}
+                                        </span>
+                                        <span class="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-xs font-mono font-semibold text-emerald-700">
+                                            <Wallet class="size-3" />
+                                            {{ row.wallet_balance ?? '0.000' }}
+                                        </span>
+                                    </div>
+                                </td>
                                 <td class="px-5 py-4 text-end">
                                     <div class="inline-flex items-center gap-2">
+                                        <button
+                                            v-if="canLoyaltyView"
+                                            type="button"
+                                            class="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-50"
+                                            @click="openLoyaltyForCustomer(row)"
+                                        >
+                                            <Gift class="size-3.5" />
+                                            {{ t('loyalty.actions.open') }}
+                                        </button>
                                         <button
                                             v-if="canManage"
                                             type="button"
@@ -549,6 +769,168 @@ const canManage = computed(() => can(MerchantPermission.CustomersManage));
                             {{ deleteBusy ? t('common.deleting') : t('customers.actions.delete') }}
                         </button>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= LOYALTY CONFIG MODAL ================== -->
+        <div v-if="configModalOpen" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
+            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
+                <div class="border-b border-slate-200 px-6 py-5">
+                    <h2 class="text-lg font-semibold text-slate-950">{{ t('loyalty.config.title') }}</h2>
+                    <p class="mt-1 text-xs text-slate-500">{{ t('loyalty.config.hint') }}</p>
+                </div>
+                <form class="space-y-4 p-6" @submit.prevent="submitLoyaltyConfig">
+                    <div v-if="configError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                        {{ configError }}
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700">{{ t('loyalty.config.points_per_omr') }}</label>
+                        <input
+                            v-model.number="configForm.points_per_omr"
+                            type="number"
+                            min="0"
+                            max="1000"
+                            class="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                        >
+                        <p class="mt-1 text-xs text-slate-500">{{ t('loyalty.config.points_per_omr_hint') }}</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700">{{ t('loyalty.config.baisas_per_point') }}</label>
+                        <input
+                            v-model.number="configForm.baisas_per_point"
+                            type="number"
+                            min="0"
+                            max="10000"
+                            class="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                        >
+                        <p class="mt-1 text-xs text-slate-500">{{ t('loyalty.config.baisas_per_point_hint') }}</p>
+                    </div>
+                    <label class="flex items-center gap-2">
+                        <input v-model="configForm.is_active" type="checkbox" class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500">
+                        <span class="text-sm font-medium text-slate-700">{{ t('loyalty.config.is_active') }}</span>
+                    </label>
+                    <div class="flex justify-end gap-2 border-t border-slate-200 pt-4">
+                        <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="configModalOpen = false">
+                            {{ t('common.cancel') }}
+                        </button>
+                        <button type="submit" :disabled="configBusy" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:opacity-50">
+                            {{ configBusy ? t('common.saving') : t('common.save') }}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- ================= CUSTOMER LOYALTY MODAL ================== -->
+        <div v-if="loyaltyModalOpen && loyaltyTarget" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
+            <div class="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
+                <div class="border-b border-slate-200 px-6 py-5">
+                    <h2 class="text-lg font-semibold text-slate-950">{{ t('loyalty.customer.title') }}</h2>
+                    <p class="mt-1 text-sm text-slate-500">{{ loyaltyTarget.name }} · <span class="font-mono">{{ loyaltyTarget.phone }}</span></p>
+                </div>
+
+                <div v-if="loyaltyError" class="mx-6 mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                    {{ loyaltyError }}
+                </div>
+
+                <div v-if="!loyaltySummary" class="p-10 text-center text-sm font-medium text-slate-500">
+                    {{ t('common.loading') }}
+                </div>
+
+                <div v-else class="space-y-6 p-6">
+                    <!-- Balance summary -->
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
+                                <Coins class="size-4" />
+                                {{ t('loyalty.customer.points_balance') }}
+                            </div>
+                            <p class="mt-2 text-2xl font-semibold text-amber-900">{{ loyaltySummary.customer.points_balance }}</p>
+                        </div>
+                        <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                                <Wallet class="size-4" />
+                                {{ t('loyalty.customer.wallet_balance') }}
+                            </div>
+                            <p class="mt-2 text-2xl font-semibold font-mono text-emerald-900">{{ loyaltySummary.customer.wallet_balance }}</p>
+                        </div>
+                    </div>
+
+                    <!-- Point adjust form -->
+                    <section v-if="canLoyaltyManage" class="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-3">
+                        <h3 class="text-sm font-semibold text-slate-700 inline-flex items-center gap-2">
+                            <Coins class="size-4 text-amber-600" />
+                            {{ t('loyalty.customer.adjust_points') }}
+                        </h3>
+                        <div class="grid grid-cols-3 gap-2">
+                            <input v-model.number="pointForm.delta" type="number" :placeholder="t('loyalty.customer.delta_placeholder')" class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                            <input v-model="pointForm.reason" type="text" :placeholder="t('loyalty.customer.reason_placeholder')" class="col-span-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                        </div>
+                        <div class="flex justify-end">
+                            <button type="button" :disabled="loyaltyBusy || pointForm.delta === 0 || !pointForm.reason" class="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-amber-700 disabled:opacity-50" @click="submitPointAdjust">
+                                {{ t('loyalty.actions.apply') }}
+                            </button>
+                        </div>
+                        <p class="text-[11px] text-slate-500">{{ t('loyalty.customer.points_hint') }}</p>
+                    </section>
+
+                    <!-- Wallet form -->
+                    <section v-if="canLoyaltyManage" class="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-3">
+                        <h3 class="text-sm font-semibold text-slate-700 inline-flex items-center gap-2">
+                            <Wallet class="size-4 text-emerald-600" />
+                            {{ t('loyalty.customer.wallet_actions') }}
+                        </h3>
+                        <div class="grid grid-cols-3 gap-2">
+                            <input v-model="walletForm.amount" type="text" inputmode="decimal" :placeholder="t('loyalty.customer.amount_placeholder')" class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-mono shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                            <input v-model="walletForm.reason" type="text" :placeholder="t('loyalty.customer.reason_placeholder')" class="col-span-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                        </div>
+                        <div class="flex justify-end gap-2">
+                            <button type="button" :disabled="loyaltyBusy || parseFloat(walletForm.amount) <= 0" class="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50" @click="submitWalletTopup">
+                                {{ t('loyalty.actions.topup') }}
+                            </button>
+                            <button type="button" :disabled="loyaltyBusy || parseFloat(walletForm.amount) === 0 || !walletForm.reason" class="rounded-lg bg-slate-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-700 disabled:opacity-50" @click="submitWalletAdjust">
+                                {{ t('loyalty.actions.adjust') }}
+                            </button>
+                        </div>
+                        <p class="text-[11px] text-slate-500">{{ t('loyalty.customer.wallet_hint') }}</p>
+                    </section>
+
+                    <!-- Recent point entries -->
+                    <section>
+                        <h3 class="text-sm font-semibold text-slate-700 mb-2">{{ t('loyalty.customer.recent_points') }}</h3>
+                        <div v-if="loyaltySummary.recent_points.length === 0" class="text-xs text-slate-400 italic">{{ t('loyalty.customer.no_entries') }}</div>
+                        <ul v-else class="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
+                            <li v-for="entry in loyaltySummary.recent_points" :key="entry.id" class="flex items-center justify-between gap-3 px-3 py-2 text-xs">
+                                <span class="flex flex-col">
+                                    <span class="font-semibold text-slate-700">{{ entry.entry_type }} · {{ entry.points_delta > 0 ? '+' : '' }}{{ entry.points_delta }}</span>
+                                    <span class="text-slate-500">{{ entry.reason ?? '—' }}</span>
+                                </span>
+                                <span class="font-mono text-slate-400">{{ entry.balance_after }}</span>
+                            </li>
+                        </ul>
+                    </section>
+
+                    <!-- Recent wallet entries -->
+                    <section>
+                        <h3 class="text-sm font-semibold text-slate-700 mb-2">{{ t('loyalty.customer.recent_wallet') }}</h3>
+                        <div v-if="loyaltySummary.recent_wallet.length === 0" class="text-xs text-slate-400 italic">{{ t('loyalty.customer.no_entries') }}</div>
+                        <ul v-else class="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
+                            <li v-for="entry in loyaltySummary.recent_wallet" :key="entry.id" class="flex items-center justify-between gap-3 px-3 py-2 text-xs">
+                                <span class="flex flex-col">
+                                    <span class="font-semibold text-slate-700">{{ entry.entry_type }} · {{ parseFloat(entry.amount_delta) > 0 ? '+' : '' }}{{ entry.amount_delta }}</span>
+                                    <span class="text-slate-500">{{ entry.reason ?? '—' }}</span>
+                                </span>
+                                <span class="font-mono text-slate-400">{{ entry.balance_after }}</span>
+                            </li>
+                        </ul>
+                    </section>
+                </div>
+
+                <div class="border-t border-slate-200 px-6 py-4 flex justify-end">
+                    <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="loyaltyModalOpen = false">
+                        {{ t('common.close') }}
+                    </button>
                 </div>
             </div>
         </div>

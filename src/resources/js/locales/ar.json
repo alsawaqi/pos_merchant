@@ -39,7 +39,11 @@
         "language_english": "English",
         "language_arabic": "العربية",
         "loading": "جارٍ التحميل…",
-        "cancel": "إلغاء"
+        "cancel": "إلغاء",
+        "save": "حفظ",
+        "saving": "جارٍ الحفظ…",
+        "deleting": "جارٍ الحذف…",
+        "close": "إغلاق"
     },
     "dashboard": {
         "title": "أهلًا بك",
@@ -878,6 +882,50 @@
             "attach_failed": "تعذر إرفاق اللوحة.",
             "detach_failed": "تعذر فصل اللوحة.",
             "delete_failed": "تعذر حذف العميل."
+        }
+    },
+    "loyalty": {
+        "table": {
+            "balances": "الأرصدة"
+        },
+        "actions": {
+            "settings": "إعدادات الولاء",
+            "open": "الولاء",
+            "apply": "تطبيق",
+            "topup": "شحن",
+            "adjust": "تسوية"
+        },
+        "config": {
+            "title": "إعدادات الولاء",
+            "hint": "حدد كيف يكسب العملاء النقاط ويستردونها داخل هذه الشركة.",
+            "points_per_omr": "النقاط لكل 1 ر.ع",
+            "points_per_omr_hint": "ضع 0 لتعطيل الكسب التلقائي على المبيعات.",
+            "baisas_per_point": "البيسات مقابل النقطة عند الاسترداد",
+            "baisas_per_point_hint": "1 ر.ع = 1000 بيسة. مثال: 10 يعني أن 100 نقطة = 1.000 ر.ع.",
+            "is_active": "تفعيل نظام الولاء (سيكتب نظام البيع قيود الكسب على المبيعات)"
+        },
+        "customer": {
+            "title": "الولاء والمحفظة",
+            "points_balance": "رصيد النقاط",
+            "wallet_balance": "رصيد المحفظة",
+            "adjust_points": "تسوية رصيد النقاط",
+            "wallet_actions": "المحفظة",
+            "delta_placeholder": "+10 أو -5",
+            "amount_placeholder": "5.000",
+            "reason_placeholder": "السبب (مطلوب للتسوية)",
+            "points_hint": "عدد صحيح موقّع. السبب مطلوب لسجل التدقيق.",
+            "wallet_hint": "الشحن يقبل مبلغًا موجبًا مع سبب اختياري. التسوية تقبل مبلغًا موقّعًا مع سبب مطلوب.",
+            "recent_points": "آخر حركات النقاط",
+            "recent_wallet": "آخر حركات المحفظة",
+            "no_entries": "لا توجد حركات بعد."
+        },
+        "errors": {
+            "config_load_failed": "تعذر تحميل إعدادات الولاء.",
+            "config_save_failed": "تعذر حفظ إعدادات الولاء.",
+            "summary_failed": "تعذر تحميل ملخص الولاء.",
+            "point_adjust_failed": "تعذر تسوية رصيد النقاط.",
+            "wallet_topup_failed": "تعذر شحن المحفظة.",
+            "wallet_adjust_failed": "تعذر تسوية رصيد المحفظة."
         }
     }
 }
