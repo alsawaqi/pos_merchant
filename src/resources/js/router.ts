@@ -3,6 +3,7 @@ import Login from '@/Pages/Auth/Login.vue';
 import Dashboard from '@/Pages/Merchant/Dashboard.vue';
 import BranchesIndex from '@/Pages/Merchant/Branches/Index.vue';
 import CatalogueIndex from '@/Pages/Merchant/Catalogue/Index.vue';
+import CustomersIndex from '@/Pages/Merchant/Customers/Index.vue';
 import FloorPlanIndex from '@/Pages/Merchant/FloorPlan/Index.vue';
 import InventoryIndex from '@/Pages/Merchant/Inventory/Index.vue';
 import PortalUsersIndex from '@/Pages/Merchant/PortalUsers/Index.vue';
@@ -91,6 +92,15 @@ const routes: RouteRecordRaw[] = [
         path: '/inventory',
         name: 'merchant.inventory',
         component: InventoryIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        // Customers — Phase 6a. Customer book + vehicle plates.
+        // Server enforces customers.view; SPA hides the nav
+        // entry for users without it.
+        path: '/customers',
+        name: 'merchant.customers',
+        component: CustomersIndex,
         meta: { requiresAuth: true },
     },
     {

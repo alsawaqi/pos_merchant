@@ -28,6 +28,7 @@
         "floor_plan": "Floor Plan",
         "catalogue": "Catalogue",
         "inventory": "Inventory",
+        "customers": "Customers",
         "portal_users": "Portal Users",
         "pos_staff": "POS Staff",
         "roles": "Roles & Permissions",
@@ -829,6 +830,54 @@
                 "open": "Open",
                 "no_lines": "No lines"
             }
+        }
+    },
+    "customers": {
+        "section_label": "Phase 6a",
+        "title": "Customers",
+        "subtitle": "Your customer book — lookup by name, phone, or vehicle plate. Attach multiple plates per customer for drive-thru recognition.",
+        "search_placeholder": "Search by name, phone, or plate…",
+        "empty_state": "No customers yet. Add your first one to get started.",
+        "table": {
+            "name": "Name",
+            "phone": "Phone",
+            "plates": "Vehicle plates",
+            "actions": "Actions"
+        },
+        "fields": {
+            "name": "Name",
+            "phone": "Phone",
+            "phone_placeholder": "+968 9123 4567"
+        },
+        "actions": {
+            "add": "Add customer",
+            "edit": "Edit",
+            "delete": "Delete",
+            "remove": "Remove",
+            "detach": "Detach",
+            "add_plate": "Add",
+            "attach_plate": "Attach"
+        },
+        "modal": {
+            "create_title": "Add a customer",
+            "edit_title": "Edit customer",
+            "plates_title": "Vehicle plates",
+            "plates_hint": "Optional — attach one per car",
+            "add_plate_label": "Plate number",
+            "add_plate_placeholder": "12345 A",
+            "no_plates": "No plates attached yet."
+        },
+        "delete": {
+            "title": "Delete customer?",
+            "confirm": "Remove {name} from your customer book? Vehicle plates remain attached and the customer can be restored from the audit log."
+        },
+        "errors": {
+            "duplicate_plate_local": "That plate is already in your pending list.",
+            "validation_summary": "Some fields need attention.",
+            "save_failed": "Could not save the customer. Try again.",
+            "attach_failed": "Could not attach the plate.",
+            "detach_failed": "Could not detach the plate.",
+            "delete_failed": "Could not delete the customer."
         }
     }
 }
