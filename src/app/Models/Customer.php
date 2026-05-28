@@ -39,6 +39,8 @@ use Illuminate\Support\Str;
     'company_id',
     'name',
     'phone',
+    'points_balance',
+    'wallet_balance',
 ])]
 class Customer extends Model
 {
@@ -46,6 +48,20 @@ class Customer extends Model
     use HasFactory, SoftDeletes;
 
     protected $table = 'pos_customers';
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            // Phase 6b — denormalised running totals. Kept in
+            // lock-step with SUM(point_ledger) / SUM(wallet_ledger)
+            // via the Phase 6b Write*LedgerEntryAction.
+            'points_balance' => 'integer',
+            'wallet_balance' => 'decimal:3',
+        ];
+    }
 
     protected static function booted(): void
     {
@@ -76,5 +92,31 @@ class Customer extends Model
     {
         return $this->hasMany(CustomerVehiclePlate::class)
             ->orderBy('id');
+    }
+
+    /**
+     * Phase 6b — append-only points ledger. Newest first so the
+     * "recent history" panel doesn't have to ->latest() at every
+     * call site.
+     *
+     * @return HasMany<CustomerPointLedgerEntry, $this>
+     */
+    public function pointLedger(): HasMany
+    {
+        return $this->hasMany(CustomerPointLedgerEntry::class)
+            ->orderByDesc('occurred_at')
+            ->orderByDesc('id');
+    }
+
+    /**
+     * Phase 6b — append-only wallet ledger.
+     *
+     * @return HasMany<CustomerWalletLedgerEntry, $this>
+     */
+    public function walletLedger(): HasMany
+    {
+        return $this->hasMany(CustomerWalletLedgerEntry::class)
+            ->orderByDesc('occurred_at')
+            ->orderByDesc('id');
     }
 }
