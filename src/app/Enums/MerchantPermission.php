@@ -123,6 +123,20 @@ enum MerchantPermission: string
     case DiscountsView = 'discounts.view';
     case DiscountsManage = 'discounts.manage';
 
+    // Phase 7b — reports + audit viewer (blueprint §13 Phase 7).
+    //   ReportsView   gates the 10 reports + landing
+    //   ReportsExport gates the queued Excel/PDF export flow
+    //                  (large exports run 30s+; gating the
+    //                  trigger protects the queue from a
+    //                  runaway user)
+    //   AuditLogView  gates the §5.12 merchant audit log viewer.
+    //                  Separate from ReportsView because some
+    //                  merchants grant reports broadly but want
+    //                  the audit log restricted to managers.
+    case ReportsView = 'reports.view';
+    case ReportsExport = 'reports.export';
+    case AuditLogView = 'audit_log.view';
+
     /**
      * @return list<string>
      */

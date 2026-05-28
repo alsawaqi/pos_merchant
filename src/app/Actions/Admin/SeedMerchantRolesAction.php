@@ -174,6 +174,11 @@ final class SeedMerchantRolesAction
                     // Phase 6d: managers configure discount rules.
                     MerchantPermission::DiscountsView->value,
                     MerchantPermission::DiscountsManage->value,
+                    // Phase 7b: managers run the daily review --
+                    // reports + exports + audit log.
+                    MerchantPermission::ReportsView->value,
+                    MerchantPermission::ReportsExport->value,
+                    MerchantPermission::AuditLogView->value,
                 ],
             ],
 
@@ -202,11 +207,15 @@ final class SeedMerchantRolesAction
                     // to understand what the POS auto-applied
                     // mid-shift.
                     MerchantPermission::DiscountsView->value,
+                    // Phase 7b: supervisors see today's sales
+                    // numbers + recent activity. No export, no
+                    // audit log -- those are Manager+ tools.
+                    MerchantPermission::ReportsView->value,
                 ],
             ],
 
             MerchantRole::Viewer->value => [
-                'description' => 'Read-only — see staff, branch list, floor plan, menu, inventory, customers, loyalty balances, and discount rules. No write access.',
+                'description' => 'Read-only — see staff, branch list, floor plan, menu, inventory, customers, loyalty balances, discount rules, and reports. No write access.',
                 'permissions' => [
                     MerchantPermission::PosStaffView->value,
                     MerchantPermission::BranchesView->value,
@@ -217,6 +226,9 @@ final class SeedMerchantRolesAction
                     MerchantPermission::CustomersView->value,
                     MerchantPermission::LoyaltyView->value,
                     MerchantPermission::DiscountsView->value,
+                    // Phase 7b: viewers see reports but can't
+                    // export or read the audit log.
+                    MerchantPermission::ReportsView->value,
                 ],
             ],
 
@@ -250,6 +262,14 @@ final class SeedMerchantRolesAction
                     // ingredient costs, so both view + manage.
                     MerchantPermission::DiscountsView->value,
                     MerchantPermission::DiscountsManage->value,
+                    // Phase 7b: inventory specialist runs the
+                    // inventory-side reports (Loss/Waste,
+                    // Consumption, Restock/Purchasing,
+                    // Recipe & Cost). Gets exports + audit log
+                    // because they own the operational review.
+                    MerchantPermission::ReportsView->value,
+                    MerchantPermission::ReportsExport->value,
+                    MerchantPermission::AuditLogView->value,
                 ],
             ],
         ];

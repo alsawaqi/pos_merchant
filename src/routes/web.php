@@ -18,6 +18,7 @@ use App\Http\Controllers\Pos\IngredientsController;
 use App\Http\Controllers\Pos\LoyaltyController;
 use App\Http\Controllers\Pos\PosStaffController;
 use App\Http\Controllers\Pos\ProductsController;
+use App\Http\Controllers\Pos\ReportsController;
 use App\Http\Controllers\Pos\RestockRequestsController;
 use App\Http\Controllers\Pos\RolesController;
 use App\Http\Controllers\Pos\StockController;
@@ -380,6 +381,13 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('discounts.resume');
         Route::put('discounts/{discount:uuid}/targets', [DiscountsController::class, 'syncTargets'])
             ->name('discounts.targets.sync');
+
+        // -------- Phase 7b — Reports + Audit Log (blueprint §13 Phase 7) --
+        // Each report key dispatches to its own Action.
+        // Adding a new report = adding an Action + a method on
+        // ReportsController. Permission gate: reports.view.
+        Route::get('reports/sales', [ReportsController::class, 'sales'])
+            ->name('reports.sales');
 
         // -------- Phase 6c — Delivery providers + per-product prices --
         // Per-merchant 3rd-party delivery aggregators (Talabat,

@@ -256,6 +256,32 @@ final class PermissionCatalog
                 ],
             ],
             [
+                // Phase 7b — reports + audit log viewer. Export +
+                // audit log gates are tighter because exports
+                // can run 30s+ (queue protection) and the audit
+                // log is compliance-adjacent.
+                'key' => 'reports',
+                'label_en' => 'Reports & Audit',
+                'label_ar' => 'التقارير والتدقيق',
+                'permissions' => [
+                    [
+                        'key' => MerchantPermission::ReportsView->value,
+                        'label_en' => 'See the reports landing + run any report',
+                        'label_ar' => 'عرض صفحة التقارير وتشغيل أي تقرير',
+                    ],
+                    [
+                        'key' => MerchantPermission::ReportsExport->value,
+                        'label_en' => 'Export reports to Excel / PDF',
+                        'label_ar' => 'تصدير التقارير إلى Excel أو PDF',
+                    ],
+                    [
+                        'key' => MerchantPermission::AuditLogView->value,
+                        'label_en' => 'View the merchant audit log (portal + POS actions)',
+                        'label_ar' => 'عرض سجل تدقيق التاجر (إجراءات البوابة ونقاط البيع)',
+                    ],
+                ],
+            ],
+            [
                 'key' => 'roles',
                 'label_en' => 'Roles & Permissions',
                 'label_ar' => 'الأدوار والصلاحيات',
