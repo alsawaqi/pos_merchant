@@ -713,6 +713,43 @@ return new class extends Migration
             $table->timestamps();
         });
 
+        // ---- pos_discounts + pos_discount_targets (Phase 6d) ---
+        // Per-merchant discount rules. The 6-axis applicability
+        // predicate (status / validity / day-of-week / time /
+        // branch-scope / scope+targets) is enforced in the
+        // evaluateDiscounts() pure function, not in SQL.
+        Schema::create('pos_discounts', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->string('name');
+            $table->string('scope', 32);
+            $table->string('amount_type', 32);
+            $table->decimal('amount', 12, 3);
+            $table->timestamp('validity_start')->nullable();
+            $table->timestamp('validity_end')->nullable();
+            // Bitmask Sun=1..Sat=64; NULL = every day.
+            $table->unsignedTinyInteger('dayofweek_mask')->nullable();
+            $table->string('time_start', 8)->nullable();
+            $table->string('time_end', 8)->nullable();
+            // sqlite mirror: text fallback for jsonb on pg.
+            $table->text('branch_scope_json')->nullable();
+            $table->boolean('stackable')->default(false);
+            $table->boolean('requires_manager_approval')->default(false);
+            $table->string('status', 32)->default('active');
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('pos_discount_targets', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('discount_id')->constrained('pos_discounts')->cascadeOnDelete();
+            $table->string('target_type', 32);
+            $table->unsignedBigInteger('target_id');
+            $table->timestamps();
+            $table->unique(['discount_id', 'target_type', 'target_id'], 'pos_discount_targets_unique');
+        });
+
         // ---- pos_payments + pos_shifts (Phase 7a) ---
         // Payments support split tender + Soft POS reconciliation.
         // Invariant (enforced by Phase 8 Action): SUM(payments
