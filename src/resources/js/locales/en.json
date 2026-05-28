@@ -29,6 +29,7 @@
         "catalogue": "Catalogue",
         "inventory": "Inventory",
         "customers": "Customers",
+        "discounts": "Discounts",
         "portal_users": "Portal Users",
         "pos_staff": "POS Staff",
         "roles": "Roles & Permissions",
@@ -969,6 +970,85 @@
         "errors": {
             "save_failed": "Could not save the provider.",
             "prices_load_failed": "Could not load this product's provider prices."
+        }
+    },
+    "discounts": {
+        "section_label": "Phase 6d",
+        "title": "Discounts",
+        "subtitle": "Configure promo rules that the POS applies automatically. Combine percent + fixed amounts across products, categories, and order totals.",
+        "empty_state": "No discount rules yet. Add a Ramadan promo or a happy-hour rule to get started.",
+        "table": {
+            "name": "Name",
+            "scope": "Scope",
+            "amount": "Amount",
+            "targets": "Targets",
+            "status": "Status",
+            "actions": "Actions"
+        },
+        "scopes": {
+            "product": "Per product",
+            "category": "Per category",
+            "order": "Whole order"
+        },
+        "amount_types": {
+            "percent": "Percent off",
+            "fixed": "Fixed amount off"
+        },
+        "statuses": {
+            "active_now": "Active now",
+            "scheduled": "Scheduled",
+            "paused": "Paused",
+            "expired": "Expired"
+        },
+        "flags": {
+            "stackable": "stackable",
+            "manager_approval": "manager approval"
+        },
+        "dow": {
+            "sun": "Sun",
+            "mon": "Mon",
+            "tue": "Tue",
+            "wed": "Wed",
+            "thu": "Thu",
+            "fri": "Fri",
+            "sat": "Sat"
+        },
+        "fields": {
+            "name": "Name",
+            "scope": "Scope",
+            "amount_type": "Amount type",
+            "amount": "Amount",
+            "amount_hint": "Percent: 0-100. Fixed: OMR amount.",
+            "target_products": "Products this discount applies to",
+            "target_products_hint": "Select one or more products. The rule will only fire on lines whose product is checked here.",
+            "target_categories": "Categories this discount applies to",
+            "validity": "Validity window",
+            "validity_start": "Starts at",
+            "validity_end": "Ends at",
+            "dayofweek": "Days of week",
+            "time_start": "Time of day starts",
+            "time_end": "Time of day ends",
+            "time_hint": "Leave blank for all day. Crossing midnight is supported (e.g. 22:00 to 02:00).",
+            "stackable": "Stackable (can combine with other discounts + loyalty)",
+            "requires_manager_approval": "Requires manager approval at POS"
+        },
+        "actions": {
+            "add": "Add discount",
+            "edit": "Edit",
+            "delete": "Delete",
+            "pause": "Pause",
+            "resume": "Resume"
+        },
+        "modal": {
+            "create_title": "Add a discount rule",
+            "edit_title": "Edit discount rule"
+        },
+        "delete": {
+            "title": "Delete discount?",
+            "confirm": "Soft-delete {name}? Historical orders that used this rule keep the snapshotted amount; the rule disappears from the POS picker."
+        },
+        "errors": {
+            "save_failed": "Could not save the discount."
         }
     }
 }

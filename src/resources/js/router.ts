@@ -4,6 +4,7 @@ import Dashboard from '@/Pages/Merchant/Dashboard.vue';
 import BranchesIndex from '@/Pages/Merchant/Branches/Index.vue';
 import CatalogueIndex from '@/Pages/Merchant/Catalogue/Index.vue';
 import CustomersIndex from '@/Pages/Merchant/Customers/Index.vue';
+import DiscountsIndex from '@/Pages/Merchant/Discounts/Index.vue';
 import FloorPlanIndex from '@/Pages/Merchant/FloorPlan/Index.vue';
 import InventoryIndex from '@/Pages/Merchant/Inventory/Index.vue';
 import PortalUsersIndex from '@/Pages/Merchant/PortalUsers/Index.vue';
@@ -101,6 +102,15 @@ const routes: RouteRecordRaw[] = [
         path: '/customers',
         name: 'merchant.customers',
         component: CustomersIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        // Discounts — Phase 6d. Rules engine. Server enforces
+        // discounts.view; SPA hides the nav for users without
+        // it.
+        path: '/discounts',
+        name: 'merchant.discounts',
+        component: DiscountsIndex,
         meta: { requiresAuth: true },
     },
     {
