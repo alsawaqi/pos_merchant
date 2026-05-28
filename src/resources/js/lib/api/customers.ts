@@ -22,9 +22,9 @@ export interface Customer {
     uuid: string;
     name: string;
     phone: string;
-    /** Phase 6b — integer points balance, always denormalised. */
-    points_balance: number;
-    /** Phase 6b — decimal:3 OMR string (opaque, never parseFloat). */
+    /** decimal:3 OMR string (opaque, never parseFloat). Store credit
+     *  (wallet) — separate from loyalty. Loyalty points/stamps live
+     *  per-rule; fetch via getCustomerLoyalty(). */
     wallet_balance: string;
     created_at: string | null;
     updated_at: string | null;

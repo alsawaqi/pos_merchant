@@ -6,6 +6,7 @@ import CatalogueIndex from '@/Pages/Merchant/Catalogue/Index.vue';
 import CustomersIndex from '@/Pages/Merchant/Customers/Index.vue';
 import DiscountsIndex from '@/Pages/Merchant/Discounts/Index.vue';
 import ExpensesIndex from '@/Pages/Merchant/Expenses/Index.vue';
+import LoyaltyIndex from '@/Pages/Merchant/Loyalty/Index.vue';
 import FloorPlanIndex from '@/Pages/Merchant/FloorPlan/Index.vue';
 import InventoryIndex from '@/Pages/Merchant/Inventory/Index.vue';
 import PortalUsersIndex from '@/Pages/Merchant/PortalUsers/Index.vue';
@@ -133,6 +134,15 @@ const routes: RouteRecordRaw[] = [
         path: '/expenses',
         name: 'merchant.expenses',
         component: ExpensesIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        // Loyalty Rules — blueprint §5.8. visit_based + spend_based
+        // rule config. Server enforces loyalty.view; SPA hides the
+        // nav entry for users without it.
+        path: '/loyalty',
+        name: 'merchant.loyalty',
+        component: LoyaltyIndex,
         meta: { requiresAuth: true },
     },
 

@@ -29,6 +29,7 @@
         "catalogue": "Catalogue",
         "inventory": "Inventory",
         "customers": "Customers",
+        "loyalty": "Loyalty",
         "discounts": "Discounts",
         "expenses": "Expenses",
         "reports": "Reports",
@@ -890,45 +891,83 @@
         }
     },
     "loyalty": {
+        "section_label": "Phase 6 · §5.8",
+        "title": "Loyalty Rules",
+        "subtitle": "Define visit-based stamp cards and spend-based point rules. Multiple can run in parallel; pause or resume any rule without deleting it. Per-customer balances live on the Customers page.",
+        "empty": "No loyalty rules yet. Create a points or stamp-card rule to get started.",
         "table": {
-            "balances": "Balances"
+            "wallet": "Wallet"
+        },
+        "types": {
+            "visit_based": "Stamp card",
+            "spend_based": "Points"
+        },
+        "statuses": {
+            "active": "Active",
+            "paused": "Paused"
+        },
+        "rules": {
+            "name": "Name",
+            "type": "Type",
+            "status": "Status",
+            "accounts": "Members"
         },
         "actions": {
-            "settings": "Loyalty settings",
+            "manage_rules": "Loyalty rules",
+            "add_rule": "Add rule",
             "open": "Loyalty",
             "apply": "Apply",
             "topup": "Top up",
-            "adjust": "Adjust"
+            "adjust": "Adjust",
+            "pause": "Pause",
+            "resume": "Resume"
         },
         "config": {
-            "title": "Loyalty configuration",
-            "hint": "Configure how customers earn + redeem points across this company.",
-            "points_per_omr": "Points earned per 1 OMR",
-            "points_per_omr_hint": "0 disables auto-earn on sales.",
-            "baisas_per_point": "Baisas per point on redemption",
-            "baisas_per_point_hint": "1 OMR = 1000 baisas. e.g. 10 means 100 points = 1.000 OMR.",
-            "is_active": "Activate loyalty (POS will write earn entries on sales)"
+            "points_per_omr": "Points per 1 OMR",
+            "redemption_points": "Points per redemption",
+            "redemption_value": "Redemption value (OMR)",
+            "min_redemption_points": "Min redemption points",
+            "min_order_value": "Min order value (OMR)",
+            "stamps_required": "Stamps required",
+            "reward_type": "Reward",
+            "reward_free_product": "Free product",
+            "reward_percent_off": "% off next order",
+            "reward_value": "Reward detail",
+            "reward_value_hint": "e.g. product name or % value"
+        },
+        "modal": {
+            "create_title": "Add a loyalty rule",
+            "edit_title": "Edit loyalty rule",
+            "type_locked": "Type can't change after creation — create a new rule instead."
+        },
+        "delete": {
+            "title": "Delete loyalty rule?",
+            "confirm": "Delete {name}? Customer balances under this rule are retained for history; the rule disappears from the POS picker."
         },
         "customer": {
             "title": "Loyalty & wallet",
-            "points_balance": "Points balance",
             "wallet_balance": "Wallet balance",
-            "adjust_points": "Adjust point balance",
-            "wallet_actions": "Wallet",
-            "delta_placeholder": "+10 or -5",
+            "accounts": "Loyalty accounts",
+            "no_accounts": "No loyalty activity yet.",
+            "points": "pts",
+            "stamps": "stamps",
+            "adjust_title": "Adjust loyalty",
+            "points_delta": "Points (+/-)",
+            "stamps_delta": "Stamps (+/-)",
+            "reason": "Reason",
+            "reason_placeholder": "Reason (required)",
             "amount_placeholder": "5.000",
-            "reason_placeholder": "Reason (required for adjust)",
-            "points_hint": "Signed integer. Reason is required for the audit trail.",
+            "wallet_actions": "Wallet",
             "wallet_hint": "Top up takes a positive amount with optional reason. Adjust takes a signed amount + required reason.",
-            "recent_points": "Recent point entries",
+            "recent_transactions": "Recent loyalty activity",
             "recent_wallet": "Recent wallet entries",
             "no_entries": "No entries yet."
         },
         "errors": {
-            "config_load_failed": "Could not load loyalty config.",
-            "config_save_failed": "Could not save loyalty config.",
+            "rules_load_failed": "Could not load loyalty rules.",
+            "rule_save_failed": "Could not save the loyalty rule.",
             "summary_failed": "Could not load loyalty summary.",
-            "point_adjust_failed": "Could not adjust point balance.",
+            "adjust_failed": "Could not adjust loyalty balance.",
             "wallet_topup_failed": "Could not top up wallet.",
             "wallet_adjust_failed": "Could not adjust wallet balance."
         }

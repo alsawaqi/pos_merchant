@@ -29,6 +29,7 @@
         "catalogue": "الكتالوج",
         "inventory": "المخزون",
         "customers": "العملاء",
+        "loyalty": "الولاء",
         "discounts": "الخصومات",
         "expenses": "المصروفات",
         "reports": "التقارير",
@@ -890,45 +891,83 @@
         }
     },
     "loyalty": {
+        "section_label": "المرحلة 6 · §5.8",
+        "title": "قواعد الولاء",
+        "subtitle": "حدّد بطاقات الأختام (حسب الزيارة) وقواعد النقاط (حسب الإنفاق). يمكن تشغيل عدة قواعد معًا؛ أوقف أو استأنف أي قاعدة دون حذفها. أرصدة كل عميل تظهر في صفحة العملاء.",
+        "empty": "لا توجد قواعد ولاء بعد. أنشئ قاعدة نقاط أو بطاقة أختام للبدء.",
         "table": {
-            "balances": "الأرصدة"
+            "wallet": "المحفظة"
+        },
+        "types": {
+            "visit_based": "بطاقة أختام",
+            "spend_based": "نقاط"
+        },
+        "statuses": {
+            "active": "نشطة",
+            "paused": "متوقفة"
+        },
+        "rules": {
+            "name": "الاسم",
+            "type": "النوع",
+            "status": "الحالة",
+            "accounts": "الأعضاء"
         },
         "actions": {
-            "settings": "إعدادات الولاء",
+            "manage_rules": "قواعد الولاء",
+            "add_rule": "إضافة قاعدة",
             "open": "الولاء",
             "apply": "تطبيق",
             "topup": "شحن",
-            "adjust": "تسوية"
+            "adjust": "تسوية",
+            "pause": "إيقاف",
+            "resume": "استئناف"
         },
         "config": {
-            "title": "إعدادات الولاء",
-            "hint": "حدد كيف يكسب العملاء النقاط ويستردونها داخل هذه الشركة.",
             "points_per_omr": "النقاط لكل 1 ر.ع",
-            "points_per_omr_hint": "ضع 0 لتعطيل الكسب التلقائي على المبيعات.",
-            "baisas_per_point": "البيسات مقابل النقطة عند الاسترداد",
-            "baisas_per_point_hint": "1 ر.ع = 1000 بيسة. مثال: 10 يعني أن 100 نقطة = 1.000 ر.ع.",
-            "is_active": "تفعيل نظام الولاء (سيكتب نظام البيع قيود الكسب على المبيعات)"
+            "redemption_points": "النقاط لكل استرداد",
+            "redemption_value": "قيمة الاسترداد (ر.ع)",
+            "min_redemption_points": "الحد الأدنى لنقاط الاسترداد",
+            "min_order_value": "الحد الأدنى لقيمة الطلب (ر.ع)",
+            "stamps_required": "الأختام المطلوبة",
+            "reward_type": "المكافأة",
+            "reward_free_product": "منتج مجاني",
+            "reward_percent_off": "% خصم على الطلب التالي",
+            "reward_value": "تفاصيل المكافأة",
+            "reward_value_hint": "مثال: اسم المنتج أو نسبة %"
+        },
+        "modal": {
+            "create_title": "إضافة قاعدة ولاء",
+            "edit_title": "تعديل قاعدة الولاء",
+            "type_locked": "لا يمكن تغيير النوع بعد الإنشاء — أنشئ قاعدة جديدة بدلًا من ذلك."
+        },
+        "delete": {
+            "title": "حذف قاعدة الولاء؟",
+            "confirm": "حذف {name}؟ تُحفظ أرصدة العملاء ضمن هذه القاعدة للسجل؛ تختفي القاعدة من قائمة نقطة البيع."
         },
         "customer": {
             "title": "الولاء والمحفظة",
-            "points_balance": "رصيد النقاط",
             "wallet_balance": "رصيد المحفظة",
-            "adjust_points": "تسوية رصيد النقاط",
-            "wallet_actions": "المحفظة",
-            "delta_placeholder": "+10 أو -5",
+            "accounts": "حسابات الولاء",
+            "no_accounts": "لا يوجد نشاط ولاء بعد.",
+            "points": "نقطة",
+            "stamps": "ختم",
+            "adjust_title": "تسوية الولاء",
+            "points_delta": "النقاط (+/-)",
+            "stamps_delta": "الأختام (+/-)",
+            "reason": "السبب",
+            "reason_placeholder": "السبب (مطلوب)",
             "amount_placeholder": "5.000",
-            "reason_placeholder": "السبب (مطلوب للتسوية)",
-            "points_hint": "عدد صحيح موقّع. السبب مطلوب لسجل التدقيق.",
+            "wallet_actions": "المحفظة",
             "wallet_hint": "الشحن يقبل مبلغًا موجبًا مع سبب اختياري. التسوية تقبل مبلغًا موقّعًا مع سبب مطلوب.",
-            "recent_points": "آخر حركات النقاط",
+            "recent_transactions": "آخر نشاط الولاء",
             "recent_wallet": "آخر حركات المحفظة",
             "no_entries": "لا توجد حركات بعد."
         },
         "errors": {
-            "config_load_failed": "تعذر تحميل إعدادات الولاء.",
-            "config_save_failed": "تعذر حفظ إعدادات الولاء.",
+            "rules_load_failed": "تعذر تحميل قواعد الولاء.",
+            "rule_save_failed": "تعذر حفظ قاعدة الولاء.",
             "summary_failed": "تعذر تحميل ملخص الولاء.",
-            "point_adjust_failed": "تعذر تسوية رصيد النقاط.",
+            "adjust_failed": "تعذر تسوية رصيد الولاء.",
             "wallet_topup_failed": "تعذر شحن المحفظة.",
             "wallet_adjust_failed": "تعذر تسوية رصيد المحفظة."
         }

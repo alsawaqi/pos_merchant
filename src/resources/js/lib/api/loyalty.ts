@@ -1,59 +1,72 @@
 /**
- * Loyalty API — config + per-customer balances + ledger
- * adjustments + paginated history.
+ * Loyalty API — rules + per-customer accounts + transactions,
+ * plus the (unchanged) wallet store-credit path.
  *
  * Mirrors {@link \App\Http\Controllers\Pos\LoyaltyController}.
- *
- * Permission gates server-side: loyalty.view for read endpoints,
+ * Permission gates server-side: loyalty.view for reads,
  * loyalty.manage for every write.
  *
- * Money + signed-delta types are STRINGS for OMR (decimal:3
- * precision contract) and integers for points.
+ * Money is STRING (decimal:3 OMR); points + stamps are integers.
  */
 
-import { apiGet, apiPatch, apiPost, type JsonValue } from '@/lib/api';
+import { apiDelete, apiGet, apiPatch, apiPost, type JsonValue } from '@/lib/api';
 
-export type PointEntryType = 'earn' | 'redeem' | 'adjustment' | 'refund_in' | 'expiry';
+export type LoyaltyRuleType = 'visit_based' | 'spend_based';
+export type LoyaltyRuleStatus = 'active' | 'paused';
+export type LoyaltyTransactionType = 'earn' | 'redeem' | 'adjust' | 'expire';
 export type WalletEntryType = 'topup' | 'redemption_use' | 'adjustment' | 'refund_in';
 
 // ---- Domain types -----------------------------------------------
 
-export interface LoyaltyConfig {
+export interface LoyaltyRule {
     id: number;
-    /** Whole points earned per 1 OMR spent. 0 = no auto-earn. */
-    points_per_omr: number;
-    /** How many baisas (1/1000 OMR) one point is worth on redemption. */
-    baisas_per_point: number;
-    /** When false, Phase 8+ POS sale pipeline skips writing earn entries. */
-    is_active: boolean;
+    uuid: string;
+    name: string;
+    type: LoyaltyRuleType;
+    /** Per-type config + §5.8 restrictions. Free-form object. */
+    config: Record<string, unknown>;
+    validity_start: string | null;
+    validity_end: string | null;
+    status: LoyaltyRuleStatus;
+    currently_active: boolean;
+    accounts_count?: number;
     created_at: string | null;
     updated_at: string | null;
 }
 
-export interface PointLedgerEntry {
+export interface LoyaltyTransaction {
     id: number;
     uuid: string;
-    entry_type: PointEntryType;
-    /** SIGNED — positive on inflow, negative on outflow. */
+    loyalty_account_id: number;
+    type: LoyaltyTransactionType;
     points_delta: number;
-    balance_after: number;
+    stamps_delta: number;
+    balance_after_points: number;
+    balance_after_stamps: number;
     reason: string | null;
-    reference_type: string | null;
-    reference_id: number | null;
+    order_id: number | null;
+    recorded_by?: string | null;
     occurred_at: string | null;
-    recorded_by?: { id: number; name: string } | null;
+}
+
+export interface LoyaltyAccount {
+    id: number;
+    uuid: string;
+    stamp_count: number;
+    point_balance: number;
+    last_activity_at: string | null;
+    rule?: { id: number; uuid: string; name: string; type: LoyaltyRuleType };
+    recent_transactions?: LoyaltyTransaction[];
 }
 
 export interface WalletLedgerEntry {
     id: number;
     uuid: string;
     entry_type: WalletEntryType;
-    /** SIGNED OMR string (decimal:3 precision). Never parseFloat. */
+    /** SIGNED OMR string (decimal:3). Never parseFloat for money. */
     amount_delta: string;
     balance_after: string;
     reason: string | null;
-    reference_type: string | null;
-    reference_id: number | null;
     occurred_at: string | null;
     recorded_by?: { id: number; name: string } | null;
 }
@@ -64,16 +77,15 @@ export interface CustomerLoyaltySummary {
         uuid: string;
         name: string;
         phone: string;
-        points_balance: number;
         wallet_balance: string;
     };
-    config: LoyaltyConfig;
-    recent_points: PointLedgerEntry[];
+    accounts: LoyaltyAccount[];
+    recent_transactions: LoyaltyTransaction[];
     recent_wallet: WalletLedgerEntry[];
 }
 
-export interface PaginatedPoints {
-    data: PointLedgerEntry[];
+export interface PaginatedTransactions {
+    data: LoyaltyTransaction[];
     current_page: number;
     last_page: number;
     per_page: number;
@@ -90,82 +102,93 @@ export interface PaginatedWallet {
 
 // ---- Payloads ---------------------------------------------------
 
-export interface UpsertLoyaltyConfigPayload {
-    points_per_omr?: number;
-    baisas_per_point?: number;
-    is_active?: boolean;
+export interface LoyaltyRulePayload {
+    name: string;
+    type: LoyaltyRuleType;
+    config_json?: Record<string, unknown>;
+    validity_start?: string | null;
+    validity_end?: string | null;
+    status?: LoyaltyRuleStatus;
 }
 
-export interface AdjustPointsPayload {
-    points_delta: number;
+export type UpdateLoyaltyRulePayload = Partial<Omit<LoyaltyRulePayload, 'type'>>;
+
+export interface AdjustLoyaltyPayload {
+    loyalty_rule_uuid: string;
+    points_delta?: number;
+    stamps_delta?: number;
     reason: string;
 }
 
 export interface TopUpWalletPayload {
-    /** Positive OMR amount as a string (decimal:3 precision). */
     amount: string;
     reason?: string | null;
 }
 
 export interface AdjustWalletPayload {
-    /** SIGNED OMR string. */
     amount_delta: string;
     reason: string;
 }
 
-// ---- Endpoints --------------------------------------------------
+// ---- Rules ------------------------------------------------------
 
-export function getLoyaltyConfig(): Promise<{ data: LoyaltyConfig }> {
-    return apiGet<{ data: LoyaltyConfig }>('/api/loyalty/config');
+export function listLoyaltyRules(): Promise<{ data: LoyaltyRule[] }> {
+    return apiGet<{ data: LoyaltyRule[] }>('/api/loyalty/rules');
 }
 
-export function upsertLoyaltyConfig(
-    payload: UpsertLoyaltyConfigPayload,
-): Promise<{ data: LoyaltyConfig }> {
-    return apiPatch<{ data: LoyaltyConfig }>(
-        '/api/loyalty/config',
-        payload as unknown as JsonValue,
-    );
+export function createLoyaltyRule(payload: LoyaltyRulePayload): Promise<{ data: LoyaltyRule }> {
+    return apiPost<{ data: LoyaltyRule }>('/api/loyalty/rules', payload as unknown as JsonValue);
 }
+
+export function updateLoyaltyRule(uuid: string, payload: UpdateLoyaltyRulePayload): Promise<{ data: LoyaltyRule }> {
+    return apiPatch<{ data: LoyaltyRule }>(`/api/loyalty/rules/${uuid}`, payload as unknown as JsonValue);
+}
+
+export function pauseLoyaltyRule(uuid: string): Promise<{ data: LoyaltyRule }> {
+    return apiPost<{ data: LoyaltyRule }>(`/api/loyalty/rules/${uuid}/pause`);
+}
+
+export function resumeLoyaltyRule(uuid: string): Promise<{ data: LoyaltyRule }> {
+    return apiPost<{ data: LoyaltyRule }>(`/api/loyalty/rules/${uuid}/resume`);
+}
+
+export function deleteLoyaltyRule(uuid: string): Promise<void> {
+    return apiDelete<void>(`/api/loyalty/rules/${uuid}`);
+}
+
+// ---- Per-customer ----------------------------------------------
 
 export function getCustomerLoyalty(customerUuid: string): Promise<{ data: CustomerLoyaltySummary }> {
     return apiGet<{ data: CustomerLoyaltySummary }>(`/api/customers/${customerUuid}/loyalty`);
 }
 
-export function adjustPoints(
+export function adjustLoyalty(
     customerUuid: string,
-    payload: AdjustPointsPayload,
-): Promise<{ data: { entry: PointLedgerEntry; points_balance: number } }> {
-    return apiPost(
-        `/api/customers/${customerUuid}/points/adjust`,
-        payload as unknown as JsonValue,
-    );
+    payload: AdjustLoyaltyPayload,
+): Promise<{ data: { transaction: LoyaltyTransaction; account: LoyaltyAccount } }> {
+    return apiPost(`/api/customers/${customerUuid}/loyalty/adjust`, payload as unknown as JsonValue);
 }
+
+export function getLoyaltyTransactions(customerUuid: string, page = 1, perPage = 50): Promise<PaginatedTransactions> {
+    return apiGet<PaginatedTransactions>(`/api/customers/${customerUuid}/loyalty/transactions`, {
+        query: { page, per_page: perPage },
+    });
+}
+
+// ---- Wallet (unchanged) ----------------------------------------
 
 export function topUpWallet(
     customerUuid: string,
     payload: TopUpWalletPayload,
 ): Promise<{ data: { entry: WalletLedgerEntry; wallet_balance: string } }> {
-    return apiPost(
-        `/api/customers/${customerUuid}/wallet/topup`,
-        payload as unknown as JsonValue,
-    );
+    return apiPost(`/api/customers/${customerUuid}/wallet/topup`, payload as unknown as JsonValue);
 }
 
 export function adjustWallet(
     customerUuid: string,
     payload: AdjustWalletPayload,
 ): Promise<{ data: { entry: WalletLedgerEntry; wallet_balance: string } }> {
-    return apiPost(
-        `/api/customers/${customerUuid}/wallet/adjust`,
-        payload as unknown as JsonValue,
-    );
-}
-
-export function getPointLedger(customerUuid: string, page = 1, perPage = 50): Promise<PaginatedPoints> {
-    return apiGet<PaginatedPoints>(`/api/customers/${customerUuid}/points/ledger`, {
-        query: { page, per_page: perPage },
-    });
+    return apiPost(`/api/customers/${customerUuid}/wallet/adjust`, payload as unknown as JsonValue);
 }
 
 export function getWalletLedger(customerUuid: string, page = 1, perPage = 50): Promise<PaginatedWallet> {
