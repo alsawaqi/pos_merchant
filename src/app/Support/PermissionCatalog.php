@@ -195,6 +195,26 @@ final class PermissionCatalog
                 ],
             ],
             [
+                // Phase 6a — customer book. Lives between
+                // catalogue (what you sell) and inventory (what
+                // you sell it with) in the role-builder UI.
+                'key' => 'customers',
+                'label_en' => 'Customers',
+                'label_ar' => 'العملاء',
+                'permissions' => [
+                    [
+                        'key' => MerchantPermission::CustomersView->value,
+                        'label_en' => 'See the customer book + vehicle plates',
+                        'label_ar' => 'عرض دفتر العملاء وأرقام المركبات',
+                    ],
+                    [
+                        'key' => MerchantPermission::CustomersManage->value,
+                        'label_en' => 'Create + edit + delete customers and their vehicle plates',
+                        'label_ar' => 'إنشاء وتعديل وحذف العملاء وأرقام المركبات',
+                    ],
+                ],
+            ],
+            [
                 'key' => 'roles',
                 'label_en' => 'Roles & Permissions',
                 'label_ar' => 'الأدوار والصلاحيات',

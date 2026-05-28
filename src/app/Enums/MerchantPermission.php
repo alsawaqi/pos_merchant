@@ -94,6 +94,18 @@ enum MerchantPermission: string
     case RestockRequestCreate = 'inventory.restock_request.create';
     case RestockRequestReview = 'inventory.restock_request.review';
 
+    // Phase 6a — customer book. Read access is generous because
+    // the cashier supervisor / viewer roles often need to look
+    // up a customer for reporting; write access is gated to
+    // Manager / SuperAdmin (the role assigning a "customer
+    // representative" can mint a custom role with manage). Note
+    // that the Phase 7+ POS terminal (Android) will do its own
+    // find-or-create on the cashier side via the device-auth
+    // pipeline — those writes do NOT come through this portal
+    // permission.
+    case CustomersView = 'customers.view';
+    case CustomersManage = 'customers.manage';
+
     /**
      * @return list<string>
      */

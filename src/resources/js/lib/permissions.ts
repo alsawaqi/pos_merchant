@@ -48,6 +48,13 @@ export const MerchantPermission = {
     // restock workflow stays independently controllable.
     RestockRequestCreate: 'inventory.restock_request.create',
     RestockRequestReview: 'inventory.restock_request.review',
+    // Phase 6a — customer book. View is generous (Viewer +
+    // CashierSupervisor + InventoryManager + Manager + SuperAdmin
+    // all see). Manage is Manager + SuperAdmin only. The Phase 7+
+    // POS terminal does its own find-or-create via the device-
+    // auth pipeline; those writes don't pass through this gate.
+    CustomersView: 'customers.view',
+    CustomersManage: 'customers.manage',
 } as const;
 
 export type MerchantPermissionValue =

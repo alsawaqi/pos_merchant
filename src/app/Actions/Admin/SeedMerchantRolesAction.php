@@ -164,11 +164,14 @@ final class SeedMerchantRolesAction
                     // review one when they're at HQ.
                     MerchantPermission::RestockRequestCreate->value,
                     MerchantPermission::RestockRequestReview->value,
+                    // Phase 6a: managers own the customer book.
+                    MerchantPermission::CustomersView->value,
+                    MerchantPermission::CustomersManage->value,
                 ],
             ],
 
             MerchantRole::CashierSupervisor->value => [
-                'description' => 'Shift supervisor — view staff + branch list + floor plan + menu + inventory. Cannot hire / fire / reset PINs, change the menu, or adjust stock.',
+                'description' => 'Shift supervisor — view staff + branch list + floor plan + menu + inventory + customers. Cannot hire / fire / reset PINs, change the menu, or adjust stock.',
                 'permissions' => [
                     MerchantPermission::PosStaffView->value,
                     MerchantPermission::PosStaffUpdate->value,
@@ -180,11 +183,16 @@ final class SeedMerchantRolesAction
                     // low-stock items mid-shift without authority
                     // to restock.
                     MerchantPermission::InventoryView->value,
+                    // Phase 6a: supervisors look up customers
+                    // during reporting / lookup. No write — the
+                    // POS terminal handles in-flight create on
+                    // its own (Phase 7+).
+                    MerchantPermission::CustomersView->value,
                 ],
             ],
 
             MerchantRole::Viewer->value => [
-                'description' => 'Read-only — see staff, branch list, floor plan, menu, and inventory. No write access.',
+                'description' => 'Read-only — see staff, branch list, floor plan, menu, inventory, and customers. No write access.',
                 'permissions' => [
                     MerchantPermission::PosStaffView->value,
                     MerchantPermission::BranchesView->value,
@@ -192,6 +200,7 @@ final class SeedMerchantRolesAction
                     MerchantPermission::FloorPlanView->value,
                     MerchantPermission::CatalogueView->value,
                     MerchantPermission::InventoryView->value,
+                    MerchantPermission::CustomersView->value,
                 ],
             ],
 
@@ -211,6 +220,12 @@ final class SeedMerchantRolesAction
                     // the request flow.
                     MerchantPermission::RestockRequestCreate->value,
                     MerchantPermission::RestockRequestReview->value,
+                    // Phase 6a: inventory specialist sees but
+                    // doesn't manage customers — the customer
+                    // book is a Manager concern, not an inventory
+                    // one. They get View so they can correlate a
+                    // request with the customer who triggered it.
+                    MerchantPermission::CustomersView->value,
                 ],
             ],
         ];
