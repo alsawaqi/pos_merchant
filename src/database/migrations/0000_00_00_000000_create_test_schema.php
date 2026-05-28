@@ -657,6 +657,62 @@ return new class extends Migration
             $table->unique(['product_id', 'delivery_provider_id'], 'pos_product_delivery_prices_product_provider_unique');
         });
 
+        // ---- pos_orders + pos_order_items + pos_order_item_addons (Phase 7a) ---
+        // Transactional spine. Snapshot columns (product/price/
+        // recipe) freeze the state at order-write time so a later
+        // catalogue edit doesn't retroactively shift historical
+        // totals. JSON columns mirror as TEXT here (sqlite has
+        // no jsonb) — production Postgres uses jsonb.
+        Schema::create('pos_orders', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->foreignId('device_id')->nullable()->constrained('pos_devices')->nullOnDelete();
+            $table->foreignId('staff_id')->nullable()->constrained('pos_staff')->nullOnDelete();
+            $table->foreignId('customer_id')->nullable()->constrained('pos_customers')->nullOnDelete();
+            $table->foreignId('table_id')->nullable()->constrained('pos_tables')->nullOnDelete();
+            $table->string('order_type', 32);
+            $table->string('status', 32)->default('open');
+            $table->string('source', 32);
+            $table->string('plate_number', 32)->nullable();
+            $table->decimal('subtotal', 12, 3)->default(0);
+            $table->decimal('discount_total', 12, 3)->default(0);
+            $table->decimal('tax_total', 12, 3)->default(0);
+            $table->decimal('grand_total', 12, 3)->default(0);
+            $table->timestamp('opened_at')->useCurrent();
+            $table->timestamp('closed_at')->nullable();
+            $table->string('client_event_id', 64)->nullable()->unique('pos_orders_client_event_id_unique');
+            $table->text('note')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('pos_order_items', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('order_id')->constrained('pos_orders')->cascadeOnDelete();
+            $table->foreignId('product_id')->nullable()->constrained('pos_products')->nullOnDelete();
+            $table->string('product_name_snapshot');
+            $table->decimal('qty', 12, 3)->default('1.000');
+            $table->decimal('unit_price_snapshot', 12, 3);
+            $table->decimal('line_discount', 12, 3)->default(0);
+            $table->decimal('line_total', 12, 3);
+            // sqlite mirror — production is jsonb on Postgres.
+            $table->text('recipe_snapshot_json')->nullable();
+            $table->string('status', 32)->default('open');
+            $table->text('notes')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('pos_order_item_addons', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('order_item_id')->constrained('pos_order_items')->cascadeOnDelete();
+            $table->foreignId('add_on_id')->nullable()->constrained('pos_addons')->nullOnDelete();
+            $table->string('add_on_name_snapshot');
+            $table->decimal('price_delta_snapshot', 12, 3);
+            $table->text('ingredient_snapshot_json')->nullable();
+            $table->timestamps();
+        });
+
         // ---- Sessions (used by some auth integration tests) -------
         // Mirrors the Laravel default sessions table — pos_merchant
         // is configured to use session driver=array in tests so this
