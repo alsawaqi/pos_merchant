@@ -713,6 +713,48 @@ return new class extends Migration
             $table->timestamps();
         });
 
+        // ---- pos_payments + pos_shifts (Phase 7a) ---
+        // Payments support split tender + Soft POS reconciliation.
+        // Invariant (enforced by Phase 8 Action): SUM(payments
+        // WHERE status=success) == order.grand_total for paid orders.
+        Schema::create('pos_payments', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('order_id')->constrained('pos_orders')->cascadeOnDelete();
+            $table->string('method', 32);
+            $table->decimal('amount', 12, 3);
+            $table->decimal('change_given', 12, 3)->nullable();
+            $table->string('softpos_reference', 64)->nullable();
+            $table->string('softpos_auth_code', 32)->nullable();
+            $table->string('status', 32)->default('success');
+            $table->boolean('pending_reconciliation')->default(false);
+            $table->foreignId('reconciled_by_admin_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->timestamp('reconciled_at')->nullable();
+            $table->timestamp('captured_at')->useCurrent();
+            $table->timestamps();
+        });
+
+        // Shifts: cashier opens with a float, closes with a count,
+        // variance is the audit trigger. Tied to a device (which
+        // POS terminal) + a staff (which cashier).
+        Schema::create('pos_shifts', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->foreignId('device_id')->nullable()->constrained('pos_devices')->nullOnDelete();
+            $table->foreignId('staff_id')->nullable()->constrained('pos_staff')->nullOnDelete();
+            $table->timestamp('opened_at')->useCurrent();
+            $table->timestamp('closed_at')->nullable();
+            $table->decimal('opening_cash', 12, 3)->default(0);
+            $table->decimal('closing_cash', 12, 3)->nullable();
+            $table->decimal('expected_cash', 12, 3)->nullable();
+            $table->decimal('variance', 12, 3)->nullable();
+            $table->string('status', 32)->default('open');
+            $table->text('note')->nullable();
+            $table->timestamps();
+        });
+
         // ---- Sessions (used by some auth integration tests) -------
         // Mirrors the Laravel default sessions table — pos_merchant
         // is configured to use session driver=array in tests so this
