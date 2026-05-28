@@ -236,6 +236,26 @@ final class PermissionCatalog
                 ],
             ],
             [
+                // Phase 6d — discount rules. Same risk class as
+                // loyalty (money off the bill at POS time), so
+                // it gets its own block with a tight manage gate.
+                'key' => 'discounts',
+                'label_en' => 'Discounts',
+                'label_ar' => 'الخصومات',
+                'permissions' => [
+                    [
+                        'key' => MerchantPermission::DiscountsView->value,
+                        'label_en' => 'See discount rules + which products / categories they target',
+                        'label_ar' => 'عرض قواعد الخصم والمنتجات أو الفئات المستهدفة',
+                    ],
+                    [
+                        'key' => MerchantPermission::DiscountsManage->value,
+                        'label_en' => 'Create + edit + pause / resume discount rules',
+                        'label_ar' => 'إنشاء وتعديل وإيقاف واستئناف قواعد الخصم',
+                    ],
+                ],
+            ],
+            [
                 'key' => 'roles',
                 'label_en' => 'Roles & Permissions',
                 'label_ar' => 'الأدوار والصلاحيات',

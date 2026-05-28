@@ -171,6 +171,9 @@ final class SeedMerchantRolesAction
                     // + grant manual point/wallet adjustments.
                     MerchantPermission::LoyaltyView->value,
                     MerchantPermission::LoyaltyManage->value,
+                    // Phase 6d: managers configure discount rules.
+                    MerchantPermission::DiscountsView->value,
+                    MerchantPermission::DiscountsManage->value,
                 ],
             ],
 
@@ -195,11 +198,15 @@ final class SeedMerchantRolesAction
                     // Phase 6b: supervisors see balances during
                     // a shift but don't move money around.
                     MerchantPermission::LoyaltyView->value,
+                    // Phase 6d: supervisors see discount rules
+                    // to understand what the POS auto-applied
+                    // mid-shift.
+                    MerchantPermission::DiscountsView->value,
                 ],
             ],
 
             MerchantRole::Viewer->value => [
-                'description' => 'Read-only — see staff, branch list, floor plan, menu, inventory, customers, and loyalty balances. No write access.',
+                'description' => 'Read-only — see staff, branch list, floor plan, menu, inventory, customers, loyalty balances, and discount rules. No write access.',
                 'permissions' => [
                     MerchantPermission::PosStaffView->value,
                     MerchantPermission::BranchesView->value,
@@ -209,6 +216,7 @@ final class SeedMerchantRolesAction
                     MerchantPermission::InventoryView->value,
                     MerchantPermission::CustomersView->value,
                     MerchantPermission::LoyaltyView->value,
+                    MerchantPermission::DiscountsView->value,
                 ],
             ],
 
@@ -237,6 +245,11 @@ final class SeedMerchantRolesAction
                     // Phase 6b: same logic — see balances for
                     // context, but don't adjust them.
                     MerchantPermission::LoyaltyView->value,
+                    // Phase 6d: inventory specialist often
+                    // configures the promo calendar alongside
+                    // ingredient costs, so both view + manage.
+                    MerchantPermission::DiscountsView->value,
+                    MerchantPermission::DiscountsManage->value,
                 ],
             ],
         ];

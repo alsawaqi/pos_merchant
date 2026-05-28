@@ -60,6 +60,11 @@ export const MerchantPermission = {
     // View matches the customers.view audience for reporting.
     LoyaltyView: 'loyalty.view',
     LoyaltyManage: 'loyalty.manage',
+    // Phase 6d — discount rules. Same risk class as loyalty
+    // (money off the bill at POS time). View generous; manage
+    // is Manager / InventoryManager / SuperAdmin.
+    DiscountsView: 'discounts.view',
+    DiscountsManage: 'discounts.manage',
 } as const;
 
 export type MerchantPermissionValue =

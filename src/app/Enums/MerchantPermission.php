@@ -115,6 +115,14 @@ enum MerchantPermission: string
     case LoyaltyView = 'loyalty.view';
     case LoyaltyManage = 'loyalty.manage';
 
+    // Phase 6d — discounts. Same risk class as loyalty (it
+    // moves money off the bill at POS time), so we gate it
+    // separately from catalogue. View is generous (reporting
+    // roles need it for the §5.11.7 Discount Report); manage
+    // is Manager + InventoryManager + SuperAdmin.
+    case DiscountsView = 'discounts.view';
+    case DiscountsManage = 'discounts.manage';
+
     /**
      * @return list<string>
      */
