@@ -556,9 +556,11 @@ return new class extends Migration
             $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
             $table->string('name');
             $table->string('phone', 32);
-            // Phase 6b -- denormalised running balances kept in
-            // lock-step with SUM(point_ledger) + SUM(wallet_ledger).
-            $table->integer('points_balance')->default(0);
+            // Phase 6b -- denormalised wallet balance kept in
+            // lock-step with SUM(wallet_ledger). Points moved to
+            // pos_loyalty_accounts.point_balance in the loyalty
+            // refactor (a customer can hold points under several
+            // rules); the wallet (store credit) stays here.
             $table->decimal('wallet_balance', 12, 3)->default(0);
             $table->timestamps();
             $table->softDeletes();
@@ -578,37 +580,77 @@ return new class extends Migration
             $table->unique(['company_id', 'plate_number'], 'pos_customer_vehicle_plates_company_plate_unique');
         });
 
-        // ---- pos_customer_loyalty_configs + point_ledger + wallet_ledger (Phase 6b) ---
-        // Per-company loyalty config (singleton). Two append-only
-        // ledgers (points + wallet) with balance_after columns so
-        // a history view doesn't re-sum prior entries per row, and
-        // ledger-balance drift is caught instantly.
-        Schema::create('pos_customer_loyalty_configs', function (Blueprint $table): void {
-            $table->id();
-            $table->foreignId('company_id')->unique()->constrained('pos_companies')->cascadeOnDelete();
-            $table->unsignedInteger('points_per_omr')->default(0);
-            $table->unsignedInteger('baisas_per_point')->default(10);
-            $table->boolean('is_active')->default(false);
-            $table->timestamps();
-        });
-
-        Schema::create('pos_customer_point_ledger', function (Blueprint $table): void {
+        // ---- Loyalty: rules + accounts + transactions (blueprint §5.8 / §10.6) ---
+        // Multi-rule loyalty. A company defines visit_based (stamp
+        // card) and/or spend_based (points) rules, multiple active
+        // in parallel. Each customer gets ONE account per rule
+        // holding stamp_count + point_balance. An append-only
+        // transactions ledger records every earn/redeem/adjust/
+        // expire with running balances so a history view never
+        // re-sums and drift is caught instantly.
+        // (Replaces the Phase 6b single-config + point-ledger model.)
+        Schema::create('pos_loyalty_rules', function (Blueprint $table): void {
             $table->id();
             $table->uuid('uuid')->unique();
-            $table->foreignId('customer_id')->constrained('pos_customers')->cascadeOnDelete();
             $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
-            $table->string('entry_type', 32);
-            // SIGNED integer points.
-            $table->integer('points_delta');
-            $table->integer('balance_after');
+            $table->string('name');
+            // LoyaltyRuleType: visit_based / spend_based.
+            $table->string('type', 32);
+            // Per-type config + restrictions (eligible products /
+            // categories / branches / days-hours, max redemption,
+            // customer-tag). sqlite mirror — production jsonb.
+            $table->text('config_json')->nullable();
+            $table->timestamp('validity_start')->nullable();
+            $table->timestamp('validity_end')->nullable();
+            // active / paused.
+            $table->string('status', 32)->default('active');
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('pos_loyalty_accounts', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('customer_id')->constrained('pos_customers')->cascadeOnDelete();
+            $table->foreignId('loyalty_rule_id')->constrained('pos_loyalty_rules')->cascadeOnDelete();
+            $table->integer('stamp_count')->default(0);
+            $table->integer('point_balance')->default(0);
+            $table->timestamp('last_activity_at')->nullable();
+            $table->timestamps();
+            // One account per customer per rule.
+            $table->unique(['customer_id', 'loyalty_rule_id'], 'pos_loyalty_accounts_customer_rule_unique');
+        });
+
+        Schema::create('pos_loyalty_transactions', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            // Denormalised so the §5.11.8 Customer Report can sum
+            // by company + window without a join through accounts.
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('loyalty_account_id')->constrained('pos_loyalty_accounts')->cascadeOnDelete();
+            // LoyaltyTransactionType: earn / redeem / adjust / expire.
+            $table->string('type', 32);
+            // SIGNED deltas; a row may move points OR stamps OR both.
+            $table->integer('points_delta')->default(0);
+            $table->integer('stamps_delta')->default(0);
+            $table->integer('balance_after_points')->default(0);
+            $table->integer('balance_after_stamps')->default(0);
             $table->text('reason')->nullable();
-            $table->string('reference_type')->nullable();
-            $table->unsignedBigInteger('reference_id')->nullable();
+            // Phase 8 wires earn/redeem to the triggering sale.
+            // Nullable + unconstrained for now (manual adjustments
+            // have no order).
+            $table->unsignedBigInteger('order_id')->nullable();
             $table->foreignId('recorded_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
             $table->timestamp('occurred_at')->useCurrent();
             $table->timestamp('created_at')->useCurrent();
         });
 
+        // ---- pos_customer_wallet_ledger (Phase 6b — store credit) ---
+        // SEPARATE from loyalty (not in the blueprint loyalty model).
+        // Append-only OMR ledger with balance_after; kept in lock-step
+        // with pos_customers.wallet_balance. Unchanged by the loyalty
+        // refactor.
         Schema::create('pos_customer_wallet_ledger', function (Blueprint $table): void {
             $table->id();
             $table->uuid('uuid')->unique();

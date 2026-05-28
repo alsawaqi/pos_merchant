@@ -4,95 +4,177 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Pos;
 
-use App\Actions\Pos\Loyalty\AdjustPointBalanceAction;
+use App\Actions\Pos\Loyalty\AdjustLoyaltyAction;
 use App\Actions\Pos\Loyalty\AdjustWalletBalanceAction;
+use App\Actions\Pos\Loyalty\CreateLoyaltyRuleAction;
+use App\Actions\Pos\Loyalty\DeleteLoyaltyRuleAction;
+use App\Actions\Pos\Loyalty\EnsureLoyaltyAccountAction;
+use App\Actions\Pos\Loyalty\PauseLoyaltyRuleAction;
+use App\Actions\Pos\Loyalty\ResumeLoyaltyRuleAction;
 use App\Actions\Pos\Loyalty\TopUpWalletAction;
-use App\Actions\Pos\Loyalty\UpsertLoyaltyConfigAction;
+use App\Actions\Pos\Loyalty\UpdateLoyaltyRuleAction;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Pos\Loyalty\AdjustPointBalanceRequest;
+use App\Http\Requests\Pos\Loyalty\AdjustLoyaltyRequest;
 use App\Http\Requests\Pos\Loyalty\AdjustWalletBalanceRequest;
+use App\Http\Requests\Pos\Loyalty\CreateLoyaltyRuleRequest;
 use App\Http\Requests\Pos\Loyalty\TopUpWalletRequest;
-use App\Http\Requests\Pos\Loyalty\UpsertLoyaltyConfigRequest;
-use App\Http\Resources\Pos\Loyalty\LoyaltyConfigResource;
-use App\Http\Resources\Pos\Loyalty\PointLedgerEntryResource;
+use App\Http\Requests\Pos\Loyalty\UpdateLoyaltyRuleRequest;
+use App\Http\Resources\Pos\Loyalty\LoyaltyAccountResource;
+use App\Http\Resources\Pos\Loyalty\LoyaltyRuleResource;
+use App\Http\Resources\Pos\Loyalty\LoyaltyTransactionResource;
 use App\Http\Resources\Pos\Loyalty\WalletLedgerEntryResource;
 use App\Models\Customer;
-use App\Models\CustomerLoyaltyConfig;
-use App\Models\CustomerPointLedgerEntry;
 use App\Models\CustomerWalletLedgerEntry;
+use App\Models\LoyaltyRule;
+use App\Models\LoyaltyTransaction;
 use App\Support\MerchantTenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Pagination\LengthAwarePaginator;
 use RuntimeException;
 
 /**
- * Phase 6b — loyalty config + per-customer adjustments + ledger
- * history.
+ * Loyalty refactor — rules CRUD + per-customer accounts +
+ * transactions, plus the (unchanged) wallet store-credit path.
  *
- *   GET    /api/loyalty/config                              → show config (creates default if absent)
- *   PATCH  /api/loyalty/config                              → upsert config
+ * RULES (blueprint §5.8):
+ *   GET    /api/loyalty/rules                                 list
+ *   POST   /api/loyalty/rules                                 create
+ *   PATCH  /api/loyalty/rules/{rule:uuid}                     update
+ *   DELETE /api/loyalty/rules/{rule:uuid}                     soft delete
+ *   POST   /api/loyalty/rules/{rule:uuid}/pause               active → paused
+ *   POST   /api/loyalty/rules/{rule:uuid}/resume              paused → active
  *
- *   GET    /api/customers/{customer:uuid}/loyalty           → balances + config snapshot
- *   POST   /api/customers/{customer:uuid}/points/adjust     → manual point adjustment
- *   POST   /api/customers/{customer:uuid}/wallet/topup      → manual wallet top-up
- *   POST   /api/customers/{customer:uuid}/wallet/adjust     → manual wallet adjustment
+ * CUSTOMER:
+ *   GET  /api/customers/{customer:uuid}/loyalty               accounts + recent txns
+ *   POST /api/customers/{customer:uuid}/loyalty/adjust        manual points/stamps adjust
+ *   GET  /api/customers/{customer:uuid}/loyalty/transactions  paginated history
  *
- *   GET    /api/customers/{customer:uuid}/points/ledger     → paginated history
- *   GET    /api/customers/{customer:uuid}/wallet/ledger     → paginated history
+ * WALLET (store credit — separate from blueprint loyalty):
+ *   POST /api/customers/{customer:uuid}/wallet/topup
+ *   POST /api/customers/{customer:uuid}/wallet/adjust
+ *   GET  /api/customers/{customer:uuid}/wallet/ledger
  *
- * Permission gating:
- *   - LoyaltyView   for GET endpoints
- *   - LoyaltyManage for every write
- *
- * All endpoints tenant-scoped. Customer model binding +
- * refuseIfNotInTenant defend against cross-merchant access.
+ * Permission gating: LoyaltyView for GETs, LoyaltyManage for writes.
+ * All endpoints tenant-scoped.
  */
 class LoyaltyController extends Controller
 {
     public function __construct(
         private readonly MerchantTenantContext $tenant,
-        private readonly UpsertLoyaltyConfigAction $upsertConfig,
-        private readonly AdjustPointBalanceAction $adjustPoints,
-        private readonly AdjustWalletBalanceAction $adjustWallet,
-        private readonly TopUpWalletAction $topUpWallet,
+        private readonly CreateLoyaltyRuleAction $createRule,
+        private readonly UpdateLoyaltyRuleAction $updateRuleAction,
+        private readonly PauseLoyaltyRuleAction $pauseRuleAction,
+        private readonly ResumeLoyaltyRuleAction $resumeRuleAction,
+        private readonly DeleteLoyaltyRuleAction $deleteRuleAction,
+        private readonly EnsureLoyaltyAccountAction $ensureAccount,
+        private readonly AdjustLoyaltyAction $adjustLoyalty,
+        private readonly TopUpWalletAction $topUpWalletAction,
+        private readonly AdjustWalletBalanceAction $adjustWalletAction,
     ) {}
 
-    // =================== CONFIG ===================
+    // =================== RULES ===================
 
-    public function showConfig(Request $request): LoyaltyConfigResource
+    public function indexRules(Request $request): AnonymousResourceCollection
     {
         $this->ensure($request, MerchantPermission::LoyaltyView);
-        $config = $this->resolveOrCreateConfig();
-        return LoyaltyConfigResource::make($config);
+
+        $rules = LoyaltyRule::query()
+            ->where('company_id', $this->tenant->requiredId())
+            ->withCount('accounts')
+            ->orderBy('name')
+            ->get();
+
+        return LoyaltyRuleResource::collection($rules);
     }
 
-    public function upsertConfig(UpsertLoyaltyConfigRequest $request): LoyaltyConfigResource | JsonResponse
+    public function storeRule(CreateLoyaltyRuleRequest $request): JsonResponse
     {
         $this->ensure($request, MerchantPermission::LoyaltyManage);
+
         try {
-            $config = $this->upsertConfig->handle($request->validated(), $request->user());
+            $rule = $this->createRule->handle($request->validated(), $request->user());
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
-        return LoyaltyConfigResource::make($config);
+
+        return response()->json([
+            'data' => (new LoyaltyRuleResource($rule))->resolve($request),
+        ], 201);
     }
 
-    // =================== PER-CUSTOMER SUMMARY ===================
+    public function updateRule(UpdateLoyaltyRuleRequest $request, LoyaltyRule $rule): LoyaltyRuleResource | JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::LoyaltyManage);
+        $this->refuseRuleNotInTenant($rule);
+
+        try {
+            $updated = $this->updateRuleAction->handle($rule, $request->validated(), $request->user());
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return LoyaltyRuleResource::make($updated);
+    }
+
+    public function destroyRule(Request $request, LoyaltyRule $rule): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::LoyaltyManage);
+        $this->refuseRuleNotInTenant($rule);
+
+        $this->deleteRuleAction->handle($rule, $request->user());
+
+        return response()->json(['data' => null], 204);
+    }
+
+    public function pauseRule(Request $request, LoyaltyRule $rule): LoyaltyRuleResource | JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::LoyaltyManage);
+        $this->refuseRuleNotInTenant($rule);
+
+        try {
+            $updated = $this->pauseRuleAction->handle($rule, $request->user());
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return LoyaltyRuleResource::make($updated);
+    }
+
+    public function resumeRule(Request $request, LoyaltyRule $rule): LoyaltyRuleResource | JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::LoyaltyManage);
+        $this->refuseRuleNotInTenant($rule);
+
+        try {
+            $updated = $this->resumeRuleAction->handle($rule, $request->user());
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return LoyaltyRuleResource::make($updated);
+    }
+
+    // =================== PER-CUSTOMER ===================
 
     public function showCustomer(Request $request, Customer $customer): JsonResponse
     {
         $this->ensure($request, MerchantPermission::LoyaltyView);
         $this->refuseIfNotInTenant($customer);
 
-        // Compact summary payload — balances + config + the
-        // most recent N entries per ledger so the customer-
-        // modal Loyalty section can render without a second
-        // round-trip. Full pagination is on the /ledger
-        // endpoints below.
-        $config = $this->resolveOrCreateConfig();
-        $recentPoints = $customer->pointLedger()->take(5)->get();
+        $accounts = $customer->loyaltyAccounts()->with('rule')->get();
+        $accountIds = $accounts->pluck('id')->all();
+
+        $recentTransactions = LoyaltyTransaction::query()
+            ->whereIn('loyalty_account_id', $accountIds === [] ? [0] : $accountIds)
+            ->with('recordedBy')
+            ->orderByDesc('occurred_at')
+            ->orderByDesc('id')
+            ->take(10)
+            ->get();
+
         $recentWallet = $customer->walletLedger()->take(5)->get();
 
         return response()->json([
@@ -102,46 +184,70 @@ class LoyaltyController extends Controller
                     'uuid' => $customer->uuid,
                     'name' => $customer->name,
                     'phone' => $customer->phone,
-                    'points_balance' => (int) $customer->points_balance,
                     'wallet_balance' => (string) $customer->wallet_balance,
                 ],
-                'config' => (new LoyaltyConfigResource($config))->resolve($request),
-                'recent_points' => PointLedgerEntryResource::collection($recentPoints)->resolve($request),
+                'accounts' => LoyaltyAccountResource::collection($accounts)->resolve($request),
+                'recent_transactions' => LoyaltyTransactionResource::collection($recentTransactions)->resolve($request),
                 'recent_wallet' => WalletLedgerEntryResource::collection($recentWallet)->resolve($request),
             ],
         ]);
     }
 
-    // =================== POINT ADJUST ===================
-
-    public function adjustPoints(AdjustPointBalanceRequest $request, Customer $customer): JsonResponse
+    public function adjust(AdjustLoyaltyRequest $request, Customer $customer): JsonResponse
     {
         $this->ensure($request, MerchantPermission::LoyaltyManage);
         $this->refuseIfNotInTenant($customer);
 
+        $validated = $request->validated();
+        $rule = LoyaltyRule::query()
+            ->where('company_id', $this->tenant->requiredId())
+            ->where('uuid', (string) $validated['loyalty_rule_uuid'])
+            ->first();
+        if ($rule === null) {
+            return response()->json(['message' => 'Loyalty rule not found.'], 422);
+        }
+
         try {
-            $entry = $this->adjustPoints->handle(
-                $customer,
-                (int) $request->validated()['points_delta'],
+            $account = $this->ensureAccount->handle($customer, $rule);
+            $txn = $this->adjustLoyalty->handle(
+                $account,
+                (int) ($validated['points_delta'] ?? 0),
+                (int) ($validated['stamps_delta'] ?? 0),
                 $request->user(),
-                (string) $request->validated()['reason'],
+                (string) $validated['reason'],
             );
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        // Refresh the customer to pick up the new running total.
-        $customer->refresh();
+        $account->refresh();
 
         return response()->json([
             'data' => [
-                'entry' => (new PointLedgerEntryResource($entry))->resolve($request),
-                'points_balance' => (int) $customer->points_balance,
+                'transaction' => (new LoyaltyTransactionResource($txn))->resolve($request),
+                'account' => (new LoyaltyAccountResource($account->load('rule')))->resolve($request),
             ],
         ], 201);
     }
 
-    // =================== WALLET TOP-UP ===================
+    public function transactions(Request $request, Customer $customer): LengthAwarePaginator
+    {
+        $this->ensure($request, MerchantPermission::LoyaltyView);
+        $this->refuseIfNotInTenant($customer);
+
+        $perPage = min((int) $request->query('per_page', '50'), 200);
+        $accountIds = $customer->loyaltyAccounts()->pluck('id')->all();
+
+        return LoyaltyTransaction::query()
+            ->whereIn('loyalty_account_id', $accountIds === [] ? [0] : $accountIds)
+            ->with('recordedBy')
+            ->orderByDesc('occurred_at')
+            ->orderByDesc('id')
+            ->paginate($perPage)
+            ->through(fn (LoyaltyTransaction $t): array => (new LoyaltyTransactionResource($t))->resolve($request));
+    }
+
+    // =================== WALLET (unchanged) ===================
 
     public function topUpWallet(TopUpWalletRequest $request, Customer $customer): JsonResponse
     {
@@ -149,7 +255,7 @@ class LoyaltyController extends Controller
         $this->refuseIfNotInTenant($customer);
 
         try {
-            $entry = $this->topUpWallet->handle(
+            $entry = $this->topUpWalletAction->handle(
                 $customer,
                 (string) $request->validated()['amount'],
                 $request->user(),
@@ -169,15 +275,13 @@ class LoyaltyController extends Controller
         ], 201);
     }
 
-    // =================== WALLET ADJUST ===================
-
     public function adjustWallet(AdjustWalletBalanceRequest $request, Customer $customer): JsonResponse
     {
         $this->ensure($request, MerchantPermission::LoyaltyManage);
         $this->refuseIfNotInTenant($customer);
 
         try {
-            $entry = $this->adjustWallet->handle(
+            $entry = $this->adjustWalletAction->handle(
                 $customer,
                 (string) $request->validated()['amount_delta'],
                 $request->user(),
@@ -197,30 +301,12 @@ class LoyaltyController extends Controller
         ], 201);
     }
 
-    // =================== LEDGERS ===================
-
-    public function pointLedger(Request $request, Customer $customer): LengthAwarePaginator
-    {
-        $this->ensure($request, MerchantPermission::LoyaltyView);
-        $this->refuseIfNotInTenant($customer);
-
-        $perPage = min((int) $request->query('per_page', 50), 200);
-
-        return CustomerPointLedgerEntry::query()
-            ->where('customer_id', $customer->id)
-            ->with('recordedBy')
-            ->orderByDesc('occurred_at')
-            ->orderByDesc('id')
-            ->paginate($perPage)
-            ->through(fn (CustomerPointLedgerEntry $e): array => (new PointLedgerEntryResource($e))->resolve($request));
-    }
-
     public function walletLedger(Request $request, Customer $customer): LengthAwarePaginator
     {
         $this->ensure($request, MerchantPermission::LoyaltyView);
         $this->refuseIfNotInTenant($customer);
 
-        $perPage = min((int) $request->query('per_page', 50), 200);
+        $perPage = min((int) $request->query('per_page', '50'), 200);
 
         return CustomerWalletLedgerEntry::query()
             ->where('customer_id', $customer->id)
@@ -233,30 +319,6 @@ class LoyaltyController extends Controller
 
     // =================== HELPERS ===================
 
-    /**
-     * Lazy-create the per-company config on first read so the
-     * customer-loyalty summary endpoint never returns a null
-     * config. Uses firstOrCreate with the production defaults.
-     *
-     * Returns a fresh()'d instance so the JsonResource layer
-     * doesn't see wasRecentlyCreated=true and respond with a
-     * 201 on what is semantically a GET — the lazy-init is an
-     * implementation detail, the user sees a normal 200.
-     */
-    private function resolveOrCreateConfig(): CustomerLoyaltyConfig
-    {
-        $companyId = $this->tenant->requiredId();
-        $config = CustomerLoyaltyConfig::query()->firstOrCreate(
-            ['company_id' => $companyId],
-            [
-                'points_per_omr' => 0,
-                'baisas_per_point' => 10,
-                'is_active' => false,
-            ],
-        );
-        return $config->fresh();
-    }
-
     private function ensure(Request $request, MerchantPermission $permission): void
     {
         $user = $request->user();
@@ -268,6 +330,13 @@ class LoyaltyController extends Controller
     private function refuseIfNotInTenant(Customer $customer): void
     {
         if ((int) $customer->company_id !== $this->tenant->requiredId()) {
+            abort(404);
+        }
+    }
+
+    private function refuseRuleNotInTenant(LoyaltyRule $rule): void
+    {
+        if ((int) $rule->company_id !== $this->tenant->requiredId()) {
             abort(404);
         }
     }

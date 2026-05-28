@@ -39,7 +39,6 @@ use Illuminate\Support\Str;
     'company_id',
     'name',
     'phone',
-    'points_balance',
     'wallet_balance',
 ])]
 class Customer extends Model
@@ -55,10 +54,9 @@ class Customer extends Model
     protected function casts(): array
     {
         return [
-            // Phase 6b — denormalised running totals. Kept in
-            // lock-step with SUM(point_ledger) / SUM(wallet_ledger)
-            // via the Phase 6b Write*LedgerEntryAction.
-            'points_balance' => 'integer',
+            // Denormalised wallet balance, kept in lock-step with
+            // SUM(wallet_ledger) via WriteWalletLedgerEntryAction.
+            // Points live per-rule on pos_loyalty_accounts now.
             'wallet_balance' => 'decimal:3',
         ];
     }
@@ -95,17 +93,16 @@ class Customer extends Model
     }
 
     /**
-     * Phase 6b — append-only points ledger. Newest first so the
-     * "recent history" panel doesn't have to ->latest() at every
-     * call site.
+     * Loyalty refactor — the customer's loyalty accounts (one per
+     * rule they've engaged with). Each holds stamp_count +
+     * point_balance; transactions hang off the account.
      *
-     * @return HasMany<CustomerPointLedgerEntry, $this>
+     * @return HasMany<LoyaltyAccount, $this>
      */
-    public function pointLedger(): HasMany
+    public function loyaltyAccounts(): HasMany
     {
-        return $this->hasMany(CustomerPointLedgerEntry::class)
-            ->orderByDesc('occurred_at')
-            ->orderByDesc('id');
+        return $this->hasMany(LoyaltyAccount::class)
+            ->orderBy('id');
     }
 
     /**

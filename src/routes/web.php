@@ -336,30 +336,40 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         Route::delete('customer-plates/{plate:uuid}', [CustomersController::class, 'detachPlate'])
             ->name('customers.plates.detach');
 
-        // -------- Phase 6b — Loyalty + wallet --
-        // The merchant-side gates:
+        // -------- Loyalty refactor — rules + accounts + wallet --
+        // Multi-rule loyalty (blueprint §5.8): visit_based stamp
+        // cards + spend_based points. Merchant-side gates:
         //   loyalty.view   GET endpoints
-        //   loyalty.manage every write (config edit + balance
-        //                   adjust + wallet top-up)
+        //   loyalty.manage every write (rule CRUD + adjustments +
+        //                   wallet top-up)
         //
-        // The Phase 7+ POS terminal will write to the ledgers
-        // via a different surface (device-auth + the sale
-        // pipeline), not these routes.
-        Route::get('loyalty/config', [LoyaltyController::class, 'showConfig'])
-            ->name('loyalty.config.show');
-        Route::patch('loyalty/config', [LoyaltyController::class, 'upsertConfig'])
-            ->name('loyalty.config.upsert');
+        // The Phase 8 POS sale pipeline will earn/redeem via a
+        // device-auth surface (EvaluateLoyalty + WriteLoyalty
+        // TransactionAction), not these config routes.
+        Route::get('loyalty/rules', [LoyaltyController::class, 'indexRules'])
+            ->name('loyalty.rules.index');
+        Route::post('loyalty/rules', [LoyaltyController::class, 'storeRule'])
+            ->name('loyalty.rules.store');
+        Route::patch('loyalty/rules/{rule:uuid}', [LoyaltyController::class, 'updateRule'])
+            ->name('loyalty.rules.update');
+        Route::delete('loyalty/rules/{rule:uuid}', [LoyaltyController::class, 'destroyRule'])
+            ->name('loyalty.rules.destroy');
+        Route::post('loyalty/rules/{rule:uuid}/pause', [LoyaltyController::class, 'pauseRule'])
+            ->name('loyalty.rules.pause');
+        Route::post('loyalty/rules/{rule:uuid}/resume', [LoyaltyController::class, 'resumeRule'])
+            ->name('loyalty.rules.resume');
 
         Route::get('customers/{customer:uuid}/loyalty', [LoyaltyController::class, 'showCustomer'])
             ->name('loyalty.customer.show');
-        Route::post('customers/{customer:uuid}/points/adjust', [LoyaltyController::class, 'adjustPoints'])
-            ->name('loyalty.points.adjust');
+        Route::post('customers/{customer:uuid}/loyalty/adjust', [LoyaltyController::class, 'adjust'])
+            ->name('loyalty.adjust');
+        Route::get('customers/{customer:uuid}/loyalty/transactions', [LoyaltyController::class, 'transactions'])
+            ->name('loyalty.transactions');
+        // Wallet (store credit — separate from blueprint loyalty).
         Route::post('customers/{customer:uuid}/wallet/topup', [LoyaltyController::class, 'topUpWallet'])
             ->name('loyalty.wallet.topup');
         Route::post('customers/{customer:uuid}/wallet/adjust', [LoyaltyController::class, 'adjustWallet'])
             ->name('loyalty.wallet.adjust');
-        Route::get('customers/{customer:uuid}/points/ledger', [LoyaltyController::class, 'pointLedger'])
-            ->name('loyalty.points.ledger');
         Route::get('customers/{customer:uuid}/wallet/ledger', [LoyaltyController::class, 'walletLedger'])
             ->name('loyalty.wallet.ledger');
 

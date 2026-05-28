@@ -14,11 +14,12 @@ declare(strict_types=1);
  *   - Permission gate
  */
 
-use App\Enums\PointLedgerEntryType;
 use App\Models\Branch;
 use App\Models\Company;
 use App\Models\Customer;
-use App\Models\CustomerPointLedgerEntry;
+use App\Models\LoyaltyAccount;
+use App\Models\LoyaltyRule;
+use App\Models\LoyaltyTransaction;
 use App\Models\Order;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -98,27 +99,31 @@ it('splits the cohort into new vs returning based on min(opened_at)', function (
 
 it('aggregates loyalty points issued / redeemed in the window + outstanding liability', function (): void {
     $ctx = makeMerchantActor();
-    $c = Customer::factory()->for($ctx['company'], 'company')->create(['points_balance' => 120]);
+    $c = Customer::factory()->for($ctx['company'], 'company')->create();
+    $rule = LoyaltyRule::factory()->for($ctx['company'], 'company')->create();
+    // Account snapshot balance = outstanding liability (120).
+    $account = LoyaltyAccount::factory()->for($ctx['company'], 'company')
+        ->for($c, 'customer')->for($rule, 'rule')->withPoints(120)->create();
 
     // In-window: +50 earn.
-    CustomerPointLedgerEntry::factory()->for($c, 'customer')->for($ctx['company'], 'company')->create([
-        'entry_type' => PointLedgerEntryType::Earn->value,
+    LoyaltyTransaction::factory()->for($ctx['company'], 'company')->for($account, 'account')->create([
+        'type' => 'earn',
         'points_delta' => 50,
-        'balance_after' => 50,
+        'balance_after_points' => 50,
         'occurred_at' => '2026-06-10 12:00:00',
     ]);
     // In-window: -30 redeem.
-    CustomerPointLedgerEntry::factory()->for($c, 'customer')->for($ctx['company'], 'company')->create([
-        'entry_type' => PointLedgerEntryType::Redeem->value,
+    LoyaltyTransaction::factory()->for($ctx['company'], 'company')->for($account, 'account')->create([
+        'type' => 'redeem',
         'points_delta' => -30,
-        'balance_after' => 20,
+        'balance_after_points' => 20,
         'occurred_at' => '2026-06-12 14:00:00',
     ]);
     // Out-of-window earn.
-    CustomerPointLedgerEntry::factory()->for($c, 'customer')->for($ctx['company'], 'company')->create([
-        'entry_type' => PointLedgerEntryType::Earn->value,
+    LoyaltyTransaction::factory()->for($ctx['company'], 'company')->for($account, 'account')->create([
+        'type' => 'earn',
         'points_delta' => 100,
-        'balance_after' => 120,
+        'balance_after_points' => 120,
         'occurred_at' => '2026-05-01 12:00:00',
     ]);
 
@@ -127,7 +132,7 @@ it('aggregates loyalty points issued / redeemed in the window + outstanding liab
     expect($response->json('data.loyalty.points_issued'))->toBe(50);
     expect($response->json('data.loyalty.points_redeemed'))->toBe(30);
     expect($response->json('data.loyalty.net_change'))->toBe(20);
-    // Liability is a snapshot of customer.points_balance.
+    // Liability is now a snapshot of SUM(loyalty_accounts.point_balance).
     expect($response->json('data.loyalty.outstanding_liability'))->toBe(120);
 });
 

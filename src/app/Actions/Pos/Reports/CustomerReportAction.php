@@ -106,28 +106,28 @@ final readonly class CustomerReportAction
         }
 
         // ---- Loyalty totals scoped to window ----
-        // Phase 6b's point ledger.
-        $pointsIssuedQuery = DB::table('pos_customer_point_ledger')
+        // The unified loyalty ledger (rules + accounts model).
+        // points_delta is signed: positive on earn, negative on
+        // redeem. company_id is denormalised on the transaction
+        // for exactly this window aggregate.
+        $pointsIssued = (int) (DB::table('pos_loyalty_transactions')
             ->where('company_id', $companyId)
             ->where('points_delta', '>', 0)
-            ->whereBetween('occurred_at', [$filter->dateFrom, $filter->dateTo]);
-        $pointsRedeemedQuery = DB::table('pos_customer_point_ledger')
+            ->whereBetween('occurred_at', [$filter->dateFrom, $filter->dateTo])
+            ->sum('points_delta') ?? 0);
+        $pointsRedeemed = (int) abs((int) (DB::table('pos_loyalty_transactions')
             ->where('company_id', $companyId)
             ->where('points_delta', '<', 0)
-            ->whereBetween('occurred_at', [$filter->dateFrom, $filter->dateTo]);
+            ->whereBetween('occurred_at', [$filter->dateFrom, $filter->dateTo])
+            ->sum('points_delta') ?? 0));
 
-        $pointsIssued = (int) ($pointsIssuedQuery->sum('points_delta') ?? 0);
-        // points_delta is negative for redeems; abs() flips it
-        // for a positive display value.
-        $pointsRedeemed = (int) abs((int) ($pointsRedeemedQuery->sum('points_delta') ?? 0));
-
-        // Outstanding liability: total points balance across
-        // all customers in the tenant. Snapshot, not window-
+        // Outstanding liability: total point_balance across all
+        // loyalty accounts in the tenant. Snapshot, not window-
         // scoped (the merchant cares about TODAY's liability).
-        $outstandingPoints = (int) DB::table('pos_customers')
+        // Points now live per-rule on pos_loyalty_accounts.
+        $outstandingPoints = (int) DB::table('pos_loyalty_accounts')
             ->where('company_id', $companyId)
-            ->whereNull('deleted_at')
-            ->sum('points_balance');
+            ->sum('point_balance');
 
         return [
             'window' => [
