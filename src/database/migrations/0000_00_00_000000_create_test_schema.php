@@ -626,6 +626,37 @@ return new class extends Migration
             $table->timestamp('created_at')->useCurrent();
         });
 
+        // ---- pos_delivery_providers + pos_product_delivery_prices (Phase 6c) ---
+        // Per-merchant 3rd-party delivery providers (Talabat,
+        // Otlob, ...) with per-product price overrides. Price
+        // resolution chain at POS time:
+        //   override -> products.delivery_price -> products.base_price
+        Schema::create('pos_delivery_providers', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->string('name', 64);
+            $table->string('color', 7)->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->unsignedSmallInteger('sort_order')->default(0);
+            $table->timestamps();
+            $table->softDeletes();
+            $table->unique(['company_id', 'name'], 'pos_delivery_providers_company_name_unique');
+        });
+
+        Schema::create('pos_product_delivery_prices', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('product_id')->constrained('pos_products')->cascadeOnDelete();
+            $table->foreignId('delivery_provider_id')->constrained('pos_delivery_providers')->cascadeOnDelete();
+            // Denormalised from product so tenant-scoped reports
+            // skip the join, and the Action layer can cross-
+            // check that product.company == provider.company.
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->decimal('price', 12, 3);
+            $table->timestamps();
+            $table->unique(['product_id', 'delivery_provider_id'], 'pos_product_delivery_prices_product_provider_unique');
+        });
+
         // ---- Sessions (used by some auth integration tests) -------
         // Mirrors the Laravel default sessions table — pos_merchant
         // is configured to use session driver=array in tests so this
