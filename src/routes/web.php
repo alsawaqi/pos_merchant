@@ -10,6 +10,7 @@ use App\Http\Controllers\Pos\AddOnGroupsController;
 use App\Http\Controllers\Pos\AddOnsController;
 use App\Http\Controllers\Pos\BranchesController as PosBranchesController;
 use App\Http\Controllers\Pos\CategoriesController;
+use App\Http\Controllers\Pos\CustomersController;
 use App\Http\Controllers\Pos\FloorsController;
 use App\Http\Controllers\Pos\IngredientsController;
 use App\Http\Controllers\Pos\PosStaffController;
@@ -298,6 +299,36 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('restock-requests.cancel');
         Route::post('restock-requests/{restockRequest:uuid}/allocate', [RestockRequestsController::class, 'allocate'])
             ->name('restock-requests.allocate');
+
+        // -------- Phase 6a — Customers + vehicle plates --
+        // Customer book lookup endpoints. UUID-bound for stable
+        // URLs across name/phone edits. The list endpoint takes
+        // an optional ?search=X query that does a LIKE across
+        // name + phone + plates (the canonical/uppercase form
+        // for plates) so the merchant can find a customer by
+        // any of the three.
+        //
+        // Plate routes:
+        //   - attach is nested under the customer (we know which
+        //     customer to attach to via the URL)
+        //   - detach is flat ({plate:uuid} resolves directly)
+        //     because plates only know their parent customer
+        //     after we resolve the row, and the controller
+        //     re-checks tenancy before any work
+        Route::get('customers', [CustomersController::class, 'index'])
+            ->name('customers.index');
+        Route::get('customers/{customer:uuid}', [CustomersController::class, 'show'])
+            ->name('customers.show');
+        Route::post('customers', [CustomersController::class, 'store'])
+            ->name('customers.store');
+        Route::patch('customers/{customer:uuid}', [CustomersController::class, 'update'])
+            ->name('customers.update');
+        Route::delete('customers/{customer:uuid}', [CustomersController::class, 'destroy'])
+            ->name('customers.destroy');
+        Route::post('customers/{customer:uuid}/plates', [CustomersController::class, 'attachPlate'])
+            ->name('customers.plates.attach');
+        Route::delete('customer-plates/{plate:uuid}', [CustomersController::class, 'detachPlate'])
+            ->name('customers.plates.detach');
 
         // -------- Phase 4.6 — POS Staff (merchant's PIN-authed workforce) --
         // {posStaff} is bound by uuid (PosStaff::getRouteKeyName).
