@@ -543,6 +543,37 @@ return new class extends Migration
             $table->unique(['restock_request_id', 'ingredient_id'], 'pos_restock_request_lines_request_ingredient_unique');
         });
 
+        // ---- pos_customers + pos_customer_vehicle_plates (Phase 6a) ---
+        // Per-merchant customer book. Phone is the natural lookup
+        // key at the POS; the (company_id, phone) unique constraint
+        // makes find-or-create a single round-trip.
+        // Plates live in a 1:N sibling table with company_id
+        // denormalised so the drive-thru "plate → customer" lookup
+        // is a single index hit + FK follow.
+        Schema::create('pos_customers', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->string('name');
+            $table->string('phone', 32);
+            $table->timestamps();
+            $table->softDeletes();
+            $table->unique(['company_id', 'phone'], 'pos_customers_company_phone_unique');
+        });
+
+        Schema::create('pos_customer_vehicle_plates', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('customer_id')->constrained('pos_customers')->cascadeOnDelete();
+            // Denormalised from the parent customer; powers the
+            // (company_id, plate_number) unique constraint without
+            // a join through customers.
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->string('plate_number', 32);
+            $table->timestamps();
+            $table->unique(['company_id', 'plate_number'], 'pos_customer_vehicle_plates_company_plate_unique');
+        });
+
         // ---- Sessions (used by some auth integration tests) -------
         // Mirrors the Laravel default sessions table — pos_merchant
         // is configured to use session driver=array in tests so this
