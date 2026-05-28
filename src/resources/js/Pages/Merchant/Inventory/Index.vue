@@ -784,8 +784,14 @@ async function submitRecordWaste(): Promise<void> {
 }
 
 // =================== Phase 5c — Restock-request flows ============
+//
+// Renamed from the obvious `statusBadgeClass` to avoid colliding
+// with the Phase 5a helper of that name (which serves the
+// ingredient + supplier active/inactive badges). Different
+// domain, different colour palette — same shape signature would
+// have been a footgun.
 
-function statusBadgeClass(status: RestockRequestStatus): string {
+function restockStatusBadgeClass(status: RestockRequestStatus): string {
     switch (status) {
         case 'draft':
             return 'bg-slate-100 text-slate-700';
@@ -1556,7 +1562,7 @@ function extractMessage(err: unknown, fallback: string): string {
                                 <td class="px-5 py-3 text-sm text-slate-600">{{ formatDate(r.created_at) }}</td>
                                 <td class="px-5 py-3 text-sm font-medium text-slate-900">{{ r.branch?.name ?? '—' }}</td>
                                 <td class="px-5 py-3 text-sm">
-                                    <span class="rounded-full px-2 py-0.5 text-xs font-semibold" :class="statusBadgeClass(r.status)">
+                                    <span class="rounded-full px-2 py-0.5 text-xs font-semibold" :class="restockStatusBadgeClass(r.status)">
                                         {{ t(`inventory.restock.statuses.${r.status}`) }}
                                     </span>
                                 </td>
@@ -1966,7 +1972,7 @@ function extractMessage(err: unknown, fallback: string): string {
                 <div class="flex items-start justify-between border-b border-slate-200 px-6 py-5">
                     <div>
                         <h2 class="text-lg font-semibold text-slate-950">{{ t('inventory.restock.show_modal.title', { branch: showTarget.branch?.name ?? '—' }) }}</h2>
-                        <span class="mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-semibold" :class="statusBadgeClass(showTarget.status)">
+                        <span class="mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-semibold" :class="restockStatusBadgeClass(showTarget.status)">
                             {{ t(`inventory.restock.statuses.${showTarget.status}`) }}
                         </span>
                     </div>
