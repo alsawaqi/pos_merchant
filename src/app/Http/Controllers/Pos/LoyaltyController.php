@@ -237,11 +237,16 @@ class LoyaltyController extends Controller
      * Lazy-create the per-company config on first read so the
      * customer-loyalty summary endpoint never returns a null
      * config. Uses firstOrCreate with the production defaults.
+     *
+     * Returns a fresh()'d instance so the JsonResource layer
+     * doesn't see wasRecentlyCreated=true and respond with a
+     * 201 on what is semantically a GET — the lazy-init is an
+     * implementation detail, the user sees a normal 200.
      */
     private function resolveOrCreateConfig(): CustomerLoyaltyConfig
     {
         $companyId = $this->tenant->requiredId();
-        return CustomerLoyaltyConfig::query()->firstOrCreate(
+        $config = CustomerLoyaltyConfig::query()->firstOrCreate(
             ['company_id' => $companyId],
             [
                 'points_per_omr' => 0,
@@ -249,6 +254,7 @@ class LoyaltyController extends Controller
                 'is_active' => false,
             ],
         );
+        return $config->fresh();
     }
 
     private function ensure(Request $request, MerchantPermission $permission): void
