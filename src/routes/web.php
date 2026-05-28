@@ -11,6 +11,7 @@ use App\Http\Controllers\Pos\AddOnsController;
 use App\Http\Controllers\Pos\BranchesController as PosBranchesController;
 use App\Http\Controllers\Pos\CategoriesController;
 use App\Http\Controllers\Pos\CustomersController;
+use App\Http\Controllers\Pos\DashboardController;
 use App\Http\Controllers\Pos\DeliveryProvidersController;
 use App\Http\Controllers\Pos\DiscountsController;
 use App\Http\Controllers\Pos\FloorsController;
@@ -381,6 +382,13 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('discounts.resume');
         Route::put('discounts/{discount:uuid}/targets', [DiscountsController::class, 'syncTargets'])
             ->name('discounts.targets.sync');
+
+        // -------- Phase 7b-7 — Dashboard summary --
+        // One GET that the landing page hits on mount. Gated
+        // under reports.view (every dashboard widget is a
+        // mini-report).
+        Route::get('dashboard/summary', [DashboardController::class, 'summary'])
+            ->name('dashboard.summary');
 
         // -------- Phase 7b — Reports + Audit Log (blueprint §13 Phase 7) --
         // Each report key dispatches to its own Action.

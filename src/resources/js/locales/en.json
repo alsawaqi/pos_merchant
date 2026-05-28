@@ -1206,6 +1206,20 @@
             "by_charity": "By charity"
         }
     },
+    "dashboard_widgets": {
+        "today": "Today",
+        "yesterday": "Yesterday",
+        "mtd": "Month to date",
+        "gross": "Gross sales",
+        "orders": "Orders",
+        "top_product_today": "Top product today",
+        "low_stock": "Low stock ingredients",
+        "low_stock_subtitle": "Ingredients with a balance below their minimum threshold across all branches.",
+        "recent_audit": "Recent activity",
+        "no_data": "No data yet.",
+        "vs_yesterday": "vs yesterday",
+        "load_failed": "Could not load the dashboard summary."
+    },
     "audit_log": {
         "section_label": "Phase 7b",
         "title": "Audit Log",

@@ -1206,6 +1206,20 @@
             "by_charity": "حسب الجمعية"
         }
     },
+    "dashboard_widgets": {
+        "today": "اليوم",
+        "yesterday": "أمس",
+        "mtd": "الشهر حتى اليوم",
+        "gross": "إجمالي المبيعات",
+        "orders": "الطلبات",
+        "top_product_today": "أعلى منتج اليوم",
+        "low_stock": "مكونات منخفضة المخزون",
+        "low_stock_subtitle": "المكونات التي رصيدها أقل من الحد الأدنى عبر كل الفروع.",
+        "recent_audit": "النشاط الأخير",
+        "no_data": "لا توجد بيانات بعد.",
+        "vs_yesterday": "مقابل أمس",
+        "load_failed": "تعذر تحميل ملخص لوحة التحكم."
+    },
     "audit_log": {
         "section_label": "المرحلة 7ب",
         "title": "سجل التدقيق",
