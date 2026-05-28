@@ -12,6 +12,7 @@ use App\Http\Controllers\Pos\BranchesController as PosBranchesController;
 use App\Http\Controllers\Pos\CategoriesController;
 use App\Http\Controllers\Pos\CustomersController;
 use App\Http\Controllers\Pos\DeliveryProvidersController;
+use App\Http\Controllers\Pos\DiscountsController;
 use App\Http\Controllers\Pos\FloorsController;
 use App\Http\Controllers\Pos\IngredientsController;
 use App\Http\Controllers\Pos\LoyaltyController;
@@ -358,6 +359,27 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('loyalty.points.ledger');
         Route::get('customers/{customer:uuid}/wallet/ledger', [LoyaltyController::class, 'walletLedger'])
             ->name('loyalty.wallet.ledger');
+
+        // -------- Phase 6d — Discount rules (blueprint §5.9) --
+        // Per-merchant rules. The Phase 6d-4 evaluator runs
+        // at POS time (Phase 8+); these endpoints are config
+        // management.
+        Route::get('discounts', [DiscountsController::class, 'index'])
+            ->name('discounts.index');
+        Route::get('discounts/{discount:uuid}', [DiscountsController::class, 'show'])
+            ->name('discounts.show');
+        Route::post('discounts', [DiscountsController::class, 'store'])
+            ->name('discounts.store');
+        Route::patch('discounts/{discount:uuid}', [DiscountsController::class, 'update'])
+            ->name('discounts.update');
+        Route::delete('discounts/{discount:uuid}', [DiscountsController::class, 'destroy'])
+            ->name('discounts.destroy');
+        Route::post('discounts/{discount:uuid}/pause', [DiscountsController::class, 'pause'])
+            ->name('discounts.pause');
+        Route::post('discounts/{discount:uuid}/resume', [DiscountsController::class, 'resume'])
+            ->name('discounts.resume');
+        Route::put('discounts/{discount:uuid}/targets', [DiscountsController::class, 'syncTargets'])
+            ->name('discounts.targets.sync');
 
         // -------- Phase 6c — Delivery providers + per-product prices --
         // Per-merchant 3rd-party delivery aggregators (Talabat,
