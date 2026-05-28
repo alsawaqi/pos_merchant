@@ -6,7 +6,10 @@ namespace App\Http\Controllers\Pos;
 
 use App\Actions\Pos\Reports\CustomerReportAction;
 use App\Actions\Pos\Reports\DiscountReportAction;
+use App\Actions\Pos\Reports\ProductPerformanceReportAction;
+use App\Actions\Pos\Reports\RecipeCostReportAction;
 use App\Actions\Pos\Reports\SalesReportAction;
+use App\Actions\Pos\Reports\StaffActivityReportAction;
 use App\Data\Reports\ReportFilter;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
@@ -35,6 +38,9 @@ class ReportsController extends Controller
         private readonly SalesReportAction $salesReport,
         private readonly CustomerReportAction $customerReport,
         private readonly DiscountReportAction $discountReport,
+        private readonly ProductPerformanceReportAction $productPerformanceReport,
+        private readonly RecipeCostReportAction $recipeCostReport,
+        private readonly StaffActivityReportAction $staffActivityReport,
     ) {}
 
     public function sales(ReportFilterRequest $request): JsonResponse
@@ -63,6 +69,36 @@ class ReportsController extends Controller
 
         $filter = ReportFilter::fromArray($request->validated());
         $payload = $this->discountReport->handle($filter);
+
+        return response()->json(['data' => $payload]);
+    }
+
+    public function productPerformance(ReportFilterRequest $request): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::ReportsView);
+
+        $filter = ReportFilter::fromArray($request->validated());
+        $payload = $this->productPerformanceReport->handle($filter);
+
+        return response()->json(['data' => $payload]);
+    }
+
+    public function recipeCost(ReportFilterRequest $request): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::ReportsView);
+
+        $filter = ReportFilter::fromArray($request->validated());
+        $payload = $this->recipeCostReport->handle($filter);
+
+        return response()->json(['data' => $payload]);
+    }
+
+    public function staffActivity(ReportFilterRequest $request): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::ReportsView);
+
+        $filter = ReportFilter::fromArray($request->validated());
+        $payload = $this->staffActivityReport->handle($filter);
 
         return response()->json(['data' => $payload]);
     }

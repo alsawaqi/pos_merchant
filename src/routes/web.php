@@ -392,6 +392,12 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('reports.customers');
         Route::get('reports/discounts', [ReportsController::class, 'discounts'])
             ->name('reports.discounts');
+        Route::get('reports/product-performance', [ReportsController::class, 'productPerformance'])
+            ->name('reports.product-performance');
+        Route::get('reports/recipe-cost', [ReportsController::class, 'recipeCost'])
+            ->name('reports.recipe-cost');
+        Route::get('reports/staff-activity', [ReportsController::class, 'staffActivity'])
+            ->name('reports.staff-activity');
 
         // -------- Phase 6c — Delivery providers + per-product prices --
         // Per-merchant 3rd-party delivery aggregators (Talabat,
