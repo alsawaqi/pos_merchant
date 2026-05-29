@@ -8,11 +8,13 @@ use App\Actions\Pos\Customers\AttachVehiclePlateAction;
 use App\Actions\Pos\Customers\CreateCustomerAction;
 use App\Actions\Pos\Customers\DeleteCustomerAction;
 use App\Actions\Pos\Customers\DetachVehiclePlateAction;
+use App\Actions\Pos\Customers\MergeCustomersAction;
 use App\Actions\Pos\Customers\UpdateCustomerAction;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Pos\Customers\AttachVehiclePlateRequest;
 use App\Http\Requests\Pos\Customers\CreateCustomerRequest;
+use App\Http\Requests\Pos\Customers\MergeCustomersRequest;
 use App\Http\Requests\Pos\Customers\UpdateCustomerRequest;
 use App\Http\Resources\Pos\Customers\CustomerResource;
 use App\Http\Resources\Pos\Customers\CustomerVehiclePlateResource;
@@ -23,6 +25,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
 /**
@@ -57,6 +60,7 @@ class CustomersController extends Controller
         private readonly DeleteCustomerAction $delete,
         private readonly AttachVehiclePlateAction $attachPlate,
         private readonly DetachVehiclePlateAction $detachPlate,
+        private readonly MergeCustomersAction $merge,
     ) {}
 
     public function index(Request $request): LengthAwarePaginator
@@ -71,7 +75,7 @@ class CustomersController extends Controller
 
         if ($request->filled('search')) {
             $raw = trim((string) $request->query('search'));
-            $lower = '%' . strtolower($raw) . '%';
+            $lower = '%'.strtolower($raw).'%';
             $upper = strtoupper($raw);
             // Plate match: any plate row LIKE the uppercased
             // search query inside this customer's bag of plates.
@@ -82,7 +86,7 @@ class CustomersController extends Controller
                 $q->whereRaw('LOWER(name) LIKE ?', [$lower])
                     ->orWhereRaw('LOWER(phone) LIKE ?', [$lower])
                     ->orWhereHas('vehiclePlates', function ($p) use ($upper): void {
-                        $p->where('plate_number', 'LIKE', '%' . $upper . '%');
+                        $p->where('plate_number', 'LIKE', '%'.$upper.'%');
                     });
             });
         }
@@ -124,6 +128,7 @@ class CustomersController extends Controller
                 foreach ($plates as $plate) {
                     $this->attachPlate->handle($c, (string) $plate, $request->user());
                 }
+
                 return $c;
             });
         } catch (RuntimeException $e) {
@@ -137,7 +142,7 @@ class CustomersController extends Controller
         ], 201);
     }
 
-    public function update(UpdateCustomerRequest $request, Customer $customer): CustomerResource | JsonResponse
+    public function update(UpdateCustomerRequest $request, Customer $customer): CustomerResource|JsonResponse
     {
         $this->ensure($request, MerchantPermission::CustomersManage);
         $this->refuseIfNotInTenant($customer);
@@ -197,6 +202,45 @@ class CustomersController extends Controller
         $this->detachPlate->handle($plate, $request->user());
 
         return response()->json(['data' => null], 204);
+    }
+
+    /**
+     * POST /api/customers/{customer:uuid}/merge
+     *
+     * Merge the source customer (body: source_uuid) INTO this one (the
+     * survivor): re-point orders / plates / loyalty / wallet, fold balances,
+     * soft-delete the source. Returns the survivor + a summary of what moved.
+     */
+    public function merge(MergeCustomersRequest $request, Customer $customer): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::CustomersManage);
+        $this->refuseIfNotInTenant($customer);
+
+        $source = Customer::query()
+            ->where('uuid', $request->validated()['source_uuid'])
+            ->where('company_id', $this->tenant->requiredId())
+            ->first();
+
+        if ($source === null) {
+            throw ValidationException::withMessages([
+                'source_uuid' => 'The source customer was not found.',
+            ]);
+        }
+
+        try {
+            $result = $this->merge->handle($customer, $source, $request->user());
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        $survivor = $result['customer'];
+        $survivor->load(['vehiclePlates' => fn ($q) => $q->orderBy('id')]);
+        $survivor->loadCount('vehiclePlates');
+
+        return response()->json([
+            'data' => (new CustomerResource($survivor))->resolve($request),
+            'summary' => $result['summary'],
+        ]);
     }
 
     private function ensure(Request $request, MerchantPermission $permission): void

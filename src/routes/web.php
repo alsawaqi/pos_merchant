@@ -333,6 +333,8 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('customers.update');
         Route::delete('customers/{customer:uuid}', [CustomersController::class, 'destroy'])
             ->name('customers.destroy');
+        Route::post('customers/{customer:uuid}/merge', [CustomersController::class, 'merge'])
+            ->name('customers.merge');
         Route::post('customers/{customer:uuid}/plates', [CustomersController::class, 'attachPlate'])
             ->name('customers.plates.attach');
         Route::delete('customer-plates/{plate:uuid}', [CustomersController::class, 'detachPlate'])
