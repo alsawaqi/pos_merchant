@@ -25,8 +25,8 @@ use App\Http\Controllers\Pos\RestockRequestsController;
 use App\Http\Controllers\Pos\RolesController;
 use App\Http\Controllers\Pos\StockController;
 use App\Http\Controllers\Pos\SuppliersController;
-use App\Http\Controllers\Pos\WasteController;
 use App\Http\Controllers\Pos\TablesController;
+use App\Http\Controllers\Pos\WasteController;
 use App\Http\Controllers\SpaController;
 use App\Http\Middleware\EnsureMerchantSessionIsFresh;
 use App\Http\Middleware\EnsureUserIsAuthenticated;
@@ -189,6 +189,8 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('products.index');
         Route::post('products', [ProductsController::class, 'store'])
             ->name('products.store');
+        Route::post('products/import', [ProductsController::class, 'import'])
+            ->name('products.import');
         Route::patch('products/{product:uuid}', [ProductsController::class, 'update'])
             ->name('products.update');
         Route::delete('products/{product:uuid}', [ProductsController::class, 'destroy'])

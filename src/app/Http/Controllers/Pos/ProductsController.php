@@ -6,12 +6,14 @@ namespace App\Http\Controllers\Pos;
 
 use App\Actions\Pos\Catalogue\CreateProductAction;
 use App\Actions\Pos\Catalogue\DeleteProductAction;
+use App\Actions\Pos\Catalogue\ImportProductsAction;
 use App\Actions\Pos\Catalogue\SyncProductAddOnGroupsAction;
 use App\Actions\Pos\Catalogue\UpdateProductAction;
 use App\Actions\Pos\Catalogue\UpdateProductRecipeAction;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Pos\Catalogue\CreateProductRequest;
+use App\Http\Requests\Pos\Catalogue\ImportProductsRequest;
 use App\Http\Requests\Pos\Catalogue\SyncProductAddOnGroupsRequest;
 use App\Http\Requests\Pos\Catalogue\UpdateProductRecipeRequest;
 use App\Http\Requests\Pos\Catalogue\UpdateProductRequest;
@@ -45,6 +47,7 @@ class ProductsController extends Controller
     public function __construct(
         private readonly MerchantTenantContext $tenant,
         private readonly CreateProductAction $create,
+        private readonly ImportProductsAction $importProducts,
         private readonly UpdateProductAction $update,
         private readonly DeleteProductAction $delete,
         private readonly SyncProductAddOnGroupsAction $syncAddOnGroups,
@@ -107,7 +110,27 @@ class ProductsController extends Controller
         ], 201);
     }
 
-    public function update(UpdateProductRequest $request, Product $product): ProductResource | JsonResponse
+    /**
+     * POST /api/products/import
+     *
+     * Bulk-create products from an uploaded CSV. Best-effort, row by row:
+     * valid rows are created (each via CreateProductAction → audit + tenant
+     * checks), invalid rows reported with their errors. Returns a per-row
+     * summary {total, created, failed, rows[]}.
+     */
+    public function import(ImportProductsRequest $request): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::CatalogueManage);
+
+        $summary = $this->importProducts->handle(
+            (string) $request->file('file')->get(),
+            $request->user(),
+        );
+
+        return response()->json(['data' => $summary]);
+    }
+
+    public function update(UpdateProductRequest $request, Product $product): ProductResource|JsonResponse
     {
         $this->ensure($request, MerchantPermission::CatalogueManage);
         $this->refuseIfNotInTenant($product);
@@ -143,7 +166,7 @@ class ProductsController extends Controller
      * wipes + re-inserts the new lines, all in one transaction.
      * No-op when the recipe is identical to disk.
      */
-    public function updateRecipe(UpdateProductRecipeRequest $request, Product $product): ProductResource | JsonResponse
+    public function updateRecipe(UpdateProductRecipeRequest $request, Product $product): ProductResource|JsonResponse
     {
         $this->ensure($request, MerchantPermission::CatalogueManage);
         $this->refuseIfNotInTenant($product);
@@ -173,7 +196,7 @@ class ProductsController extends Controller
      * what's no longer wanted, and writes ONE audit row for the
      * delta (rather than N attach/detach rows).
      */
-    public function syncAddOnGroups(SyncProductAddOnGroupsRequest $request, Product $product): JsonResponse | AnonymousResourceCollection
+    public function syncAddOnGroups(SyncProductAddOnGroupsRequest $request, Product $product): JsonResponse|AnonymousResourceCollection
     {
         $this->ensure($request, MerchantPermission::CatalogueManage);
         $this->refuseIfNotInTenant($product);
