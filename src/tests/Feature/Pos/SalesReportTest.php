@@ -35,11 +35,14 @@ use App\Enums\OrderStatus;
 use App\Models\Branch;
 use App\Models\Company;
 use App\Models\Order;
+use App\Models\OrderItem;
+use App\Models\OrderItemAddon;
 use App\Models\Payment;
 use App\Models\Product;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Spatie\Permission\PermissionRegistrar;
 
 uses(RefreshDatabase::class);
 
@@ -56,7 +59,7 @@ it('returns 403 when actor lacks reports.view', function (): void {
     // a portal user without assigning any role.
     $u = $ctx['user'];
     $u->syncRoles([]); // strip the role
-    app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
 
     $this->getJson('/api/reports/sales?date_from=2026-06-01&date_to=2026-06-30')
         ->assertForbidden();
@@ -198,7 +201,7 @@ it('filters by branch_ids when provided', function (): void {
 
     // Filter to ctx branch only.
     $filtered = $this->getJson(
-        '/api/reports/sales?date_from=2026-06-01&date_to=2026-06-30&branch_ids[]=' . $ctx['branch']->id,
+        '/api/reports/sales?date_from=2026-06-01&date_to=2026-06-30&branch_ids[]='.$ctx['branch']->id,
     )->assertOk();
     expect($filtered->json('data.headline.gross_sales'))->toBe('10.000');
 });
@@ -339,4 +342,45 @@ it('SalesReportAction works directly when called by Phase 8 internal code paths'
 
     expect($report['headline']['gross_sales'])->toBe('10.000');
     expect($report['window']['consolidated'])->toBeTrue();
+});
+
+// =================== COGS / GROSS PROFIT ===================
+
+it('computes COGS and gross_profit from order-item recipe snapshots', function (): void {
+    $ctx = makeMerchantActor();
+    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    $order = Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->paid()->create([
+        'subtotal' => '10.000', 'discount_total' => '0.000', 'tax_total' => '0.000', 'grand_total' => '10.000',
+        'opened_at' => '2026-06-15 12:00:00',
+    ]);
+    // 2 units; recipe cost per unit = 0.25 × 0.400 = 0.100 OMR → COGS = 0.200.
+    OrderItem::factory()->for($order, 'order')->for($product, 'product')->create([
+        'qty' => '2.000', 'unit_price_snapshot' => '5.000', 'line_total' => '10.000',
+        'recipe_snapshot_json' => [['ingredient_id' => 1, 'qty' => 0.25, 'unit' => 'l', 'unit_cost' => 0.400]],
+    ]);
+
+    $response = $this->getJson('/api/reports/sales?date_from=2026-06-01&date_to=2026-06-30')->assertOk();
+
+    expect($response->json('data.headline.cogs'))->toBe('0.200');
+    expect($response->json('data.headline.gross_profit'))->toBe('9.800'); // net_sales 10.000 − cogs 0.200
+});
+
+it('adds add-on ingredient cost to COGS', function (): void {
+    $ctx = makeMerchantActor();
+    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    $order = Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->paid()->create([
+        'subtotal' => '10.000', 'grand_total' => '10.000', 'opened_at' => '2026-06-15 12:00:00',
+    ]);
+    $item = OrderItem::factory()->for($order, 'order')->for($product, 'product')->create([
+        'qty' => '2.000', 'line_total' => '10.000',
+        'recipe_snapshot_json' => [['ingredient_id' => 1, 'qty' => 0.25, 'unit' => 'l', 'unit_cost' => 0.400]], // 0.200
+    ]);
+    // Add-on ingredient: 1 × 0.200 OMR × 2 units = 0.400.
+    OrderItemAddon::factory()->for($item, 'orderItem')->create([
+        'ingredient_snapshot_json' => ['ingredient_id' => 2, 'qty' => 1, 'unit' => 'shot', 'unit_cost' => 0.200],
+    ]);
+
+    $response = $this->getJson('/api/reports/sales?date_from=2026-06-01&date_to=2026-06-30')->assertOk();
+
+    expect($response->json('data.headline.cogs'))->toBe('0.600'); // 0.200 recipe + 0.400 add-on
 });

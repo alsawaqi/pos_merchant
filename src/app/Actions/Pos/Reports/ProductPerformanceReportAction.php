@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Actions\Pos\Reports;
 
+use App\Actions\Pos\Reports\Support\RecipeSnapshotCost;
 use App\Data\Reports\ReportFilter;
 use App\Enums\OrderStatus;
 use App\Support\MerchantTenantContext;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -46,6 +48,9 @@ final readonly class ProductPerformanceReportAction
             $itemsBase->whereIn('pos_orders.branch_id', $branchScope);
         }
 
+        // Per-product COGS from the snapshotted recipes (see RecipeSnapshotCost).
+        $costByProduct = $this->costByProduct($itemsBase);
+
         // Per-product aggregate.
         $perProduct = (clone $itemsBase)
             ->join('pos_products', 'pos_products.id', '=', 'pos_order_items.product_id')
@@ -58,16 +63,14 @@ final readonly class ProductPerformanceReportAction
             ->groupBy('pos_products.id', 'pos_products.name')
             ->orderByDesc('revenue')
             ->get()
-            ->map(static function ($r): array {
+            ->map(static function ($r) use ($costByProduct): array {
                 $qty = (float) $r->qty_sold;
                 $revenue = (float) $r->revenue;
-                // Phase 8 will populate recipe_cost from
-                // order_items.recipe_snapshot_json. For now
-                // we return 0 + a note in _phase so the UI
-                // can render the stub.
-                $cost = 0.0;
+                // recipe_cost from the line recipe snapshots (Phase 8 data).
+                $cost = ($costByProduct[(int) $r->product_id] ?? 0) / 1000;
                 $profit = $revenue - $cost;
                 $marginPct = $revenue > 0 ? round(($profit / $revenue) * 100, 2) : 0.0;
+
                 return [
                     'product_id' => (int) $r->product_id,
                     'product_name' => (string) $r->product_name,
@@ -129,9 +132,30 @@ final readonly class ProductPerformanceReportAction
             'slow_movers' => $slowMovers,
             'slow_mover_threshold' => $slowMoverThreshold,
             'top_addons' => $topAddons,
-            '_phase' => [
-                'recipe_cost_stub' => 'recipe_cost = 0 + margin_pct = 100% until Phase 8 fills the recipe_snapshot_json cost path.',
-            ],
         ];
+    }
+
+    /**
+     * Per-product COGS (baisas) from the line recipe snapshots.
+     *
+     * @param  Builder  $itemsBase
+     * @return array<int, int> product_id => cogs_baisas
+     */
+    private function costByProduct($itemsBase): array
+    {
+        $rows = (clone $itemsBase)
+            ->select('pos_order_items.product_id', 'pos_order_items.qty', 'pos_order_items.recipe_snapshot_json')
+            ->get();
+
+        $cost = [];
+        foreach ($rows as $row) {
+            if ($row->product_id === null) {
+                continue;
+            }
+            $pid = (int) $row->product_id;
+            $cost[$pid] = ($cost[$pid] ?? 0) + RecipeSnapshotCost::itemBaisas($row->recipe_snapshot_json, (float) $row->qty);
+        }
+
+        return $cost;
     }
 }

@@ -119,3 +119,26 @@ it('does not leak product data from another company', function (): void {
     expect($response->json('data.top_by_revenue'))->toHaveCount(1);
     expect($response->json('data.top_by_revenue.0.product_name'))->toBe('Mine');
 });
+
+it('computes per-product recipe_cost, profit and margin from snapshots', function (): void {
+    $ctx = makeMerchantActor();
+    $latte = Product::factory()->for($ctx['company'], 'company')->create(['name' => 'Latte', 'base_price' => '2.500']);
+    $order = Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->paid()->create([
+        'opened_at' => '2026-06-10 12:00:00',
+    ]);
+    // 4 lattes @2.500 → revenue 10.000; recipe per unit 0.25 × 0.400 = 0.100 → cost 0.400.
+    for ($i = 0; $i < 4; $i++) {
+        OrderItem::factory()->for($order, 'order')->for($latte, 'product')->create([
+            'product_name_snapshot' => 'Latte', 'qty' => '1.000', 'unit_price_snapshot' => '2.500', 'line_total' => '2.500',
+            'recipe_snapshot_json' => [['ingredient_id' => 1, 'qty' => 0.25, 'unit' => 'l', 'unit_cost' => 0.400]],
+        ]);
+    }
+
+    $response = $this->getJson('/api/reports/product-performance?date_from=2026-06-01&date_to=2026-06-30')->assertOk();
+
+    $row = collect($response->json('data.top_by_revenue'))->firstWhere('product_name', 'Latte');
+    expect($row['revenue'])->toBe('10.000');
+    expect($row['recipe_cost'])->toBe('0.400'); // 4 × 0.100
+    expect($row['profit'])->toBe('9.600');
+    expect($row['margin_pct'])->toEqual(96.0); // (9.6 / 10) × 100
+});

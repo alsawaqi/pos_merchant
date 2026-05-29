@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Actions\Pos\Reports;
 
+use App\Actions\Pos\Reports\Support\RecipeSnapshotCost;
 use App\Data\Reports\ReportFilter;
 use App\Enums\OrderStatus;
 use App\Support\MerchantTenantContext;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -102,13 +104,11 @@ final readonly class SalesReportAction
         $taxTotal = (float) ($headline?->tax_total ?? 0);
         $netSales = $grossSales - $discountTotal;
         $refundsTotal = (float) ($refundsRow?->refunds_total ?? 0);
-        // Phase 7b stub: COGS will be derived from
-        // order_items.recipe_snapshot_json + unit_cost_at_time
-        // once Phase 8 lands. For now we sum the
-        // unit_price_snapshot weighted by an assumed margin —
-        // we return 0 to keep the report HONEST about what we
-        // can and can't compute.
-        $cogs = 0.0;
+        // COGS from the recipe + add-on ingredient snapshots the device sale
+        // pipeline (pos_api, Phase 8) froze onto each line — immune to later
+        // recipe/price edits. gross_profit = net_sales − COGS. (net_profit
+        // additionally subtracts expenses; that feed is a separate stub.)
+        $cogs = $this->cogs($paidQuery);
         $grossProfit = $netSales - $cogs;
 
         // Breakdowns
@@ -256,6 +256,41 @@ final readonly class SalesReportAction
             'gross' => self::fmt((float) $r->gross),
             'count' => (int) $r->cnt,
         ])->all();
+    }
+
+    /**
+     * Total COGS (OMR) for the paid orders in scope: the recipe + add-on
+     * ingredient cost snapshotted on each line. Read raw via the query
+     * builder + summed in PHP (the snapshot is a JSON array, not SQL-summable).
+     *
+     * @param  Builder  $paidQuery
+     */
+    private function cogs($paidQuery): float
+    {
+        $itemRows = DB::table('pos_order_items')
+            ->joinSub((clone $paidQuery)->select('id'), 'scoped_orders', 'scoped_orders.id', '=', 'pos_order_items.order_id')
+            ->select('pos_order_items.id', 'pos_order_items.qty', 'pos_order_items.recipe_snapshot_json')
+            ->get();
+
+        $baisas = 0;
+        $qtyByItem = [];
+        foreach ($itemRows as $row) {
+            $qty = (float) $row->qty;
+            $qtyByItem[(int) $row->id] = $qty;
+            $baisas += RecipeSnapshotCost::itemBaisas($row->recipe_snapshot_json, $qty);
+        }
+
+        if ($qtyByItem !== []) {
+            $addonRows = DB::table('pos_order_item_addons')
+                ->whereIn('order_item_id', array_keys($qtyByItem))
+                ->select('order_item_id', 'ingredient_snapshot_json')
+                ->get();
+            foreach ($addonRows as $row) {
+                $baisas += RecipeSnapshotCost::addonBaisas($row->ingredient_snapshot_json, $qtyByItem[(int) $row->order_item_id] ?? 0.0);
+            }
+        }
+
+        return $baisas / 1000;
     }
 
     private static function fmt(float $omr): string
