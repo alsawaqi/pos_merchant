@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Pos\Reports;
 
 use App\Data\Reports\ReportFilter;
+use App\Enums\StockMovementType;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
 
@@ -108,6 +109,47 @@ final readonly class LossWasteReportAction
                 'value' => number_format((float) $r->value, 3, '.', ''),
             ])->all();
 
+        // ---- Shortfall: actual stock depletion vs theoretical sales usage ----
+        // Per ingredient, the stock that left BEYOND what sales recipes account
+        // for (recorded waste + manual adjustments). sale_consumption /
+        // addon_consumption are the device-derived "theoretical from sales";
+        // everything else negative is the shortfall to investigate (§5.11.5).
+        $saleList = "'".implode("','", [
+            StockMovementType::SaleConsumption->value,
+            StockMovementType::AddOnConsumption->value,
+        ])."'";
+        $shortfall = DB::table('pos_stock_movements')
+            ->join('pos_ingredients', 'pos_ingredients.id', '=', 'pos_stock_movements.ingredient_id')
+            ->where('pos_ingredients.company_id', $companyId)
+            ->where('pos_stock_movements.quantity', '<', 0)
+            ->whereBetween('pos_stock_movements.occurred_at', [$filter->dateFrom, $filter->dateTo])
+            ->when($branchScope !== null, fn ($q) => $q->whereIn('pos_stock_movements.branch_id', $branchScope))
+            ->selectRaw("
+                pos_ingredients.id AS ingredient_id,
+                pos_ingredients.name AS ingredient_name,
+                pos_ingredients.unit AS unit,
+                ABS(SUM(CASE WHEN pos_stock_movements.movement_type IN ($saleList) THEN pos_stock_movements.quantity ELSE 0 END)) AS sales_consumption,
+                ABS(SUM(pos_stock_movements.quantity)) AS total_depletion
+            ")
+            ->groupBy('pos_ingredients.id', 'pos_ingredients.name', 'pos_ingredients.unit')
+            ->get()
+            ->map(static function ($r): array {
+                $sales = (float) $r->sales_consumption;
+                $total = (float) $r->total_depletion;
+
+                return [
+                    'ingredient_id' => (int) $r->ingredient_id,
+                    'ingredient_name' => (string) $r->ingredient_name,
+                    'unit' => (string) $r->unit,
+                    'sales_consumption' => number_format($sales, 3, '.', ''),
+                    'total_depletion' => number_format($total, 3, '.', ''),
+                    'shortfall' => number_format($total - $sales, 3, '.', ''),
+                ];
+            })
+            ->sortByDesc(static fn (array $r): float => (float) $r['shortfall'])
+            ->values()
+            ->all();
+
         return [
             'window' => [
                 'from' => $filter->dateFrom->format('Y-m-d\TH:i:s'),
@@ -123,9 +165,7 @@ final readonly class LossWasteReportAction
             'by_branch' => $byBranch,
             'by_reason' => $byReason,
             'top_wasted' => $topWasted,
-            '_phase' => [
-                'shortfall_stub' => 'Theoretical-vs-actual shortfall lands with Phase 8 recipe_snapshot_json + sale-consumption pipeline.',
-            ],
+            'shortfall' => $shortfall,
         ];
     }
 }

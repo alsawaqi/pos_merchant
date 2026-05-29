@@ -7,6 +7,7 @@ namespace App\Actions\Pos\Reports;
 use App\Data\Reports\ReportFilter;
 use App\Enums\StockMovementType;
 use App\Support\MerchantTenantContext;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -84,13 +85,35 @@ final readonly class InventoryConsumptionReportAction
             ->get()
             ->keyBy('ingredient_id');
 
-        $rows = $perIngredient->map(static function ($r) use ($balanceQuery, $windowDays): array {
+        // Trailing baseline: per-ingredient consumption over the 30 days
+        // immediately BEFORE the window, for the ">20% above average" anomaly
+        // flag (§5.11.3 — potential waste or theft).
+        $trailingDays = 30;
+        $trailingFrom = Carbon::instance($filter->dateFrom)->subDays($trailingDays);
+        $trailing = DB::table('pos_stock_movements')
+            ->join('pos_ingredients', 'pos_ingredients.id', '=', 'pos_stock_movements.ingredient_id')
+            ->where('pos_ingredients.company_id', $companyId)
+            ->whereIn('pos_stock_movements.movement_type', self::CONSUMPTION_TYPES)
+            ->where('pos_stock_movements.quantity', '<', 0)
+            ->where('pos_stock_movements.occurred_at', '>=', $trailingFrom)
+            ->where('pos_stock_movements.occurred_at', '<', $filter->dateFrom)
+            ->when($branchScope !== null, fn ($q) => $q->whereIn('pos_stock_movements.branch_id', $branchScope))
+            ->selectRaw('pos_stock_movements.ingredient_id AS ingredient_id, ABS(SUM(pos_stock_movements.quantity)) AS consumed')
+            ->groupBy('pos_stock_movements.ingredient_id')
+            ->get()
+            ->keyBy('ingredient_id');
+
+        $rows = $perIngredient->map(static function ($r) use ($balanceQuery, $trailing, $windowDays, $trailingDays): array {
             $consumed = (float) $r->consumed;
             $balance = (float) ($balanceQuery[$r->ingredient_id]->balance ?? 0);
             $consumptionPerDay = $consumed / $windowDays;
             $daysOfStock = $consumptionPerDay > 0
                 ? round($balance / $consumptionPerDay, 2)
                 : null;
+            // Anomaly: window rate exceeds the trailing-30-day average rate by
+            // more than 20%. No baseline (zero trailing) ⇒ not flagged.
+            $trailingPerDay = (float) ($trailing[$r->ingredient_id]->consumed ?? 0) / $trailingDays;
+            $anomaly = $trailingPerDay > 0 && $consumptionPerDay > ($trailingPerDay * 1.2);
 
             return [
                 'ingredient_id' => (int) $r->ingredient_id,
@@ -100,9 +123,8 @@ final readonly class InventoryConsumptionReportAction
                 'current_balance' => number_format($balance, 3, '.', ''),
                 'consumption_per_day' => number_format($consumptionPerDay, 3, '.', ''),
                 'days_of_stock' => $daysOfStock,
-                // Anomaly flag will land in Phase 8 with the
-                // trailing-30-day baseline calc. For Phase 7b we
-                // flag the simpler case: below min threshold.
+                'trailing_avg_per_day' => number_format($trailingPerDay, 3, '.', ''),
+                'anomaly' => $anomaly,
                 'below_min_threshold' => $r->min_threshold !== null && $balance < (float) $r->min_threshold,
             ];
         })->all();
@@ -116,9 +138,6 @@ final readonly class InventoryConsumptionReportAction
                 'days_span' => $windowDays,
             ],
             'rows' => $rows,
-            '_phase' => [
-                'anomaly_stub' => '20%-above-trailing-30-day anomaly flag lands with Phase 8 baseline calc.',
-            ],
         ];
     }
 }

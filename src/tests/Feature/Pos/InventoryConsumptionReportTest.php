@@ -123,7 +123,7 @@ it('filters by branch_ids when provided', function (): void {
         'occurred_at' => '2026-06-03 12:00:00',
     ]);
 
-    $response = $this->getJson('/api/reports/inventory-consumption?date_from=2026-06-01&date_to=2026-06-10&branch_ids[]=' . $ctx['branch']->id)
+    $response = $this->getJson('/api/reports/inventory-consumption?date_from=2026-06-01&date_to=2026-06-10&branch_ids[]='.$ctx['branch']->id)
         ->assertOk();
 
     $rows = $response->json('data.rows');
@@ -149,12 +149,44 @@ it('does not leak other tenants ingredients', function (): void {
     expect($response->json('data.rows'))->toBe([]);
 });
 
-it('exposes the Phase 8 anomaly stub note', function (): void {
-    makeMerchantActor();
+it('flags an ingredient consumed >20% above its trailing-30-day average', function (): void {
+    $ctx = makeMerchantActor();
+    $milk = Ingredient::factory()->for($ctx['company'], 'company')->create(['name' => 'Milk']);
+    BranchStock::factory()->for($ctx['branch'], 'branch')->for($milk, 'ingredient')->create(['quantity' => '100.000']);
 
-    $response = $this->getJson('/api/reports/inventory-consumption?date_from=2026-06-01&date_to=2026-06-30')
-        ->assertOk();
+    // Trailing baseline: 30 over the 30 days before the window = 1.0/day.
+    StockMovement::factory()->for($ctx['branch'], 'branch')->for($milk, 'ingredient')->create([
+        'movement_type' => StockMovementType::SaleConsumption->value,
+        'quantity' => '-30.000', 'occurred_at' => '2026-05-15 12:00:00',
+    ]);
+    // Window: 20 over 10 days = 2.0/day = 2× baseline (> 1.2×) → anomaly.
+    StockMovement::factory()->for($ctx['branch'], 'branch')->for($milk, 'ingredient')->create([
+        'movement_type' => StockMovementType::SaleConsumption->value,
+        'quantity' => '-20.000', 'occurred_at' => '2026-06-05 12:00:00',
+    ]);
 
-    expect($response->json('data._phase.anomaly_stub'))
-        ->toContain('Phase 8');
+    $row = $this->getJson('/api/reports/inventory-consumption?date_from=2026-06-01&date_to=2026-06-10')
+        ->assertOk()->json('data.rows.0');
+    expect($row['anomaly'])->toBeTrue();
+    expect($row['trailing_avg_per_day'])->toBe('1.000');
+});
+
+it('does not flag consumption within the trailing baseline', function (): void {
+    $ctx = makeMerchantActor();
+    $milk = Ingredient::factory()->for($ctx['company'], 'company')->create(['name' => 'Milk']);
+    BranchStock::factory()->for($ctx['branch'], 'branch')->for($milk, 'ingredient')->create(['quantity' => '100.000']);
+
+    // Baseline 30/30d = 1.0/day; window 8/10d = 0.8/day (< 1.2×) → no anomaly.
+    StockMovement::factory()->for($ctx['branch'], 'branch')->for($milk, 'ingredient')->create([
+        'movement_type' => StockMovementType::SaleConsumption->value,
+        'quantity' => '-30.000', 'occurred_at' => '2026-05-15 12:00:00',
+    ]);
+    StockMovement::factory()->for($ctx['branch'], 'branch')->for($milk, 'ingredient')->create([
+        'movement_type' => StockMovementType::SaleConsumption->value,
+        'quantity' => '-8.000', 'occurred_at' => '2026-06-05 12:00:00',
+    ]);
+
+    $row = $this->getJson('/api/reports/inventory-consumption?date_from=2026-06-01&date_to=2026-06-10')
+        ->assertOk()->json('data.rows.0');
+    expect($row['anomaly'])->toBeFalse();
 });

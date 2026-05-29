@@ -15,10 +15,12 @@ declare(strict_types=1);
  *   - Phase 8 shortfall stub note exposed
  */
 
+use App\Enums\StockMovementType;
 use App\Enums\WasteReason;
 use App\Models\Branch;
 use App\Models\Company;
 use App\Models\Ingredient;
+use App\Models\StockMovement;
 use App\Models\WasteRecord;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -179,12 +181,24 @@ it('does not leak other tenants waste records', function (): void {
     expect($response->json('data.by_reason'))->toBe([]);
 });
 
-it('exposes the Phase 8 shortfall stub note', function (): void {
-    makeMerchantActor();
+it('computes per-ingredient shortfall as non-sales stock depletion', function (): void {
+    $ctx = makeMerchantActor();
+    $milk = Ingredient::factory()->for($ctx['company'], 'company')->create(['name' => 'Milk']);
 
-    $response = $this->getJson('/api/reports/loss-waste?date_from=2026-06-01&date_to=2026-06-30')
-        ->assertOk();
+    // 2 used by sales + 1 lost to a manual adjustment → shortfall 1.
+    StockMovement::factory()->for($ctx['branch'], 'branch')->for($milk, 'ingredient')->create([
+        'movement_type' => StockMovementType::SaleConsumption->value,
+        'quantity' => '-2.000', 'occurred_at' => '2026-06-05 12:00:00',
+    ]);
+    StockMovement::factory()->for($ctx['branch'], 'branch')->for($milk, 'ingredient')->create([
+        'movement_type' => StockMovementType::Adjustment->value,
+        'quantity' => '-1.000', 'occurred_at' => '2026-06-06 12:00:00',
+    ]);
 
-    expect($response->json('data._phase.shortfall_stub'))
-        ->toContain('Phase 8');
+    $row = collect($this->getJson('/api/reports/loss-waste?date_from=2026-06-01&date_to=2026-06-30')
+        ->assertOk()->json('data.shortfall'))->firstWhere('ingredient_name', 'Milk');
+
+    expect($row['sales_consumption'])->toBe('2.000');
+    expect($row['total_depletion'])->toBe('3.000');
+    expect($row['shortfall'])->toBe('1.000');
 });
