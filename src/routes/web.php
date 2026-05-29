@@ -295,6 +295,8 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('restock-requests.show');
         Route::post('branches/{branch:uuid}/restock-requests', [RestockRequestsController::class, 'store'])
             ->name('restock-requests.store');
+        Route::get('branches/{branch:uuid}/restock-suggestions', [RestockRequestsController::class, 'suggestions'])
+            ->name('restock-requests.suggestions');
         Route::patch('restock-requests/{restockRequest:uuid}', [RestockRequestsController::class, 'update'])
             ->name('restock-requests.update');
         Route::post('restock-requests/{restockRequest:uuid}/submit', [RestockRequestsController::class, 'submit'])

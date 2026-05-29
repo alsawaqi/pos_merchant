@@ -9,6 +9,7 @@ use App\Actions\Pos\Inventory\CancelRestockRequestAction;
 use App\Actions\Pos\Inventory\CreateRestockRequestAction;
 use App\Actions\Pos\Inventory\ReviewRestockRequestAction;
 use App\Actions\Pos\Inventory\SubmitRestockRequestAction;
+use App\Actions\Pos\Inventory\SuggestRestockAction;
 use App\Actions\Pos\Inventory\UpdateRestockRequestAction;
 use App\Enums\MerchantPermission;
 use App\Enums\RestockRequestStatus;
@@ -65,6 +66,7 @@ class RestockRequestsController extends Controller
         private readonly ReviewRestockRequestAction $review,
         private readonly CancelRestockRequestAction $cancel,
         private readonly AllocateRestockRequestAction $allocate,
+        private readonly SuggestRestockAction $suggest,
     ) {}
 
     public function index(Request $request): AnonymousResourceCollection
@@ -112,6 +114,39 @@ class RestockRequestsController extends Controller
         return RestockRequestResource::make($restockRequest);
     }
 
+    /**
+     * GET /api/branches/{branch:uuid}/restock-suggestions
+     *
+     * Non-binding restock suggestions for a branch: per ingredient, a proposed
+     * quantity derived from current stock + min_stock_threshold + the trailing
+     * consumption rate. The manager pre-fills a restock request from this, then
+     * edits + submits via the normal flow. A READ — gated on InventoryView, so
+     * a read-only supervisor can see it without restock authority.
+     *
+     * ?window_days (consumption lookback, default 30) + ?cover_days (target
+     * days-of-stock to carry, default 14), each clamped to 1..365.
+     */
+    public function suggestions(Request $request, Branch $branch): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::InventoryView);
+        $this->refuseIfBranchNotInTenant($branch);
+
+        $windowDays = max(1, min(365, (int) $request->query('window_days', 30)));
+        $coverDays = max(1, min(365, (int) $request->query('cover_days', 14)));
+
+        $suggestions = $this->suggest->handle($branch, $windowDays, $coverDays);
+
+        return response()->json([
+            'data' => $suggestions,
+            'meta' => [
+                'branch_id' => $branch->id,
+                'branch_uuid' => $branch->uuid,
+                'window_days' => $windowDays,
+                'cover_days' => $coverDays,
+            ],
+        ]);
+    }
+
     public function store(CreateRestockRequestRequest $request, Branch $branch): JsonResponse
     {
         $this->ensure($request, MerchantPermission::RestockRequestCreate);
@@ -133,7 +168,7 @@ class RestockRequestsController extends Controller
         ], 201);
     }
 
-    public function update(UpdateRestockRequestRequest $request, RestockRequest $restockRequest): RestockRequestResource | JsonResponse
+    public function update(UpdateRestockRequestRequest $request, RestockRequest $restockRequest): RestockRequestResource|JsonResponse
     {
         $this->ensure($request, MerchantPermission::RestockRequestCreate);
         $this->refuseIfNotInTenant($restockRequest);
@@ -152,7 +187,7 @@ class RestockRequestsController extends Controller
         return RestockRequestResource::make($updated);
     }
 
-    public function submit(Request $request, RestockRequest $restockRequest): RestockRequestResource | JsonResponse
+    public function submit(Request $request, RestockRequest $restockRequest): RestockRequestResource|JsonResponse
     {
         $this->ensure($request, MerchantPermission::RestockRequestCreate);
         $this->refuseIfNotInTenant($restockRequest);
@@ -166,7 +201,7 @@ class RestockRequestsController extends Controller
         return RestockRequestResource::make($updated);
     }
 
-    public function approve(ReviewRestockRequestRequest $request, RestockRequest $restockRequest): RestockRequestResource | JsonResponse
+    public function approve(ReviewRestockRequestRequest $request, RestockRequest $restockRequest): RestockRequestResource|JsonResponse
     {
         $this->ensure($request, MerchantPermission::RestockRequestReview);
         $this->refuseIfNotInTenant($restockRequest);
@@ -184,7 +219,7 @@ class RestockRequestsController extends Controller
         return RestockRequestResource::make($updated);
     }
 
-    public function reject(ReviewRestockRequestRequest $request, RestockRequest $restockRequest): RestockRequestResource | JsonResponse
+    public function reject(ReviewRestockRequestRequest $request, RestockRequest $restockRequest): RestockRequestResource|JsonResponse
     {
         $this->ensure($request, MerchantPermission::RestockRequestReview);
         $this->refuseIfNotInTenant($restockRequest);
@@ -204,7 +239,7 @@ class RestockRequestsController extends Controller
         return RestockRequestResource::make($updated);
     }
 
-    public function cancel(CancelRestockRequestRequest $request, RestockRequest $restockRequest): RestockRequestResource | JsonResponse
+    public function cancel(CancelRestockRequestRequest $request, RestockRequest $restockRequest): RestockRequestResource|JsonResponse
     {
         $this->ensure($request, MerchantPermission::RestockRequestCreate);
         $this->refuseIfNotInTenant($restockRequest);
@@ -222,7 +257,7 @@ class RestockRequestsController extends Controller
         return RestockRequestResource::make($updated);
     }
 
-    public function allocate(AllocateRestockRequestRequest $request, RestockRequest $restockRequest): RestockRequestResource | JsonResponse
+    public function allocate(AllocateRestockRequestRequest $request, RestockRequest $restockRequest): RestockRequestResource|JsonResponse
     {
         $this->ensure($request, MerchantPermission::RestockRequestReview);
         $this->refuseIfNotInTenant($restockRequest);
