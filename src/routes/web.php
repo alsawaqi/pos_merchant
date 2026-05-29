@@ -424,6 +424,12 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // Each report key dispatches to its own Action.
         // Adding a new report = adding an Action + a method on
         // ReportsController. Permission gate: reports.view.
+        //
+        // CSV export of any report key — gated on reports.export
+        // (separate from reports.view). The {report}/export suffix
+        // can't shadow the literal report routes below it.
+        Route::get('reports/{report}/export', [ReportsController::class, 'export'])
+            ->name('reports.export');
         Route::get('reports/sales', [ReportsController::class, 'sales'])
             ->name('reports.sales');
         Route::get('reports/customers', [ReportsController::class, 'customers'])

@@ -20,8 +20,10 @@ use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Pos\Reports\AuditLogFilterRequest;
 use App\Http\Requests\Pos\Reports\ReportFilterRequest;
+use App\Support\ReportCsvExporter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 
 /**
  * Phase 7b — reports endpoints (blueprint §13 Phase 7).
@@ -173,6 +175,52 @@ class ReportsController extends Controller
         ]);
 
         return response()->json(['data' => $payload]);
+    }
+
+    /**
+     * GET /api/reports/{report}/export
+     *
+     * CSV export of any analytics report. Runs the same Action as the JSON
+     * endpoint, then flattens the multi-section payload to CSV. Gated on
+     * reports.export — distinct from reports.view, so a view-only role can read
+     * a report on-screen but not download it. The audit log is intentionally
+     * excluded (it's a separate, AuditLogView-gated viewer with pagination).
+     *
+     * Fetched with Accept: application/json like the rest of the API (the group's
+     * RequireJsonRequest middleware 406s otherwise); the SPA reads the returned
+     * text/csv body as a blob to trigger the download.
+     */
+    public function export(ReportFilterRequest $request, string $report, ReportCsvExporter $exporter): Response
+    {
+        $this->ensure($request, MerchantPermission::ReportsExport);
+
+        $reports = [
+            'sales' => $this->salesReport,
+            'customers' => $this->customerReport,
+            'discounts' => $this->discountReport,
+            'product-performance' => $this->productPerformanceReport,
+            'recipe-cost' => $this->recipeCostReport,
+            'staff-activity' => $this->staffActivityReport,
+            'inventory-consumption' => $this->inventoryConsumptionReport,
+            'loss-waste' => $this->lossWasteReport,
+            'restock-purchasing' => $this->restockPurchasingReport,
+            'round-up-donation' => $this->roundUpDonationReport,
+        ];
+
+        if (! array_key_exists($report, $reports)) {
+            abort(404);
+        }
+
+        $filter = ReportFilter::fromArray($request->validated());
+        $csv = $exporter->toCsv($reports[$report]->handle($filter));
+
+        $validated = $request->validated();
+        $filename = sprintf('%s-report_%s_to_%s.csv', $report, $validated['date_from'], $validated['date_to']);
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+        ]);
     }
 
     private function ensure(Request $request, MerchantPermission $permission): void
