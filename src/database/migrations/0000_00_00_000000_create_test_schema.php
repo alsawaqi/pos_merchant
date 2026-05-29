@@ -792,6 +792,25 @@ return new class extends Migration
             $table->unique(['discount_id', 'target_type', 'target_id'], 'pos_discount_targets_unique');
         });
 
+        // ---- pos_order_discounts (Phase 8.10) ---
+        // Per-order discount-application records written by the pos_api sale
+        // pipeline at order.create. Feeds the §5.11.7 Discount Report's
+        // by-RULE breakdown. name/type snapshotted for rename-safe history;
+        // discount_id NULL = manual discount, order_item_id NULL = order-level.
+        Schema::create('pos_order_discounts', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->foreignId('order_id')->constrained('pos_orders')->cascadeOnDelete();
+            $table->foreignId('order_item_id')->nullable()->constrained('pos_order_items')->nullOnDelete();
+            $table->foreignId('discount_id')->nullable()->constrained('pos_discounts')->nullOnDelete();
+            $table->string('name_snapshot');
+            $table->string('amount_type_snapshot', 32)->nullable();
+            $table->decimal('amount', 12, 3)->default(0);
+            $table->timestamp('applied_at')->nullable();
+            $table->timestamps();
+        });
+
         // ---- pos_payments + pos_shifts (Phase 7a) ---
         // Payments support split tender + Soft POS reconciliation.
         // Invariant (enforced by Phase 8 Action): SUM(payments

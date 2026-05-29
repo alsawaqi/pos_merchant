@@ -9,15 +9,18 @@ declare(strict_types=1);
  *   - Headline: total_discount, gross_sales, discount_pct_of_gross,
  *     order_count, discounted_order_count
  *   - by_branch breakdown
- *   - by_rule / by_staff stubs (Phase 8 lands the data path)
+ *   - by_staff breakdown (order.staff_id)
+ *   - by_rule breakdown (pos_order_discounts, Phase 8.10)
  *   - Tenant isolation + window filter
  */
 
 use App\Models\Branch;
 use App\Models\Company;
+use App\Models\Discount;
 use App\Models\Order;
 use App\Models\PosStaff;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -82,9 +85,9 @@ it('breaks down by_branch with discount_pct per branch', function (): void {
     expect((float) $b2['discount_pct'])->toBe(0.0);
 });
 
-// =================== STUB BREAKDOWNS ===================
+// =================== BY STAFF ===================
 
-it('breaks down discount by_staff and keeps by_rule stubbed', function (): void {
+it('breaks down discount by_staff (order.staff_id)', function (): void {
     $ctx = makeMerchantActor();
     $sara = PosStaff::factory()->for($ctx['company'], 'company')->create(['name' => 'Sara']);
 
@@ -103,10 +106,67 @@ it('breaks down discount by_staff and keeps by_rule stubbed', function (): void 
     expect($row['staff_name'])->toBe('Sara');
     expect($row['total_discount'])->toBe('10.000');
     expect($row['discounted_order_count'])->toBe(1);
+});
 
-    // Per-rule still needs the pos_api discount-application record.
+// =================== BY RULE ===================
+
+it('breaks down discount by_rule from the discount-application records', function (): void {
+    $ctx = makeMerchantActor();
+    $rule = Discount::factory()->for($ctx['company'], 'company')->create(['name' => 'Happy Hour']);
+
+    $o1 = Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->paid()->create([
+        'subtotal' => '50.000', 'discount_total' => '7.000', 'grand_total' => '43.000',
+        'opened_at' => '2026-06-15 12:00:00',
+    ]);
+    $o2 = Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->paid()->create([
+        'subtotal' => '30.000', 'discount_total' => '3.000', 'grand_total' => '27.000',
+        'opened_at' => '2026-06-16 12:00:00',
+    ]);
+
+    // The discount-application records pos_api writes at order.create.
+    DB::table('pos_order_discounts')->insert([
+        ['company_id' => $ctx['company']->id, 'branch_id' => $ctx['branch']->id, 'order_id' => $o1->id, 'order_item_id' => null, 'discount_id' => $rule->id, 'name_snapshot' => 'Happy Hour', 'amount_type_snapshot' => 'percent', 'amount' => '5.000', 'applied_at' => '2026-06-15 12:00:00', 'created_at' => now(), 'updated_at' => now()],
+        ['company_id' => $ctx['company']->id, 'branch_id' => $ctx['branch']->id, 'order_id' => $o2->id, 'order_item_id' => null, 'discount_id' => $rule->id, 'name_snapshot' => 'Happy Hour', 'amount_type_snapshot' => 'percent', 'amount' => '3.000', 'applied_at' => '2026-06-16 12:00:00', 'created_at' => now(), 'updated_at' => now()],
+        // Manual / ad-hoc discount on o1 — no rule behind it.
+        ['company_id' => $ctx['company']->id, 'branch_id' => $ctx['branch']->id, 'order_id' => $o1->id, 'order_item_id' => null, 'discount_id' => null, 'name_snapshot' => 'Manager comp', 'amount_type_snapshot' => null, 'amount' => '2.000', 'applied_at' => '2026-06-15 12:00:00', 'created_at' => now(), 'updated_at' => now()],
+    ]);
+
+    $response = $this->getJson('/api/reports/discounts?date_from=2026-06-01&date_to=2026-06-30')->assertOk();
+
+    $byRule = collect($response->json('data.by_rule'));
+
+    $happy = $byRule->firstWhere('discount_id', $rule->id);
+    expect($happy['rule_name'])->toBe('Happy Hour');
+    expect($happy['total_discount'])->toBe('8.000');       // 5 + 3 across two orders
+    expect($happy['order_count'])->toBe(2);
+    expect($happy['application_count'])->toBe(2);
+
+    $manual = $byRule->firstWhere('rule_name', 'Manager comp');
+    expect($manual['discount_id'])->toBeNull();
+    expect($manual['total_discount'])->toBe('2.000');
+    expect($manual['order_count'])->toBe(1);
+});
+
+it('does not count discount applications from unpaid or out-of-window orders', function (): void {
+    $ctx = makeMerchantActor();
+    $rule = Discount::factory()->for($ctx['company'], 'company')->create(['name' => 'Promo']);
+
+    // Out of window (May) + an open (unpaid) order — neither should count.
+    $stale = Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->paid()->create([
+        'opened_at' => '2026-05-15 12:00:00',
+    ]);
+    $open = Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->create([
+        'status' => 'open', 'opened_at' => '2026-06-15 12:00:00',
+    ]);
+
+    DB::table('pos_order_discounts')->insert([
+        ['company_id' => $ctx['company']->id, 'branch_id' => $ctx['branch']->id, 'order_id' => $stale->id, 'order_item_id' => null, 'discount_id' => $rule->id, 'name_snapshot' => 'Promo', 'amount_type_snapshot' => 'percent', 'amount' => '9.000', 'applied_at' => '2026-05-15 12:00:00', 'created_at' => now(), 'updated_at' => now()],
+        ['company_id' => $ctx['company']->id, 'branch_id' => $ctx['branch']->id, 'order_id' => $open->id, 'order_item_id' => null, 'discount_id' => $rule->id, 'name_snapshot' => 'Promo', 'amount_type_snapshot' => 'percent', 'amount' => '4.000', 'applied_at' => '2026-06-15 12:00:00', 'created_at' => now(), 'updated_at' => now()],
+    ]);
+
+    $response = $this->getJson('/api/reports/discounts?date_from=2026-06-01&date_to=2026-06-30')->assertOk();
+
     expect($response->json('data.by_rule'))->toBe([]);
-    expect($response->json('data._phase.by_rule_stub'))->toContain('discount-application');
 });
 
 // =================== TENANT ISOLATION ===================

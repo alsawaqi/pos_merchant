@@ -17,15 +17,13 @@ use Illuminate\Support\Facades\DB;
  *     staff who applied it
  *   - Discount % of gross sales (over-discounting watchdog)
  *
- * Phase 7b ships an AGGREGATE-level report using
- * pos_orders.discount_total. Per-rule and per-staff
- * breakdowns require a discount_application snapshot
- * column on order_items (or a dedicated audit join), which
- * lands with the Phase 8 sale pipeline. For now the rule +
- * staff breakdowns return empty arrays with a documented
- * stub note.
- *
- * by_branch breakdown ships in full.
+ * Headline + by_branch + by_staff come from pos_orders
+ * (discount_total + staff_id). The by_RULE breakdown is
+ * driven by pos_order_discounts — the discount-application
+ * record the pos_api sale pipeline writes at order.create
+ * (Phase 8.10) — joined to pos_orders for the paid/window/
+ * branch scope and grouped by rule, with the rule name
+ * snapshotted so renamed/soft-deleted rules still read.
  */
 final readonly class DiscountReportAction
 {
@@ -116,6 +114,40 @@ final readonly class DiscountReportAction
                 'discounted_order_count' => (int) $r->discounted_order_count,
             ])->all();
 
+        // ---- By rule (which discount rule granted how much) ----
+        // Driven by pos_order_discounts — the discount-application record the
+        // pos_api sale pipeline writes at order.create (§9.1.6 snapshot).
+        // Joined to pos_orders for the paid-status + window + branch scope.
+        // Grouped by (discount_id, name_snapshot): a renamed rule reads under
+        // the name in force at sale time, and manual (rule-less) discounts
+        // group by the name that was entered.
+        $byRuleQuery = DB::table('pos_order_discounts as od')
+            ->join('pos_orders', 'pos_orders.id', '=', 'od.order_id')
+            ->where('od.company_id', $companyId)
+            ->where('pos_orders.status', OrderStatus::Paid->value)
+            ->whereBetween('pos_orders.opened_at', [$filter->dateFrom, $filter->dateTo]);
+        if ($branchScope !== null) {
+            $byRuleQuery->whereIn('pos_orders.branch_id', $branchScope);
+        }
+        $byRule = $byRuleQuery
+            ->selectRaw('
+                od.discount_id AS discount_id,
+                od.name_snapshot AS rule_name,
+                COALESCE(SUM(od.amount), 0) AS total_discount,
+                COUNT(DISTINCT od.order_id) AS order_count,
+                COUNT(*) AS application_count
+            ')
+            ->groupBy('od.discount_id', 'od.name_snapshot')
+            ->orderByDesc('total_discount')
+            ->get()
+            ->map(static fn ($r): array => [
+                'discount_id' => $r->discount_id !== null ? (int) $r->discount_id : null,
+                'rule_name' => (string) $r->rule_name,
+                'total_discount' => number_format((float) $r->total_discount, 3, '.', ''),
+                'order_count' => (int) $r->order_count,
+                'application_count' => (int) $r->application_count,
+            ])->all();
+
         return [
             'window' => [
                 'from' => $filter->dateFrom->format('Y-m-d\TH:i:s'),
@@ -132,14 +164,7 @@ final readonly class DiscountReportAction
             ],
             'by_branch' => $byBranch,
             'by_staff' => $byStaff,
-            // Per-RULE breakdown still needs a discount-application record
-            // (which discount rule gave which amount), written at order.create
-            // by the pos_api sale pipeline — not yet emitted. by_staff above
-            // needs only order.staff_id, so it ships in full.
-            'by_rule' => [],
-            '_phase' => [
-                'by_rule_stub' => 'Per-rule breakdown needs a discount-application record written at order.create (pos_api).',
-            ],
+            'by_rule' => $byRule,
         ];
     }
 }
