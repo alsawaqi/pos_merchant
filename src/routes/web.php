@@ -9,6 +9,7 @@ use App\Http\Controllers\Portal\PortalUsersController;
 use App\Http\Controllers\Pos\AddOnGroupsController;
 use App\Http\Controllers\Pos\AddOnsController;
 use App\Http\Controllers\Pos\BranchesController as PosBranchesController;
+use App\Http\Controllers\Pos\BranchTransfersController;
 use App\Http\Controllers\Pos\CategoriesController;
 use App\Http\Controllers\Pos\CustomersController;
 use App\Http\Controllers\Pos\DashboardController;
@@ -266,6 +267,17 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('stock.restock');
         Route::get('branches/{branch:uuid}/stock-movements', [StockController::class, 'movements'])
             ->name('stock.movements');
+
+        // -------- Branch stock transfers (§5.6) -----------
+        // Immediate atomic move between two branches. List/show
+        // gated on inventory.view; the transfer mutation on
+        // inventory.manage. Source branch = the route branch.
+        Route::get('branch-transfers', [BranchTransfersController::class, 'index'])
+            ->name('branch-transfers.index');
+        Route::get('branch-transfers/{transfer:uuid}', [BranchTransfersController::class, 'show'])
+            ->name('branch-transfers.show');
+        Route::post('branches/{branch:uuid}/transfers', [BranchTransfersController::class, 'store'])
+            ->name('branch-transfers.store');
 
         // -------- Phase 5c — Waste records --
         // Branch-scoped. List paginated + filterable by

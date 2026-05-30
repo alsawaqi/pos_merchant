@@ -548,6 +548,32 @@ return new class extends Migration
             $table->unique(['restock_request_id', 'ingredient_id'], 'pos_restock_request_lines_request_ingredient_unique');
         });
 
+        // ---- pos_branch_transfers + lines (branch transfers, §5.6) ---
+        // Immediate atomic stock move between two branches; each line writes a
+        // paired transfer_out (source) + transfer_in (destination) movement.
+        Schema::create('pos_branch_transfers', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('from_branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->foreignId('to_branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->foreignId('transferred_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->timestamp('transferred_at')->useCurrent();
+            $table->text('note')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('pos_branch_transfer_lines', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('branch_transfer_id')->constrained('pos_branch_transfers')->cascadeOnDelete();
+            $table->foreignId('ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
+            $table->decimal('quantity', 12, 3);
+            $table->string('unit_at_set', 16);
+            $table->decimal('unit_cost_at_time', 12, 3)->default(0);
+            $table->timestamps();
+            $table->unique(['branch_transfer_id', 'ingredient_id'], 'pos_branch_transfer_lines_transfer_ingredient_unique');
+        });
+
         // ---- pos_customers + pos_customer_vehicle_plates (Phase 6a) ---
         // Per-merchant customer book. Phone is the natural lookup
         // key at the POS; the (company_id, phone) unique constraint
