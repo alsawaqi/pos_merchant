@@ -24,6 +24,7 @@ use App\Http\Controllers\Pos\ProductsController;
 use App\Http\Controllers\Pos\ReportsController;
 use App\Http\Controllers\Pos\RestockRequestsController;
 use App\Http\Controllers\Pos\RolesController;
+use App\Http\Controllers\Pos\SavedViewsController;
 use App\Http\Controllers\Pos\StockController;
 use App\Http\Controllers\Pos\SuppliersController;
 use App\Http\Controllers\Pos\TablesController;
@@ -431,6 +432,18 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // mini-report).
         Route::get('dashboard/summary', [DashboardController::class, 'summary'])
             ->name('dashboard.summary');
+
+        // -------- Saved views — per-user filter presets -----------
+        // Personal bookmarks; NO permission gate (every authed user
+        // manages their own). Ownership-scoped in the controller.
+        Route::get('saved-views', [SavedViewsController::class, 'index'])
+            ->name('saved-views.index');
+        Route::post('saved-views', [SavedViewsController::class, 'store'])
+            ->name('saved-views.store');
+        Route::patch('saved-views/{savedView:uuid}', [SavedViewsController::class, 'update'])
+            ->name('saved-views.update');
+        Route::delete('saved-views/{savedView:uuid}', [SavedViewsController::class, 'destroy'])
+            ->name('saved-views.destroy');
 
         // -------- Phase 7b — Reports + Audit Log (blueprint §13 Phase 7) --
         // Each report key dispatches to its own Action.

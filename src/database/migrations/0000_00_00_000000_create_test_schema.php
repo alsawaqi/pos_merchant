@@ -919,12 +919,29 @@ return new class extends Migration
             $table->longText('payload');
             $table->integer('last_activity')->index();
         });
+
+        // ---- pos_saved_views (per-user filter presets) ---
+        // Personal bookmarks scoped to (company_id, user_id). Not shared.
+        Schema::create('pos_saved_views', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('user_id')->constrained('pos_users')->cascadeOnDelete();
+            $table->string('view_key', 64);
+            $table->string('name', 100);
+            $table->json('filters')->nullable();
+            $table->boolean('is_default')->default(false);
+            $table->timestamps();
+            $table->unique(['user_id', 'view_key', 'name'], 'pos_saved_views_user_key_name_unique');
+            $table->index(['user_id', 'view_key'], 'pos_saved_views_user_key_idx');
+        });
     }
 
     public function down(): void
     {
         // Drop in reverse dependency order. Tests use :memory: so
         // this is essentially never called, but symmetry is cheap.
+        Schema::dropIfExists('pos_saved_views');
         Schema::dropIfExists('sessions');
         Schema::dropIfExists('pos_role_has_permissions');
         Schema::dropIfExists('pos_model_has_roles');
