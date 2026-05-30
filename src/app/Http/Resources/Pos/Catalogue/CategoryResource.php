@@ -28,6 +28,7 @@ class CategoryResource extends JsonResource
         return [
             'id' => $this->id,
             'uuid' => $this->uuid,
+            'parent_id' => $this->parent_id,
             'name' => $this->name,
             'name_ar' => $this->name_ar,
             'description' => $this->description,
@@ -36,6 +37,8 @@ class CategoryResource extends JsonResource
             'status' => $this->status?->value,
             'products_count' => $this->products_count
                 ?? $this->products()->count(),
+            'subcategories_count' => $this->subcategories_count
+                ?? $this->subcategories()->count(),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

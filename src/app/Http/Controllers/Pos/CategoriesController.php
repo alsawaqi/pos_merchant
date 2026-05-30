@@ -46,7 +46,7 @@ class CategoriesController extends Controller
 
         $categories = ProductCategory::query()
             ->where('company_id', $this->tenant->requiredId())
-            ->withCount('products')
+            ->withCount(['products', 'subcategories'])
             ->orderBy('display_order')
             ->orderBy('name')
             ->get();

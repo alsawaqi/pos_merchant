@@ -25,6 +25,9 @@ class CreateCategoryRequest extends FormRequest
             'description' => ['nullable', 'string', 'max:500'],
             'image_url' => ['nullable', 'url', 'max:500'],
             'display_order' => ['nullable', 'integer', 'between:0,999'],
+            // Optional parent → makes this a subcategory. Company-scope +
+            // 2-level cap checked in withValidator.
+            'parent_id' => ['nullable', 'integer'],
         ];
     }
 
@@ -46,6 +49,35 @@ class CreateCategoryRequest extends FormRequest
             if ($taken) {
                 $v->errors()->add('name', 'A category with this name already exists.');
             }
+
+            $this->validateParent($v, $companyId);
         });
+    }
+
+    /**
+     * A parent, when supplied, must belong to this company and itself be
+     * top-level (parent_id NULL) — categories nest at most one level deep.
+     */
+    private function validateParent(Validator $v, int $companyId): void
+    {
+        $parentId = $this->input('parent_id');
+        if ($parentId === null || $parentId === '') {
+            return;
+        }
+
+        $parent = ProductCategory::query()
+            ->where('id', $parentId)
+            ->where('company_id', $companyId)
+            ->first();
+
+        if ($parent === null) {
+            $v->errors()->add('parent_id', 'The selected parent category does not belong to your company.');
+
+            return;
+        }
+
+        if ($parent->parent_id !== null) {
+            $v->errors()->add('parent_id', 'Categories can only be nested one level deep.');
+        }
     }
 }

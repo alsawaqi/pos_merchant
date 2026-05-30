@@ -23,6 +23,10 @@ final readonly class UpdateCategoryAction
         'name_ar',
         'description',
         'image_url',
+        // Re-parent / un-nest (null = promote to top-level). Validity
+        // (company-scoped, 2-level cap, no-self, no-has-children) is enforced
+        // by UpdateCategoryRequest before we get here.
+        'parent_id',
         'display_order',
         'status',
     ];

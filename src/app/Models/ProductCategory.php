@@ -16,16 +16,21 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
 /**
- * Flat menu category — Drinks, Mains, Desserts, etc.
+ * Menu category — Drinks, Mains, Desserts, etc.
  *
- * Schema owned by pos_admin's
- * 2026_05_27_040000_create_pos_product_categories_table.
- * pos_merchant reads + writes via the narrow whitelist below,
- * always through {@see \App\Actions\Pos\Catalogue\*}.
+ * Two-level hierarchy: a NULL parent_id is a top-level category; a set
+ * parent_id makes it a subcategory of that parent. Nesting is capped at two
+ * levels (a subcategory can't itself be a parent) — enforced in the
+ * Create/Update request + action layer.
+ *
+ * Schema owned by pos_admin (table created 2026_05_27_040000; parent_id added
+ * 2026_06_12_010000). pos_merchant reads + writes via the narrow whitelist
+ * below, always through {@see \App\Actions\Pos\Catalogue\*}.
  */
 #[Fillable([
     'uuid',
     'company_id',
+    'parent_id',
     'name',
     'name_ar',
     'description',
@@ -48,6 +53,7 @@ class ProductCategory extends Model
         return [
             'status' => CategoryStatus::class,
             'display_order' => 'integer',
+            'parent_id' => 'integer',
         ];
     }
 
@@ -79,6 +85,28 @@ class ProductCategory extends Model
     public function products(): HasMany
     {
         return $this->hasMany(Product::class, 'category_id')
+            ->orderBy('display_order')
+            ->orderBy('name');
+    }
+
+    /**
+     * The parent category, or null for a top-level category.
+     *
+     * @return BelongsTo<ProductCategory, $this>
+     */
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_id');
+    }
+
+    /**
+     * Child categories nested one level under this top-level category.
+     *
+     * @return HasMany<ProductCategory, $this>
+     */
+    public function subcategories(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_id')
             ->orderBy('display_order')
             ->orderBy('name');
     }

@@ -47,6 +47,20 @@ final readonly class DeleteCategoryAction
             );
         }
 
+        // A parent can't be deleted out from under its subcategories — they'd
+        // be left pointing at a missing parent. Force the merchant to move or
+        // delete the children first.
+        $subcategoryCount = $category->subcategories()->count();
+        if ($subcategoryCount > 0) {
+            throw new RuntimeException(
+                sprintf(
+                    'This category has %d subcategor%s. Re-assign or delete them first.',
+                    $subcategoryCount,
+                    $subcategoryCount === 1 ? 'y' : 'ies',
+                ),
+            );
+        }
+
         DB::transaction(function () use ($category, $actor, $companyId): void {
             $snapshot = [
                 'name' => $category->name,

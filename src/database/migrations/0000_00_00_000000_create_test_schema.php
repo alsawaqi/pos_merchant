@@ -172,6 +172,10 @@ return new class extends Migration
             $table->id();
             $table->uuid('uuid')->unique();
             $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            // Subcategories: NULL = top-level, set = subcategory (2-level cap
+            // enforced in the action/request layer). Plain foreign id, no
+            // DB-level self-FK — matches the real ALTER migration.
+            $table->foreignId('parent_id')->nullable();
             $table->string('name');
             $table->string('name_ar')->nullable();
             $table->text('description')->nullable();
@@ -181,6 +185,7 @@ return new class extends Migration
             $table->timestamps();
             $table->softDeletes();
             $table->unique(['company_id', 'name'], 'pos_product_categories_company_name_unique');
+            $table->index(['company_id', 'parent_id'], 'pos_product_categories_company_parent_idx');
         });
 
         // ---- pos_products (Phase 6b + 4.9 delivery_price) ---------

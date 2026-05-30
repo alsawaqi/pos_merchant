@@ -29,7 +29,7 @@ final readonly class CreateCategoryAction
     ) {}
 
     /**
-     * @param  array{name: string, name_ar?: string|null, description?: string|null, image_url?: string|null, display_order?: int}  $attributes
+     * @param  array{name: string, parent_id?: int|null, name_ar?: string|null, description?: string|null, image_url?: string|null, display_order?: int}  $attributes
      */
     public function handle(array $attributes, User $actor): ProductCategory
     {
@@ -39,6 +39,9 @@ final readonly class CreateCategoryAction
             /** @var ProductCategory $category */
             $category = ProductCategory::query()->create([
                 'company_id' => $companyId,
+                // parent_id validity (company-scoped + 2-level cap) is enforced
+                // by CreateCategoryRequest before we get here.
+                'parent_id' => $attributes['parent_id'] ?? null,
                 'name' => $attributes['name'],
                 'name_ar' => $attributes['name_ar'] ?? null,
                 'description' => $attributes['description'] ?? null,
@@ -56,6 +59,7 @@ final readonly class CreateCategoryAction
                 newValues: [
                     'name' => $category->name,
                     'name_ar' => $category->name_ar,
+                    'parent_id' => $category->parent_id,
                     'display_order' => $category->display_order,
                 ],
             ));
