@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Listeners\SeedMerchantRolesOnLogin;
 use App\Support\MerchantTenantContext;
+use Illuminate\Auth\Events\Login;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -19,6 +22,10 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        //
+        // A freshly-created merchant owner arrives from pos_admin with
+        // an empty `merchant_super_admin` role; seed the catalogue +
+        // force-sync the owner's permissions on login so they are never
+        // locked out. See SeedMerchantRolesOnLogin for the full why.
+        Event::listen(Login::class, SeedMerchantRolesOnLogin::class);
     }
 }
