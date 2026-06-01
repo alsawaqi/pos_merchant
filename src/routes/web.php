@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
+use App\Http\Controllers\Auth\ChangePasswordController;
 use App\Http\Controllers\Auth\CsrfTokenController;
 use App\Http\Controllers\Portal\BranchesController;
 use App\Http\Controllers\Portal\PortalUsersController;
@@ -85,6 +86,12 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
     Route::get('/auth/user', [AuthenticatedSessionController::class, 'show'])
         ->middleware(RequireJsonRequest::class)
         ->name('auth.user');
+
+    // Self-service password change (+ clears the must_change_password
+    // flag the platform admin sets on a freshly-minted account).
+    Route::post('/auth/change-password', [ChangePasswordController::class, 'update'])
+        ->middleware(RequireJsonRequest::class)
+        ->name('auth.change-password');
 
     // -------- Phase 4.5 — Portal Users (merchant manages own team) -----
     // All endpoints auto-scoped to the actor's company via the

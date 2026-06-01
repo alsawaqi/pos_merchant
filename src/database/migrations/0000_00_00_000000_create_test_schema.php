@@ -80,6 +80,7 @@ return new class extends Migration
             // password until setup). The create-with-password flow
             // populates it on insert.
             $table->string('password')->nullable();
+            $table->boolean('must_change_password')->default(false);
             $table->string('setup_token_hash', 64)->nullable()->unique();
             $table->timestamp('setup_token_expires_at')->nullable();
             $table->string('user_type')->default('merchant');

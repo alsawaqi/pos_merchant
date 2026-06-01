@@ -186,6 +186,7 @@ class AuthenticatedSessionController extends Controller
             'status' => $user->status,
             'company_id' => $user->company_id,
             'locale' => $user->locale,
+            'must_change_password' => (bool) $user->must_change_password,
             'roles' => array_values($roles),
             'permissions' => array_values($permissions),
         ];
