@@ -53,7 +53,8 @@
         "pos_staff": "POS Staff",
         "roles": "Roles & Permissions",
         "sign_out": "Sign out",
-        "language": "Language"
+        "language": "Language",
+        "orders": "Sales"
     },
     "common": {
         "language_english": "English",
@@ -1411,5 +1412,46 @@
         },
         "no_rows": "No audit events match the current filters.",
         "load_failed": "Could not load the audit log."
+    },
+    "orders": {
+        "section_label": "Sales",
+        "title": "Sales / Orders",
+        "subtitle": "Every order across your branches. Filter by date, branch, or status.",
+        "load_failed": "Failed to load orders.",
+        "forbidden": "Forbidden",
+        "no_rows": "No orders in this window.",
+        "prev": "Prev",
+        "next": "Next",
+        "pagination": "Page {page} of {last} · {total} total",
+        "filters": {
+            "status": "Status",
+            "status_all": "All statuses"
+        },
+        "totals": {
+            "count": "Orders",
+            "grand_total": "Total sales"
+        },
+        "columns": {
+            "time": "Time",
+            "order": "Order #",
+            "branch": "Branch",
+            "type": "Type",
+            "status": "Status",
+            "items": "Items",
+            "customer": "Customer",
+            "total": "Total"
+        },
+        "types": {
+            "quick": "Quick",
+            "dine_in": "Dine-in",
+            "to_go": "To-go",
+            "delivery": "Delivery",
+            "car": "Car"
+        },
+        "statuses": {
+            "open": "Open",
+            "paid": "Paid",
+            "void": "Void"
+        }
     }
 }

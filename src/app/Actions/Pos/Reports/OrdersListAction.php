@@ -1,0 +1,101 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Actions\Pos\Reports;
+
+use App\Data\Reports\ReportFilter;
+use App\Models\Order;
+use App\Support\MerchantTenantContext;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+
+/**
+ * Merchant "Sales / Orders" list -- a paginated, date-filterable feed of
+ * the company's actual orders (not the §5.11 aggregate Sales report). Same
+ * ReportFilter shape (date window + optional branch scope) as the reports
+ * cluster, plus an optional status filter + page/per_page. Tenant-scoped to
+ * company_id; cross-tenant orders are never returnable. A `totals` block
+ * sums the WHOLE filtered set (every page), not just the current page.
+ */
+final readonly class OrdersListAction
+{
+    private const DEFAULT_PER_PAGE = 50;
+
+    public function __construct(
+        private MerchantTenantContext $tenant,
+    ) {}
+
+    /**
+     * @param  array{status?: string|null, page?: int, per_page?: int}  $extras
+     * @return array<string, mixed>
+     */
+    public function handle(ReportFilter $filter, array $extras = []): array
+    {
+        $companyId = $this->tenant->requiredId();
+        $branchScope = $filter->branchScope();
+        $status = isset($extras['status']) && $extras['status'] !== '' && $extras['status'] !== null
+            ? (string) $extras['status'] : null;
+        $perPage = max(1, min(200, (int) ($extras['per_page'] ?? self::DEFAULT_PER_PAGE)));
+        $page = max(1, (int) ($extras['page'] ?? 1));
+
+        $query = Order::query()
+            ->with(['branch:id,name', 'customer:id,name'])
+            ->withCount('items')
+            ->where('company_id', $companyId)
+            ->whereBetween('opened_at', [$filter->dateFrom, $filter->dateTo])
+            ->orderByDesc('opened_at')
+            ->orderByDesc('id');
+
+        if ($branchScope !== null) {
+            $query->whereIn('branch_id', $branchScope);
+        }
+        if ($status !== null) {
+            $query->where('status', $status);
+        }
+
+        // Totals across the ENTIRE filtered set (before pagination).
+        $grandTotal = (float) (clone $query)->sum('grand_total');
+
+        /** @var LengthAwarePaginator $paginator */
+        $paginator = $query->paginate(perPage: $perPage, page: $page);
+
+        $rows = collect($paginator->items())->map(static fn (Order $o): array => [
+            'id' => (int) $o->id,
+            'uuid' => $o->uuid,
+            'branch_id' => (int) $o->branch_id,
+            'branch_name' => $o->branch?->name,
+            'order_type' => $o->order_type?->value,
+            'status' => $o->status?->value,
+            'source' => $o->source?->value,
+            'customer_name' => $o->customer?->name,
+            'plate_number' => $o->plate_number,
+            'items_count' => (int) $o->items_count,
+            'subtotal' => (string) $o->subtotal,
+            'discount_total' => (string) $o->discount_total,
+            'tax_total' => (string) $o->tax_total,
+            'grand_total' => (string) $o->grand_total,
+            'opened_at' => $o->opened_at?->format('Y-m-d\TH:i:s'),
+            'closed_at' => $o->closed_at?->format('Y-m-d\TH:i:s'),
+        ])->all();
+
+        return [
+            'window' => [
+                'from' => $filter->dateFrom->format('Y-m-d\TH:i:s'),
+                'to' => $filter->dateTo->format('Y-m-d\TH:i:s'),
+                'branch_ids' => $branchScope,
+                'status' => $status,
+            ],
+            'totals' => [
+                'count' => $paginator->total(),
+                'grand_total' => number_format($grandTotal, 3, '.', ''),
+            ],
+            'rows' => $rows,
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'per_page' => $paginator->perPage(),
+                'last_page' => $paginator->lastPage(),
+                'total' => $paginator->total(),
+            ],
+        ];
+    }
+}

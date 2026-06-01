@@ -2,6 +2,7 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import Login from '@/Pages/Auth/Login.vue';
 import ChangePassword from '@/Pages/Auth/ChangePassword.vue';
 import Dashboard from '@/Pages/Merchant/Dashboard.vue';
+import OrdersIndex from '@/Pages/Merchant/Orders/Index.vue';
 import BranchesIndex from '@/Pages/Merchant/Branches/Index.vue';
 import CatalogueIndex from '@/Pages/Merchant/Catalogue/Index.vue';
 import CustomersIndex from '@/Pages/Merchant/Customers/Index.vue';
@@ -45,6 +46,12 @@ const routes: RouteRecordRaw[] = [
         path: '/',
         name: 'merchant.dashboard',
         component: Dashboard,
+        meta: { requiresAuth: true },
+    },
+    {
+        path: '/orders',
+        name: 'merchant.orders',
+        component: OrdersIndex,
         meta: { requiresAuth: true },
     },
     {

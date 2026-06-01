@@ -21,6 +21,7 @@ use App\Http\Controllers\Pos\FloorsController;
 use App\Http\Controllers\Pos\IngredientsController;
 use App\Http\Controllers\Pos\LoyaltyController;
 use App\Http\Controllers\Pos\PosStaffController;
+use App\Http\Controllers\Pos\OrdersController;
 use App\Http\Controllers\Pos\ProductsController;
 use App\Http\Controllers\Pos\ReportsController;
 use App\Http\Controllers\Pos\RestockRequestsController;
@@ -493,6 +494,11 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // rather than reports.view -- see controller note.
         Route::get('reports/audit-log', [ReportsController::class, 'auditLog'])
             ->name('reports.audit-log');
+
+        // Sales / Orders list (paginated, date-filterable). reports.view
+        // gated; tenant-scoped to the company's own orders.
+        Route::get('orders', [OrdersController::class, 'index'])
+            ->name('orders.index');
 
         // -------- Phase 6c — Delivery providers + per-product prices --
         // Per-merchant 3rd-party delivery aggregators (Talabat,

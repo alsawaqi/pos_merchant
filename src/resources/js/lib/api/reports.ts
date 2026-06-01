@@ -329,3 +329,48 @@ export function fetchAuditLog(filter: AuditLogFilter): Promise<{ data: AuditLogP
     const url = withBranchScope(`${base}?${q.toString()}`, filter.branch_ids);
     return apiGet<{ data: AuditLogPayload }>(url);
 }
+
+// ---- Sales / Orders list (not an aggregate report) -------------
+
+export interface OrderListFilter extends ReportFilter {
+    status?: string | null;
+    page?: number;
+    per_page?: number;
+}
+
+export interface OrderListRow {
+    id: number;
+    uuid: string;
+    branch_id: number;
+    branch_name: string | null;
+    order_type: string | null;
+    status: string | null;
+    source: string | null;
+    customer_name: string | null;
+    plate_number: string | null;
+    items_count: number;
+    subtotal: string;
+    discount_total: string;
+    tax_total: string;
+    grand_total: string;
+    opened_at: string | null;
+    closed_at: string | null;
+}
+
+export interface OrderListPayload {
+    window: { from: string; to: string; branch_ids: number[] | null; status: string | null };
+    totals: { count: number; grand_total: string };
+    rows: OrderListRow[];
+    meta: { current_page: number; per_page: number; last_page: number; total: number };
+}
+
+export function fetchOrders(filter: OrderListFilter): Promise<{ data: OrderListPayload }> {
+    const q = new URLSearchParams();
+    q.set('date_from', filter.date_from);
+    q.set('date_to', filter.date_to);
+    if (filter.status) q.set('status', filter.status);
+    if (filter.page !== undefined) q.set('page', String(filter.page));
+    if (filter.per_page !== undefined) q.set('per_page', String(filter.per_page));
+    const url = withBranchScope(`/api/orders?${q.toString()}`, filter.branch_ids);
+    return apiGet<{ data: OrderListPayload }>(url);
+}
