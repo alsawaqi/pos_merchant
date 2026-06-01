@@ -51,6 +51,11 @@ it('returns zeros when no data exists', function (): void {
 });
 
 it('aggregates today + yesterday + MTD from paid orders', function (): void {
+    // Freeze to mid-month: on the 1st of a month startOfMonth() IS today,
+    // so the "earlier in the month" order below would fall into the today
+    // bucket and break today.gross == 20.000. Mid-month keeps the three
+    // buckets (today / yesterday / earlier-MTD) genuinely distinct.
+    Carbon::setTestNow(Carbon::parse('2026-06-15 12:00:00'));
     $ctx = makeMerchantActor();
 
     $today = Carbon::now()->setTime(12, 0);
