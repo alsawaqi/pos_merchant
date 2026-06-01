@@ -213,7 +213,7 @@ const features = [
                                     v-model="email"
                                     type="email"
                                     name="email"
-                                    autocomplete="email"
+                                    autocomplete="username"
                                     required
                                     :placeholder="t('auth.email_placeholder')"
                                     class="w-full rounded-xl border border-slate-200 bg-white ps-11 pe-4 py-3 text-sm font-medium text-slate-950 shadow-sm transition focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
