@@ -73,6 +73,8 @@ export interface Product {
     theoretical_cost: string;
     /** Phase 5b — recipe lines when eager-loaded by the controller. */
     recipe_lines?: ProductRecipeLine[];
+    /** Phase B — per-branch availability + unit stock when eager-loaded. */
+    branches?: ProductBranchAssignment[];
     created_at: string | null;
     updated_at: string | null;
 }
@@ -359,5 +361,28 @@ export function updateProductRecipe(
     return apiPut<{ data: Product }>(
         `/api/products/${productUuid}/recipe`,
         payload as unknown as JsonValue,
+    );
+}
+
+// ---- Phase B - product per-branch availability + stock ---------
+
+export interface ProductBranchAssignment {
+    branch_id: number;
+    is_available: boolean;
+    /** Per-branch units; null = not unit-tracked at that branch. */
+    stock_qty: number | null;
+}
+
+/**
+ * Idempotent replace of a product's per-branch availability + unit
+ * stock. Empty array = available at every branch (device default).
+ */
+export function syncProductBranches(
+    productUuid: string,
+    branches: ProductBranchAssignment[],
+): Promise<{ data: Product }> {
+    return apiPut<{ data: Product }>(
+        `/api/products/${productUuid}/branches`,
+        { branches } as unknown as JsonValue,
     );
 }

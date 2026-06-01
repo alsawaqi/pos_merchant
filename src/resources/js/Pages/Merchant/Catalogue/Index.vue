@@ -12,7 +12,7 @@
  *   - Create / edit / delete buttons only when CatalogueManage
  */
 
-import { Beaker, Boxes, Globe2, Image, Layers, Minus, Package, Pencil, Plus, Sparkles, Tag, Trash2, Truck } from 'lucide-vue-next';
+import { Beaker, Building2, Boxes, Globe2, Image, Layers, Minus, Package, Pencil, Plus, Sparkles, Tag, Trash2, Truck } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
@@ -31,6 +31,7 @@ import {
     listCategories,
     listProducts,
     syncProductAddOnGroups,
+    syncProductBranches,
     updateAddOn,
     updateAddOnGroup,
     updateCategory,
@@ -44,10 +45,12 @@ import {
     type CategoryStatus,
     type CreateProductPayload,
     type Product,
+    type ProductBranchAssignment,
     type ProductStatus,
     type RecipeLinePayload,
 } from '@/lib/api/catalogue';
 import { listIngredients, type Ingredient } from '@/lib/api/inventory';
+import { listBranches, type Branch as BranchLite } from '@/lib/api/branches';
 import {
     createDeliveryProvider,
     deleteDeliveryProvider,
@@ -77,6 +80,9 @@ const products = ref<Product[]>([]);
 // options eager-loaded. Drives both the Add-ons tab and the
 // product modal's picker (filtered to non-global groups there).
 const addOnGroups = ref<AddOnGroup[]>([]);
+// Phase B - the company's branches, for the product editor's per-branch
+// availability + stock picker. Lean list (id + name), no permission gate.
+const branches = ref<BranchLite[]>([]);
 // Phase 5b — ingredients power the product Recipe section's
 // dropdown. Fetched from the inventory API; merchants without
 // inventory.view get an empty list and a disabled recipe
@@ -157,6 +163,10 @@ const prodForm = reactive<{
     // recipe / pre-made goods". Each row is mirrored to a
     // RecipeLinePayload at submitProduct time.
     recipe_lines: { ingredient_uuid: string; quantity: string }[];
+    // Phase B - per-branch availability + stock. branch_all = available
+    // everywhere (no rows). Otherwise one row per company branch.
+    branch_all: boolean;
+    branch_rows: { branch_id: number; selected: boolean; stock_qty: string }[];
 }>({
     name: '',
     name_ar: '',
@@ -173,6 +183,8 @@ const prodForm = reactive<{
     status: 'active',
     addon_group_uuids: [],
     recipe_lines: [],
+    branch_all: true,
+    branch_rows: [],
 });
 
 // ---- Add-on group modal (Phase 4.9) -----------------------------
@@ -274,6 +286,16 @@ async function fetchAddOnGroups(): Promise<void> {
     }
 }
 
+async function fetchBranches(): Promise<void> {
+    // Soft-fail: the picker degrades to "all branches" only.
+    try {
+        const response = await listBranches();
+        branches.value = response.data;
+    } catch {
+        branches.value = [];
+    }
+}
+
 async function fetchDeliveryProviders(): Promise<void> {
     try {
         const response = await listDeliveryProviders();
@@ -292,6 +314,7 @@ async function fetchAll(): Promise<void> {
         fetchAddOnGroups(),
         fetchIngredients(),
         fetchDeliveryProviders(),
+        fetchBranches(),
     ]);
     loading.value = false;
 }
@@ -399,6 +422,8 @@ function openCreateProduct(): void {
     prodForm.status = 'active';
     prodForm.addon_group_uuids = [];
     prodForm.recipe_lines = [];
+    prodForm.branch_all = true;
+    prodForm.branch_rows = buildBranchRows();
     prodModalErrors.value = {};
     prodModalError.value = null;
     prodModalOpen.value = true;
@@ -433,6 +458,9 @@ function openEditProduct(product: Product): void {
         ingredient_uuid: line.ingredient?.uuid ?? '',
         quantity: line.quantity,
     }));
+    // Phase B - no assignments = available everywhere (branch_all on).
+    prodForm.branch_all = (product.branches ?? []).length === 0;
+    prodForm.branch_rows = buildBranchRows(product.branches);
     prodModalErrors.value = {};
     prodModalError.value = null;
     prodModalOpen.value = true;
@@ -509,6 +537,26 @@ function ingredientUnitLabel(uuid: string): string {
     return ingredient?.unit ?? '';
 }
 
+// ---- Phase B - per-branch availability + stock helpers ----
+function branchName(branchId: number): string {
+    return branches.value.find((b) => b.id === branchId)?.name ?? `#${branchId}`;
+}
+
+function buildBranchRows(
+    assignments?: ProductBranchAssignment[],
+): { branch_id: number; selected: boolean; stock_qty: string }[] {
+    const byBranch = new Map<number, ProductBranchAssignment>();
+    for (const a of assignments ?? []) byBranch.set(a.branch_id, a);
+    return branches.value.map((b) => {
+        const a = byBranch.get(b.id);
+        return {
+            branch_id: b.id,
+            selected: a ? a.is_available : false,
+            stock_qty: a && a.stock_qty !== null ? String(a.stock_qty) : '',
+        };
+    });
+}
+
 async function submitProduct(): Promise<void> {
     prodModalBusy.value = true;
     prodModalErrors.value = {};
@@ -563,6 +611,20 @@ async function submitProduct(): Promise<void> {
                 quantity: l.quantity,
             }));
         await updateProductRecipe(productUuid, { lines: cleanLines });
+
+        // Step 3b (Phase B): replace per-branch availability + unit
+        // stock. branch_all = clear all rows (available everywhere);
+        // otherwise the ticked branches with their optional units.
+        const branchPayload: ProductBranchAssignment[] = prodForm.branch_all
+            ? []
+            : prodForm.branch_rows
+                .filter((r) => r.selected)
+                .map((r) => ({
+                    branch_id: r.branch_id,
+                    is_available: true,
+                    stock_qty: r.stock_qty.trim() === '' ? null : Number(r.stock_qty),
+                }));
+        await syncProductBranches(productUuid, branchPayload);
 
         // Step 4 (Phase 6c): sync per-provider price overrides.
         // Iterates the touched provider prices and fires
@@ -1573,6 +1635,60 @@ async function syncProductProviderPrices(productUuid: string): Promise<void> {
                                 <span class="text-[10px] text-slate-400">{{ selectionModeLabel(group.selection_mode) }}</span>
                             </label>
                         </div>
+                    </fieldset>
+
+                    <!-- Phase B - per-branch availability + unit stock.
+                         "All branches" = no rows (available everywhere).
+                         Otherwise tick the branches that sell this product
+                         and optionally set per-branch units. Branch
+                         location + devices are admin-managed. -->
+                    <fieldset class="rounded-lg border border-slate-200 p-3">
+                        <legend class="px-2 text-sm font-semibold text-slate-700">
+                            <Building2 class="me-1 inline size-3.5 text-teal-600" />
+                            {{ t('catalogue.branches.section_title') }}
+                        </legend>
+                        <p class="mb-2 text-xs text-slate-500">{{ t('catalogue.branches.section_hint') }}</p>
+
+                        <label class="mb-2 flex items-center gap-2 text-xs font-medium text-slate-700">
+                            <input
+                                v-model="prodForm.branch_all"
+                                type="checkbox"
+                                class="rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200"
+                            >
+                            {{ t('catalogue.branches.all_branches') }}
+                        </label>
+
+                        <div v-if="prodForm.branch_all" class="rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
+                            {{ t('catalogue.branches.all_branches_hint') }}
+                        </div>
+                        <div v-else-if="prodForm.branch_rows.length === 0" class="rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
+                            {{ t('catalogue.branches.no_branches') }}
+                        </div>
+                        <ul v-else class="space-y-1.5">
+                            <li
+                                v-for="(row, idx) in prodForm.branch_rows"
+                                :key="row.branch_id"
+                                class="flex items-center gap-2 rounded border border-slate-200 px-2.5 py-1.5 text-xs"
+                            >
+                                <label class="flex flex-1 items-center gap-2 font-medium text-slate-700">
+                                    <input
+                                        v-model="prodForm.branch_rows[idx].selected"
+                                        type="checkbox"
+                                        class="rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200"
+                                    >
+                                    <span class="truncate">{{ branchName(row.branch_id) }}</span>
+                                </label>
+                                <input
+                                    v-model="prodForm.branch_rows[idx].stock_qty"
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    :disabled="!row.selected"
+                                    :placeholder="t('catalogue.branches.stock_placeholder')"
+                                    class="w-24 rounded border border-slate-200 px-2 py-1 text-xs tabular-nums disabled:cursor-not-allowed disabled:bg-slate-50"
+                                >
+                            </li>
+                        </ul>
                     </fieldset>
 
                     <!-- Phase 5b — Recipe section. Each line is an

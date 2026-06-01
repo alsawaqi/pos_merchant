@@ -571,6 +571,14 @@
             "body": "Delete \"{name}\"? Past orders that reference it will still resolve via the soft-delete trail.",
             "confirm": "Yes, delete",
             "submitting": "Deleting…"
+        },
+        "branches": {
+            "section_title": "Branch availability & stock",
+            "section_hint": "Choose which branches sell this product and set per-branch units. Branch location & devices are managed by the admin.",
+            "all_branches": "Available at all branches",
+            "all_branches_hint": "This product shows on every branch POS. Untick to choose specific branches.",
+            "no_branches": "No branches yet.",
+            "stock_placeholder": "Units"
         }
     },
     "inventory": {
