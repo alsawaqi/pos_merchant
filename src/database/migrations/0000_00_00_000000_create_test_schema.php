@@ -487,6 +487,16 @@ return new class extends Migration
             $table->unique(['product_id', 'ingredient_id'], 'pos_product_recipes_product_ingredient_unique');
         });
 
+        Schema::create('pos_branch_product', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->foreignId('product_id')->constrained('pos_products')->cascadeOnDelete();
+            $table->boolean('is_available')->default(true);
+            $table->decimal('stock_qty', 12, 3)->nullable();
+            $table->timestamps();
+            $table->unique(['branch_id', 'product_id']);
+        });
+
         Schema::create('pos_product_recipe_versions', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('product_id')->constrained('pos_products')->cascadeOnDelete();

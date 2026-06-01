@@ -79,6 +79,14 @@ class ProductResource extends JsonResource
             'has_recipe' => $this->hasRecipe(),
             'theoretical_cost' => $this->theoreticalCost(),
             'recipe_lines' => ProductRecipeResource::collection($this->whenLoaded('recipeLines')),
+            // Per-branch availability + unit stock (which branches sell this
+            // product + how many units each holds). Empty/absent = available
+            // everywhere. Inlined when the controller eager-loads branchProducts.
+            'branches' => $this->whenLoaded('branchProducts', fn (): array => $this->branchProducts->map(fn ($bp): array => [
+                'branch_id' => (int) $bp->branch_id,
+                'is_available' => (bool) $bp->is_available,
+                'stock_qty' => $bp->stock_qty !== null ? (float) $bp->stock_qty : null,
+            ])->values()->all()),
             // Phase 6c — per-provider price overrides inlined
             // when the controller eager-loaded `deliveryPrices`
             // + the provider relation. Product edit modal uses

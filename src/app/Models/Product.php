@@ -255,6 +255,17 @@ class Product extends Model
     }
 
     /**
+     * Per-branch availability + unit stock. No rows = available at every
+     * branch by default (the device-config backward-compatible default).
+     *
+     * @return HasMany<BranchProduct, $this>
+     */
+    public function branchProducts(): HasMany
+    {
+        return $this->hasMany(BranchProduct::class);
+    }
+
+    /**
      * Append-only pre-edit recipe snapshots. Newest first —
      * the UI shows them as a history timeline in the product
      * edit modal.

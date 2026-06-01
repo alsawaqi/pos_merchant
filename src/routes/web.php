@@ -235,6 +235,9 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         Route::put('products/{product:uuid}/addon-groups', [ProductsController::class, 'syncAddOnGroups'])
             ->name('products.sync-addon-groups');
 
+        Route::put('products/{product:uuid}/branches', [ProductsController::class, 'syncBranches'])
+            ->name('products.sync-branches');
+
         // Phase 5b — product recipe replace. Idempotent — caller
         // PUTs the full desired list of recipe lines. Empty = no
         // recipe (pre-made goods, no inventory deduction on sale).

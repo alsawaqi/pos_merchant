@@ -8,6 +8,7 @@ use App\Actions\Pos\Catalogue\CreateProductAction;
 use App\Actions\Pos\Catalogue\DeleteProductAction;
 use App\Actions\Pos\Catalogue\ImportProductsAction;
 use App\Actions\Pos\Catalogue\SyncProductAddOnGroupsAction;
+use App\Actions\Pos\Catalogue\SyncProductBranchesAction;
 use App\Actions\Pos\Catalogue\UpdateProductAction;
 use App\Actions\Pos\Catalogue\UpdateProductRecipeAction;
 use App\Enums\MerchantPermission;
@@ -15,6 +16,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Pos\Catalogue\CreateProductRequest;
 use App\Http\Requests\Pos\Catalogue\ImportProductsRequest;
 use App\Http\Requests\Pos\Catalogue\SyncProductAddOnGroupsRequest;
+use App\Http\Requests\Pos\Catalogue\SyncProductBranchesRequest;
 use App\Http\Requests\Pos\Catalogue\UpdateProductRecipeRequest;
 use App\Http\Requests\Pos\Catalogue\UpdateProductRequest;
 use App\Http\Resources\Pos\Catalogue\AddOnGroupResource;
@@ -52,6 +54,7 @@ class ProductsController extends Controller
         private readonly DeleteProductAction $delete,
         private readonly SyncProductAddOnGroupsAction $syncAddOnGroups,
         private readonly UpdateProductRecipeAction $updateRecipe,
+        private readonly SyncProductBranchesAction $syncBranches,
     ) {}
 
     public function index(Request $request): AnonymousResourceCollection
@@ -69,7 +72,7 @@ class ProductsController extends Controller
             // Phase 5b — recipeLines + ingredient so the cost +
             // has_recipe + edit-modal pre-populate without extra
             // round-trips.
-            ->with(['category', 'addOnGroups', 'recipeLines.ingredient']);
+            ->with(['category', 'addOnGroups', 'recipeLines.ingredient', 'branchProducts']);
 
         // Optional ?category=<uuid> filter. Unknown / cross-
         // tenant uuid silently yields zero results (no leak).
@@ -141,7 +144,7 @@ class ProductsController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $updated->load(['category', 'addOnGroups', 'recipeLines.ingredient']);
+        $updated->load(['category', 'addOnGroups', 'recipeLines.ingredient', 'branchProducts']);
 
         return ProductResource::make($updated);
     }
@@ -182,7 +185,7 @@ class ProductsController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $updated->load(['category', 'addOnGroups', 'recipeLines.ingredient']);
+        $updated->load(['category', 'addOnGroups', 'recipeLines.ingredient', 'branchProducts']);
 
         return ProductResource::make($updated);
     }
@@ -212,6 +215,33 @@ class ProductsController extends Controller
         }
 
         return AddOnGroupResource::collection(collect($groups));
+    }
+
+    /**
+     * PUT /api/products/{product:uuid}/branches
+     *
+     * Replace the product's per-branch availability + unit stock (which
+     * branches sell it + how many units each holds). Empty set = available
+     * at every branch (the device-config default).
+     */
+    public function syncBranches(SyncProductBranchesRequest $request, Product $product): ProductResource|JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::CatalogueManage);
+        $this->refuseIfNotInTenant($product);
+
+        try {
+            $this->syncBranches->handle(
+                $product,
+                $request->validated()['branches'] ?? [],
+                $request->user(),
+            );
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        $product->load(['category', 'addOnGroups', 'recipeLines.ingredient', 'branchProducts']);
+
+        return ProductResource::make($product);
     }
 
     private function ensure(Request $request, MerchantPermission $permission): void
