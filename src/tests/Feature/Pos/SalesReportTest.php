@@ -365,6 +365,49 @@ it('computes COGS and gross_profit from order-item recipe snapshots', function (
     expect($response->json('data.headline.gross_profit'))->toBe('9.800'); // net_sales 10.000 − cogs 0.200
 });
 
+it('computes net_profit = gross_profit minus operating expenses, excluding ingredients', function (): void {
+    $ctx = makeMerchantActor();
+    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    $order = Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->paid()->create([
+        'subtotal' => '10.000', 'discount_total' => '0.000', 'tax_total' => '0.000', 'grand_total' => '10.000',
+        'opened_at' => '2026-06-15 12:00:00',
+    ]);
+    OrderItem::factory()->for($order, 'order')->for($product, 'product')->create([
+        'qty' => '2.000', 'unit_price_snapshot' => '5.000', 'line_total' => '10.000',
+        'recipe_snapshot_json' => [['ingredient_id' => 1, 'qty' => 0.25, 'unit' => 'l', 'unit_cost' => 0.400]], // COGS 0.200
+    ]);
+    // Utilities counts toward operating expenses; the ingredients expense
+    // (e.g. auto-logged by a restock) is excluded -- COGS already covers it.
+    \App\Models\Expense::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->create([
+        'category' => \App\Enums\ExpenseCategory::Utilities->value, 'amount' => '4.000', 'logged_at' => '2026-06-15 09:00:00',
+    ]);
+    \App\Models\Expense::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->create([
+        'category' => \App\Enums\ExpenseCategory::Ingredients->value, 'amount' => '5.000', 'logged_at' => '2026-06-15 09:00:00',
+    ]);
+
+    $response = $this->getJson('/api/reports/sales?date_from=2026-06-01&date_to=2026-06-30')->assertOk();
+
+    expect($response->json('data.headline.gross_profit'))->toBe('9.800');
+    expect($response->json('data.headline.operating_expenses'))->toBe('4.000'); // utilities only
+    expect($response->json('data.headline.net_profit'))->toBe('5.800'); // 9.800 - 4.000
+});
+
+it('excludes rejected expenses from net_profit', function (): void {
+    $ctx = makeMerchantActor();
+    Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->paid()->create([
+        'subtotal' => '10.000', 'discount_total' => '0.000', 'tax_total' => '0.000', 'grand_total' => '10.000',
+        'opened_at' => '2026-06-15 12:00:00',
+    ]);
+    \App\Models\Expense::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->rejected()->create([
+        'category' => \App\Enums\ExpenseCategory::Utilities->value, 'amount' => '99.000', 'logged_at' => '2026-06-15 09:00:00',
+    ]);
+
+    $response = $this->getJson('/api/reports/sales?date_from=2026-06-01&date_to=2026-06-30')->assertOk();
+
+    expect($response->json('data.headline.operating_expenses'))->toBe('0.000');
+    expect($response->json('data.headline.net_profit'))->toBe('10.000'); // gross_profit 10.000 - 0
+});
+
 it('adds add-on ingredient cost to COGS', function (): void {
     $ctx = makeMerchantActor();
     $product = Product::factory()->for($ctx['company'], 'company')->create();

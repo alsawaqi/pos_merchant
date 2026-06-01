@@ -6,6 +6,8 @@ namespace App\Actions\Pos\Reports;
 
 use App\Actions\Pos\Reports\Support\RecipeSnapshotCost;
 use App\Data\Reports\ReportFilter;
+use App\Enums\ExpenseCategory;
+use App\Enums\ExpenseStatus;
 use App\Enums\OrderStatus;
 use App\Support\MerchantTenantContext;
 use Illuminate\Database\Query\Builder;
@@ -111,6 +113,24 @@ final readonly class SalesReportAction
         $cogs = $this->cogs($paidQuery);
         $grossProfit = $netSales - $cogs;
 
+        // Operating expenses for NET profit. Excludes the 'ingredients'
+        // category (COGS already recognises ingredient cost when the stock
+        // is consumed in a sale -- counting the purchase here too would
+        // double-count) and rejected expenses. Scoped to the same window +
+        // branch scope as the sales: a branch-filtered report counts that
+        // branch's expenses; consolidated counts every branch PLUS the
+        // general (no-branch) expenses.
+        $expenseQuery = DB::table('pos_expenses')
+            ->where('company_id', $companyId)
+            ->whereBetween('logged_at', [$filter->dateFrom, $filter->dateTo])
+            ->where('status', '!=', ExpenseStatus::Rejected->value)
+            ->where('category', '!=', ExpenseCategory::Ingredients->value);
+        if ($branchScope !== null) {
+            $expenseQuery->whereIn('branch_id', $branchScope);
+        }
+        $operatingExpenses = (float) $expenseQuery->sum('amount');
+        $netProfit = $grossProfit - $operatingExpenses;
+
         // Breakdowns
         $byHour = $this->byHour($paidQuery);
         $byWeekday = $this->byWeekday($paidQuery);
@@ -133,6 +153,8 @@ final readonly class SalesReportAction
                 'refunds_total' => self::fmt($refundsTotal),
                 'cogs' => self::fmt($cogs),
                 'gross_profit' => self::fmt($grossProfit),
+                'operating_expenses' => self::fmt($operatingExpenses),
+                'net_profit' => self::fmt($netProfit),
                 'order_count' => (int) ($headline?->order_count ?? 0),
                 'refund_count' => (int) ($refundsRow?->refund_count ?? 0),
                 // Convenience: avg ticket size on paid orders.
