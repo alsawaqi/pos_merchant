@@ -1299,7 +1299,8 @@
             "supplies": "Supplies",
             "maintenance": "Maintenance",
             "salaries": "Salaries",
-            "other": "Other"
+            "other": "Other",
+            "ingredients": "Ingredients"
         },
         "columns": {
             "date": "Date",

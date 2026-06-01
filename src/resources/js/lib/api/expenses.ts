@@ -9,7 +9,7 @@
 
 import { apiGet, apiPost, type JsonValue } from '@/lib/api';
 
-export type ExpenseCategory = 'utilities' | 'supplies' | 'maintenance' | 'salaries' | 'other';
+export type ExpenseCategory = 'utilities' | 'supplies' | 'ingredients' | 'maintenance' | 'salaries' | 'other';
 export type ExpenseStatus = 'recorded' | 'reviewed' | 'rejected';
 
 export interface Expense {
@@ -69,6 +69,7 @@ export interface LogExpensePayload {
 export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
     'utilities',
     'supplies',
+    'ingredients',
     'maintenance',
     'salaries',
     'other',

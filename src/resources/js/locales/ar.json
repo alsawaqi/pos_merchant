@@ -1299,7 +1299,8 @@
             "supplies": "مستلزمات",
             "maintenance": "صيانة",
             "salaries": "رواتب",
-            "other": "أخرى"
+            "other": "أخرى",
+            "ingredients": "مكوّنات"
         },
         "columns": {
             "date": "التاريخ",

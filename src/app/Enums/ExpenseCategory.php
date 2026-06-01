@@ -14,6 +14,9 @@ enum ExpenseCategory: string
 {
     case Utilities = 'utilities';
     case Supplies = 'supplies';
+    // Ingredient / inventory purchases. Auto-logged by RestockAction
+    // (a restock with a cost) + selectable for a manual ingredient buy.
+    case Ingredients = 'ingredients';
     case Maintenance = 'maintenance';
     case Salaries = 'salaries';
     case Other = 'other';

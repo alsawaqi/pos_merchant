@@ -189,6 +189,40 @@ it('records a restock as a positive inflow + balance + audit', function (): void
     expect((string) $balance->quantity)->toBe('10.000');
 });
 
+it('records an ingredient-purchase expense for a restock', function (): void {
+    $ctx = makeMerchantActor();
+    $ingredient = Ingredient::factory()->for($ctx['company'], 'company')
+        ->create(['default_unit_cost' => '1.500', 'name' => 'Milk']);
+
+    $this->postJson("/api/branches/{$ctx['branch']->uuid}/stock/restock", [
+        'ingredient_uuid' => $ingredient->uuid,
+        'quantity' => '10.000',
+        'unit_cost' => '1.500',
+    ])->assertCreated();
+
+    // 10 x 1.5 = 15.000, auto-logged as an 'ingredients' expense.
+    $this->assertDatabaseHas('pos_expenses', [
+        'company_id' => $ctx['company']->id,
+        'branch_id' => $ctx['branch']->id,
+        'category' => 'ingredients',
+        'amount' => '15.000',
+        'status' => 'recorded',
+    ]);
+});
+
+it('does not create an expense for a zero-cost restock', function (): void {
+    $ctx = makeMerchantActor();
+    $ingredient = Ingredient::factory()->for($ctx['company'], 'company')
+        ->create(['default_unit_cost' => '0.000']);
+
+    $this->postJson("/api/branches/{$ctx['branch']->uuid}/stock/restock", [
+        'ingredient_uuid' => $ingredient->uuid,
+        'quantity' => '10.000',
+    ])->assertCreated();
+
+    expect(\App\Models\Expense::query()->count())->toBe(0);
+});
+
 it('rejects a restock with negative quantity', function (): void {
     $ctx = makeMerchantActor();
     $ingredient = Ingredient::factory()->for($ctx['company'], 'company')->create();
