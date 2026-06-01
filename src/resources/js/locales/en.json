@@ -1121,16 +1121,46 @@
         },
         "landing": {
             "tile": {
-                "sales": { "title": "Sales", "desc": "Gross + net + discounts + tax + refunds by hour, weekday, payment, type, branch." },
-                "customers": { "title": "Customers", "desc": "Top customers, new vs returning, loyalty points issued + redeemed + liability." },
-                "discounts": { "title": "Discounts", "desc": "Total discount value, share of gross, by branch (rule + staff land in Phase 8)." },
-                "product_performance": { "title": "Product Performance", "desc": "Top sellers by revenue + qty, slow movers, top add-ons." },
-                "recipe_cost": { "title": "Recipe & Cost", "desc": "Per-product theoretical cost, profit, margin (trend lands in Phase 8)." },
-                "staff_activity": { "title": "Staff Activity", "desc": "Per-staff orders paid, revenue, avg ticket, voids, discounts, hours logged." },
-                "inventory_consumption": { "title": "Inventory Consumption", "desc": "Per-ingredient consumed in window, days of stock, low-stock flag." },
-                "loss_waste": { "title": "Loss / Waste", "desc": "Total waste value, by branch, by reason, top wasted ingredients." },
-                "restock_purchasing": { "title": "Restock / Purchasing", "desc": "Restock spend by supplier, by branch, top purchased ingredients." },
-                "round_up_donation": { "title": "Round-Up Donations", "desc": "Total raised, by charity, by branch (lands in Phase 9 — currently zeroed)." }
+                "sales": {
+                    "title": "Sales",
+                    "desc": "Gross + net + discounts + tax + refunds by hour, weekday, payment, type, branch."
+                },
+                "customers": {
+                    "title": "Customers",
+                    "desc": "Top customers, new vs returning, loyalty points issued + redeemed + liability."
+                },
+                "discounts": {
+                    "title": "Discounts",
+                    "desc": "Total discount value, share of gross, by branch (rule + staff land in Phase 8)."
+                },
+                "product_performance": {
+                    "title": "Product Performance",
+                    "desc": "Top sellers by revenue + qty, slow movers, top add-ons."
+                },
+                "recipe_cost": {
+                    "title": "Recipe & Cost",
+                    "desc": "Per-product theoretical cost, profit, margin (trend lands in Phase 8)."
+                },
+                "staff_activity": {
+                    "title": "Staff Activity",
+                    "desc": "Per-staff orders paid, revenue, avg ticket, voids, discounts, hours logged."
+                },
+                "inventory_consumption": {
+                    "title": "Inventory Consumption",
+                    "desc": "Per-ingredient consumed in window, days of stock, low-stock flag."
+                },
+                "loss_waste": {
+                    "title": "Loss / Waste",
+                    "desc": "Total waste value, by branch, by reason, top wasted ingredients."
+                },
+                "restock_purchasing": {
+                    "title": "Restock / Purchasing",
+                    "desc": "Restock spend by supplier, by branch, top purchased ingredients."
+                },
+                "round_up_donation": {
+                    "title": "Round-Up Donations",
+                    "desc": "Total raised, by charity, by branch (lands in Phase 9 — currently zeroed)."
+                }
             }
         },
         "sales": {
@@ -1292,7 +1322,9 @@
             "category": "Category",
             "amount": "Amount (OMR)",
             "note": "Note",
-            "submit": "Log expense"
+            "submit": "Log expense",
+            "general": "General (company-wide)",
+            "date": "Date"
         },
         "review_modal": {
             "title": "Approve expense",
@@ -1307,7 +1339,8 @@
         },
         "empty": "No expenses match the current filters.",
         "load_failed": "Could not load expenses.",
-        "save_failed": "Could not save the expense."
+        "save_failed": "Could not save the expense.",
+        "general": "General"
     },
     "dashboard_widgets": {
         "today": "Today",

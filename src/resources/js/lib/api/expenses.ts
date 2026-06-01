@@ -15,7 +15,7 @@ export type ExpenseStatus = 'recorded' | 'reviewed' | 'rejected';
 export interface Expense {
     id: number;
     uuid: string;
-    branch_id: number;
+    branch_id: number | null;
     branch_name: string | null;
     category: ExpenseCategory;
     /** Decimal:3 OMR string. Never parseFloat for money. */
@@ -58,11 +58,12 @@ export interface ExpenseFilters {
 }
 
 export interface LogExpensePayload {
-    branch_id: number;
+    branch_id: number | null;
     category: ExpenseCategory;
     amount: string;
     note?: string | null;
     receipt_photo_path?: string | null;
+    logged_at?: string;
 }
 
 export const EXPENSE_CATEGORIES: ExpenseCategory[] = [

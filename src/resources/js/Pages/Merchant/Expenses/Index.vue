@@ -100,11 +100,12 @@ onMounted(async () => {
 const logOpen = ref(false);
 const logBusy = ref(false);
 const logError = ref<string | null>(null);
-const logForm = reactive<{ branch_id: number | null; category: ExpenseCategory; amount: string; note: string }>({
+const logForm = reactive<{ branch_id: number | null; category: ExpenseCategory; amount: string; note: string; logged_at: string }>({
     branch_id: null,
     category: 'utilities',
     amount: '',
     note: '',
+    logged_at: '',
 });
 
 function openLog(): void {
@@ -112,15 +113,13 @@ function openLog(): void {
     logForm.category = 'utilities';
     logForm.amount = '';
     logForm.note = '';
+    logForm.logged_at = new Date().toISOString().slice(0, 10);
     logError.value = null;
     logOpen.value = true;
 }
 
 async function submitLog(): Promise<void> {
-    if (logForm.branch_id === null) {
-        logError.value = t('expenses.log_modal.branch_required');
-        return;
-    }
+    // branch_id null = a general / company-wide expense (allowed).
     logBusy.value = true;
     logError.value = null;
     try {
@@ -129,6 +128,7 @@ async function submitLog(): Promise<void> {
             category: logForm.category,
             amount: logForm.amount,
             note: logForm.note || null,
+            logged_at: logForm.logged_at || undefined,
         });
         logOpen.value = false;
         applyFilters();
@@ -297,7 +297,7 @@ function fmt(dt: string | null): string {
                         <tbody class="divide-y divide-slate-100 bg-white">
                             <tr v-for="e in expenses" :key="e.id" class="align-top transition hover:bg-slate-50">
                                 <td class="px-5 py-4 text-sm tabular-nums text-slate-700">{{ fmt(e.logged_at) }}</td>
-                                <td class="px-5 py-4 text-sm text-slate-700">{{ e.branch_name ?? '—' }}</td>
+                                <td class="px-5 py-4 text-sm text-slate-700">{{ e.branch_name ?? t('expenses.general') }}</td>
                                 <td class="px-5 py-4 text-sm capitalize text-slate-700">{{ t(`expenses.category.${e.category}`) }}</td>
                                 <td class="px-5 py-4 text-end text-sm font-semibold tabular-nums text-slate-900">{{ e.amount }}</td>
                                 <td class="px-5 py-4 text-sm text-slate-700">
@@ -354,6 +354,7 @@ function fmt(dt: string | null): string {
                     <label class="block text-sm font-semibold text-slate-700">
                         {{ t('expenses.log_modal.branch') }}
                         <select v-model="logForm.branch_id" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                            <option :value="null">{{ t('expenses.log_modal.general') }}</option>
                             <option v-for="b in branches" :key="b.id" :value="b.id">{{ b.name }}</option>
                         </select>
                     </label>
@@ -366,6 +367,10 @@ function fmt(dt: string | null): string {
                     <label class="block text-sm font-semibold text-slate-700">
                         {{ t('expenses.log_modal.amount') }}
                         <input v-model="logForm.amount" type="text" inputmode="decimal" placeholder="0.000" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm tabular-nums" />
+                    </label>
+                    <label class="block text-sm font-semibold text-slate-700">
+                        {{ t('expenses.log_modal.date') }}
+                        <input v-model="logForm.logged_at" type="date" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
                     </label>
                     <label class="block text-sm font-semibold text-slate-700">
                         {{ t('expenses.log_modal.note') }}
