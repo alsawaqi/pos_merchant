@@ -78,6 +78,25 @@ it('logs an expense from the portal and writes an audit row', function (): void 
     ]);
 });
 
+it('logs a general (no-branch) expense', function (): void {
+    $ctx = makeMerchantActor();
+
+    $response = $this->postJson('/api/expenses', [
+        'branch_id' => null,
+        'category' => ExpenseCategory::Other->value,
+        'amount' => '40.000',
+        'note' => 'Head-office internet',
+    ])->assertStatus(201);
+
+    expect($response->json('data.branch_id'))->toBeNull();
+    $this->assertDatabaseHas('pos_expenses', [
+        'company_id' => $ctx['company']->id,
+        'branch_id' => null,
+        'category' => 'other',
+        'amount' => '40.000',
+    ]);
+});
+
 it('returns 422 on missing/invalid fields', function (): void {
     $ctx = makeMerchantActor();
 

@@ -21,7 +21,8 @@ class ExpenseResource extends JsonResource
         return [
             'id' => $this->id,
             'uuid' => $this->uuid,
-            'branch_id' => (int) $this->branch_id,
+            // null branch_id = a general / company-wide expense.
+            'branch_id' => $this->branch_id !== null ? (int) $this->branch_id : null,
             'branch_name' => $this->whenLoaded('branch', fn () => $this->branch?->name),
             'category' => $this->category?->value,
             'amount' => (string) $this->amount,

@@ -45,13 +45,19 @@ final readonly class LogExpenseAction
     {
         $companyId = $this->tenant->requiredId();
 
+        // A null / blank / 0 branch_id = a general / company-wide expense
+        // (the controller casts an absent branch to 0). A real branch id is
+        // always > 0; only then do we enforce tenant ownership.
         $branchId = (int) ($attributes['branch_id'] ?? 0);
-        $branchOwned = Branch::query()
-            ->where('id', $branchId)
-            ->where('company_id', $companyId)
-            ->exists();
-        if (! $branchOwned) {
-            throw new RuntimeException('Branch does not belong to this company.');
+        $branchId = $branchId > 0 ? $branchId : null;
+        if ($branchId !== null) {
+            $branchOwned = Branch::query()
+                ->where('id', $branchId)
+                ->where('company_id', $companyId)
+                ->exists();
+            if (! $branchOwned) {
+                throw new RuntimeException('Branch does not belong to this company.');
+            }
         }
 
         $category = ExpenseCategory::from((string) $attributes['category']);

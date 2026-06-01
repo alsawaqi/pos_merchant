@@ -891,7 +891,7 @@ return new class extends Migration
             $table->id();
             $table->uuid('uuid')->unique();
             $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
-            $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->foreignId('branch_id')->nullable()->constrained('pos_branches')->nullOnDelete();
             $table->string('category', 32);
             $table->decimal('amount', 12, 3);
             $table->text('note')->nullable();

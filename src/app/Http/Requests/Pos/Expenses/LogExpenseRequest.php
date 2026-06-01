@@ -23,11 +23,15 @@ class LogExpenseRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'branch_id' => ['required', 'integer'],
+            // Nullable: a null/absent branch_id = a general /
+            // company-wide expense (office, HQ, non-branch staff).
+            'branch_id' => ['nullable', 'integer'],
             'category' => ['required', 'string', Rule::in(ExpenseCategory::values())],
             'amount' => ['required', 'numeric', 'gt:0', 'max:999999.999'],
             'note' => ['nullable', 'string', 'max:1000'],
             'receipt_photo_path' => ['nullable', 'string', 'max:1024'],
+            // When the expense actually occurred (defaults to now).
+            'logged_at' => ['nullable', 'date'],
         ];
     }
 }
