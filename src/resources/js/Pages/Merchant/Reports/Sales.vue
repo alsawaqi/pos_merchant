@@ -30,11 +30,15 @@ const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
                 :items="[
                     { label: t('reports.sales.headline_labels.gross_sales'), value: payload.headline.gross_sales },
                     { label: t('reports.sales.headline_labels.net_sales'), value: payload.headline.net_sales },
-                    { label: t('reports.sales.headline_labels.discounts'), value: payload.headline.discounts },
-                    { label: t('reports.sales.headline_labels.tax'), value: payload.headline.tax },
-                    { label: t('reports.sales.headline_labels.refunds'), value: payload.headline.refunds },
+                    { label: t('reports.sales.headline_labels.discounts'), value: payload.headline.discount_total },
+                    { label: t('reports.sales.headline_labels.tax'), value: payload.headline.tax_total },
+                    { label: t('reports.sales.headline_labels.refunds'), value: payload.headline.refunds_total },
+                    { label: t('reports.sales.headline_labels.cogs'), value: payload.headline.cogs },
+                    { label: t('reports.sales.headline_labels.gross_profit'), value: payload.headline.gross_profit },
+                    { label: t('reports.sales.headline_labels.operating_expenses'), value: payload.headline.operating_expenses },
+                    { label: t('reports.sales.headline_labels.net_profit'), value: payload.headline.net_profit },
                     { label: t('reports.sales.headline_labels.order_count'), value: payload.headline.order_count },
-                    { label: t('reports.sales.headline_labels.average_ticket'), value: payload.headline.average_ticket },
+                    { label: t('reports.sales.headline_labels.average_ticket'), value: payload.headline.avg_ticket },
                 ]"
             />
 

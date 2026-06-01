@@ -1172,7 +1172,11 @@
                 "tax": "الضريبة",
                 "refunds": "الإرجاعات",
                 "order_count": "الطلبات",
-                "average_ticket": "متوسط الفاتورة"
+                "average_ticket": "متوسط الفاتورة",
+                "cogs": "تكلفة البضاعة",
+                "gross_profit": "إجمالي الربح",
+                "operating_expenses": "المصروفات التشغيلية",
+                "net_profit": "صافي الربح"
             },
             "by_hour": "حسب الساعة",
             "by_weekday": "حسب يوم الأسبوع",

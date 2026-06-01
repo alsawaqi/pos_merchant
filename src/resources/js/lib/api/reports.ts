@@ -70,12 +70,17 @@ export interface SalesReportPayload {
     window: { from: string; to: string; consolidated: boolean; branch_ids: number[] | null };
     headline: {
         gross_sales: string;
+        discount_total: string;
         net_sales: string;
-        discounts: string;
-        tax: string;
-        refunds: string;
+        tax_total: string;
+        refunds_total: string;
+        cogs: string;
+        gross_profit: string;
+        operating_expenses: string;
+        net_profit: string;
         order_count: number;
-        average_ticket: string;
+        refund_count: number;
+        avg_ticket: string;
     };
     by_hour?: { hour: number; gross: string; order_count: number }[];
     by_weekday?: { weekday: number; gross: string; order_count: number }[];
