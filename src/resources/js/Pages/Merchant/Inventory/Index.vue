@@ -445,7 +445,10 @@ async function submitIngredient(): Promise<void> {
             name_ar: ingForm.name_ar.trim() || null,
             unit: ingForm.unit,
             default_unit_cost: ingForm.default_unit_cost,
-            min_stock_threshold: ingForm.min_stock_threshold.trim() === ''
+            // The bound input is type="number", so Vue casts this to a
+            // number as soon as the user types — String() keeps the
+            // empty-check safe for both the number and blank-string cases.
+            min_stock_threshold: String(ingForm.min_stock_threshold).trim() === ''
                 ? null
                 : ingForm.min_stock_threshold,
             primary_supplier_id: ingForm.primary_supplier_id ?? null,
@@ -628,7 +631,9 @@ async function submitRestock(): Promise<void> {
         await restockStock(selectedBranchUuid.value, {
             ingredient_uuid: restockTarget.value.ingredient.uuid,
             quantity: restockForm.quantity,
-            unit_cost: restockForm.unit_cost.trim() === '' ? null : restockForm.unit_cost,
+            // type="number" input -> Vue casts to a number; String() keeps
+            // the empty-check safe (same fix as the ingredient threshold).
+            unit_cost: String(restockForm.unit_cost).trim() === '' ? null : restockForm.unit_cost,
             supplier_uuid: restockForm.supplier_uuid || null,
             note: restockForm.note.trim() || null,
         });
