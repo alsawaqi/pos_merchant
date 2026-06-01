@@ -14,15 +14,17 @@
  *     field disabled with a tooltip
  */
 
-import { Building2, Pencil, Plus } from 'lucide-vue-next';
+import { Building2, MonitorSmartphone, Pencil, Plus, X } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
 import {
+    listBranchDevices,
     listMerchantBranches,
     updateMerchantBranch,
+    type BranchDevice,
     type BranchOrderType,
     type BranchStatus,
     type MerchantBranch,
@@ -67,6 +69,13 @@ const filteredBranches = computed<MerchantBranch[]>(() => {
         || (b.manager_name ?? '').toLowerCase().includes(term),
     );
 });
+
+// ---- Devices modal (read-only) ----------------------------------
+const devicesOpen = ref(false);
+const devicesLoading = ref(false);
+const devicesError = ref<string | null>(null);
+const devicesBranch = ref<MerchantBranch | null>(null);
+const devicesList = ref<BranchDevice[]>([]);
 
 // ---- Edit modal -------------------------------------------------
 const editOpen = ref(false);
@@ -123,6 +132,21 @@ function orderTypeLabel(orderType: BranchOrderType | null): string {
     return t(`branches.order_types.${orderType}`);
 }
 
+function formatDateTime(iso: string): string {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString();
+}
+
+function deviceStatusClass(status: string | null): string {
+    switch (status) {
+        case 'active': return 'bg-emerald-100 text-emerald-700';
+        case 'assigned': return 'bg-sky-100 text-sky-700';
+        case 'blocked':
+        case 'inactive': return 'bg-rose-100 text-rose-700';
+        default: return 'bg-slate-100 text-slate-600';
+    }
+}
+
 // ---- Fetcher ----------------------------------------------------
 async function fetchBranches(): Promise<void> {
     loading.value = true;
@@ -140,6 +164,24 @@ async function fetchBranches(): Promise<void> {
 onMounted(() => {
     void fetchBranches();
 });
+
+// ---- Devices flow (read-only) -----------------------------------
+
+async function openDevices(row: MerchantBranch): Promise<void> {
+    devicesBranch.value = row;
+    devicesList.value = [];
+    devicesError.value = null;
+    devicesOpen.value = true;
+    devicesLoading.value = true;
+    try {
+        const response = await listBranchDevices(row.uuid);
+        devicesList.value = response.data;
+    } catch (err) {
+        devicesError.value = err instanceof Error ? err.message : 'Failed to load devices';
+    } finally {
+        devicesLoading.value = false;
+    }
+}
 
 // ---- Edit flow --------------------------------------------------
 
@@ -304,15 +346,25 @@ const canEditStatus = computed(() => can(MerchantPermission.BranchesTransitionSt
                                     </span>
                                 </td>
                                 <td class="px-5 py-4 text-end">
-                                    <button
-                                        v-if="can(MerchantPermission.BranchesUpdate)"
-                                        type="button"
-                                        class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-                                        @click="openEdit(row)"
-                                    >
-                                        <Pencil class="size-3.5" />
-                                        {{ t('branches.actions.edit') }}
-                                    </button>
+                                    <div class="inline-flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                                            @click="openDevices(row)"
+                                        >
+                                            <MonitorSmartphone class="size-3.5" />
+                                            {{ t('branches.actions.devices') }}
+                                        </button>
+                                        <button
+                                            v-if="can(MerchantPermission.BranchesUpdate)"
+                                            type="button"
+                                            class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                                            @click="openEdit(row)"
+                                        >
+                                            <Pencil class="size-3.5" />
+                                            {{ t('branches.actions.edit') }}
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         </tbody>
@@ -320,6 +372,51 @@ const canEditStatus = computed(() => can(MerchantPermission.BranchesTransitionSt
                 </div>
             </section>
         </section>
+
+        <!-- ============== DEVICES MODAL (read-only) ============== -->
+        <div v-if="devicesOpen && devicesBranch" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
+            <div class="w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
+                <div class="flex items-start justify-between border-b border-slate-200 px-6 py-5">
+                    <div>
+                        <h2 class="text-lg font-semibold text-slate-950">{{ t('branches.devices.title') }}</h2>
+                        <p class="mt-1 text-sm text-slate-500">{{ devicesBranch.name }}</p>
+                    </div>
+                    <button type="button" class="rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" @click="devicesOpen = false">
+                        <X class="size-5" />
+                    </button>
+                </div>
+
+                <div class="p-6">
+                    <p class="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                        {{ t('branches.devices.read_only_hint') }}
+                    </p>
+
+                    <div v-if="devicesLoading" class="p-6 text-center text-sm text-slate-500">{{ t('common.loading') }}</div>
+                    <div v-else-if="devicesError" class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{{ devicesError }}</div>
+                    <div v-else-if="devicesList.length === 0" class="flex flex-col items-center gap-2 p-8 text-center text-slate-500">
+                        <MonitorSmartphone class="size-9 text-slate-300" />
+                        <p class="text-sm font-semibold">{{ t('branches.devices.empty') }}</p>
+                    </div>
+                    <ul v-else class="space-y-2">
+                        <li
+                            v-for="device in devicesList"
+                            :key="device.id"
+                            class="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-4 py-3"
+                        >
+                            <div class="min-w-0">
+                                <p class="truncate text-sm font-semibold text-slate-900">{{ device.name || device.kiosk_id || device.serial_number || '—' }}</p>
+                                <p class="mt-0.5 text-xs text-slate-500">
+                                    <span class="font-medium">{{ device.device_type ?? '—' }}</span>
+                                    <span v-if="device.serial_number"> &middot; {{ device.serial_number }}</span>
+                                    <span v-if="device.last_seen_at"> &middot; {{ t('branches.devices.last_seen') }} {{ formatDateTime(device.last_seen_at) }}</span>
+                                </p>
+                            </div>
+                            <span class="shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold" :class="deviceStatusClass(device.status)">{{ device.status ?? '—' }}</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
 
         <!-- ================= EDIT MODAL ================== -->
         <div v-if="editOpen && editTarget" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">

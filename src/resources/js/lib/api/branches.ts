@@ -108,3 +108,21 @@ export function updateMerchantBranch(
         payload as unknown as JsonValue,
     );
 }
+
+// ---- Read-only: devices assigned to a branch (admin-managed) ----
+
+export interface BranchDevice {
+    id: number;
+    uuid: string;
+    name: string | null;
+    serial_number: string | null;
+    kiosk_id: string | null;
+    device_type: string | null;
+    status: string | null;
+    assigned_at: string | null;
+    last_seen_at: string | null;
+}
+
+export function listBranchDevices(uuid: string): Promise<{ data: BranchDevice[] }> {
+    return apiGet<{ data: BranchDevice[] }>(`/api/pos/branches/${uuid}/devices`);
+}

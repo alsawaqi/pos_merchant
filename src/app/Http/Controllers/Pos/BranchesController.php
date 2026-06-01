@@ -9,7 +9,9 @@ use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Pos\Branch\UpdateMerchantBranchRequest;
 use App\Http\Resources\Pos\Branch\BranchResource;
+use App\Http\Resources\Pos\Branch\DeviceResource;
 use App\Models\Branch;
+use App\Models\Device;
 use App\Support\MerchantTenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -107,6 +109,27 @@ class BranchesController extends Controller
         }
 
         return BranchResource::make($updated);
+    }
+
+    /**
+     * GET /api/pos/branches/{branch:uuid}/devices
+     *
+     * Read-only list of the devices the platform admin has assigned to
+     * this branch. The merchant SEES them (type, status, last seen) but
+     * cannot control them -- device provisioning lives in pos_admin.
+     */
+    public function devices(Request $request, Branch $branch): AnonymousResourceCollection
+    {
+        $this->ensure($request, MerchantPermission::BranchesView);
+        $this->refuseIfNotInTenant($branch);
+
+        $devices = Device::query()
+            ->where('company_id', $this->tenant->requiredId())
+            ->where('branch_id', $branch->id)
+            ->orderBy('name')
+            ->get();
+
+        return DeviceResource::collection($devices);
     }
 
     private function ensure(Request $request, MerchantPermission $permission): void

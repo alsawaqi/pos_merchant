@@ -267,7 +267,8 @@
             "sun": "Sunday"
         },
         "actions": {
-            "edit": "Edit"
+            "edit": "Edit",
+            "devices": "Devices"
         },
         "edit": {
             "title": "Edit branch",
@@ -295,6 +296,12 @@
             "status": "Status",
             "status_disabled_hint": "Only an account super admin can activate or deactivate a branch.",
             "closed_day": "Closed"
+        },
+        "devices": {
+            "title": "Devices on this branch",
+            "read_only_hint": "Devices are assigned and managed by the admin. You can see them here but cannot change them.",
+            "empty": "No devices assigned to this branch yet.",
+            "last_seen": "last seen"
         }
     },
     "roles": {

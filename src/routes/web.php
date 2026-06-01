@@ -133,6 +133,10 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('pos.branches.index');
         Route::get('pos/branches/{branch:uuid}', [PosBranchesController::class, 'show'])
             ->name('pos.branches.show');
+        // Read-only: the admin-assigned devices on a branch (merchant
+        // sees, can't control).
+        Route::get('pos/branches/{branch:uuid}/devices', [PosBranchesController::class, 'devices'])
+            ->name('pos.branches.devices');
         Route::patch('pos/branches/{branch:uuid}', [PosBranchesController::class, 'update'])
             ->name('pos.branches.update');
 
