@@ -20,7 +20,22 @@
         "generic_error": "We could not sign you in. Please try again.",
         "rate_limited": "Too many login attempts. Please wait a minute and try again.",
         "hero_title": "Everything your merchant needs, in one portal.",
-        "hero_subtitle": "Configure branches, manage your POS staff, build your menu, and watch your sales — all from a workspace built for Oman."
+        "hero_subtitle": "Configure branches, manage your POS staff, build your menu, and watch your sales — all from a workspace built for Oman.",
+        "change_password": {
+            "title": "Change password",
+            "title_forced": "Set your password",
+            "subtitle": "Update the password you use to sign in.",
+            "subtitle_forced": "For your security, choose your own password before continuing.",
+            "current": "Current password",
+            "new": "New password",
+            "confirm": "Confirm new password",
+            "submit": "Update password",
+            "submitting": "Updating…",
+            "cancel": "Back",
+            "hint": "At least 8 characters.",
+            "mismatch": "The new passwords do not match.",
+            "error_generic": "Could not update your password. Please try again."
+        }
     },
     "nav": {
         "dashboard": "Dashboard",

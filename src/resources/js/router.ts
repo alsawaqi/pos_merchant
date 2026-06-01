@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 import Login from '@/Pages/Auth/Login.vue';
+import ChangePassword from '@/Pages/Auth/ChangePassword.vue';
 import Dashboard from '@/Pages/Merchant/Dashboard.vue';
 import BranchesIndex from '@/Pages/Merchant/Branches/Index.vue';
 import CatalogueIndex from '@/Pages/Merchant/Catalogue/Index.vue';
@@ -168,6 +169,11 @@ const routes: RouteRecordRaw[] = [
     // permission.
     { path: '/audit-log', name: 'merchant.audit-log', component: AuditLogIndex, meta: { requiresAuth: true } },
 
+    // Self-service / forced password change. requiresAuth so only a
+    // signed-in user reaches it; the beforeEach guard force-redirects
+    // here while must_change_password is set on a freshly-minted account.
+    { path: '/change-password', name: 'merchant.change-password', component: ChangePassword, meta: { requiresAuth: true } },
+
     {
         // Catch-all → bounce to the dashboard (server-side guard
         // handles the auth check). Mirrors pos_admin's pattern.
@@ -193,6 +199,13 @@ router.beforeEach(async (to) => {
                 query: { redirect: to.fullPath },
                 replace: true,
             };
+        }
+
+        // Forced first-login password change: a freshly-minted account
+        // (must_change_password set by the platform admin) must choose
+        // its own password before it can reach anything else.
+        if (authState.user.must_change_password && to.name !== 'merchant.change-password') {
+            return { name: 'merchant.change-password', replace: true };
         }
     }
 

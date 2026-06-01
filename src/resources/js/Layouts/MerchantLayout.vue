@@ -186,6 +186,16 @@ function toggleLocale(): void {
                             <ChevronDown class="hidden size-4 text-slate-400 sm:block" />
                         </button>
 
+                        <!-- Change password (self-service). -->
+                        <RouterLink
+                            to="/change-password"
+                            class="grid size-11 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-teal-50 hover:text-teal-700"
+                            :aria-label="t('auth.change_password.title')"
+                            :title="t('auth.change_password.title')"
+                        >
+                            <KeyRound class="size-5" />
+                        </RouterLink>
+
                         <!-- Logout: native form POST. -->
                         <form method="POST" action="/auth/logout" class="inline-flex">
                             <input type="hidden" name="_token" :value="csrfToken">

@@ -27,6 +27,12 @@ export interface AuthUser {
     roles?: string[];
     /** Flat permission names ('portal_users.view', etc.). */
     permissions?: string[];
+    /**
+     * Set on a freshly-minted account (the platform admin gives a
+     * temporary password). The router forces a self-chosen password
+     * before the app is usable; cleared after a successful change.
+     */
+    must_change_password?: boolean;
 }
 
 export interface AuthSession {
@@ -110,4 +116,15 @@ export function ensureAuthLoaded(): Promise<void> {
 export function resetAuthBootPromise(): void {
     inflight = null;
     authState.loaded = false;
+}
+
+/**
+ * Clear the forced-change flag in-place after a successful self-service
+ * password change, so the router guard stops redirecting to the
+ * change-password page without needing a full /auth/user refetch.
+ */
+export function clearMustChangePassword(): void {
+    if (authState.user) {
+        authState.user.must_change_password = false;
+    }
 }
