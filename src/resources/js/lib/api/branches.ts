@@ -78,9 +78,8 @@ export interface UpdateMerchantBranchPayload {
     phone?: string | null;
     email?: string | null;
     address?: string | null;
-    latitude?: string | number | null;
-    longitude?: string | number | null;
-    geofence_radius_m?: number;
+    // Location (latitude/longitude/geofence_radius_m) is admin-owned and
+    // intentionally not part of the merchant update payload.
     opening_hours_json?: Record<string, OpeningDay> | null;
     default_order_type?: BranchOrderType;
     status?: BranchStatus;

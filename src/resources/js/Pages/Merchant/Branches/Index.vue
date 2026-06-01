@@ -14,7 +14,7 @@
  *     field disabled with a tooltip
  */
 
-import { Building2, MapPin, Pencil, Plus } from 'lucide-vue-next';
+import { Building2, Pencil, Plus } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
@@ -81,9 +81,6 @@ const editForm = reactive<{
     phone: string;
     email: string;
     address: string;
-    latitude: string;
-    longitude: string;
-    geofence_radius_m: number;
     default_order_type: BranchOrderType;
     status: BranchStatus;
     opening_hours: Record<string, { open: string; close: string; closed: boolean }>;
@@ -94,9 +91,6 @@ const editForm = reactive<{
     phone: '',
     email: '',
     address: '',
-    latitude: '',
-    longitude: '',
-    geofence_radius_m: 500,
     default_order_type: 'quick',
     status: 'active',
     opening_hours: defaultOpeningHours(),
@@ -157,9 +151,6 @@ function openEdit(row: MerchantBranch): void {
     editForm.phone = row.phone ?? '';
     editForm.email = row.email ?? '';
     editForm.address = row.address ?? '';
-    editForm.latitude = row.latitude ?? '';
-    editForm.longitude = row.longitude ?? '';
-    editForm.geofence_radius_m = row.geofence_radius_m ?? 500;
     editForm.default_order_type = (row.default_order_type ?? 'quick') as BranchOrderType;
     editForm.status = (row.status ?? 'active') as BranchStatus;
 
@@ -195,9 +186,6 @@ async function submitEdit(): Promise<void> {
         phone: editForm.phone || null,
         email: editForm.email || null,
         address: editForm.address || null,
-        latitude: editForm.latitude || null,
-        longitude: editForm.longitude || null,
-        geofence_radius_m: editForm.geofence_radius_m,
         default_order_type: editForm.default_order_type,
         opening_hours_json: editForm.opening_hours,
     };
@@ -385,31 +373,6 @@ const canEditStatus = computed(() => can(MerchantPermission.BranchesTransitionSt
                             <label class="block">
                                 <span class="text-sm font-medium text-slate-700">{{ t('branches.fields.address') }}</span>
                                 <input v-model="editForm.address" type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            </label>
-                        </div>
-                    </fieldset>
-
-                    <!-- Geolocation -->
-                    <fieldset class="space-y-3">
-                        <legend class="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                            <MapPin class="me-1 inline size-3.5" />
-                            {{ t('branches.fieldset.geo') }}
-                        </legend>
-                        <div class="grid gap-3 sm:grid-cols-3">
-                            <label class="block">
-                                <span class="text-sm font-medium text-slate-700">{{ t('branches.fields.latitude') }}</span>
-                                <input v-model="editForm.latitude" type="text" inputmode="decimal" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                                <p v-if="editFieldErrors.latitude" class="mt-1 text-xs text-rose-600">{{ editFieldErrors.latitude[0] }}</p>
-                            </label>
-                            <label class="block">
-                                <span class="text-sm font-medium text-slate-700">{{ t('branches.fields.longitude') }}</span>
-                                <input v-model="editForm.longitude" type="text" inputmode="decimal" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                                <p v-if="editFieldErrors.longitude" class="mt-1 text-xs text-rose-600">{{ editFieldErrors.longitude[0] }}</p>
-                            </label>
-                            <label class="block">
-                                <span class="text-sm font-medium text-slate-700">{{ t('branches.fields.geofence_radius_m') }}</span>
-                                <input v-model.number="editForm.geofence_radius_m" type="number" min="100" max="2000" step="50" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                                <p v-if="editFieldErrors.geofence_radius_m" class="mt-1 text-xs text-rose-600">{{ editFieldErrors.geofence_radius_m[0] }}</p>
                             </label>
                         </div>
                     </fieldset>

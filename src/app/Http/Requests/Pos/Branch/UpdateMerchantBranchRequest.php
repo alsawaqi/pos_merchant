@@ -20,6 +20,7 @@ use Illuminate\Validation\Rule;
  *
  *   - code, company_id, uuid          → identifiers, admin-only
  *   - country/region/district/city_id → admin's geo provisioning
+ *   - latitude/longitude/geofence     → location is admin-owned
  *
  * Status flip is allowed in payload only when the user holds the
  * `branches.transition_status` permission; the gate is enforced
@@ -54,15 +55,10 @@ class UpdateMerchantBranchRequest extends FormRequest
             'email' => ['sometimes', 'nullable', 'email:rfc', 'max:191'],
             'address' => ['sometimes', 'nullable', 'string', 'max:500'],
 
-            'latitude' => ['sometimes', 'nullable', 'numeric', 'between:-90,90'],
-            'longitude' => ['sometimes', 'nullable', 'numeric', 'between:-180,180'],
-            // Geofence in metres. Floor of 100 (smaller is
-            // GPS-noise; staff would be marked "out of branch"
-            // while standing at the counter) + ceiling of 2000
-            // (above that the area is bigger than a city block,
-            // makes attendance tracking meaningless). Matches
-            // pos_admin StoreBranchRequest.
-            'geofence_radius_m' => ['sometimes', 'integer', 'between:100,2000'],
+            // latitude / longitude / geofence_radius_m are intentionally
+            // ABSENT — a branch's location + geofence are admin-owned (set
+            // and kept in pos_admin), so a merchant cannot change them. Any
+            // such keys posted here are simply not validated and dropped.
 
             'opening_hours_json' => ['sometimes', 'nullable', 'array'],
             'opening_hours_json.*' => ['array'],

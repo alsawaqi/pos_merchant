@@ -26,14 +26,15 @@ use RuntimeException;
  *   - name, name_ar         — display labels
  *   - manager_name          — operational contact
  *   - phone, email, address — branch reachability
- *   - latitude, longitude   — geo
- *   - geofence_radius_m     — geo
  *   - opening_hours_json    — weekly schedule
  *   - default_order_type    — Main POS UX default
  *   - status                — gated EXTRA on
  *                              BranchesTransitionStatus permission
  *                              because deactivating a branch
  *                              stops POS orders + bills
+ *
+ * Location (latitude/longitude/geofence_radius_m) is admin-owned and is
+ * deliberately NOT in this whitelist — it is set + kept in pos_admin.
  *
  * Cross-tenant refusal at the action layer is defence in depth on
  * top of the controller's refuseIfNotInTenant() guard — a future
@@ -60,9 +61,6 @@ final readonly class UpdateMerchantBranchAction
         'phone',
         'email',
         'address',
-        'latitude',
-        'longitude',
-        'geofence_radius_m',
         'opening_hours_json',
         'default_order_type',
         // status is in the list but gated by the extra
