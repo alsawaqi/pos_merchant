@@ -5,6 +5,7 @@ import Dashboard from '@/Pages/Merchant/Dashboard.vue';
 import OrdersIndex from '@/Pages/Merchant/Orders/Index.vue';
 import BranchesIndex from '@/Pages/Merchant/Branches/Index.vue';
 import CatalogueIndex from '@/Pages/Merchant/Catalogue/Index.vue';
+import TaxesIndex from '@/Pages/Merchant/Taxes/Index.vue';
 import CustomersIndex from '@/Pages/Merchant/Customers/Index.vue';
 import DiscountsIndex from '@/Pages/Merchant/Discounts/Index.vue';
 import ExpensesIndex from '@/Pages/Merchant/Expenses/Index.vue';
@@ -106,6 +107,14 @@ const routes: RouteRecordRaw[] = [
         path: '/catalogue',
         name: 'merchant.catalogue',
         component: CatalogueIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        // Taxes — company-level tax settings the POS fetches via /device/config.
+        // Server-side gates by catalogue.view (reused, like delivery providers).
+        path: '/taxes',
+        name: 'merchant.taxes',
+        component: TaxesIndex,
         meta: { requiresAuth: true },
     },
     {

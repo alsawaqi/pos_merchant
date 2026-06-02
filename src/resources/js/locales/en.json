@@ -38,6 +38,7 @@
         }
     },
     "nav": {
+        "taxes": "Taxes",
         "dashboard": "Dashboard",
         "branches": "Branches",
         "floor_plan": "Floor Plan",
@@ -1002,6 +1003,38 @@
             "wallet_topup_failed": "Could not top up wallet.",
             "wallet_adjust_failed": "Could not adjust wallet balance."
         }
+    },
+    "taxes": {
+        "title": "Taxes",
+        "subtitle": "Define the taxes your company collects (e.g. VAT, Municipality). The POS fetches the active set when staff log in and adds each, as its own line, on top of every order total.",
+        "empty_state": "No taxes yet. Add VAT or any charge your company collects.",
+        "add": "Add tax",
+        "edit": "Edit",
+        "delete": "Delete",
+        "save": "Save",
+        "cancel": "Cancel",
+        "table": {
+            "name": "Name",
+            "rate": "Rate",
+            "status": "Status",
+            "actions": "Actions"
+        },
+        "fields": {
+            "name": "Tax name",
+            "name_ar": "Arabic name (optional)",
+            "rate_percent": "Rate (%)",
+            "is_active": "Active (applied at the POS)"
+        },
+        "statuses": {
+            "active": "Active",
+            "inactive": "Inactive"
+        },
+        "modal": {
+            "create_title": "Add a tax",
+            "edit_title": "Edit tax"
+        },
+        "delete_confirm": "Delete {name}? It stops applying at the POS on the next sync.",
+        "save_failed": "Could not save the tax."
     },
     "delivery_providers": {
         "subtitle": "Manage the third-party aggregators your branches deliver through. Per-product prices live on each product (see the Provider Pricing section in the product modal).",
