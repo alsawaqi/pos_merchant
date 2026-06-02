@@ -124,13 +124,6 @@ function openPlanner(floor: Floor): void {
     plannerFloorUuid.value = floor.uuid;
 }
 
-async function onPlannerSaved(): Promise<void> {
-    // Refresh the floor data so the table cards in any other
-    // open view reflect the persisted positions. Planner stays
-    // open — saving shouldn't kick the merchant out mid-plan.
-    await fetchFloors();
-}
-
 function onPlannerClose(): void {
     plannerFloorUuid.value = null;
 }
@@ -523,7 +516,6 @@ function statusBadgeClass(status: string | null): string {
                             :floor="floor"
                             :can-manage="canManage"
                             @close="onPlannerClose"
-                            @saved="onPlannerSaved"
                         />
                     </div>
                     <div v-else class="p-5">
