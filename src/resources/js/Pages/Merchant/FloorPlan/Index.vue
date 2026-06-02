@@ -124,6 +124,13 @@ function openPlanner(floor: Floor): void {
     plannerFloorUuid.value = floor.uuid;
 }
 
+async function onPlannerSaved(): Promise<void> {
+    // Reordering persisted — refresh so the new table order reflects in the
+    // management grid (and on the POS at its next config fetch). Planner stays
+    // open so the merchant can keep arranging.
+    await fetchFloors();
+}
+
 function onPlannerClose(): void {
     plannerFloorUuid.value = null;
 }
@@ -516,6 +523,7 @@ function statusBadgeClass(status: string | null): string {
                             :floor="floor"
                             :can-manage="canManage"
                             @close="onPlannerClose"
+                            @saved="onPlannerSaved"
                         />
                     </div>
                     <div v-else class="p-5">
