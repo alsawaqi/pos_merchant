@@ -16,6 +16,7 @@ use App\Http\Controllers\Pos\CustomersController;
 use App\Http\Controllers\Pos\DashboardController;
 use App\Http\Controllers\Pos\DeliveryProvidersController;
 use App\Http\Controllers\Pos\DiscountsController;
+use App\Http\Controllers\Pos\TaxesController;
 use App\Http\Controllers\Pos\ExpensesController;
 use App\Http\Controllers\Pos\FloorsController;
 use App\Http\Controllers\Pos\IngredientsController;
@@ -516,6 +517,15 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('delivery-providers.update');
         Route::delete('delivery-providers/{provider:uuid}', [DeliveryProvidersController::class, 'destroy'])
             ->name('delivery-providers.destroy');
+
+        // Company-level taxes (merchant settings). The Main POS fetches the
+        // active set via /device/config and adds each, as its own line, on top
+        // of the order total. Gated under CatalogueView / CatalogueManage --
+        // a company-wide pricing setting, same risk class as product pricing.
+        Route::get('taxes', [TaxesController::class, 'index'])->name('taxes.index');
+        Route::post('taxes', [TaxesController::class, 'store'])->name('taxes.store');
+        Route::patch('taxes/{tax:uuid}', [TaxesController::class, 'update'])->name('taxes.update');
+        Route::delete('taxes/{tax:uuid}', [TaxesController::class, 'destroy'])->name('taxes.destroy');
 
         // Per-product price overrides. PUT is upsert: creates
         // on first call, updates on subsequent. The two-uuid

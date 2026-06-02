@@ -728,6 +728,21 @@ return new class extends Migration
             $table->unique(['company_id', 'name'], 'pos_delivery_providers_company_name_unique');
         });
 
+        // ---- pos_taxes (company-level taxes the POS fetches via config) ----
+        Schema::create('pos_taxes', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->string('name', 64);
+            $table->string('name_ar', 64)->nullable();
+            $table->decimal('rate_percent', 5, 2);
+            $table->boolean('is_active')->default(true);
+            $table->unsignedSmallInteger('sort_order')->default(0);
+            $table->timestamps();
+            $table->softDeletes();
+            $table->unique(['company_id', 'name'], 'pos_taxes_company_name_unique');
+        });
+
         Schema::create('pos_product_delivery_prices', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('product_id')->constrained('pos_products')->cascadeOnDelete();
