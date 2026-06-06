@@ -31,6 +31,7 @@ import {
 } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import BaseModal from '@/Components/BaseModal.vue';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import FloorPlanner from '@/Pages/Merchant/FloorPlan/FloorPlanner.vue';
 import { usePermissions } from '@/composables/usePermissions';
@@ -586,116 +587,130 @@ function statusBadgeClass(status: string | null): string {
         </section>
 
         <!-- ================= FLOOR MODAL ================== -->
-        <div v-if="floorModalOpen" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">
-                        {{ floorModalMode === 'create' ? t('floor_plan.floor_modal.create_title') : t('floor_plan.floor_modal.edit_title') }}
-                    </h2>
+        <BaseModal
+            v-if="floorModalOpen"
+            :title="floorModalMode === 'create' ? t('floor_plan.floor_modal.create_title') : t('floor_plan.floor_modal.edit_title')"
+            size="md"
+            :loading="floorModalBusy"
+            @close="floorModalOpen = false"
+        >
+            <form id="floor-modal-form" class="space-y-4" @submit.prevent="submitFloor">
+                <div v-if="floorModalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                    {{ floorModalError }}
                 </div>
-                <form class="space-y-4 p-6" @submit.prevent="submitFloor">
-                    <div v-if="floorModalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
-                        {{ floorModalError }}
-                    </div>
-                    <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('floor_plan.fields.floor_name') }} *</span>
-                        <input v-model="floorForm.name" required type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                        <p v-if="floorModalErrors.name" class="mt-1 text-xs text-rose-600">{{ floorModalErrors.name[0] }}</p>
-                    </label>
-                    <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('floor_plan.fields.floor_name_ar') }}</span>
-                        <input v-model="floorForm.name_ar" type="text" dir="rtl" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                    </label>
-                    <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('floor_plan.fields.display_order') }}</span>
-                        <input v-model.number="floorForm.display_order" type="number" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                    </label>
-                    <div class="flex justify-end gap-2 pt-2">
-                        <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="floorModalOpen = false">{{ t('common.cancel') }}</button>
-                        <button type="submit" :disabled="floorModalBusy" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
-                            {{ floorModalBusy ? t('floor_plan.floor_modal.submitting') : t('floor_plan.floor_modal.submit') }}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('floor_plan.fields.floor_name') }} *</span>
+                    <input v-model="floorForm.name" required type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                    <p v-if="floorModalErrors.name" class="mt-1 text-xs text-rose-600">{{ floorModalErrors.name[0] }}</p>
+                </label>
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('floor_plan.fields.floor_name_ar') }}</span>
+                    <input v-model="floorForm.name_ar" type="text" dir="rtl" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                </label>
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('floor_plan.fields.display_order') }}</span>
+                    <input v-model.number="floorForm.display_order" type="number" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                </label>
+            </form>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="floorModalOpen = false">{{ t('common.cancel') }}</button>
+                    <button type="submit" form="floor-modal-form" :disabled="floorModalBusy" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
+                        {{ floorModalBusy ? t('floor_plan.floor_modal.submitting') : t('floor_plan.floor_modal.submit') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
 
         <!-- ================= TABLE MODAL ================== -->
-        <div v-if="tableModalOpen" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
+        <BaseModal
+            v-if="tableModalOpen"
+            size="lg"
+            :loading="tableModalBusy"
+            @close="tableModalOpen = false"
+        >
+            <template #header>
+                <div>
                     <h2 class="text-lg font-semibold text-slate-950">
                         {{ tableModalMode === 'create' ? t('floor_plan.table_modal.create_title') : t('floor_plan.table_modal.edit_title') }}
                     </h2>
                     <p v-if="tableModalTargetFloor" class="mt-1 text-xs text-slate-500">{{ tableModalTargetFloor.name }}</p>
                 </div>
-                <form class="space-y-4 p-6" @submit.prevent="submitTable">
-                    <div v-if="tableModalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
-                        {{ tableModalError }}
-                    </div>
-                    <div class="grid grid-cols-2 gap-3">
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('floor_plan.fields.label') }} *</span>
-                            <input v-model="tableForm.label" required type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <p v-if="tableModalErrors.label" class="mt-1 text-xs text-rose-600">{{ tableModalErrors.label[0] }}</p>
-                        </label>
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('floor_plan.fields.seats') }}</span>
-                            <input v-model.number="tableForm.seats" type="number" min="1" max="99" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                        </label>
-                    </div>
-                    <div class="grid grid-cols-2 gap-3">
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('floor_plan.fields.min_party') }}</span>
-                            <input v-model.number="tableForm.min_party" type="number" min="1" max="99" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                        </label>
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('floor_plan.fields.max_party') }}</span>
-                            <input v-model.number="tableForm.max_party" type="number" min="1" max="99" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <p v-if="tableModalErrors.max_party" class="mt-1 text-xs text-rose-600">{{ tableModalErrors.max_party[0] }}</p>
-                        </label>
-                    </div>
+            </template>
+            <form id="table-modal-form" class="space-y-4" @submit.prevent="submitTable">
+                <div v-if="tableModalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                    {{ tableModalError }}
+                </div>
+                <div class="grid grid-cols-2 gap-3">
                     <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('floor_plan.fields.shape') }}</span>
-                        <select v-model="tableForm.shape" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <option v-for="opt in shapeOptions" :key="opt.value" :value="opt.value">{{ t(`floor_plan.shapes.${opt.key}`) }}</option>
-                        </select>
+                        <span class="text-sm font-medium text-slate-700">{{ t('floor_plan.fields.label') }} *</span>
+                        <input v-model="tableForm.label" required type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <p v-if="tableModalErrors.label" class="mt-1 text-xs text-rose-600">{{ tableModalErrors.label[0] }}</p>
                     </label>
                     <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('floor_plan.fields.notes') }}</span>
-                        <textarea v-model="tableForm.notes" rows="2" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100" />
+                        <span class="text-sm font-medium text-slate-700">{{ t('floor_plan.fields.seats') }}</span>
+                        <input v-model.number="tableForm.seats" type="number" min="1" max="99" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                     </label>
-                    <div class="flex justify-end gap-2 pt-2">
-                        <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="tableModalOpen = false">{{ t('common.cancel') }}</button>
-                        <button type="submit" :disabled="tableModalBusy" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
-                            {{ tableModalBusy ? t('floor_plan.table_modal.submitting') : t('floor_plan.table_modal.submit') }}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <label class="block">
+                        <span class="text-sm font-medium text-slate-700">{{ t('floor_plan.fields.min_party') }}</span>
+                        <input v-model.number="tableForm.min_party" type="number" min="1" max="99" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                    </label>
+                    <label class="block">
+                        <span class="text-sm font-medium text-slate-700">{{ t('floor_plan.fields.max_party') }}</span>
+                        <input v-model.number="tableForm.max_party" type="number" min="1" max="99" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <p v-if="tableModalErrors.max_party" class="mt-1 text-xs text-rose-600">{{ tableModalErrors.max_party[0] }}</p>
+                    </label>
+                </div>
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('floor_plan.fields.shape') }}</span>
+                    <select v-model="tableForm.shape" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <option v-for="opt in shapeOptions" :key="opt.value" :value="opt.value">{{ t(`floor_plan.shapes.${opt.key}`) }}</option>
+                    </select>
+                </label>
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('floor_plan.fields.notes') }}</span>
+                    <textarea v-model="tableForm.notes" rows="2" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100" />
+                </label>
+            </form>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="tableModalOpen = false">{{ t('common.cancel') }}</button>
+                    <button type="submit" form="table-modal-form" :disabled="tableModalBusy" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
+                        {{ tableModalBusy ? t('floor_plan.table_modal.submitting') : t('floor_plan.table_modal.submit') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
 
         <!-- ================= QR MODAL ================== -->
-        <div v-if="qrModalOpen && qrModalTable" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
+        <BaseModal
+            v-if="qrModalOpen && qrModalTable"
+            size="md"
+            @close="qrModalOpen = false"
+        >
+            <template #header>
+                <div>
                     <h2 class="text-lg font-semibold text-slate-950">{{ t('floor_plan.qr_modal.title', { label: qrModalTable.label }) }}</h2>
                     <p class="mt-1 text-sm text-slate-500">{{ t('floor_plan.qr_modal.subtitle') }}</p>
                 </div>
-                <div class="space-y-4 p-6">
-                    <label class="block">
-                        <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('floor_plan.qr_modal.token_label') }}</span>
-                        <div class="mt-2 flex gap-2">
-                            <input id="floor-plan-qr-out" :value="qrModalTable.qr_token" readonly class="flex-1 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-mono tracking-wider text-slate-950 focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <button type="button" class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2.5 text-sm font-semibold transition" :class="qrCopied ? 'border-teal-300 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-700 hover:bg-slate-50'" @click="copyQrToken">
-                                <Copy class="size-4" />
-                                {{ qrCopied ? t('floor_plan.qr_modal.copied') : t('floor_plan.qr_modal.copy') }}
-                            </button>
-                        </div>
-                    </label>
-                    <p class="text-xs text-slate-500">{{ t('floor_plan.qr_modal.menu_url_hint') }}</p>
-                </div>
-                <div class="flex justify-between gap-2 border-t border-slate-200 bg-slate-50 px-6 py-4">
+            </template>
+            <div class="space-y-4">
+                <label class="block">
+                    <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('floor_plan.qr_modal.token_label') }}</span>
+                    <div class="mt-2 flex gap-2">
+                        <input id="floor-plan-qr-out" :value="qrModalTable.qr_token" readonly class="flex-1 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-mono tracking-wider text-slate-950 focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <button type="button" class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2.5 text-sm font-semibold transition" :class="qrCopied ? 'border-teal-300 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-700 hover:bg-slate-50'" @click="copyQrToken">
+                            <Copy class="size-4" />
+                            {{ qrCopied ? t('floor_plan.qr_modal.copied') : t('floor_plan.qr_modal.copy') }}
+                        </button>
+                    </div>
+                </label>
+                <p class="text-xs text-slate-500">{{ t('floor_plan.qr_modal.menu_url_hint') }}</p>
+            </div>
+            <template #footer>
+                <div class="flex justify-between gap-2">
                     <button
                         v-if="canManage"
                         type="button"
@@ -709,38 +724,44 @@ function statusBadgeClass(status: string | null): string {
                         {{ t('floor_plan.qr_modal.done') }}
                     </button>
                 </div>
-            </div>
-        </div>
+            </template>
+        </BaseModal>
 
         <!-- ================= DELETE CONFIRMS ================== -->
-        <div v-if="floorDeleteTarget" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('floor_plan.delete_floor_dialog.title') }}</h2>
-                </div>
-                <div class="px-6 py-5 text-sm text-slate-700">{{ t('floor_plan.delete_floor_dialog.body', { name: floorDeleteTarget.name }) }}</div>
-                <div class="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-6 py-4">
+        <BaseModal
+            v-if="floorDeleteTarget"
+            :title="t('floor_plan.delete_floor_dialog.title')"
+            size="md"
+            :loading="deleting"
+            @close="floorDeleteTarget = null"
+        >
+            <div class="text-sm text-slate-700">{{ t('floor_plan.delete_floor_dialog.body', { name: floorDeleteTarget.name }) }}</div>
+            <template #footer>
+                <div class="flex justify-end gap-2">
                     <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="floorDeleteTarget = null">{{ t('common.cancel') }}</button>
                     <button type="button" :disabled="deleting" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-wait disabled:opacity-60" @click="confirmDeleteFloor">
                         {{ deleting ? t('floor_plan.delete_floor_dialog.submitting') : t('floor_plan.delete_floor_dialog.confirm') }}
                     </button>
                 </div>
-            </div>
-        </div>
+            </template>
+        </BaseModal>
 
-        <div v-if="tableDeleteTarget" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('floor_plan.delete_table_dialog.title') }}</h2>
-                </div>
-                <div class="px-6 py-5 text-sm text-slate-700">{{ t('floor_plan.delete_table_dialog.body', { label: tableDeleteTarget.label }) }}</div>
-                <div class="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-6 py-4">
+        <BaseModal
+            v-if="tableDeleteTarget"
+            :title="t('floor_plan.delete_table_dialog.title')"
+            size="md"
+            :loading="deleting"
+            @close="tableDeleteTarget = null"
+        >
+            <div class="text-sm text-slate-700">{{ t('floor_plan.delete_table_dialog.body', { label: tableDeleteTarget.label }) }}</div>
+            <template #footer>
+                <div class="flex justify-end gap-2">
                     <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="tableDeleteTarget = null">{{ t('common.cancel') }}</button>
                     <button type="button" :disabled="deleting" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-wait disabled:opacity-60" @click="confirmDeleteTable">
                         {{ deleting ? t('floor_plan.delete_table_dialog.submitting') : t('floor_plan.delete_table_dialog.confirm') }}
                     </button>
                 </div>
-            </div>
-        </div>
+            </template>
+        </BaseModal>
     </MerchantLayout>
 </template>
