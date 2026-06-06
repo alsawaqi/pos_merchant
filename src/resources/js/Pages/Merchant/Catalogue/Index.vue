@@ -16,6 +16,7 @@ import { Beaker, Building2, Boxes, Globe2, Image, Layers, Minus, Package, Pencil
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
+import ProductStockDialog from './ProductStockDialog.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
 import {
@@ -155,6 +156,8 @@ const prodForm = reactive<{
     tax_rate: string;
     display_order: number;
     status: ProductStatus;
+    // Phase 7 — stock mode: unit (finished/piece-counted) | ingredient | untracked.
+    stock_mode: string;
     // Phase 4.9 — uuids of non-global add-on groups attached
     // to this product. Mirrored from product.addon_groups on
     // edit, posted to syncProductAddOnGroups on save.
@@ -181,6 +184,7 @@ const prodForm = reactive<{
     tax_rate: '',
     display_order: 0,
     status: 'active',
+    stock_mode: 'untracked',
     addon_group_uuids: [],
     recipe_lines: [],
     branch_all: true,
@@ -238,6 +242,12 @@ const aoForm = reactive<{
 // ---- Delete confirms --------------------------------------------
 const catDeleteTarget = ref<Category | null>(null);
 const prodDeleteTarget = ref<Product | null>(null);
+
+// Phase 7 — central stock dialog (unit products only).
+const stockDialogProduct = ref<Product | null>(null);
+function openStockDialog(product: Product): void {
+    stockDialogProduct.value = product;
+}
 // Phase 4.9 — add-on delete confirms
 const agDeleteTarget = ref<AddOnGroup | null>(null);
 const aoDeleteTarget = ref<AddOn | null>(null);
@@ -420,6 +430,7 @@ function openCreateProduct(): void {
     prodForm.tax_rate = '';
     prodForm.display_order = products.value.length;
     prodForm.status = 'active';
+    prodForm.stock_mode = 'untracked';
     prodForm.addon_group_uuids = [];
     prodForm.recipe_lines = [];
     prodForm.branch_all = true;
@@ -447,6 +458,7 @@ function openEditProduct(product: Product): void {
     prodForm.tax_rate = product.tax_rate ?? '';
     prodForm.display_order = product.display_order;
     prodForm.status = (product.status ?? 'active') as ProductStatus;
+    prodForm.stock_mode = product.stock_mode ?? 'untracked';
     // Phase 4.9 — pre-populate the picker from the eager-
     // loaded relation. The list endpoint doesn't return
     // addon_groups, so editing relies on the resource emitting
@@ -577,6 +589,7 @@ async function submitProduct(): Promise<void> {
             delivery_price: prodForm.delivery_price === '' ? null : prodForm.delivery_price,
             cost_price: prodForm.cost_price === '' ? null : prodForm.cost_price,
             tax_rate: prodForm.tax_rate === '' ? null : prodForm.tax_rate,
+            stock_mode: prodForm.stock_mode as 'unit' | 'ingredient' | 'untracked',
             display_order: prodForm.display_order,
         };
 
@@ -1206,6 +1219,9 @@ async function syncProductProviderPrices(productUuid: string): Promise<void> {
                                         <button v-if="canManage" type="button" class="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50" @click="openEditProduct(prod)">
                                             <Pencil class="size-3" /> {{ t('catalogue.actions.edit') }}
                                         </button>
+                                        <button v-if="prod.stock_mode === 'unit'" type="button" class="inline-flex items-center gap-1 rounded border border-teal-200 px-2 py-1 text-[11px] font-semibold text-teal-700 transition hover:bg-teal-50" @click="openStockDialog(prod)">
+                                            <Boxes class="size-3" /> Stock
+                                        </button>
                                         <button v-if="canManage" type="button" class="inline-flex items-center gap-1 rounded border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-50" @click="prodDeleteTarget = prod">
                                             <Trash2 class="size-3" /> {{ t('catalogue.actions.delete') }}
                                         </button>
@@ -1605,6 +1621,21 @@ async function syncProductProviderPrices(productUuid: string): Promise<void> {
                             <option value="active">{{ t('catalogue.statuses.active') }}</option>
                             <option value="inactive">{{ t('catalogue.statuses.inactive') }}</option>
                         </select>
+                    </label>
+
+                    <!-- Phase 7 — stock tracking mode. -->
+                    <label class="block">
+                        <span class="text-sm font-medium text-slate-700">Stock tracking</span>
+                        <select v-model="prodForm.stock_mode" class="mt-1 w-full max-w-xs rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                            <option value="untracked">No stock tracking</option>
+                            <option value="unit">Unit / finished good (count pieces)</option>
+                            <option value="ingredient">Made from ingredients (recipe)</option>
+                        </select>
+                        <p class="mt-1 text-xs text-slate-500">
+                            <template v-if="prodForm.stock_mode === 'unit'">Tracked by piece count. Manage the central pool + branch counts from the <strong>Stock</strong> button on the product row{{ prodModalMode === 'create' ? ' after saving' : '' }}.</template>
+                            <template v-else-if="prodForm.stock_mode === 'ingredient'">Availability comes from its recipe + per-branch ingredient stock — no piece count.</template>
+                            <template v-else>Sold freely — no stock is tracked.</template>
+                        </p>
                     </label>
 
                     <!-- Phase 4.9 — add-on groups picker. Only
@@ -2007,5 +2038,13 @@ async function syncProductProviderPrices(productUuid: string): Promise<void> {
                 </div>
             </div>
         </div>
+
+        <ProductStockDialog
+            :open="stockDialogProduct !== null"
+            :product-uuid="stockDialogProduct?.uuid ?? null"
+            :product-name="stockDialogProduct?.name ?? ''"
+            :can-manage="canManage"
+            @close="stockDialogProduct = null"
+        />
     </MerchantLayout>
 </template>

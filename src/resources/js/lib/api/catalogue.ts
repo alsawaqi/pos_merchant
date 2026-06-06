@@ -50,6 +50,8 @@ export interface Product {
      * via Product::priceFor() server-side.
      */
     delivery_price: string | null;
+    /** Phase 7 — stock mode: unit | ingredient | untracked. */
+    stock_mode: string | null;
     cost_price: string | null;
     /** Percentage (5.00 = 5%). null = inherit company default. */
     tax_rate: string | null;
@@ -176,6 +178,8 @@ export interface CreateProductPayload {
     base_price: string | number;
     /** Phase 4.9 — delivery-channel price override. */
     delivery_price?: string | number | null;
+    /** Phase 7 — stock mode: unit (finished/piece-counted) | ingredient | untracked. */
+    stock_mode?: 'unit' | 'ingredient' | 'untracked';
     cost_price?: string | number | null;
     tax_rate?: string | number | null;
     display_order?: number;
@@ -191,6 +195,8 @@ export interface UpdateProductPayload {
     barcode?: string | null;
     base_price?: string | number;
     delivery_price?: string | number | null;
+    /** Phase 7 — stock mode: unit (finished/piece-counted) | ingredient | untracked. */
+    stock_mode?: 'unit' | 'ingredient' | 'untracked';
     cost_price?: string | number | null;
     tax_rate?: string | number | null;
     display_order?: number;
