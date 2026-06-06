@@ -6,6 +6,7 @@
  * decimal strings (never parsed for precision-critical math here).
  */
 import { computed, reactive, ref, watch } from 'vue';
+import BaseModal from '@/Components/BaseModal.vue';
 import { ApiError } from '@/lib/api';
 import {
     adjustProductStock,
@@ -168,21 +169,15 @@ function fmtType(t: string): string {
 </script>
 
 <template>
-    <div
-        v-if="open"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
-        @click.self="emit('close')"
-    >
-        <div class="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-            <header class="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-                <div>
-                    <h2 class="text-base font-bold text-slate-900">Stock — {{ productName }}</h2>
-                    <p class="text-xs text-slate-500">Hold a central total, then distribute units to branches.</p>
-                </div>
-                <button type="button" class="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100" @click="emit('close')">✕</button>
-            </header>
+    <BaseModal v-if="open" size="3xl" @close="emit('close')">
+        <template #header>
+            <div>
+                <h2 class="text-base font-bold text-slate-900">Stock — {{ productName }}</h2>
+                <p class="text-xs text-slate-500">Hold a central total, then distribute units to branches.</p>
+            </div>
+        </template>
 
-            <div class="flex-1 space-y-5 overflow-y-auto px-6 py-5">
+        <div class="space-y-5">
                 <p v-if="error" class="rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{{ error }}</p>
                 <p v-else-if="loading" class="text-sm text-slate-500">Loading…</p>
 
@@ -307,7 +302,6 @@ function fmtType(t: string): string {
                         </div>
                     </div>
                 </template>
-            </div>
         </div>
-    </div>
+    </BaseModal>
 </template>

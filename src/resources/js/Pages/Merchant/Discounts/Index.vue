@@ -21,6 +21,7 @@ import { Calendar, CheckCircle2, Pause, PauseCircle, Pencil, Percent, Plus, Play
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
+import BaseModal from '@/Components/BaseModal.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
 import {
@@ -400,14 +401,14 @@ function amountLabel(d: Discount): string {
         </section>
 
         <!-- ============== CREATE / EDIT MODAL =============== -->
-        <div v-if="modalOpen" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">
-                        {{ modalMode === 'create' ? t('discounts.modal.create_title') : t('discounts.modal.edit_title') }}
-                    </h2>
-                </div>
-                <form class="space-y-5 p-6" @submit.prevent="submitModal">
+        <BaseModal
+            v-if="modalOpen"
+            :title="modalMode === 'create' ? t('discounts.modal.create_title') : t('discounts.modal.edit_title')"
+            size="3xl"
+            :loading="modalBusy"
+            @close="modalOpen = false"
+        >
+                <form id="discount-form" class="space-y-5" @submit.prevent="submitModal">
                     <div v-if="modalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
                         {{ modalError }}
                     </div>
@@ -520,34 +521,38 @@ function amountLabel(d: Discount): string {
                         </label>
                     </div>
 
-                    <div class="flex justify-end gap-2 border-t border-slate-200 pt-4">
-                        <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="modalOpen = false">
-                            {{ t('common.cancel') }}
-                        </button>
-                        <button type="submit" :disabled="modalBusy" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 disabled:opacity-50">
-                            {{ modalBusy ? t('common.saving') : t('common.save') }}
-                        </button>
-                    </div>
                 </form>
-            </div>
-        </div>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="modalOpen = false">
+                        {{ t('common.cancel') }}
+                    </button>
+                    <button type="submit" form="discount-form" :disabled="modalBusy" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 disabled:opacity-50">
+                        {{ modalBusy ? t('common.saving') : t('common.save') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
 
         <!-- ============== DELETE CONFIRM =============== -->
-        <div v-if="toDelete" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('discounts.delete.title') }}</h2>
-                </div>
-                <div class="p-6 space-y-4">
+        <BaseModal
+            v-if="toDelete"
+            :title="t('discounts.delete.title')"
+            size="md"
+            :loading="deleteBusy"
+            @close="toDelete = null"
+        >
+                <div class="space-y-4">
                     <p class="text-sm text-slate-600">{{ t('discounts.delete.confirm', { name: toDelete.name }) }}</p>
-                    <div class="flex justify-end gap-2">
-                        <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="toDelete = null">{{ t('common.cancel') }}</button>
-                        <button type="button" :disabled="deleteBusy" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-700 disabled:opacity-50" @click="performDelete">
-                            {{ deleteBusy ? t('common.deleting') : t('discounts.actions.delete') }}
-                        </button>
-                    </div>
                 </div>
-            </div>
-        </div>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="toDelete = null">{{ t('common.cancel') }}</button>
+                    <button type="button" :disabled="deleteBusy" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-700 disabled:opacity-50" @click="performDelete">
+                        {{ deleteBusy ? t('common.deleting') : t('discounts.actions.delete') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
     </MerchantLayout>
 </template>

@@ -16,6 +16,7 @@ import { Coins, Gift, Pause, Pencil, Play, Plus, Stamp, Trash2 } from 'lucide-vu
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
+import BaseModal from '@/Components/BaseModal.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
 import {
@@ -269,12 +270,14 @@ async function performDelete(): Promise<void> {
         </section>
 
         <!-- Create / edit modal -->
-        <div v-if="modalOpen" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ modalMode === 'create' ? t('loyalty.modal.create_title') : t('loyalty.modal.edit_title') }}</h2>
-                </div>
-                <form class="space-y-4 p-6" @submit.prevent="submit">
+        <BaseModal
+            v-if="modalOpen"
+            :title="modalMode === 'create' ? t('loyalty.modal.create_title') : t('loyalty.modal.edit_title')"
+            size="lg"
+            :loading="modalBusy"
+            @close="modalOpen = false"
+        >
+            <form id="loyalty-rule-form" class="space-y-4" @submit.prevent="submit">
                     <div v-if="modalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{{ modalError }}</div>
 
                     <div>
@@ -326,28 +329,32 @@ async function performDelete(): Promise<void> {
                         </label>
                     </div>
 
-                    <div class="flex justify-end gap-2 border-t border-slate-200 pt-4">
-                        <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="modalOpen = false">{{ t('common.cancel') }}</button>
-                        <button type="submit" :disabled="modalBusy" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:opacity-50">{{ modalBusy ? t('common.saving') : t('common.save') }}</button>
-                    </div>
-                </form>
-            </div>
-        </div>
+            </form>
+
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="modalOpen = false">{{ t('common.cancel') }}</button>
+                    <button type="submit" form="loyalty-rule-form" :disabled="modalBusy" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:opacity-50">{{ modalBusy ? t('common.saving') : t('common.save') }}</button>
+                </div>
+            </template>
+        </BaseModal>
 
         <!-- Delete confirm -->
-        <div v-if="toDelete" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('loyalty.delete.title') }}</h2>
+        <BaseModal
+            v-if="toDelete"
+            :title="t('loyalty.delete.title')"
+            size="md"
+            :loading="deleteBusy"
+            @close="toDelete = null"
+        >
+            <p class="text-sm text-slate-600">{{ t('loyalty.delete.confirm', { name: toDelete.name }) }}</p>
+
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="toDelete = null">{{ t('common.cancel') }}</button>
+                    <button type="button" :disabled="deleteBusy" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-700 disabled:opacity-50" @click="performDelete">{{ deleteBusy ? t('common.deleting') : t('customers.actions.delete') }}</button>
                 </div>
-                <div class="p-6 space-y-4">
-                    <p class="text-sm text-slate-600">{{ t('loyalty.delete.confirm', { name: toDelete.name }) }}</p>
-                    <div class="flex justify-end gap-2">
-                        <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="toDelete = null">{{ t('common.cancel') }}</button>
-                        <button type="button" :disabled="deleteBusy" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-700 disabled:opacity-50" @click="performDelete">{{ deleteBusy ? t('common.deleting') : t('customers.actions.delete') }}</button>
-                    </div>
-                </div>
-            </div>
-        </div>
+            </template>
+        </BaseModal>
     </MerchantLayout>
 </template>
