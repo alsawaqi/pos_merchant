@@ -30,6 +30,8 @@ class UpdateProductRequest extends FormRequest
             'base_price' => ['sometimes', 'numeric', 'min:0', 'max:999999.999'],
             // Phase 4.9 — per-product delivery override.
             'delivery_price' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:999999.999'],
+            // Phase 7 — stock mode: unit | ingredient | untracked.
+            'stock_mode' => ['sometimes', 'string', 'in:unit,ingredient,untracked'],
             'cost_price' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:999999.999'],
             'tax_rate' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:100'],
             'display_order' => ['sometimes', 'integer', 'between:0,999'],

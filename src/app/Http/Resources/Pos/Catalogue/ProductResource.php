@@ -51,6 +51,9 @@ class ProductResource extends JsonResource
             // The POS / sync endpoint uses Product::priceFor()
             // to resolve the right price at order time.
             'delivery_price' => $this->delivery_price !== null ? (string) $this->delivery_price : null,
+            // Phase 7 — stock mode: unit (finished, piece-counted) | ingredient
+            // (recipe-driven) | untracked (sold freely).
+            'stock_mode' => $this->stock_mode,
             'cost_price' => $this->cost_price !== null ? (string) $this->cost_price : null,
             // Effective tax: column when set, NULL means
             // "inherit company default". Frontend resolves

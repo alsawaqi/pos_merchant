@@ -48,6 +48,8 @@ use Illuminate\Support\Str;
     // Phase 4.9 — per-product delivery override. NULL = use
     // base_price for delivery orders too.
     'delivery_price',
+    // Phase 7 — stock mode: unit | ingredient | untracked.
+    'stock_mode',
     'cost_price',
     'tax_rate',
     'display_order',
