@@ -101,9 +101,9 @@ const todayVsYesterdayPct = computed<number | null>(() => {
             <div v-if="error" class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">{{ error }}</div>
 
             <!-- KPI tiles (only when payload loaded) -->
-            <div v-if="summary" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div v-if="summary" class="u-stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <!-- Today -->
-                <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm card-hover">
                     <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('dashboard_widgets.today') }}</div>
                     <div class="mt-2 text-3xl font-bold text-slate-950 tabular-nums">{{ summary.today.gross }}</div>
                     <div class="mt-1 text-xs text-slate-500">{{ summary.today.order_count }} {{ t('dashboard_widgets.orders') }}</div>
@@ -118,14 +118,14 @@ const todayVsYesterdayPct = computed<number | null>(() => {
                 </div>
 
                 <!-- MTD -->
-                <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm card-hover">
                     <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('dashboard_widgets.mtd') }}</div>
                     <div class="mt-2 text-3xl font-bold text-slate-950 tabular-nums">{{ summary.mtd.gross }}</div>
                     <div class="mt-1 text-xs text-slate-500">{{ summary.mtd.order_count }} {{ t('dashboard_widgets.orders') }}</div>
                 </div>
 
                 <!-- Top product today -->
-                <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm card-hover">
                     <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
                         <Trophy class="size-3.5 text-amber-500" />
                         {{ t('dashboard_widgets.top_product_today') }}
@@ -138,7 +138,7 @@ const todayVsYesterdayPct = computed<number | null>(() => {
                 </div>
 
                 <!-- Low-stock count -->
-                <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm card-hover">
                     <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
                         <AlertTriangle class="size-3.5" :class="summary.low_stock_count > 0 ? 'text-rose-500' : 'text-slate-400'" />
                         {{ t('dashboard_widgets.low_stock') }}

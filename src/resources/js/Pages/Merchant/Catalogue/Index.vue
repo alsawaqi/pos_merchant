@@ -1024,7 +1024,7 @@ async function syncProductProviderPrices(productUuid: string): Promise<void> {
             </div>
 
             <!-- Tabs -->
-            <div class="flex gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+            <div class="flex gap-1 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
                 <button
                     type="button"
                     class="flex-1 inline-flex items-center justify-center gap-2 rounded px-3 py-2 text-sm font-semibold transition"

@@ -143,7 +143,7 @@ const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
             </div>
         </div>
 
-        <div v-else-if="!loading" class="rounded-lg border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
+        <div v-else-if="!loading" class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
             {{ t('reports.shared.no_data') }}
         </div>
     </ReportShell>

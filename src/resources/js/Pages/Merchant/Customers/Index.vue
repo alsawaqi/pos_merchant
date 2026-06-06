@@ -722,7 +722,7 @@ async function submitWalletAdjust(): Promise<void> {
                         <h3 class="text-sm font-semibold text-slate-700 mb-2">{{ t('loyalty.customer.accounts') }}</h3>
                         <div v-if="loyaltySummary.accounts.length === 0" class="text-xs text-slate-400 italic">{{ t('loyalty.customer.no_accounts') }}</div>
                         <ul v-else class="grid gap-2 sm:grid-cols-2">
-                            <li v-for="acct in loyaltySummary.accounts" :key="acct.id" class="rounded-lg border border-slate-200 bg-white p-3">
+                            <li v-for="acct in loyaltySummary.accounts" :key="acct.id" class="rounded-2xl border border-slate-200 bg-white p-3">
                                 <div class="text-sm font-semibold text-slate-800">{{ acct.rule?.name ?? '—' }}</div>
                                 <div class="mt-2 flex items-center gap-3 text-xs">
                                     <span v-if="acct.rule?.type === 'visit_based'" class="inline-flex items-center gap-1 font-semibold text-indigo-700">
