@@ -18,6 +18,10 @@ let previousOverflow = '';
  *  - Backdrop blur, Escape + backdrop-to-close (both suppressed while
  *    `loading`), body scroll-lock, and a subtle scale + fade enter/leave.
  *
+ * Visual polish: a thin teal accent strip, generous rounding, a deep layered
+ * shadow, and a wider size scale — a consistent, professional look that every
+ * popup inherits for free.
+ *
  * Parents keep their existing `v-if` mount + `@close` pattern. A user-initiated
  * close animates out first, then emits `close`; a parent that unmounts on
  * success (sets its v-if false) simply skips the leave animation.
@@ -54,13 +58,13 @@ const props = withDefaults(
 const emit = defineEmits<{ (e: 'close'): void }>();
 
 const SIZES: Record<NonNullable<typeof props.size>, string> = {
-    sm: 'max-w-sm',
-    md: 'max-w-md',
-    lg: 'max-w-lg',
-    xl: 'max-w-xl',
-    '2xl': 'max-w-2xl',
-    '3xl': 'max-w-3xl',
-    '4xl': 'max-w-4xl',
+    sm: 'max-w-md',
+    md: 'max-w-lg',
+    lg: 'max-w-xl',
+    xl: 'max-w-2xl',
+    '2xl': 'max-w-3xl',
+    '3xl': 'max-w-4xl',
+    '4xl': 'max-w-5xl',
 };
 const maxWidthClass = computed(() => SIZES[props.size ?? 'md']);
 
@@ -120,7 +124,7 @@ onBeforeUnmount(() => {
             >
                 <div
                     v-show="visible"
-                    class="absolute inset-0 bg-slate-950/50 backdrop-blur-sm"
+                    class="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
                     @click="onBackdrop"
                 />
             </Transition>
@@ -137,11 +141,14 @@ onBeforeUnmount(() => {
             >
                 <div v-show="visible" class="pointer-events-none fixed inset-0 flex items-center justify-center p-4">
                     <div
-                        class="pointer-events-auto flex max-h-[90vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-950/5"
+                        class="pointer-events-auto flex max-h-[90vh] w-full flex-col overflow-hidden rounded-3xl bg-white shadow-[0_25px_70px_-15px_rgba(2,6,23,0.45)] ring-1 ring-slate-950/10"
                         :class="maxWidthClass"
                         role="dialog"
                         aria-modal="true"
                     >
+                        <!-- Accent strip -->
+                        <div class="h-1 shrink-0 bg-gradient-to-r from-teal-400 via-teal-500 to-teal-600" />
+
                         <header
                             v-if="title || $slots.header || !hideClose"
                             class="flex shrink-0 items-center gap-3 border-b border-slate-200 px-6 py-4"
@@ -149,13 +156,13 @@ onBeforeUnmount(() => {
                             <slot name="icon" />
                             <div class="min-w-0 flex-1">
                                 <slot name="header">
-                                    <h2 class="truncate text-base font-semibold text-slate-900">{{ title }}</h2>
+                                    <h2 class="truncate text-lg font-semibold text-slate-900">{{ title }}</h2>
                                 </slot>
                             </div>
                             <button
                                 v-if="!hideClose"
                                 type="button"
-                                class="-mr-1.5 grid size-9 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
+                                class="-mr-1.5 grid size-9 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-teal-50 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 disabled:opacity-50"
                                 :disabled="loading"
                                 aria-label="Close"
                                 @click="requestClose"
