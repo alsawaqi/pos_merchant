@@ -16,6 +16,7 @@ import { Beaker, Building2, Boxes, Globe2, Image, Layers, Minus, Package, Pencil
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
+import BaseModal from '@/Components/BaseModal.vue';
 import ProductStockDialog from './ProductStockDialog.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
@@ -1409,134 +1410,137 @@ async function syncProductProviderPrices(productUuid: string): Promise<void> {
         </section>
 
         <!-- =============== Phase 6c — PROVIDER CREATE/EDIT MODAL =============== -->
-        <div v-if="providerModalOpen" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">
-                        {{ providerModalMode === 'create' ? t('delivery_providers.modal.create_title') : t('delivery_providers.modal.edit_title') }}
-                    </h2>
+        <BaseModal
+            v-if="providerModalOpen"
+            :title="providerModalMode === 'create' ? t('delivery_providers.modal.create_title') : t('delivery_providers.modal.edit_title')"
+            size="md"
+            :loading="providerModalBusy"
+            @close="providerModalOpen = false"
+        >
+            <form id="provider-modal-form" class="space-y-4" @submit.prevent="submitProvider">
+                <div v-if="providerModalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                    {{ providerModalError }}
                 </div>
-                <form class="space-y-4 p-6" @submit.prevent="submitProvider">
-                    <div v-if="providerModalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
-                        {{ providerModalError }}
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">{{ t('delivery_providers.fields.name') }}</label>
+                    <input v-model="providerForm.name" type="text" required class="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">{{ t('delivery_providers.fields.color') }}</label>
+                    <div class="mt-1 flex items-center gap-2">
+                        <input v-model="providerForm.color" type="text" placeholder="#FF6B00" maxlength="7" class="block w-32 rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                        <input v-model="providerForm.color" type="color" class="size-9 cursor-pointer rounded border border-slate-200">
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700">{{ t('delivery_providers.fields.name') }}</label>
-                        <input v-model="providerForm.name" type="text" required class="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700">{{ t('delivery_providers.fields.color') }}</label>
-                        <div class="mt-1 flex items-center gap-2">
-                            <input v-model="providerForm.color" type="text" placeholder="#FF6B00" maxlength="7" class="block w-32 rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
-                            <input v-model="providerForm.color" type="color" class="size-9 cursor-pointer rounded border border-slate-200">
-                        </div>
-                        <p class="mt-1 text-xs text-slate-500">{{ t('delivery_providers.fields.color_hint') }}</p>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700">{{ t('delivery_providers.fields.sort_order') }}</label>
-                        <input v-model.number="providerForm.sort_order" type="number" min="0" max="65535" class="mt-1 block w-32 rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
-                    </div>
-                    <label class="flex items-center gap-2">
-                        <input v-model="providerForm.is_active" type="checkbox" class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500">
-                        <span class="text-sm font-medium text-slate-700">{{ t('delivery_providers.fields.is_active') }}</span>
-                    </label>
-                    <div class="flex justify-end gap-2 border-t border-slate-200 pt-4">
-                        <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="providerModalOpen = false">{{ t('common.cancel') }}</button>
-                        <button type="submit" :disabled="providerModalBusy" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 disabled:opacity-50">
-                            {{ providerModalBusy ? t('common.saving') : t('common.save') }}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+                    <p class="mt-1 text-xs text-slate-500">{{ t('delivery_providers.fields.color_hint') }}</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">{{ t('delivery_providers.fields.sort_order') }}</label>
+                    <input v-model.number="providerForm.sort_order" type="number" min="0" max="65535" class="mt-1 block w-32 rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                </div>
+                <label class="flex items-center gap-2">
+                    <input v-model="providerForm.is_active" type="checkbox" class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500">
+                    <span class="text-sm font-medium text-slate-700">{{ t('delivery_providers.fields.is_active') }}</span>
+                </label>
+            </form>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="providerModalOpen = false">{{ t('common.cancel') }}</button>
+                    <button type="submit" form="provider-modal-form" :disabled="providerModalBusy" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 disabled:opacity-50">
+                        {{ providerModalBusy ? t('common.saving') : t('common.save') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
 
         <!-- =============== Phase 6c — PROVIDER DELETE CONFIRM =============== -->
-        <div v-if="providerToDelete" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('delivery_providers.delete.title') }}</h2>
+        <BaseModal
+            v-if="providerToDelete"
+            :title="t('delivery_providers.delete.title')"
+            size="md"
+            :loading="providerDeleteBusy"
+            @close="providerToDelete = null"
+        >
+            <p class="text-sm text-slate-600">{{ t('delivery_providers.delete.confirm', { name: providerToDelete.name }) }}</p>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="providerToDelete = null">{{ t('common.cancel') }}</button>
+                    <button type="button" :disabled="providerDeleteBusy" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-700 disabled:opacity-50" @click="performProviderDelete">
+                        {{ providerDeleteBusy ? t('common.deleting') : t('delivery_providers.actions.delete') }}
+                    </button>
                 </div>
-                <div class="p-6 space-y-4">
-                    <p class="text-sm text-slate-600">{{ t('delivery_providers.delete.confirm', { name: providerToDelete.name }) }}</p>
-                    <div class="flex justify-end gap-2">
-                        <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="providerToDelete = null">{{ t('common.cancel') }}</button>
-                        <button type="button" :disabled="providerDeleteBusy" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-700 disabled:opacity-50" @click="performProviderDelete">
-                            {{ providerDeleteBusy ? t('common.deleting') : t('delivery_providers.actions.delete') }}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
+            </template>
+        </BaseModal>
 
         <!-- =============== CATEGORY MODAL =============== -->
-        <div v-if="catModalOpen" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">
-                        {{ catModalMode === 'create' ? t('catalogue.cat_modal.create_title') : t('catalogue.cat_modal.edit_title') }}
-                    </h2>
+        <BaseModal
+            v-if="catModalOpen"
+            :title="catModalMode === 'create' ? t('catalogue.cat_modal.create_title') : t('catalogue.cat_modal.edit_title')"
+            size="lg"
+            :loading="catModalBusy"
+            @close="catModalOpen = false"
+        >
+            <form id="cat-modal-form" class="space-y-4" @submit.prevent="submitCategory">
+                <div v-if="catModalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                    {{ catModalError }}
                 </div>
-                <form class="space-y-4 p-6" @submit.prevent="submitCategory">
-                    <div v-if="catModalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
-                        {{ catModalError }}
-                    </div>
-                    <div class="grid gap-3 sm:grid-cols-2">
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.name') }} *</span>
-                            <input v-model="catForm.name" required type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <p v-if="catModalErrors.name" class="mt-1 text-xs text-rose-600">{{ catModalErrors.name[0] }}</p>
-                        </label>
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.name_ar') }}</span>
-                            <input v-model="catForm.name_ar" type="text" dir="rtl" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                        </label>
-                    </div>
+                <div class="grid gap-3 sm:grid-cols-2">
                     <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.description') }}</span>
-                        <textarea v-model="catForm.description" rows="2" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100" />
+                        <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.name') }} *</span>
+                        <input v-model="catForm.name" required type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <p v-if="catModalErrors.name" class="mt-1 text-xs text-rose-600">{{ catModalErrors.name[0] }}</p>
                     </label>
                     <label class="block">
-                        <span class="text-sm font-medium text-slate-700">
-                            <Image class="me-1 inline size-3" />
-                            {{ t('catalogue.fields.image_url') }}
-                        </span>
-                        <input v-model="catForm.image_url" type="url" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.name_ar') }}</span>
+                        <input v-model="catForm.name_ar" type="text" dir="rtl" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                     </label>
-                    <div v-if="catModalMode === 'edit'" class="grid gap-3 sm:grid-cols-2">
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.display_order') }}</span>
-                            <input v-model.number="catForm.display_order" type="number" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                        </label>
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.status') }}</span>
-                            <select v-model="catForm.status" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                                <option value="active">{{ t('catalogue.statuses.active') }}</option>
-                                <option value="inactive">{{ t('catalogue.statuses.inactive') }}</option>
-                            </select>
-                        </label>
-                    </div>
-                    <div class="flex justify-end gap-2 pt-2">
-                        <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="catModalOpen = false">{{ t('common.cancel') }}</button>
-                        <button type="submit" :disabled="catModalBusy" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
-                            {{ catModalBusy ? t('catalogue.cat_modal.submitting') : t('catalogue.cat_modal.submit') }}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+                </div>
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.description') }}</span>
+                    <textarea v-model="catForm.description" rows="2" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100" />
+                </label>
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">
+                        <Image class="me-1 inline size-3" />
+                        {{ t('catalogue.fields.image_url') }}
+                    </span>
+                    <input v-model="catForm.image_url" type="url" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                </label>
+                <div v-if="catModalMode === 'edit'" class="grid gap-3 sm:grid-cols-2">
+                    <label class="block">
+                        <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.display_order') }}</span>
+                        <input v-model.number="catForm.display_order" type="number" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                    </label>
+                    <label class="block">
+                        <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.status') }}</span>
+                        <select v-model="catForm.status" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                            <option value="active">{{ t('catalogue.statuses.active') }}</option>
+                            <option value="inactive">{{ t('catalogue.statuses.inactive') }}</option>
+                        </select>
+                    </label>
+                </div>
+            </form>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="catModalOpen = false">{{ t('common.cancel') }}</button>
+                    <button type="submit" form="cat-modal-form" :disabled="catModalBusy" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
+                        {{ catModalBusy ? t('catalogue.cat_modal.submitting') : t('catalogue.cat_modal.submit') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
 
         <!-- =============== PRODUCT MODAL =============== -->
-        <div v-if="prodModalOpen" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">
-                        {{ prodModalMode === 'create' ? t('catalogue.prod_modal.create_title') : t('catalogue.prod_modal.edit_title') }}
-                    </h2>
+        <BaseModal
+            v-if="prodModalOpen"
+            :title="prodModalMode === 'create' ? t('catalogue.prod_modal.create_title') : t('catalogue.prod_modal.edit_title')"
+            size="2xl"
+            :loading="prodModalBusy"
+            @close="prodModalOpen = false"
+        >
+            <form id="prod-modal-form" class="space-y-4" @submit.prevent="submitProduct">
+                <div v-if="prodModalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                    {{ prodModalError }}
                 </div>
-                <form class="space-y-4 p-6" @submit.prevent="submitProduct">
-                    <div v-if="prodModalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
-                        {{ prodModalError }}
-                    </div>
                     <div class="grid gap-3 sm:grid-cols-2">
                         <label class="block">
                             <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.name') }} *</span>
@@ -1850,194 +1854,210 @@ async function syncProductProviderPrices(productUuid: string): Promise<void> {
                         </div>
                     </fieldset>
 
-                    <div class="flex justify-end gap-2 pt-2">
-                        <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="prodModalOpen = false">{{ t('common.cancel') }}</button>
-                        <button
-                            type="submit"
-                            :disabled="prodModalBusy || recipeHasDuplicates"
-                            class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                            {{ prodModalBusy ? t('catalogue.prod_modal.submitting') : t('catalogue.prod_modal.submit') }}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+            </form>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="prodModalOpen = false">{{ t('common.cancel') }}</button>
+                    <button
+                        type="submit"
+                        form="prod-modal-form"
+                        :disabled="prodModalBusy || recipeHasDuplicates"
+                        class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                        {{ prodModalBusy ? t('catalogue.prod_modal.submitting') : t('catalogue.prod_modal.submit') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
 
         <!-- =============== DELETE CONFIRMS =============== -->
-        <div v-if="catDeleteTarget" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('catalogue.delete_cat_dialog.title') }}</h2>
-                </div>
-                <div class="px-6 py-5 text-sm text-slate-700">{{ t('catalogue.delete_cat_dialog.body', { name: catDeleteTarget.name }) }}</div>
-                <div class="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-6 py-4">
+        <BaseModal
+            v-if="catDeleteTarget"
+            :title="t('catalogue.delete_cat_dialog.title')"
+            size="md"
+            :loading="deleting"
+            @close="catDeleteTarget = null"
+        >
+            <p class="text-sm text-slate-700">{{ t('catalogue.delete_cat_dialog.body', { name: catDeleteTarget.name }) }}</p>
+            <template #footer>
+                <div class="flex justify-end gap-2">
                     <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="catDeleteTarget = null">{{ t('common.cancel') }}</button>
                     <button type="button" :disabled="deleting" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-wait disabled:opacity-60" @click="confirmDeleteCategory">
                         {{ deleting ? t('catalogue.delete_cat_dialog.submitting') : t('catalogue.delete_cat_dialog.confirm') }}
                     </button>
                 </div>
-            </div>
-        </div>
+            </template>
+        </BaseModal>
 
-        <div v-if="prodDeleteTarget" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('catalogue.delete_prod_dialog.title') }}</h2>
-                </div>
-                <div class="px-6 py-5 text-sm text-slate-700">{{ t('catalogue.delete_prod_dialog.body', { name: prodDeleteTarget.name }) }}</div>
-                <div class="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-6 py-4">
+        <BaseModal
+            v-if="prodDeleteTarget"
+            :title="t('catalogue.delete_prod_dialog.title')"
+            size="md"
+            :loading="deleting"
+            @close="prodDeleteTarget = null"
+        >
+            <p class="text-sm text-slate-700">{{ t('catalogue.delete_prod_dialog.body', { name: prodDeleteTarget.name }) }}</p>
+            <template #footer>
+                <div class="flex justify-end gap-2">
                     <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="prodDeleteTarget = null">{{ t('common.cancel') }}</button>
                     <button type="button" :disabled="deleting" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-wait disabled:opacity-60" @click="confirmDeleteProduct">
                         {{ deleting ? t('catalogue.delete_prod_dialog.submitting') : t('catalogue.delete_prod_dialog.confirm') }}
                     </button>
                 </div>
-            </div>
-        </div>
+            </template>
+        </BaseModal>
 
         <!-- =============== ADD-ON GROUP MODAL (Phase 4.9) =============== -->
-        <div v-if="agModalOpen" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">
-                        {{ agModalMode === 'create' ? t('catalogue.addon_group_modal.create_title') : t('catalogue.addon_group_modal.edit_title') }}
-                    </h2>
+        <BaseModal
+            v-if="agModalOpen"
+            :title="agModalMode === 'create' ? t('catalogue.addon_group_modal.create_title') : t('catalogue.addon_group_modal.edit_title')"
+            size="lg"
+            :loading="agModalBusy"
+            @close="agModalOpen = false"
+        >
+            <form id="ag-modal-form" class="space-y-4" @submit.prevent="submitAddOnGroup">
+                <div v-if="agModalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                    {{ agModalError }}
                 </div>
-                <form class="space-y-4 p-6" @submit.prevent="submitAddOnGroup">
-                    <div v-if="agModalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
-                        {{ agModalError }}
-                    </div>
-                    <div class="grid gap-3 sm:grid-cols-2">
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.name') }} *</span>
-                            <input v-model="agForm.name" required type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <p v-if="agModalErrors.name" class="mt-1 text-xs text-rose-600">{{ agModalErrors.name[0] }}</p>
-                        </label>
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.name_ar') }}</span>
-                            <input v-model="agForm.name_ar" type="text" dir="rtl" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                        </label>
-                    </div>
+                <div class="grid gap-3 sm:grid-cols-2">
                     <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.selection_mode') }}</span>
-                        <select v-model="agForm.selection_mode" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <option value="single">{{ t('catalogue.selection_modes.single') }}</option>
-                            <option value="multi">{{ t('catalogue.selection_modes.multi') }}</option>
+                        <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.name') }} *</span>
+                        <input v-model="agForm.name" required type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <p v-if="agModalErrors.name" class="mt-1 text-xs text-rose-600">{{ agModalErrors.name[0] }}</p>
+                    </label>
+                    <label class="block">
+                        <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.name_ar') }}</span>
+                        <input v-model="agForm.name_ar" type="text" dir="rtl" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                    </label>
+                </div>
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.selection_mode') }}</span>
+                    <select v-model="agForm.selection_mode" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <option value="single">{{ t('catalogue.selection_modes.single') }}</option>
+                        <option value="multi">{{ t('catalogue.selection_modes.multi') }}</option>
+                    </select>
+                </label>
+                <label class="flex items-start gap-2 rounded-lg border border-slate-200 p-3">
+                    <input v-model="agForm.is_global" type="checkbox" class="mt-0.5 rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200">
+                    <span>
+                        <span class="block text-sm font-medium text-slate-700">{{ t('catalogue.fields.is_global') }}</span>
+                        <span class="block text-xs text-slate-500">{{ t('catalogue.fields.is_global_hint') }}</span>
+                    </span>
+                </label>
+                <div v-if="agModalMode === 'edit'" class="grid gap-3 sm:grid-cols-2">
+                    <label class="block">
+                        <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.display_order') }}</span>
+                        <input v-model.number="agForm.display_order" type="number" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                    </label>
+                    <label class="block">
+                        <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.status') }}</span>
+                        <select v-model="agForm.status" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                            <option value="active">{{ t('catalogue.statuses.active') }}</option>
+                            <option value="inactive">{{ t('catalogue.statuses.inactive') }}</option>
                         </select>
                     </label>
-                    <label class="flex items-start gap-2 rounded-lg border border-slate-200 p-3">
-                        <input v-model="agForm.is_global" type="checkbox" class="mt-0.5 rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200">
-                        <span>
-                            <span class="block text-sm font-medium text-slate-700">{{ t('catalogue.fields.is_global') }}</span>
-                            <span class="block text-xs text-slate-500">{{ t('catalogue.fields.is_global_hint') }}</span>
-                        </span>
-                    </label>
-                    <div v-if="agModalMode === 'edit'" class="grid gap-3 sm:grid-cols-2">
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.display_order') }}</span>
-                            <input v-model.number="agForm.display_order" type="number" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                        </label>
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.status') }}</span>
-                            <select v-model="agForm.status" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                                <option value="active">{{ t('catalogue.statuses.active') }}</option>
-                                <option value="inactive">{{ t('catalogue.statuses.inactive') }}</option>
-                            </select>
-                        </label>
-                    </div>
-                    <div class="flex justify-end gap-2 pt-2">
-                        <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="agModalOpen = false">{{ t('common.cancel') }}</button>
-                        <button type="submit" :disabled="agModalBusy" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
-                            {{ agModalBusy ? t('catalogue.addon_group_modal.submitting') : t('catalogue.addon_group_modal.submit') }}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+                </div>
+            </form>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="agModalOpen = false">{{ t('common.cancel') }}</button>
+                    <button type="submit" form="ag-modal-form" :disabled="agModalBusy" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
+                        {{ agModalBusy ? t('catalogue.addon_group_modal.submitting') : t('catalogue.addon_group_modal.submit') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
 
         <!-- =============== ADD-ON OPTION MODAL (Phase 4.9) =============== -->
-        <div v-if="aoModalOpen" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">
-                        {{ aoModalMode === 'create'
-                            ? t('catalogue.addon_modal.create_title', { group: aoModalParentGroup?.name ?? '' })
-                            : t('catalogue.addon_modal.edit_title') }}
-                    </h2>
+        <BaseModal
+            v-if="aoModalOpen"
+            :title="aoModalMode === 'create'
+                ? t('catalogue.addon_modal.create_title', { group: aoModalParentGroup?.name ?? '' })
+                : t('catalogue.addon_modal.edit_title')"
+            size="md"
+            :loading="aoModalBusy"
+            @close="aoModalOpen = false"
+        >
+            <form id="ao-modal-form" class="space-y-4" @submit.prevent="submitAddOn">
+                <div v-if="aoModalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                    {{ aoModalError }}
                 </div>
-                <form class="space-y-4 p-6" @submit.prevent="submitAddOn">
-                    <div v-if="aoModalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
-                        {{ aoModalError }}
-                    </div>
-                    <div class="grid gap-3 sm:grid-cols-2">
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.name') }} *</span>
-                            <input v-model="aoForm.name" required type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <p v-if="aoModalErrors.name" class="mt-1 text-xs text-rose-600">{{ aoModalErrors.name[0] }}</p>
-                        </label>
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.name_ar') }}</span>
-                            <input v-model="aoForm.name_ar" type="text" dir="rtl" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                        </label>
-                    </div>
+                <div class="grid gap-3 sm:grid-cols-2">
                     <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.price_delta') }} (OMR)</span>
-                        <input v-model="aoForm.price_delta" type="number" step="0.001" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                        <p v-if="aoModalErrors.price_delta" class="mt-1 text-xs text-rose-600">{{ aoModalErrors.price_delta[0] }}</p>
+                        <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.name') }} *</span>
+                        <input v-model="aoForm.name" required type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <p v-if="aoModalErrors.name" class="mt-1 text-xs text-rose-600">{{ aoModalErrors.name[0] }}</p>
                     </label>
-                    <div v-if="aoModalMode === 'edit'" class="grid gap-3 sm:grid-cols-2">
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.display_order') }}</span>
-                            <input v-model.number="aoForm.display_order" type="number" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                        </label>
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.status') }}</span>
-                            <select v-model="aoForm.status" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                                <option value="active">{{ t('catalogue.statuses.active') }}</option>
-                                <option value="inactive">{{ t('catalogue.statuses.inactive') }}</option>
-                            </select>
-                        </label>
-                    </div>
-                    <div class="flex justify-end gap-2 pt-2">
-                        <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="aoModalOpen = false">{{ t('common.cancel') }}</button>
-                        <button type="submit" :disabled="aoModalBusy" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
-                            {{ aoModalBusy ? t('catalogue.addon_modal.submitting') : t('catalogue.addon_modal.submit') }}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+                    <label class="block">
+                        <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.name_ar') }}</span>
+                        <input v-model="aoForm.name_ar" type="text" dir="rtl" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                    </label>
+                </div>
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.price_delta') }} (OMR)</span>
+                    <input v-model="aoForm.price_delta" type="number" step="0.001" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                    <p v-if="aoModalErrors.price_delta" class="mt-1 text-xs text-rose-600">{{ aoModalErrors.price_delta[0] }}</p>
+                </label>
+                <div v-if="aoModalMode === 'edit'" class="grid gap-3 sm:grid-cols-2">
+                    <label class="block">
+                        <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.display_order') }}</span>
+                        <input v-model.number="aoForm.display_order" type="number" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                    </label>
+                    <label class="block">
+                        <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.status') }}</span>
+                        <select v-model="aoForm.status" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                            <option value="active">{{ t('catalogue.statuses.active') }}</option>
+                            <option value="inactive">{{ t('catalogue.statuses.inactive') }}</option>
+                        </select>
+                    </label>
+                </div>
+            </form>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="aoModalOpen = false">{{ t('common.cancel') }}</button>
+                    <button type="submit" form="ao-modal-form" :disabled="aoModalBusy" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
+                        {{ aoModalBusy ? t('catalogue.addon_modal.submitting') : t('catalogue.addon_modal.submit') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
 
         <!-- =============== ADD-ON DELETE CONFIRMS (Phase 4.9) =============== -->
-        <div v-if="agDeleteTarget" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('catalogue.delete_addon_group_dialog.title') }}</h2>
-                </div>
-                <div class="px-6 py-5 text-sm text-slate-700">{{ t('catalogue.delete_addon_group_dialog.body', { name: agDeleteTarget.name }) }}</div>
-                <div class="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-6 py-4">
+        <BaseModal
+            v-if="agDeleteTarget"
+            :title="t('catalogue.delete_addon_group_dialog.title')"
+            size="md"
+            :loading="deleting"
+            @close="agDeleteTarget = null"
+        >
+            <p class="text-sm text-slate-700">{{ t('catalogue.delete_addon_group_dialog.body', { name: agDeleteTarget.name }) }}</p>
+            <template #footer>
+                <div class="flex justify-end gap-2">
                     <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="agDeleteTarget = null">{{ t('common.cancel') }}</button>
                     <button type="button" :disabled="deleting" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-wait disabled:opacity-60" @click="confirmDeleteAddOnGroup">
                         {{ deleting ? t('catalogue.delete_addon_group_dialog.submitting') : t('catalogue.delete_addon_group_dialog.confirm') }}
                     </button>
                 </div>
-            </div>
-        </div>
+            </template>
+        </BaseModal>
 
-        <div v-if="aoDeleteTarget" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('catalogue.delete_addon_dialog.title') }}</h2>
-                </div>
-                <div class="px-6 py-5 text-sm text-slate-700">{{ t('catalogue.delete_addon_dialog.body', { name: aoDeleteTarget.name }) }}</div>
-                <div class="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-6 py-4">
+        <BaseModal
+            v-if="aoDeleteTarget"
+            :title="t('catalogue.delete_addon_dialog.title')"
+            size="md"
+            :loading="deleting"
+            @close="aoDeleteTarget = null"
+        >
+            <p class="text-sm text-slate-700">{{ t('catalogue.delete_addon_dialog.body', { name: aoDeleteTarget.name }) }}</p>
+            <template #footer>
+                <div class="flex justify-end gap-2">
                     <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="aoDeleteTarget = null">{{ t('common.cancel') }}</button>
                     <button type="button" :disabled="deleting" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-wait disabled:opacity-60" @click="confirmDeleteAddOn">
                         {{ deleting ? t('catalogue.delete_addon_dialog.submitting') : t('catalogue.delete_addon_dialog.confirm') }}
                     </button>
                 </div>
-            </div>
-        </div>
+            </template>
+        </BaseModal>
 
         <ProductStockDialog
             :open="stockDialogProduct !== null"

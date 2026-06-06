@@ -22,6 +22,7 @@ import { Copy, KeyRound, Pencil, Plus, RotateCw, ShieldCheck, ShieldOff, UserMin
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
+import BaseModal from '@/Components/BaseModal.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
 import {
@@ -502,191 +503,189 @@ function readError(err: unknown): string {
         </section>
 
         <!-- ================= CREATE MODAL ================== -->
-        <div v-if="createOpen" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('pos_staff.create.title') }}</h2>
-                    <p class="mt-1 text-sm text-slate-500">{{ t('pos_staff.create.subtitle') }}</p>
+        <BaseModal v-if="createOpen" size="lg" :loading="creating" @close="createOpen = false">
+            <template #header>
+                <h2 class="text-lg font-semibold text-slate-950">{{ t('pos_staff.create.title') }}</h2>
+                <p class="mt-1 text-sm text-slate-500">{{ t('pos_staff.create.subtitle') }}</p>
+            </template>
+
+            <form id="pos-staff-create-form" class="space-y-4" @submit.prevent="submitCreate">
+                <div v-if="createError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                    {{ createError }}
                 </div>
 
-                <form class="space-y-4 p-6" @submit.prevent="submitCreate">
-                    <div v-if="createError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
-                        {{ createError }}
-                    </div>
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.name') }} *</span>
+                    <input v-model="createForm.name" required type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                    <p v-if="createFieldErrors.name" class="mt-1 text-xs text-rose-600">{{ createFieldErrors.name[0] }}</p>
+                </label>
 
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.branch') }} *</span>
+                    <select v-model.number="createForm.branch_id" required class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option>
+                    </select>
+                    <p v-if="createFieldErrors.branch_id" class="mt-1 text-xs text-rose-600">{{ createFieldErrors.branch_id[0] }}</p>
+                </label>
+
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.position') }} *</span>
+                    <select v-model="createForm.position" required class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <option v-for="opt in positionOptions" :key="opt.value" :value="opt.value">
+                            {{ t(`pos_staff.positions.${opt.key}`) }}
+                        </option>
+                    </select>
+                </label>
+
+                <div class="grid grid-cols-2 gap-3">
                     <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.name') }} *</span>
-                        <input v-model="createForm.name" required type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                        <p v-if="createFieldErrors.name" class="mt-1 text-xs text-rose-600">{{ createFieldErrors.name[0] }}</p>
+                        <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.phone') }}</span>
+                        <input v-model="createForm.phone" type="tel" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                     </label>
-
                     <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.branch') }} *</span>
-                        <select v-model.number="createForm.branch_id" required class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option>
-                        </select>
-                        <p v-if="createFieldErrors.branch_id" class="mt-1 text-xs text-rose-600">{{ createFieldErrors.branch_id[0] }}</p>
+                        <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.staff_code') }}</span>
+                        <input v-model="createForm.staff_code" type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <p v-if="createFieldErrors.staff_code" class="mt-1 text-xs text-rose-600">{{ createFieldErrors.staff_code[0] }}</p>
                     </label>
+                </div>
 
-                    <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.position') }} *</span>
-                        <select v-model="createForm.position" required class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <option v-for="opt in positionOptions" :key="opt.value" :value="opt.value">
-                                {{ t(`pos_staff.positions.${opt.key}`) }}
-                            </option>
-                        </select>
-                    </label>
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.hired_at') }}</span>
+                    <input v-model="createForm.hired_at" type="date" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                </label>
+            </form>
 
-                    <div class="grid grid-cols-2 gap-3">
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.phone') }}</span>
-                            <input v-model="createForm.phone" type="tel" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                        </label>
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.staff_code') }}</span>
-                            <input v-model="createForm.staff_code" type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <p v-if="createFieldErrors.staff_code" class="mt-1 text-xs text-rose-600">{{ createFieldErrors.staff_code[0] }}</p>
-                        </label>
-                    </div>
-
-                    <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.hired_at') }}</span>
-                        <input v-model="createForm.hired_at" type="date" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                    </label>
-
-                    <div class="flex justify-end gap-2 pt-2">
-                        <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="createOpen = false">
-                            {{ t('common.cancel') }}
-                        </button>
-                        <button type="submit" :disabled="creating" class="rounded-lg bg-gradient-to-r from-teal-600 to-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-wait disabled:opacity-60">
-                            {{ creating ? t('pos_staff.create.submitting') : t('pos_staff.create.submit') }}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="createOpen = false">
+                        {{ t('common.cancel') }}
+                    </button>
+                    <button type="submit" form="pos-staff-create-form" :disabled="creating" class="rounded-lg bg-gradient-to-r from-teal-600 to-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-wait disabled:opacity-60">
+                        {{ creating ? t('pos_staff.create.submitting') : t('pos_staff.create.submit') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
 
         <!-- ============== ONE-SHOT PIN MODAL ============== -->
-        <div v-if="pinModalOpen && pinModalStaff" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('pos_staff.pin_modal.title') }}</h2>
-                    <p class="mt-1 text-sm text-slate-500">
-                        {{ t('pos_staff.pin_modal.subtitle', { name: pinModalStaff.name }) }}
-                    </p>
+        <BaseModal v-if="pinModalOpen && pinModalStaff" size="lg" @close="closePinModal">
+            <template #header>
+                <h2 class="text-lg font-semibold text-slate-950">{{ t('pos_staff.pin_modal.title') }}</h2>
+                <p class="mt-1 text-sm text-slate-500">
+                    {{ t('pos_staff.pin_modal.subtitle', { name: pinModalStaff.name }) }}
+                </p>
+            </template>
+
+            <div class="space-y-4">
+                <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
+                    {{ t('pos_staff.pin_modal.one_shot_warning') }}
                 </div>
 
-                <div class="space-y-4 px-6 py-6">
-                    <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
-                        {{ t('pos_staff.pin_modal.one_shot_warning') }}
+                <label class="block">
+                    <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('pos_staff.pin_modal.pin_label') }}</span>
+                    <div class="mt-2 flex gap-2">
+                        <input
+                            id="pos-staff-pin-out"
+                            :value="pinModalSecret"
+                            readonly
+                            class="flex-1 rounded-lg border border-slate-200 px-3 py-3 text-center text-2xl font-mono tracking-[0.5em] text-slate-950 focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
+                        >
+                        <button
+                            type="button"
+                            class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2.5 text-sm font-semibold transition"
+                            :class="pinCopied ? 'border-teal-300 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-700 hover:bg-slate-50'"
+                            @click="copyPin"
+                        >
+                            <Copy class="size-4" />
+                            {{ pinCopied ? t('pos_staff.pin_modal.copied') : t('pos_staff.pin_modal.copy') }}
+                        </button>
                     </div>
+                </label>
+            </div>
 
-                    <label class="block">
-                        <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('pos_staff.pin_modal.pin_label') }}</span>
-                        <div class="mt-2 flex gap-2">
-                            <input
-                                id="pos-staff-pin-out"
-                                :value="pinModalSecret"
-                                readonly
-                                class="flex-1 rounded-lg border border-slate-200 px-3 py-3 text-center text-2xl font-mono tracking-[0.5em] text-slate-950 focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
-                            >
-                            <button
-                                type="button"
-                                class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2.5 text-sm font-semibold transition"
-                                :class="pinCopied ? 'border-teal-300 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-700 hover:bg-slate-50'"
-                                @click="copyPin"
-                            >
-                                <Copy class="size-4" />
-                                {{ pinCopied ? t('pos_staff.pin_modal.copied') : t('pos_staff.pin_modal.copy') }}
-                            </button>
-                        </div>
-                    </label>
-                </div>
-
-                <div class="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-6 py-4">
+            <template #footer>
+                <div class="flex justify-end gap-2">
                     <button type="button" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" @click="closePinModal">
                         {{ t('pos_staff.pin_modal.done') }}
                     </button>
                 </div>
-            </div>
-        </div>
+            </template>
+        </BaseModal>
 
         <!-- ================= EDIT MODAL ================== -->
-        <div v-if="editOpen && editTarget" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('pos_staff.edit.title') }}</h2>
-                    <p class="mt-1 text-sm text-slate-500">{{ editTarget.name }}</p>
+        <BaseModal v-if="editOpen && editTarget" size="lg" :loading="editing" @close="editOpen = false">
+            <template #header>
+                <h2 class="text-lg font-semibold text-slate-950">{{ t('pos_staff.edit.title') }}</h2>
+                <p class="mt-1 text-sm text-slate-500">{{ editTarget.name }}</p>
+            </template>
+
+            <form id="pos-staff-edit-form" class="space-y-4" @submit.prevent="submitEdit">
+                <div v-if="editError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                    {{ editError }}
                 </div>
 
-                <form class="space-y-4 p-6" @submit.prevent="submitEdit">
-                    <div v-if="editError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
-                        {{ editError }}
-                    </div>
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.name') }}</span>
+                    <input v-model="editForm.name" type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                    <p v-if="editFieldErrors.name" class="mt-1 text-xs text-rose-600">{{ editFieldErrors.name[0] }}</p>
+                </label>
 
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.branch') }}</span>
+                    <select v-model.number="editForm.branch_id" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option>
+                    </select>
+                    <p v-if="editFieldErrors.branch_id" class="mt-1 text-xs text-rose-600">{{ editFieldErrors.branch_id[0] }}</p>
+                </label>
+
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.position') }}</span>
+                    <select v-model="editForm.position" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <option v-for="opt in positionOptions" :key="opt.value" :value="opt.value">
+                            {{ t(`pos_staff.positions.${opt.key}`) }}
+                        </option>
+                    </select>
+                </label>
+
+                <div class="grid grid-cols-2 gap-3">
                     <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.name') }}</span>
-                        <input v-model="editForm.name" type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                        <p v-if="editFieldErrors.name" class="mt-1 text-xs text-rose-600">{{ editFieldErrors.name[0] }}</p>
+                        <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.phone') }}</span>
+                        <input v-model="editForm.phone" type="tel" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                     </label>
-
                     <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.branch') }}</span>
-                        <select v-model.number="editForm.branch_id" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option>
-                        </select>
-                        <p v-if="editFieldErrors.branch_id" class="mt-1 text-xs text-rose-600">{{ editFieldErrors.branch_id[0] }}</p>
+                        <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.staff_code') }}</span>
+                        <input v-model="editForm.staff_code" type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <p v-if="editFieldErrors.staff_code" class="mt-1 text-xs text-rose-600">{{ editFieldErrors.staff_code[0] }}</p>
                     </label>
+                </div>
 
-                    <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.position') }}</span>
-                        <select v-model="editForm.position" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <option v-for="opt in positionOptions" :key="opt.value" :value="opt.value">
-                                {{ t(`pos_staff.positions.${opt.key}`) }}
-                            </option>
-                        </select>
-                    </label>
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.hired_at') }}</span>
+                    <input v-model="editForm.hired_at" type="date" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                </label>
+            </form>
 
-                    <div class="grid grid-cols-2 gap-3">
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.phone') }}</span>
-                            <input v-model="editForm.phone" type="tel" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                        </label>
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.staff_code') }}</span>
-                            <input v-model="editForm.staff_code" type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <p v-if="editFieldErrors.staff_code" class="mt-1 text-xs text-rose-600">{{ editFieldErrors.staff_code[0] }}</p>
-                        </label>
-                    </div>
-
-                    <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.hired_at') }}</span>
-                        <input v-model="editForm.hired_at" type="date" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                    </label>
-
-                    <div class="flex justify-end gap-2 pt-2">
-                        <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="editOpen = false">
-                            {{ t('common.cancel') }}
-                        </button>
-                        <button type="submit" :disabled="editing" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
-                            {{ editing ? t('pos_staff.edit.submitting') : t('pos_staff.edit.submit') }}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="editOpen = false">
+                        {{ t('common.cancel') }}
+                    </button>
+                    <button type="submit" form="pos-staff-edit-form" :disabled="editing" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
+                        {{ editing ? t('pos_staff.edit.submitting') : t('pos_staff.edit.submit') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
 
         <!-- ============ TERMINATE CONFIRM ============ -->
-        <div v-if="terminateTarget" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('pos_staff.terminate_dialog.title') }}</h2>
-                </div>
-                <div class="px-6 py-5 text-sm text-slate-700">
-                    <p>{{ t('pos_staff.terminate_dialog.body', { name: terminateTarget.name }) }}</p>
-                    <p class="mt-3 text-xs text-slate-500">{{ t('pos_staff.terminate_dialog.note') }}</p>
-                </div>
-                <div class="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-6 py-4">
+        <BaseModal v-if="terminateTarget" size="md" :title="t('pos_staff.terminate_dialog.title')" :loading="terminating" @close="terminateTarget = null">
+            <div class="text-sm text-slate-700">
+                <p>{{ t('pos_staff.terminate_dialog.body', { name: terminateTarget.name }) }}</p>
+                <p class="mt-3 text-xs text-slate-500">{{ t('pos_staff.terminate_dialog.note') }}</p>
+            </div>
+
+            <template #footer>
+                <div class="flex justify-end gap-2">
                     <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="terminateTarget = null">
                         {{ t('common.cancel') }}
                     </button>
@@ -694,7 +693,7 @@ function readError(err: unknown): string {
                         {{ terminating ? t('pos_staff.terminate_dialog.submitting') : t('pos_staff.terminate_dialog.confirm') }}
                     </button>
                 </div>
-            </div>
-        </div>
+            </template>
+        </BaseModal>
     </MerchantLayout>
 </template>

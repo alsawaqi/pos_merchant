@@ -24,6 +24,7 @@ import { Copy, KeyRound, Pencil, Plus, RotateCw, ShieldCheck, ShieldOff, Users }
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
+import BaseModal from '@/Components/BaseModal.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
 import {
@@ -581,221 +582,221 @@ function toggleBranchInCreate(branchId: number): void {
         </section>
 
         <!-- ================= CREATE MODAL ================== -->
-        <div v-if="createOpen" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('portal_users.create.title') }}</h2>
-                    <p class="mt-1 text-sm text-slate-500">{{ t('portal_users.create.subtitle') }}</p>
+        <BaseModal v-if="createOpen" size="lg" :loading="creating" @close="createOpen = false">
+            <template #header>
+                <h2 class="text-lg font-semibold text-slate-950">{{ t('portal_users.create.title') }}</h2>
+                <p class="mt-1 text-sm text-slate-500">{{ t('portal_users.create.subtitle') }}</p>
+            </template>
+
+            <form id="portal-user-create-form" class="space-y-4" @submit.prevent="submitCreate">
+                <div v-if="createError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                    {{ createError }}
                 </div>
 
-                <form class="space-y-4 p-6" @submit.prevent="submitCreate">
-                    <div v-if="createError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
-                        {{ createError }}
-                    </div>
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('portal_users.fields.name') }} *</span>
+                    <input v-model="createForm.name" required type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                    <p v-if="createFieldErrors.name" class="mt-1 text-xs text-rose-600">{{ createFieldErrors.name[0] }}</p>
+                </label>
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('portal_users.fields.email') }} *</span>
+                    <input v-model="createForm.email" required type="email" autocomplete="off" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                    <p v-if="createFieldErrors.email" class="mt-1 text-xs text-rose-600">{{ createFieldErrors.email[0] }}</p>
+                </label>
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('portal_users.fields.phone') }}</span>
+                    <input v-model="createForm.phone" type="tel" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                </label>
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('portal_users.fields.role') }} *</span>
+                    <select v-model="createForm.role" required class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <option v-for="opt in roleOptions" :key="opt.value" :value="opt.value">
+                            {{ t(`portal_users.roles.${opt.key}`) }}
+                        </option>
+                    </select>
+                </label>
 
-                    <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('portal_users.fields.name') }} *</span>
-                        <input v-model="createForm.name" required type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                        <p v-if="createFieldErrors.name" class="mt-1 text-xs text-rose-600">{{ createFieldErrors.name[0] }}</p>
+                <div>
+                    <span class="text-sm font-medium text-slate-700">{{ t('portal_users.fields.branch_scope') }}</span>
+                    <label class="mt-2 flex items-center gap-2 text-sm text-slate-700">
+                        <input v-model="createForm.scope_all" type="checkbox" class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500">
+                        {{ t('portal_users.fields.scope_all') }}
                     </label>
-                    <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('portal_users.fields.email') }} *</span>
-                        <input v-model="createForm.email" required type="email" autocomplete="off" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                        <p v-if="createFieldErrors.email" class="mt-1 text-xs text-rose-600">{{ createFieldErrors.email[0] }}</p>
-                    </label>
-                    <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('portal_users.fields.phone') }}</span>
-                        <input v-model="createForm.phone" type="tel" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                    </label>
-                    <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('portal_users.fields.role') }} *</span>
-                        <select v-model="createForm.role" required class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <option v-for="opt in roleOptions" :key="opt.value" :value="opt.value">
-                                {{ t(`portal_users.roles.${opt.key}`) }}
-                            </option>
-                        </select>
-                    </label>
-
-                    <div>
-                        <span class="text-sm font-medium text-slate-700">{{ t('portal_users.fields.branch_scope') }}</span>
-                        <label class="mt-2 flex items-center gap-2 text-sm text-slate-700">
-                            <input v-model="createForm.scope_all" type="checkbox" class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500">
-                            {{ t('portal_users.fields.scope_all') }}
+                    <div v-if="!createForm.scope_all" class="mt-2 grid gap-2 max-h-48 overflow-y-auto rounded-lg border border-slate-200 p-3 sm:grid-cols-2">
+                        <label v-for="branch in branches" :key="branch.id" class="flex items-center gap-2 text-xs">
+                            <input
+                                type="checkbox"
+                                :checked="(createForm.branch_scope ?? []).includes(branch.id)"
+                                class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                                @change="toggleBranchInCreate(branch.id)"
+                            >
+                            <span class="font-medium text-slate-800">{{ branch.name }}</span>
                         </label>
-                        <div v-if="!createForm.scope_all" class="mt-2 grid gap-2 max-h-48 overflow-y-auto rounded-lg border border-slate-200 p-3 sm:grid-cols-2">
-                            <label v-for="branch in branches" :key="branch.id" class="flex items-center gap-2 text-xs">
-                                <input
-                                    type="checkbox"
-                                    :checked="(createForm.branch_scope ?? []).includes(branch.id)"
-                                    class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                                    @change="toggleBranchInCreate(branch.id)"
-                                >
-                                <span class="font-medium text-slate-800">{{ branch.name }}</span>
-                            </label>
-                            <p v-if="branches.length === 0" class="col-span-full text-xs text-slate-500">{{ t('portal_users.no_branches') }}</p>
-                        </div>
-                        <p v-if="createFieldErrors.branch_scope" class="mt-1 text-xs text-rose-600">{{ createFieldErrors.branch_scope[0] }}</p>
+                        <p v-if="branches.length === 0" class="col-span-full text-xs text-slate-500">{{ t('portal_users.no_branches') }}</p>
                     </div>
+                    <p v-if="createFieldErrors.branch_scope" class="mt-1 text-xs text-rose-600">{{ createFieldErrors.branch_scope[0] }}</p>
+                </div>
+            </form>
 
-                    <div class="flex justify-end gap-2 pt-2">
-                        <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="createOpen = false">
-                            {{ t('common.cancel') }}
-                        </button>
-                        <button type="submit" :disabled="creating" class="rounded-lg bg-gradient-to-r from-teal-600 to-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-wait disabled:opacity-60">
-                            {{ creating ? t('portal_users.create.submitting') : t('portal_users.create.submit') }}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="createOpen = false">
+                        {{ t('common.cancel') }}
+                    </button>
+                    <button type="submit" form="portal-user-create-form" :disabled="creating" class="rounded-lg bg-gradient-to-r from-teal-600 to-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-wait disabled:opacity-60">
+                        {{ creating ? t('portal_users.create.submitting') : t('portal_users.create.submit') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
 
         <!-- ============== ONE-SHOT PASSWORD MODAL ============== -->
-        <div v-if="passwordModalOpen && passwordModalUser" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('portal_users.password_modal.title') }}</h2>
-                    <p class="mt-1 text-sm text-slate-500">
-                        {{ t('portal_users.password_modal.subtitle', { name: passwordModalUser.name, email: passwordModalUser.email }) }}
-                    </p>
+        <BaseModal v-if="passwordModalOpen && passwordModalUser" size="lg" @close="closePasswordModal">
+            <template #header>
+                <h2 class="text-lg font-semibold text-slate-950">{{ t('portal_users.password_modal.title') }}</h2>
+                <p class="mt-1 text-sm text-slate-500">
+                    {{ t('portal_users.password_modal.subtitle', { name: passwordModalUser.name, email: passwordModalUser.email }) }}
+                </p>
+            </template>
+
+            <div class="space-y-4">
+                <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
+                    {{ t('portal_users.password_modal.one_shot_warning') }}
                 </div>
 
-                <div class="space-y-4 px-6 py-6">
-                    <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
-                        {{ t('portal_users.password_modal.one_shot_warning') }}
+                <label class="block">
+                    <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('portal_users.password_modal.password_label') }}</span>
+                    <div class="mt-2 flex gap-2">
+                        <input
+                            id="portal-user-password-out"
+                            :value="passwordModalSecret"
+                            readonly
+                            class="flex-1 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-mono tracking-wider text-slate-950 focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
+                        >
+                        <button
+                            type="button"
+                            class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-semibold transition"
+                            :class="passwordCopied ? 'border-teal-300 bg-teal-50 text-teal-700' : 'text-slate-700 hover:bg-slate-50'"
+                            @click="copyPassword"
+                        >
+                            <Copy class="size-4" />
+                            {{ passwordCopied ? t('portal_users.password_modal.copied') : t('portal_users.password_modal.copy') }}
+                        </button>
                     </div>
+                </label>
+            </div>
 
-                    <label class="block">
-                        <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('portal_users.password_modal.password_label') }}</span>
-                        <div class="mt-2 flex gap-2">
-                            <input
-                                id="portal-user-password-out"
-                                :value="passwordModalSecret"
-                                readonly
-                                class="flex-1 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-mono tracking-wider text-slate-950 focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
-                            >
-                            <button
-                                type="button"
-                                class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-semibold transition"
-                                :class="passwordCopied ? 'border-teal-300 bg-teal-50 text-teal-700' : 'text-slate-700 hover:bg-slate-50'"
-                                @click="copyPassword"
-                            >
-                                <Copy class="size-4" />
-                                {{ passwordCopied ? t('portal_users.password_modal.copied') : t('portal_users.password_modal.copy') }}
-                            </button>
-                        </div>
-                    </label>
-                </div>
-
-                <div class="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-6 py-4">
+            <template #footer>
+                <div class="flex justify-end gap-2">
                     <button type="button" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" @click="closePasswordModal">
                         {{ t('portal_users.password_modal.done') }}
                     </button>
                 </div>
-            </div>
-        </div>
+            </template>
+        </BaseModal>
 
         <!-- ================= EDIT MODAL ================== -->
-        <div v-if="editOpen && editTarget" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('portal_users.edit.title') }}</h2>
-                    <p class="mt-1 text-sm text-slate-500">{{ editTarget.email }}</p>
+        <BaseModal v-if="editOpen && editTarget" size="lg" :loading="editing" @close="editOpen = false">
+            <template #header>
+                <h2 class="text-lg font-semibold text-slate-950">{{ t('portal_users.edit.title') }}</h2>
+                <p class="mt-1 text-sm text-slate-500">{{ editTarget.email }}</p>
+            </template>
+
+            <form id="portal-user-edit-form" class="space-y-4" @submit.prevent="submitEdit">
+                <div v-if="editError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                    {{ editError }}
                 </div>
 
-                <form class="space-y-4 p-6" @submit.prevent="submitEdit">
-                    <div v-if="editError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
-                        {{ editError }}
-                    </div>
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('portal_users.fields.name') }}</span>
+                    <input v-model="editForm.name" type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                    <p v-if="editFieldErrors.name" class="mt-1 text-xs text-rose-600">{{ editFieldErrors.name[0] }}</p>
+                </label>
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('portal_users.fields.phone') }}</span>
+                    <input v-model="editForm.phone" type="tel" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                </label>
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('portal_users.fields.role') }}</span>
+                    <select v-model="editForm.role" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <option v-for="opt in roleOptions" :key="opt.value" :value="opt.value">
+                            {{ t(`portal_users.roles.${opt.key}`) }}
+                        </option>
+                    </select>
+                </label>
 
-                    <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('portal_users.fields.name') }}</span>
-                        <input v-model="editForm.name" type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                        <p v-if="editFieldErrors.name" class="mt-1 text-xs text-rose-600">{{ editFieldErrors.name[0] }}</p>
+                <div>
+                    <span class="text-sm font-medium text-slate-700">{{ t('portal_users.fields.branch_scope') }}</span>
+                    <label class="mt-2 flex items-center gap-2 text-sm text-slate-700">
+                        <input v-model="editForm.scope_all" type="checkbox" class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500">
+                        {{ t('portal_users.fields.scope_all') }}
                     </label>
-                    <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('portal_users.fields.phone') }}</span>
-                        <input v-model="editForm.phone" type="tel" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                    </label>
-                    <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('portal_users.fields.role') }}</span>
-                        <select v-model="editForm.role" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <option v-for="opt in roleOptions" :key="opt.value" :value="opt.value">
-                                {{ t(`portal_users.roles.${opt.key}`) }}
-                            </option>
-                        </select>
-                    </label>
-
-                    <div>
-                        <span class="text-sm font-medium text-slate-700">{{ t('portal_users.fields.branch_scope') }}</span>
-                        <label class="mt-2 flex items-center gap-2 text-sm text-slate-700">
-                            <input v-model="editForm.scope_all" type="checkbox" class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500">
-                            {{ t('portal_users.fields.scope_all') }}
+                    <div v-if="!editForm.scope_all" class="mt-2 grid gap-2 max-h-48 overflow-y-auto rounded-lg border border-slate-200 p-3 sm:grid-cols-2">
+                        <label v-for="branch in branches" :key="branch.id" class="flex items-center gap-2 text-xs">
+                            <input
+                                type="checkbox"
+                                :checked="editForm.branch_scope.includes(branch.id)"
+                                class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                                @change="toggleBranchInEdit(branch.id)"
+                            >
+                            <span class="font-medium text-slate-800">{{ branch.name }}</span>
                         </label>
-                        <div v-if="!editForm.scope_all" class="mt-2 grid gap-2 max-h-48 overflow-y-auto rounded-lg border border-slate-200 p-3 sm:grid-cols-2">
-                            <label v-for="branch in branches" :key="branch.id" class="flex items-center gap-2 text-xs">
-                                <input
-                                    type="checkbox"
-                                    :checked="editForm.branch_scope.includes(branch.id)"
-                                    class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                                    @change="toggleBranchInEdit(branch.id)"
-                                >
-                                <span class="font-medium text-slate-800">{{ branch.name }}</span>
-                            </label>
-                            <p v-if="branches.length === 0" class="col-span-full text-xs text-slate-500">{{ t('portal_users.no_branches') }}</p>
-                        </div>
-                        <p v-if="editFieldErrors.branch_scope" class="mt-1 text-xs text-rose-600">{{ editFieldErrors.branch_scope[0] }}</p>
+                        <p v-if="branches.length === 0" class="col-span-full text-xs text-slate-500">{{ t('portal_users.no_branches') }}</p>
                     </div>
+                    <p v-if="editFieldErrors.branch_scope" class="mt-1 text-xs text-rose-600">{{ editFieldErrors.branch_scope[0] }}</p>
+                </div>
+            </form>
 
-                    <div class="flex justify-end gap-2 pt-2">
-                        <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="editOpen = false">
-                            {{ t('common.cancel') }}
-                        </button>
-                        <button type="submit" :disabled="editing" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
-                            {{ editing ? t('portal_users.edit.submitting') : t('portal_users.edit.submit') }}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="editOpen = false">
+                        {{ t('common.cancel') }}
+                    </button>
+                    <button type="submit" form="portal-user-edit-form" :disabled="editing" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
+                        {{ editing ? t('portal_users.edit.submitting') : t('portal_users.edit.submit') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
 
         <!-- ============== ASSIGN ROLES MODAL ============== -->
-        <div v-if="assignRolesOpen && assignRolesTarget" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('portal_users.assign_roles.title') }}</h2>
-                    <p class="mt-1 text-sm text-slate-500">{{ assignRolesTarget.name }} ({{ assignRolesTarget.email }})</p>
+        <BaseModal v-if="assignRolesOpen && assignRolesTarget" size="md" :loading="assignRolesBusy" @close="assignRolesOpen = false">
+            <template #header>
+                <h2 class="text-lg font-semibold text-slate-950">{{ t('portal_users.assign_roles.title') }}</h2>
+                <p class="mt-1 text-sm text-slate-500">{{ assignRolesTarget.name }} ({{ assignRolesTarget.email }})</p>
+            </template>
+
+            <div class="space-y-3">
+                <div v-if="assignRolesError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                    {{ assignRolesError }}
                 </div>
 
-                <div class="space-y-3 p-6">
-                    <div v-if="assignRolesError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
-                        {{ assignRolesError }}
-                    </div>
+                <p class="text-xs text-slate-500">{{ t('portal_users.assign_roles.hint') }}</p>
 
-                    <p class="text-xs text-slate-500">{{ t('portal_users.assign_roles.hint') }}</p>
+                <div v-if="availableRoles.length === 0" class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-4 text-center text-sm text-slate-500">
+                    {{ t('portal_users.assign_roles.no_roles') }}
+                </div>
 
-                    <div v-if="availableRoles.length === 0" class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-4 text-center text-sm text-slate-500">
-                        {{ t('portal_users.assign_roles.no_roles') }}
-                    </div>
-
-                    <label
-                        v-for="role in availableRoles"
-                        :key="role.id"
-                        class="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3 transition hover:bg-slate-50"
+                <label
+                    v-for="role in availableRoles"
+                    :key="role.id"
+                    class="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3 transition hover:bg-slate-50"
+                >
+                    <input
+                        type="checkbox"
+                        :checked="assignRolesSelection.has(role.name)"
+                        class="mt-1 size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                        @change="toggleRoleAssignment(role.name)"
                     >
-                        <input
-                            type="checkbox"
-                            :checked="assignRolesSelection.has(role.name)"
-                            class="mt-1 size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                            @change="toggleRoleAssignment(role.name)"
-                        >
-                        <span class="flex-1">
-                            <span class="block text-sm font-semibold text-slate-950">{{ role.name }}</span>
-                            <span v-if="role.description" class="block text-xs text-slate-500">{{ role.description }}</span>
-                        </span>
-                    </label>
-                </div>
+                    <span class="flex-1">
+                        <span class="block text-sm font-semibold text-slate-950">{{ role.name }}</span>
+                        <span v-if="role.description" class="block text-xs text-slate-500">{{ role.description }}</span>
+                    </span>
+                </label>
+            </div>
 
-                <div class="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-6 py-4">
+            <template #footer>
+                <div class="flex justify-end gap-2">
                     <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="assignRolesOpen = false">
                         {{ t('common.cancel') }}
                     </button>
@@ -803,7 +804,7 @@ function toggleBranchInCreate(branchId: number): void {
                         {{ assignRolesBusy ? t('portal_users.assign_roles.submitting') : t('portal_users.assign_roles.submit') }}
                     </button>
                 </div>
-            </div>
-        </div>
+            </template>
+        </BaseModal>
     </MerchantLayout>
 </template>

@@ -42,6 +42,7 @@ import {
 } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import BaseModal from '@/Components/BaseModal.vue';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
@@ -1614,14 +1615,14 @@ function extractMessage(err: unknown, fallback: string): string {
         </section>
 
         <!-- ================== INGREDIENT MODAL ================== -->
-        <div v-if="ingModalOpen" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">
-                        {{ ingModalMode === 'create' ? t('inventory.ing_modal.create_title') : t('inventory.ing_modal.edit_title') }}
-                    </h2>
-                </div>
-                <form class="space-y-4 p-6" @submit.prevent="submitIngredient">
+        <BaseModal
+            v-if="ingModalOpen"
+            :title="ingModalMode === 'create' ? t('inventory.ing_modal.create_title') : t('inventory.ing_modal.edit_title')"
+            size="xl"
+            :loading="ingModalBusy"
+            @close="ingModalOpen = false"
+        >
+                <form id="ing-modal-form" class="space-y-4" @submit.prevent="submitIngredient">
                     <div v-if="ingModalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
                         {{ ingModalError }}
                     </div>
@@ -1670,25 +1671,26 @@ function extractMessage(err: unknown, fallback: string): string {
                             <option value="inactive">{{ t('inventory.statuses.inactive') }}</option>
                         </select>
                     </label>
-                    <div class="flex justify-end gap-2 pt-2">
-                        <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="ingModalOpen = false">{{ t('common.cancel') }}</button>
-                        <button type="submit" :disabled="ingModalBusy" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
-                            {{ ingModalBusy ? t('inventory.ing_modal.submitting') : t('inventory.ing_modal.submit') }}
-                        </button>
-                    </div>
                 </form>
-            </div>
-        </div>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="ingModalOpen = false">{{ t('common.cancel') }}</button>
+                    <button type="submit" form="ing-modal-form" :disabled="ingModalBusy" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
+                        {{ ingModalBusy ? t('inventory.ing_modal.submitting') : t('inventory.ing_modal.submit') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
 
         <!-- ================== SUPPLIER MODAL ================== -->
-        <div v-if="supModalOpen" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">
-                        {{ supModalMode === 'create' ? t('inventory.sup_modal.create_title') : t('inventory.sup_modal.edit_title') }}
-                    </h2>
-                </div>
-                <form class="space-y-4 p-6" @submit.prevent="submitSupplier">
+        <BaseModal
+            v-if="supModalOpen"
+            :title="supModalMode === 'create' ? t('inventory.sup_modal.create_title') : t('inventory.sup_modal.edit_title')"
+            size="md"
+            :loading="supModalBusy"
+            @close="supModalOpen = false"
+        >
+                <form id="sup-modal-form" class="space-y-4" @submit.prevent="submitSupplier">
                     <div v-if="supModalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
                         {{ supModalError }}
                     </div>
@@ -1712,24 +1714,29 @@ function extractMessage(err: unknown, fallback: string): string {
                             <option value="inactive">{{ t('inventory.statuses.inactive') }}</option>
                         </select>
                     </label>
-                    <div class="flex justify-end gap-2 pt-2">
-                        <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="supModalOpen = false">{{ t('common.cancel') }}</button>
-                        <button type="submit" :disabled="supModalBusy" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
-                            {{ supModalBusy ? t('inventory.sup_modal.submitting') : t('inventory.sup_modal.submit') }}
-                        </button>
-                    </div>
                 </form>
-            </div>
-        </div>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="supModalOpen = false">{{ t('common.cancel') }}</button>
+                    <button type="submit" form="sup-modal-form" :disabled="supModalBusy" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
+                        {{ supModalBusy ? t('inventory.sup_modal.submitting') : t('inventory.sup_modal.submit') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
 
         <!-- ================== ADJUST MODAL ================== -->
-        <div v-if="adjustOpen && adjustTarget.ingredient" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('inventory.adjust_modal.title', { ingredient: adjustTarget.ingredient.name }) }}</h2>
-                    <p class="mt-1 text-xs text-slate-500">{{ t('inventory.adjust_modal.subtitle') }}</p>
-                </div>
-                <form class="space-y-4 p-6" @submit.prevent="submitAdjust">
+        <BaseModal
+            v-if="adjustOpen && adjustTarget.ingredient"
+            size="md"
+            :loading="adjustBusy"
+            @close="adjustOpen = false"
+        >
+            <template #header>
+                <h2 class="text-lg font-semibold text-slate-950">{{ t('inventory.adjust_modal.title', { ingredient: adjustTarget.ingredient.name }) }}</h2>
+                <p class="mt-1 text-xs text-slate-500">{{ t('inventory.adjust_modal.subtitle') }}</p>
+            </template>
+                <form id="adjust-modal-form" class="space-y-4" @submit.prevent="submitAdjust">
                     <div v-if="adjustError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
                         {{ adjustError }}
                     </div>
@@ -1747,24 +1754,29 @@ function extractMessage(err: unknown, fallback: string): string {
                         <p class="mt-1 text-xs text-slate-500">{{ t('inventory.fields.note_required_hint') }}</p>
                         <p v-if="adjustErrors.note" class="mt-1 text-xs text-rose-600">{{ adjustErrors.note[0] }}</p>
                     </label>
-                    <div class="flex justify-end gap-2 pt-2">
-                        <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="adjustOpen = false">{{ t('common.cancel') }}</button>
-                        <button type="submit" :disabled="adjustBusy" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
-                            {{ adjustBusy ? t('inventory.adjust_modal.submitting') : t('inventory.adjust_modal.submit') }}
-                        </button>
-                    </div>
                 </form>
-            </div>
-        </div>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="adjustOpen = false">{{ t('common.cancel') }}</button>
+                    <button type="submit" form="adjust-modal-form" :disabled="adjustBusy" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
+                        {{ adjustBusy ? t('inventory.adjust_modal.submitting') : t('inventory.adjust_modal.submit') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
 
         <!-- ================== RESTOCK MODAL ================== -->
-        <div v-if="restockOpen" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('inventory.restock_modal.title', { ingredient: restockTarget.ingredient?.name ?? '' }) }}</h2>
-                    <p class="mt-1 text-xs text-slate-500">{{ t('inventory.restock_modal.subtitle') }}</p>
-                </div>
-                <form class="space-y-4 p-6" @submit.prevent="submitRestock">
+        <BaseModal
+            v-if="restockOpen"
+            size="md"
+            :loading="restockBusy"
+            @close="restockOpen = false"
+        >
+            <template #header>
+                <h2 class="text-lg font-semibold text-slate-950">{{ t('inventory.restock_modal.title', { ingredient: restockTarget.ingredient?.name ?? '' }) }}</h2>
+                <p class="mt-1 text-xs text-slate-500">{{ t('inventory.restock_modal.subtitle') }}</p>
+            </template>
+                <form id="restock-modal-form" class="space-y-4" @submit.prevent="submitRestock">
                     <div v-if="restockError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
                         {{ restockError }}
                     </div>
@@ -1800,56 +1812,63 @@ function extractMessage(err: unknown, fallback: string): string {
                         <span class="text-sm font-medium text-slate-700">{{ t('inventory.fields.notes') }}</span>
                         <textarea v-model="restockForm.note" rows="2" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100" />
                     </label>
-                    <div class="flex justify-end gap-2 pt-2">
-                        <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="restockOpen = false">{{ t('common.cancel') }}</button>
-                        <button type="submit" :disabled="restockBusy" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
-                            {{ restockBusy ? t('inventory.restock_modal.submitting') : t('inventory.restock_modal.submit') }}
-                        </button>
-                    </div>
                 </form>
-            </div>
-        </div>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="restockOpen = false">{{ t('common.cancel') }}</button>
+                    <button type="submit" form="restock-modal-form" :disabled="restockBusy" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
+                        {{ restockBusy ? t('inventory.restock_modal.submitting') : t('inventory.restock_modal.submit') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
 
         <!-- ================== DELETE CONFIRMS ================== -->
-        <div v-if="ingDeleteTarget" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('inventory.delete_ing_dialog.title') }}</h2>
-                </div>
-                <div class="px-6 py-5 text-sm text-slate-700">{{ t('inventory.delete_ing_dialog.body', { name: ingDeleteTarget.name }) }}</div>
-                <div class="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-6 py-4">
+        <BaseModal
+            v-if="ingDeleteTarget"
+            :title="t('inventory.delete_ing_dialog.title')"
+            size="md"
+            :loading="deleting"
+            @close="ingDeleteTarget = null"
+        >
+            <div class="text-sm text-slate-700">{{ t('inventory.delete_ing_dialog.body', { name: ingDeleteTarget.name }) }}</div>
+            <template #footer>
+                <div class="flex justify-end gap-2">
                     <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="ingDeleteTarget = null">{{ t('common.cancel') }}</button>
                     <button type="button" :disabled="deleting" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-wait disabled:opacity-60" @click="confirmDeleteIngredient">
                         {{ deleting ? t('inventory.delete_ing_dialog.submitting') : t('inventory.delete_ing_dialog.confirm') }}
                     </button>
                 </div>
-            </div>
-        </div>
+            </template>
+        </BaseModal>
 
-        <div v-if="supDeleteTarget" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('inventory.delete_sup_dialog.title') }}</h2>
-                </div>
-                <div class="px-6 py-5 text-sm text-slate-700">{{ t('inventory.delete_sup_dialog.body', { name: supDeleteTarget.name }) }}</div>
-                <div class="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-6 py-4">
+        <BaseModal
+            v-if="supDeleteTarget"
+            :title="t('inventory.delete_sup_dialog.title')"
+            size="md"
+            :loading="deleting"
+            @close="supDeleteTarget = null"
+        >
+            <div class="text-sm text-slate-700">{{ t('inventory.delete_sup_dialog.body', { name: supDeleteTarget.name }) }}</div>
+            <template #footer>
+                <div class="flex justify-end gap-2">
                     <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="supDeleteTarget = null">{{ t('common.cancel') }}</button>
                     <button type="button" :disabled="deleting" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-wait disabled:opacity-60" @click="confirmDeleteSupplier">
                         {{ deleting ? t('inventory.delete_sup_dialog.submitting') : t('inventory.delete_sup_dialog.confirm') }}
                     </button>
                 </div>
-            </div>
-        </div>
+            </template>
+        </BaseModal>
 
         <!-- ================== PHASE 5c — RECORD WASTE MODAL ================== -->
-        <div v-if="wasteOpen" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">
-                        {{ t('inventory.waste.modal.title', { branch: selectedBranchName }) }}
-                    </h2>
-                </div>
-                <form class="space-y-4 p-6" @submit.prevent="submitRecordWaste">
+        <BaseModal
+            v-if="wasteOpen"
+            :title="t('inventory.waste.modal.title', { branch: selectedBranchName })"
+            size="xl"
+            :loading="wasteBusy"
+            @close="wasteOpen = false"
+        >
+                <form id="waste-modal-form" class="space-y-4" @submit.prevent="submitRecordWaste">
                     <div v-if="wasteError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
                         {{ wasteError }}
                     </div>
@@ -1898,27 +1917,28 @@ function extractMessage(err: unknown, fallback: string): string {
                         <AlertTriangle class="me-1 inline size-3.5" />
                         {{ t('inventory.waste.modal.insufficient_warning') }}
                     </div>
-                    <div class="flex justify-end gap-2 border-t border-slate-200 pt-4">
-                        <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="wasteOpen = false">
-                            {{ t('inventory.waste.modal.cancel') }}
-                        </button>
-                        <button type="submit" :disabled="wasteBusy || wasteInsufficient" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60">
-                            {{ wasteBusy ? t('inventory.waste.modal.submitting') : t('inventory.waste.modal.submit') }}
-                        </button>
-                    </div>
                 </form>
-            </div>
-        </div>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="wasteOpen = false">
+                        {{ t('inventory.waste.modal.cancel') }}
+                    </button>
+                    <button type="submit" form="waste-modal-form" :disabled="wasteBusy || wasteInsufficient" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60">
+                        {{ wasteBusy ? t('inventory.waste.modal.submitting') : t('inventory.waste.modal.submit') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
 
         <!-- ================== PHASE 5c — CREATE/EDIT RESTOCK REQUEST MODAL ================== -->
-        <div v-if="restockModalOpen" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">
-                        {{ restockModalMode === 'create' ? t('inventory.restock.create_modal.title_create') : t('inventory.restock.create_modal.title_edit') }}
-                    </h2>
-                </div>
-                <form class="space-y-4 p-6" @submit.prevent="submitRestockModal">
+        <BaseModal
+            v-if="restockModalOpen"
+            :title="restockModalMode === 'create' ? t('inventory.restock.create_modal.title_create') : t('inventory.restock.create_modal.title_edit')"
+            size="2xl"
+            :loading="restockModalBusy"
+            @close="restockModalOpen = false"
+        >
+                <form id="restock-request-form" class="space-y-4" @submit.prevent="submitRestockModal">
                     <div v-if="restockModalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
                         {{ restockModalError }}
                     </div>
@@ -1958,31 +1978,32 @@ function extractMessage(err: unknown, fallback: string): string {
                             {{ t('inventory.restock.create_modal.duplicate_warning') }}
                         </p>
                     </div>
-
-                    <div class="flex justify-end gap-2 border-t border-slate-200 pt-4">
-                        <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="restockModalOpen = false">
-                            {{ t('inventory.restock.create_modal.cancel') }}
-                        </button>
-                        <button type="submit" :disabled="restockModalBusy || restockHasDuplicates" class="rounded-lg bg-gradient-to-r from-indigo-600 to-cyan-600 px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
-                            {{ restockModalBusy ? t('inventory.restock.create_modal.submitting') : (restockModalMode === 'create' ? t('inventory.restock.create_modal.submit_create') : t('inventory.restock.create_modal.submit_edit')) }}
-                        </button>
-                    </div>
                 </form>
-            </div>
-        </div>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="restockModalOpen = false">
+                        {{ t('inventory.restock.create_modal.cancel') }}
+                    </button>
+                    <button type="submit" form="restock-request-form" :disabled="restockModalBusy || restockHasDuplicates" class="rounded-lg bg-gradient-to-r from-indigo-600 to-cyan-600 px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
+                        {{ restockModalBusy ? t('inventory.restock.create_modal.submitting') : (restockModalMode === 'create' ? t('inventory.restock.create_modal.submit_create') : t('inventory.restock.create_modal.submit_edit')) }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
 
         <!-- ================== PHASE 5c — SHOW RESTOCK REQUEST MODAL ================== -->
-        <div v-if="showOpen && showTarget" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
-                <div class="flex items-start justify-between border-b border-slate-200 px-6 py-5">
-                    <div>
-                        <h2 class="text-lg font-semibold text-slate-950">{{ t('inventory.restock.show_modal.title', { branch: showTarget.branch?.name ?? '—' }) }}</h2>
-                        <span class="mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-semibold" :class="restockStatusBadgeClass(showTarget.status)">
-                            {{ t(`inventory.restock.statuses.${showTarget.status}`) }}
-                        </span>
-                    </div>
-                </div>
-                <div class="space-y-4 p-6">
+        <BaseModal
+            v-if="showOpen && showTarget"
+            size="2xl"
+            @close="showOpen = false"
+        >
+            <template #header>
+                <h2 class="text-lg font-semibold text-slate-950">{{ t('inventory.restock.show_modal.title', { branch: showTarget.branch?.name ?? '—' }) }}</h2>
+                <span class="mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-semibold" :class="restockStatusBadgeClass(showTarget.status)">
+                    {{ t(`inventory.restock.statuses.${showTarget.status}`) }}
+                </span>
+            </template>
+                <div class="space-y-4">
                     <!-- Lifecycle timeline -->
                     <div class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs">
                         <p class="mb-2 text-sm font-semibold text-slate-700">{{ t('inventory.restock.show_modal.lifecycle') }}</p>
@@ -2022,21 +2043,22 @@ function extractMessage(err: unknown, fallback: string): string {
                         </table>
                     </div>
                 </div>
-                <div class="flex justify-end border-t border-slate-200 bg-slate-50 px-6 py-4">
+            <template #footer>
+                <div class="flex justify-end">
                     <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="showOpen = false">{{ t('inventory.restock.show_modal.close') }}</button>
                 </div>
-            </div>
-        </div>
+            </template>
+        </BaseModal>
 
         <!-- ================== PHASE 5c — REVIEW (APPROVE/REJECT) MODAL ================== -->
-        <div v-if="reviewOpen && reviewTarget" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">
-                        {{ reviewMode === 'approve' ? t('inventory.restock.review_modal.title_approve') : t('inventory.restock.review_modal.title_reject') }}
-                    </h2>
-                </div>
-                <form class="space-y-3 p-6" @submit.prevent="submitReview">
+        <BaseModal
+            v-if="reviewOpen && reviewTarget"
+            :title="reviewMode === 'approve' ? t('inventory.restock.review_modal.title_approve') : t('inventory.restock.review_modal.title_reject')"
+            size="md"
+            :loading="reviewBusy"
+            @close="reviewOpen = false"
+        >
+                <form id="review-modal-form" class="space-y-3" @submit.prevent="submitReview">
                     <div v-if="reviewError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
                         {{ reviewError }}
                     </div>
@@ -2047,23 +2069,26 @@ function extractMessage(err: unknown, fallback: string): string {
                         <span class="text-sm font-medium text-slate-700">{{ t('inventory.restock.review_modal.note') }}{{ reviewMode === 'reject' ? ' *' : '' }}</span>
                         <textarea v-model="reviewNote" rows="3" :required="reviewMode === 'reject'" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"></textarea>
                     </label>
-                    <div class="flex justify-end gap-2 border-t border-slate-200 pt-4">
-                        <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="reviewOpen = false">{{ t('inventory.restock.review_modal.cancel') }}</button>
-                        <button type="submit" :disabled="reviewBusy" :class="reviewMode === 'approve' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'" class="rounded-lg px-4 py-2 text-sm font-semibold text-white transition disabled:cursor-wait disabled:opacity-60">
-                            {{ reviewBusy ? t('inventory.restock.review_modal.submitting') : (reviewMode === 'approve' ? t('inventory.restock.review_modal.submit_approve') : t('inventory.restock.review_modal.submit_reject')) }}
-                        </button>
-                    </div>
                 </form>
-            </div>
-        </div>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="reviewOpen = false">{{ t('inventory.restock.review_modal.cancel') }}</button>
+                    <button type="submit" form="review-modal-form" :disabled="reviewBusy" :class="reviewMode === 'approve' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'" class="rounded-lg px-4 py-2 text-sm font-semibold text-white transition disabled:cursor-wait disabled:opacity-60">
+                        {{ reviewBusy ? t('inventory.restock.review_modal.submitting') : (reviewMode === 'approve' ? t('inventory.restock.review_modal.submit_approve') : t('inventory.restock.review_modal.submit_reject')) }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
 
         <!-- ================== PHASE 5c — CANCEL MODAL ================== -->
-        <div v-if="cancelOpen && cancelTarget" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('inventory.restock.cancel_modal.title') }}</h2>
-                </div>
-                <form class="space-y-3 p-6" @submit.prevent="submitCancel">
+        <BaseModal
+            v-if="cancelOpen && cancelTarget"
+            :title="t('inventory.restock.cancel_modal.title')"
+            size="md"
+            :loading="cancelBusy"
+            @close="cancelOpen = false"
+        >
+                <form id="cancel-modal-form" class="space-y-3" @submit.prevent="submitCancel">
                     <div v-if="cancelError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
                         {{ cancelError }}
                     </div>
@@ -2072,24 +2097,29 @@ function extractMessage(err: unknown, fallback: string): string {
                         <span class="text-sm font-medium text-slate-700">{{ t('inventory.restock.cancel_modal.note') }}</span>
                         <textarea v-model="cancelNote" rows="3" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"></textarea>
                     </label>
-                    <div class="flex justify-end gap-2 border-t border-slate-200 pt-4">
-                        <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="cancelOpen = false">{{ t('inventory.restock.cancel_modal.back') }}</button>
-                        <button type="submit" :disabled="cancelBusy" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-wait disabled:opacity-60">
-                            {{ cancelBusy ? t('inventory.restock.cancel_modal.submitting') : t('inventory.restock.cancel_modal.submit') }}
-                        </button>
-                    </div>
                 </form>
-            </div>
-        </div>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="cancelOpen = false">{{ t('inventory.restock.cancel_modal.back') }}</button>
+                    <button type="submit" form="cancel-modal-form" :disabled="cancelBusy" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-wait disabled:opacity-60">
+                        {{ cancelBusy ? t('inventory.restock.cancel_modal.submitting') : t('inventory.restock.cancel_modal.submit') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
 
         <!-- ================== PHASE 5c — ALLOCATE MODAL ================== -->
-        <div v-if="allocateOpen && allocateTarget" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('inventory.restock.allocate_modal.title') }}</h2>
-                    <p class="mt-1 text-xs text-slate-600">{{ t('inventory.restock.allocate_modal.hint') }}</p>
-                </div>
-                <form class="space-y-3 p-6" @submit.prevent="submitAllocate">
+        <BaseModal
+            v-if="allocateOpen && allocateTarget"
+            size="xl"
+            :loading="allocateBusy"
+            @close="allocateOpen = false"
+        >
+            <template #header>
+                <h2 class="text-lg font-semibold text-slate-950">{{ t('inventory.restock.allocate_modal.title') }}</h2>
+                <p class="mt-1 text-xs text-slate-600">{{ t('inventory.restock.allocate_modal.hint') }}</p>
+            </template>
+                <form id="allocate-modal-form" class="space-y-3" @submit.prevent="submitAllocate">
                     <div v-if="allocateError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
                         {{ allocateError }}
                     </div>
@@ -2117,14 +2147,15 @@ function extractMessage(err: unknown, fallback: string): string {
                         <AlertTriangle class="me-1 inline size-3.5" />
                         {{ t('inventory.restock.allocate_modal.over_warning') }}
                     </p>
-                    <div class="flex justify-end gap-2 border-t border-slate-200 pt-4">
-                        <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="allocateOpen = false">{{ t('inventory.restock.allocate_modal.cancel') }}</button>
-                        <button type="submit" :disabled="allocateBusy || allocateHasOver" class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60">
-                            {{ allocateBusy ? t('inventory.restock.allocate_modal.submitting') : t('inventory.restock.allocate_modal.submit') }}
-                        </button>
-                    </div>
                 </form>
-            </div>
-        </div>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="allocateOpen = false">{{ t('inventory.restock.allocate_modal.cancel') }}</button>
+                    <button type="submit" form="allocate-modal-form" :disabled="allocateBusy || allocateHasOver" class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60">
+                        {{ allocateBusy ? t('inventory.restock.allocate_modal.submitting') : t('inventory.restock.allocate_modal.submit') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
     </MerchantLayout>
 </template>

@@ -20,6 +20,7 @@ import { Receipt, Plus, Check, Ban, Filter } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
+import BaseModal from '@/Components/BaseModal.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
 import { listBranches, type Branch } from '@/lib/api/branches';
@@ -347,73 +348,70 @@ function fmt(dt: string | null): string {
         </section>
 
         <!-- Log modal -->
-        <div v-if="logOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" @click.self="logOpen = false">
-            <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-                <h2 class="text-lg font-semibold text-slate-950">{{ t('expenses.log_modal.title') }}</h2>
-                <div class="mt-4 space-y-3">
-                    <label class="block text-sm font-semibold text-slate-700">
-                        {{ t('expenses.log_modal.branch') }}
-                        <select v-model="logForm.branch_id" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                            <option :value="null">{{ t('expenses.log_modal.general') }}</option>
-                            <option v-for="b in branches" :key="b.id" :value="b.id">{{ b.name }}</option>
-                        </select>
-                    </label>
-                    <label class="block text-sm font-semibold text-slate-700">
-                        {{ t('expenses.log_modal.category') }}
-                        <select v-model="logForm.category" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                            <option v-for="c in EXPENSE_CATEGORIES" :key="c" :value="c">{{ t(`expenses.category.${c}`) }}</option>
-                        </select>
-                    </label>
-                    <label class="block text-sm font-semibold text-slate-700">
-                        {{ t('expenses.log_modal.amount') }}
-                        <input v-model="logForm.amount" type="text" inputmode="decimal" placeholder="0.000" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm tabular-nums" />
-                    </label>
-                    <label class="block text-sm font-semibold text-slate-700">
-                        {{ t('expenses.log_modal.date') }}
-                        <input v-model="logForm.logged_at" type="date" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                    </label>
-                    <label class="block text-sm font-semibold text-slate-700">
-                        {{ t('expenses.log_modal.note') }}
-                        <textarea v-model="logForm.note" rows="2" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
-                    </label>
-                    <p v-if="logError" class="text-sm font-semibold text-rose-600">{{ logError }}</p>
-                </div>
-                <div class="mt-5 flex justify-end gap-2">
+        <BaseModal v-if="logOpen" :title="t('expenses.log_modal.title')" size="md" :loading="logBusy" @close="logOpen = false">
+            <div class="space-y-3">
+                <label class="block text-sm font-semibold text-slate-700">
+                    {{ t('expenses.log_modal.branch') }}
+                    <select v-model="logForm.branch_id" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                        <option :value="null">{{ t('expenses.log_modal.general') }}</option>
+                        <option v-for="b in branches" :key="b.id" :value="b.id">{{ b.name }}</option>
+                    </select>
+                </label>
+                <label class="block text-sm font-semibold text-slate-700">
+                    {{ t('expenses.log_modal.category') }}
+                    <select v-model="logForm.category" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                        <option v-for="c in EXPENSE_CATEGORIES" :key="c" :value="c">{{ t(`expenses.category.${c}`) }}</option>
+                    </select>
+                </label>
+                <label class="block text-sm font-semibold text-slate-700">
+                    {{ t('expenses.log_modal.amount') }}
+                    <input v-model="logForm.amount" type="text" inputmode="decimal" placeholder="0.000" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm tabular-nums" />
+                </label>
+                <label class="block text-sm font-semibold text-slate-700">
+                    {{ t('expenses.log_modal.date') }}
+                    <input v-model="logForm.logged_at" type="date" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                </label>
+                <label class="block text-sm font-semibold text-slate-700">
+                    {{ t('expenses.log_modal.note') }}
+                    <textarea v-model="logForm.note" rows="2" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
+                </label>
+                <p v-if="logError" class="text-sm font-semibold text-rose-600">{{ logError }}</p>
+            </div>
+            <template #footer>
+                <div class="flex justify-end gap-2">
                     <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="logOpen = false">{{ t('common.cancel') }}</button>
                     <button type="button" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-50" :disabled="logBusy" @click="submitLog">{{ logBusy ? t('common.saving') : t('expenses.log_modal.submit') }}</button>
                 </div>
-            </div>
-        </div>
+            </template>
+        </BaseModal>
 
         <!-- Review modal -->
-        <div v-if="reviewOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" @click.self="reviewOpen = false">
-            <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-                <h2 class="text-lg font-semibold text-slate-950">{{ t('expenses.review_modal.title') }}</h2>
-                <label class="mt-4 block text-sm font-semibold text-slate-700">
-                    {{ t('expenses.review_modal.note_optional') }}
-                    <textarea v-model="reviewNote" rows="3" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
-                </label>
-                <div class="mt-5 flex justify-end gap-2">
+        <BaseModal v-if="reviewOpen" :title="t('expenses.review_modal.title')" size="md" :loading="reviewBusy" @close="reviewOpen = false">
+            <label class="block text-sm font-semibold text-slate-700">
+                {{ t('expenses.review_modal.note_optional') }}
+                <textarea v-model="reviewNote" rows="3" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
+            </label>
+            <template #footer>
+                <div class="flex justify-end gap-2">
                     <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="reviewOpen = false">{{ t('common.cancel') }}</button>
                     <button type="button" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50" :disabled="reviewBusy" @click="submitReview">{{ reviewBusy ? t('common.saving') : t('expenses.review_modal.submit') }}</button>
                 </div>
-            </div>
-        </div>
+            </template>
+        </BaseModal>
 
         <!-- Reject modal -->
-        <div v-if="rejectOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" @click.self="rejectOpen = false">
-            <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-                <h2 class="text-lg font-semibold text-slate-950">{{ t('expenses.reject_modal.title') }}</h2>
-                <label class="mt-4 block text-sm font-semibold text-slate-700">
-                    {{ t('expenses.reject_modal.reason') }}
-                    <textarea v-model="rejectNote" rows="3" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
-                </label>
-                <p v-if="rejectError" class="mt-2 text-sm font-semibold text-rose-600">{{ rejectError }}</p>
-                <div class="mt-5 flex justify-end gap-2">
+        <BaseModal v-if="rejectOpen" :title="t('expenses.reject_modal.title')" size="md" :loading="rejectBusy" @close="rejectOpen = false">
+            <label class="block text-sm font-semibold text-slate-700">
+                {{ t('expenses.reject_modal.reason') }}
+                <textarea v-model="rejectNote" rows="3" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
+            </label>
+            <p v-if="rejectError" class="mt-2 text-sm font-semibold text-rose-600">{{ rejectError }}</p>
+            <template #footer>
+                <div class="flex justify-end gap-2">
                     <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="rejectOpen = false">{{ t('common.cancel') }}</button>
                     <button type="button" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50" :disabled="rejectBusy" @click="submitReject">{{ rejectBusy ? t('common.saving') : t('expenses.reject_modal.submit') }}</button>
                 </div>
-            </div>
-        </div>
+            </template>
+        </BaseModal>
     </MerchantLayout>
 </template>

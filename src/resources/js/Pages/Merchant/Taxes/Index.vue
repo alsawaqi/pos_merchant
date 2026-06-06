@@ -15,6 +15,7 @@
 import { Pencil, Percent, Plus, Trash2 } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import BaseModal from '@/Components/BaseModal.vue';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
@@ -220,57 +221,57 @@ async function confirmDelete(): Promise<void> {
         </div>
 
         <!-- create / edit modal -->
-        <div
+        <BaseModal
             v-if="modalOpen"
-            class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"
-            @click.self="modalOpen = false"
+            :title="modalMode === 'create' ? t('taxes.modal.create_title') : t('taxes.modal.edit_title')"
+            size="md"
+            :loading="modalBusy"
+            @close="modalOpen = false"
         >
-            <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-                <h2 class="text-lg font-bold text-slate-900">
-                    {{ modalMode === 'create' ? t('taxes.modal.create_title') : t('taxes.modal.edit_title') }}
-                </h2>
-                <div class="mt-5 space-y-4">
-                    <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('taxes.fields.name') }}</span>
-                        <input
-                            v-model="form.name"
-                            type="text"
-                            maxlength="64"
-                            class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
-                        >
-                    </label>
-                    <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('taxes.fields.name_ar') }}</span>
-                        <input
-                            v-model="form.name_ar"
-                            type="text"
-                            maxlength="64"
-                            dir="rtl"
-                            class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
-                        >
-                    </label>
-                    <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('taxes.fields.rate_percent') }}</span>
-                        <input
-                            v-model="form.rate_percent"
-                            type="number"
-                            min="0"
-                            max="100"
-                            step="0.01"
-                            class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
-                        >
-                    </label>
-                    <label class="flex items-center gap-3">
-                        <input
-                            v-model="form.is_active"
-                            type="checkbox"
-                            class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                        >
-                        <span class="text-sm font-medium text-slate-700">{{ t('taxes.fields.is_active') }}</span>
-                    </label>
-                    <p v-if="modalError" class="text-sm text-rose-600">{{ modalError }}</p>
-                </div>
-                <div class="mt-6 flex justify-end gap-3">
+            <div class="space-y-4">
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('taxes.fields.name') }}</span>
+                    <input
+                        v-model="form.name"
+                        type="text"
+                        maxlength="64"
+                        class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
+                    >
+                </label>
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('taxes.fields.name_ar') }}</span>
+                    <input
+                        v-model="form.name_ar"
+                        type="text"
+                        maxlength="64"
+                        dir="rtl"
+                        class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
+                    >
+                </label>
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('taxes.fields.rate_percent') }}</span>
+                    <input
+                        v-model="form.rate_percent"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
+                    >
+                </label>
+                <label class="flex items-center gap-3">
+                    <input
+                        v-model="form.is_active"
+                        type="checkbox"
+                        class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                    >
+                    <span class="text-sm font-medium text-slate-700">{{ t('taxes.fields.is_active') }}</span>
+                </label>
+                <p v-if="modalError" class="text-sm text-rose-600">{{ modalError }}</p>
+            </div>
+
+            <template #footer>
+                <div class="flex justify-end gap-3">
                     <button
                         type="button"
                         class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
@@ -288,19 +289,21 @@ async function confirmDelete(): Promise<void> {
                         {{ t('taxes.save') }}
                     </button>
                 </div>
-            </div>
-        </div>
+            </template>
+        </BaseModal>
 
         <!-- delete confirm -->
-        <div
+        <BaseModal
             v-if="deleteTarget"
-            class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"
-            @click.self="deleteTarget = null"
+            :title="t('taxes.delete')"
+            size="sm"
+            :loading="deleteBusy"
+            @close="deleteTarget = null"
         >
-            <div class="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
-                <h2 class="text-lg font-bold text-slate-900">{{ t('taxes.delete') }}</h2>
-                <p class="mt-2 text-sm text-slate-600">{{ t('taxes.delete_confirm', { name: deleteTarget.name }) }}</p>
-                <div class="mt-6 flex justify-end gap-3">
+            <p class="text-sm text-slate-600">{{ t('taxes.delete_confirm', { name: deleteTarget.name }) }}</p>
+
+            <template #footer>
+                <div class="flex justify-end gap-3">
                     <button
                         type="button"
                         class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
@@ -318,7 +321,7 @@ async function confirmDelete(): Promise<void> {
                         {{ t('taxes.delete') }}
                     </button>
                 </div>
-            </div>
-        </div>
+            </template>
+        </BaseModal>
     </MerchantLayout>
 </template>

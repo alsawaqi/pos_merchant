@@ -19,6 +19,7 @@ import { Car, Coins, Gift, Pencil, Plus, Settings, Stamp, Trash2, Users, Wallet 
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { RouterLink } from 'vue-router';
+import BaseModal from '@/Components/BaseModal.vue';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
@@ -535,15 +536,14 @@ async function submitWalletAdjust(): Promise<void> {
         </section>
 
         <!-- ================= CREATE / EDIT MODAL ================== -->
-        <div v-if="modalOpen" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">
-                        {{ modalMode === 'create' ? t('customers.modal.create_title') : t('customers.modal.edit_title') }}
-                    </h2>
-                </div>
-
-                <form class="space-y-5 p-6" @submit.prevent="submitModal">
+        <BaseModal
+            v-if="modalOpen"
+            :title="modalMode === 'create' ? t('customers.modal.create_title') : t('customers.modal.edit_title')"
+            size="xl"
+            :loading="modalBusy"
+            @close="modalOpen = false"
+        >
+                <form id="customer-form" class="space-y-5" @submit.prevent="submitModal">
                     <div v-if="modalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
                         {{ modalError }}
                     </div>
@@ -646,59 +646,68 @@ async function submitWalletAdjust(): Promise<void> {
                             </button>
                         </div>
                     </div>
-
-                    <div class="flex justify-end gap-2 border-t border-slate-200 pt-4">
-                        <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="modalOpen = false">
-                            {{ t('common.cancel') }}
-                        </button>
-                        <button type="submit" :disabled="modalBusy" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:opacity-50">
-                            {{ modalBusy ? t('common.saving') : t('common.save') }}
-                        </button>
-                    </div>
                 </form>
-            </div>
-        </div>
+
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="modalOpen = false">
+                        {{ t('common.cancel') }}
+                    </button>
+                    <button type="submit" form="customer-form" :disabled="modalBusy" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:opacity-50">
+                        {{ modalBusy ? t('common.saving') : t('common.save') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
 
         <!-- ================= DELETE CONFIRM ================== -->
-        <div v-if="confirmDelete" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('customers.delete.title') }}</h2>
-                </div>
-                <div class="p-6 space-y-4">
+        <BaseModal
+            v-if="confirmDelete"
+            :title="t('customers.delete.title')"
+            size="md"
+            :loading="deleteBusy"
+            @close="confirmDelete = null"
+        >
+                <div class="space-y-4">
                     <p class="text-sm text-slate-600">{{ t('customers.delete.confirm', { name: confirmDelete.name }) }}</p>
                     <div v-if="deleteError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
                         {{ deleteError }}
                     </div>
-                    <div class="flex justify-end gap-2">
-                        <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="confirmDelete = null">
-                            {{ t('common.cancel') }}
-                        </button>
-                        <button type="button" :disabled="deleteBusy" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-700 disabled:opacity-50" @click="performDelete">
-                            {{ deleteBusy ? t('common.deleting') : t('customers.actions.delete') }}
-                        </button>
-                    </div>
                 </div>
-            </div>
-        </div>
+
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="confirmDelete = null">
+                        {{ t('common.cancel') }}
+                    </button>
+                    <button type="button" :disabled="deleteBusy" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-700 disabled:opacity-50" @click="performDelete">
+                        {{ deleteBusy ? t('common.deleting') : t('customers.actions.delete') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
 
         <!-- ================= CUSTOMER LOYALTY MODAL ================== -->
-        <div v-if="loyaltyModalOpen && loyaltyTarget" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('loyalty.customer.title') }}</h2>
-                    <p class="mt-1 text-sm text-slate-500">{{ loyaltyTarget.name }} · <span class="font-mono">{{ loyaltyTarget.phone }}</span></p>
-                </div>
+        <BaseModal
+            v-if="loyaltyModalOpen && loyaltyTarget"
+            size="2xl"
+            :loading="loyaltyBusy"
+            @close="loyaltyModalOpen = false"
+        >
+            <template #header>
+                <h2 class="text-lg font-semibold text-slate-950">{{ t('loyalty.customer.title') }}</h2>
+                <p class="mt-1 text-sm text-slate-500">{{ loyaltyTarget.name }} · <span class="font-mono">{{ loyaltyTarget.phone }}</span></p>
+            </template>
 
-                <div v-if="loyaltyError" class="mx-6 mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                <div v-if="loyaltyError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
                     {{ loyaltyError }}
                 </div>
 
-                <div v-if="!loyaltySummary" class="p-10 text-center text-sm font-medium text-slate-500">
+                <div v-if="!loyaltySummary" class="py-10 text-center text-sm font-medium text-slate-500">
                     {{ t('common.loading') }}
                 </div>
 
-                <div v-else class="space-y-6 p-6">
+                <div v-else class="space-y-6">
                     <!-- Wallet tile -->
                     <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
                         <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">
@@ -827,12 +836,13 @@ async function submitWalletAdjust(): Promise<void> {
                     </section>
                 </div>
 
-                <div class="border-t border-slate-200 px-6 py-4 flex justify-end">
+            <template #footer>
+                <div class="flex justify-end">
                     <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="loyaltyModalOpen = false">
                         {{ t('common.close') }}
                     </button>
                 </div>
-            </div>
-        </div>
+            </template>
+        </BaseModal>
     </MerchantLayout>
 </template>

@@ -16,6 +16,7 @@
 import { Lock, Pencil, Plus, ShieldCheck, Trash2, Users } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import BaseModal from '@/Components/BaseModal.vue';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
@@ -331,100 +332,104 @@ const canManage = computed(() => can(MerchantPermission.RolesManage));
         </section>
 
         <!-- =============== EDITOR MODAL =============== -->
-        <div v-if="editorOpen" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">
-                        {{ editorMode === 'create' ? t('roles.editor.create_title') : t('roles.editor.edit_title') }}
-                    </h2>
-                    <p v-if="editorTarget?.is_system" class="mt-1 text-xs text-amber-700">
-                        <Lock class="me-1 inline size-3" />
-                        {{ t('roles.editor.system_role_hint') }}
-                    </p>
+        <BaseModal v-if="editorOpen" size="3xl" :loading="editorBusy" @close="editorOpen = false">
+            <template #header>
+                <h2 class="text-lg font-semibold text-slate-950">
+                    {{ editorMode === 'create' ? t('roles.editor.create_title') : t('roles.editor.edit_title') }}
+                </h2>
+                <p v-if="editorTarget?.is_system" class="mt-1 text-xs text-amber-700">
+                    <Lock class="me-1 inline size-3" />
+                    {{ t('roles.editor.system_role_hint') }}
+                </p>
+            </template>
+
+            <form id="role-editor-form" class="space-y-5" @submit.prevent="submitEditor">
+                <div v-if="editorError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                    {{ editorError }}
                 </div>
 
-                <form class="space-y-5 p-6" @submit.prevent="submitEditor">
-                    <div v-if="editorError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
-                        {{ editorError }}
-                    </div>
-
-                    <div class="grid gap-3 sm:grid-cols-2">
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('roles.fields.name') }} *</span>
-                            <input
-                                v-model="editorForm.name"
-                                required
-                                type="text"
-                                :disabled="editorTarget?.is_system"
-                                class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
-                            >
-                            <p v-if="editorFieldErrors.name" class="mt-1 text-xs text-rose-600">{{ editorFieldErrors.name[0] }}</p>
-                        </label>
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('roles.fields.description') }}</span>
-                            <input v-model="editorForm.description" type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                        </label>
-                    </div>
-
-                    <!-- Grouped permissions -->
-                    <div class="space-y-3">
-                        <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('roles.fields.permissions') }}</h3>
-                        <div
-                            v-for="group in catalog"
-                            :key="group.key"
-                            class="rounded-lg border border-slate-200 bg-slate-50/50 p-4"
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <label class="block">
+                        <span class="text-sm font-medium text-slate-700">{{ t('roles.fields.name') }} *</span>
+                        <input
+                            v-model="editorForm.name"
+                            required
+                            type="text"
+                            :disabled="editorTarget?.is_system"
+                            class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
                         >
-                            <label class="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
+                        <p v-if="editorFieldErrors.name" class="mt-1 text-xs text-rose-600">{{ editorFieldErrors.name[0] }}</p>
+                    </label>
+                    <label class="block">
+                        <span class="text-sm font-medium text-slate-700">{{ t('roles.fields.description') }}</span>
+                        <input v-model="editorForm.description" type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                    </label>
+                </div>
+
+                <!-- Grouped permissions -->
+                <div class="space-y-3">
+                    <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('roles.fields.permissions') }}</h3>
+                    <div
+                        v-for="group in catalog"
+                        :key="group.key"
+                        class="rounded-lg border border-slate-200 bg-slate-50/50 p-4"
+                    >
+                        <label class="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
+                            <input
+                                type="checkbox"
+                                :checked="isGroupFullyChecked(group)"
+                                :indeterminate="isGroupPartiallyChecked(group)"
+                                class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                                @change="toggleGroup(group)"
+                            >
+                            {{ groupLabel(group) }}
+                        </label>
+                        <div class="grid gap-2 sm:grid-cols-2 ms-6">
+                            <label
+                                v-for="perm in group.permissions"
+                                :key="perm.key"
+                                class="flex items-center gap-2 text-sm text-slate-700"
+                            >
                                 <input
                                     type="checkbox"
-                                    :checked="isGroupFullyChecked(group)"
-                                    :indeterminate="isGroupPartiallyChecked(group)"
+                                    :checked="editorForm.permissions.has(perm.key)"
                                     class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                                    @change="toggleGroup(group)"
+                                    @change="togglePermission(perm.key)"
                                 >
-                                {{ groupLabel(group) }}
+                                <span>{{ isArabic ? perm.label_ar : perm.label_en }}</span>
                             </label>
-                            <div class="grid gap-2 sm:grid-cols-2 ms-6">
-                                <label
-                                    v-for="perm in group.permissions"
-                                    :key="perm.key"
-                                    class="flex items-center gap-2 text-sm text-slate-700"
-                                >
-                                    <input
-                                        type="checkbox"
-                                        :checked="editorForm.permissions.has(perm.key)"
-                                        class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                                        @change="togglePermission(perm.key)"
-                                    >
-                                    <span>{{ isArabic ? perm.label_ar : perm.label_en }}</span>
-                                </label>
-                            </div>
                         </div>
-                        <p v-if="editorFieldErrors.permissions" class="text-xs text-rose-600">{{ editorFieldErrors.permissions[0] }}</p>
                     </div>
+                    <p v-if="editorFieldErrors.permissions" class="text-xs text-rose-600">{{ editorFieldErrors.permissions[0] }}</p>
+                </div>
+            </form>
 
-                    <div class="flex justify-end gap-2 pt-2">
-                        <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="editorOpen = false">
-                            {{ t('common.cancel') }}
-                        </button>
-                        <button type="submit" :disabled="editorBusy" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
-                            {{ editorBusy ? t('roles.editor.submitting') : t('roles.editor.submit') }}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="editorOpen = false">
+                        {{ t('common.cancel') }}
+                    </button>
+                    <button type="submit" form="role-editor-form" :disabled="editorBusy" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60">
+                        {{ editorBusy ? t('roles.editor.submitting') : t('roles.editor.submit') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
 
         <!-- =============== DELETE CONFIRM =============== -->
-        <div v-if="deleteTarget" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 backdrop-blur-sm p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-                <div class="border-b border-slate-200 px-6 py-5">
-                    <h2 class="text-lg font-semibold text-slate-950">{{ t('roles.delete_dialog.title') }}</h2>
-                </div>
-                <div class="px-6 py-5 text-sm text-slate-700">
-                    <p>{{ t('roles.delete_dialog.body', { name: deleteTarget.name }) }}</p>
-                </div>
-                <div class="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-6 py-4">
+        <BaseModal
+            v-if="deleteTarget"
+            :title="t('roles.delete_dialog.title')"
+            size="md"
+            :loading="deleting"
+            @close="deleteTarget = null"
+        >
+            <div class="text-sm text-slate-700">
+                <p>{{ t('roles.delete_dialog.body', { name: deleteTarget.name }) }}</p>
+            </div>
+
+            <template #footer>
+                <div class="flex justify-end gap-2">
                     <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="deleteTarget = null">
                         {{ t('common.cancel') }}
                     </button>
@@ -432,7 +437,7 @@ const canManage = computed(() => can(MerchantPermission.RolesManage));
                         {{ deleting ? t('roles.delete_dialog.submitting') : t('roles.delete_dialog.confirm') }}
                     </button>
                 </div>
-            </div>
-        </div>
+            </template>
+        </BaseModal>
     </MerchantLayout>
 </template>
