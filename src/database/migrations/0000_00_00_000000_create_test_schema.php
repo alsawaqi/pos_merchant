@@ -498,6 +498,36 @@ return new class extends Migration
             $table->unique(['branch_id', 'product_id']);
         });
 
+        // ---- pos_product_stock + pos_product_stock_movements (Phase 7) ---
+        // Central company unit-product pool + the product-units ledger.
+        Schema::create('pos_product_stock', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('product_id')->constrained('pos_products')->cascadeOnDelete();
+            $table->decimal('quantity', 12, 3)->default(0);
+            $table->timestamp('last_movement_at')->nullable();
+            $table->timestamps();
+            $table->unique(['company_id', 'product_id'], 'pos_product_stock_company_product_unique');
+        });
+
+        Schema::create('pos_product_stock_movements', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('product_id')->constrained('pos_products')->cascadeOnDelete();
+            $table->foreignId('branch_id')->nullable()->constrained('pos_branches')->cascadeOnDelete();
+            $table->string('movement_type', 32);
+            $table->decimal('quantity', 12, 3);
+            $table->string('reference_type')->nullable();
+            $table->unsignedBigInteger('reference_id')->nullable();
+            $table->foreignId('recorded_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->foreignId('recorded_by_pos_staff_id')->nullable()->constrained('pos_staff')->nullOnDelete();
+            $table->text('note')->nullable();
+            $table->timestamp('occurred_at')->useCurrent();
+            $table->timestamp('created_at')->useCurrent();
+            $table->index(['company_id', 'product_id', 'occurred_at'], 'pos_product_stock_mov_company_product_idx');
+            $table->index(['branch_id', 'occurred_at'], 'pos_product_stock_mov_branch_idx');
+        });
+
         Schema::create('pos_product_recipe_versions', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('product_id')->constrained('pos_products')->cascadeOnDelete();

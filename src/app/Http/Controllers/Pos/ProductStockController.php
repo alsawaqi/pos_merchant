@@ -1,0 +1,249 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers\Pos;
+
+use App\Actions\Pos\Inventory\AdjustProductStockAction;
+use App\Actions\Pos\Inventory\AllocateProductStockAction;
+use App\Actions\Pos\Inventory\ReceiveProductStockAction;
+use App\Actions\Pos\Inventory\TransferProductStockAction;
+use App\Enums\MerchantPermission;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Pos\Inventory\AdjustProductStockRequest;
+use App\Http\Requests\Pos\Inventory\AllocateProductStockRequest;
+use App\Http\Requests\Pos\Inventory\ReceiveProductStockRequest;
+use App\Http\Requests\Pos\Inventory\TransferProductStockRequest;
+use App\Http\Resources\Pos\Inventory\ProductStockMovementResource;
+use App\Models\Branch;
+use App\Models\BranchProduct;
+use App\Models\Product;
+use App\Models\ProductStock;
+use App\Models\ProductStockMovement;
+use App\Support\MerchantTenantContext;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
+use RuntimeException;
+
+/**
+ * Phase 7 — central pool + per-branch distribution for UNIT (finished-good)
+ * products.
+ *
+ *   GET  /api/products/{product:uuid}/stock            → central + per-branch balances + recent ledger
+ *   POST /api/products/{product:uuid}/stock/receive    → add to the central pool
+ *   POST /api/products/{product:uuid}/stock/allocate   → distribute central → branches
+ *   POST /api/products/{product:uuid}/stock/transfer   → move units branch → branch
+ *   POST /api/products/{product:uuid}/stock/adjust      → correct central or a branch count
+ *   GET  /api/products/{product:uuid}/stock/movements  → paginated ledger
+ *
+ * Scoped to the product's company. Mutations require the product to be in 'unit'
+ * stock mode.
+ */
+class ProductStockController extends Controller
+{
+    public function __construct(
+        private readonly MerchantTenantContext $tenant,
+        private readonly ReceiveProductStockAction $receive,
+        private readonly AllocateProductStockAction $allocate,
+        private readonly TransferProductStockAction $transfer,
+        private readonly AdjustProductStockAction $adjust,
+    ) {}
+
+    public function show(Request $request, Product $product): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::InventoryView);
+        $this->refuseIfNotInTenant($product);
+
+        $companyId = $this->tenant->requiredId();
+
+        // Read through the model so the decimal:3 cast formats consistently
+        // (a query-builder value() would return SQLite's raw, un-padded number).
+        $central = ProductStock::query()
+            ->where('company_id', $companyId)
+            ->where('product_id', $product->id)
+            ->first();
+
+        $bpByBranch = BranchProduct::query()
+            ->where('product_id', $product->id)
+            ->get()
+            ->keyBy('branch_id');
+
+        $branches = Branch::query()
+            ->where('company_id', $companyId)
+            ->orderBy('name')
+            ->get()
+            ->map(function (Branch $b) use ($bpByBranch): array {
+                $bp = $bpByBranch->get($b->id);
+
+                return [
+                    'branch_uuid' => $b->uuid,
+                    'branch_name' => $b->name,
+                    'stock_qty' => ($bp !== null && $bp->stock_qty !== null) ? (string) $bp->stock_qty : null,
+                ];
+            })
+            ->values()
+            ->all();
+
+        $movements = ProductStockMovement::query()
+            ->where('product_id', $product->id)
+            ->with(['branch', 'recordedByUser'])
+            ->orderByDesc('occurred_at')
+            ->orderByDesc('id')
+            ->limit(20)
+            ->get();
+
+        return response()->json([
+            'data' => [
+                'product_uuid' => $product->uuid,
+                'stock_mode' => $product->stock_mode,
+                'central_quantity' => $central !== null ? (string) $central->quantity : '0.000',
+                'branches' => $branches,
+                'recent_movements' => ProductStockMovementResource::collection($movements)->resolve($request),
+            ],
+        ]);
+    }
+
+    public function receive(ReceiveProductStockRequest $request, Product $product): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::InventoryManage);
+        $this->refuseIfNotInTenant($product);
+        $this->requireUnitProduct($product);
+
+        try {
+            $this->receive->handle($product, $request->input('quantity'), $request->input('note'), $request->user());
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return $this->show($request, $product);
+    }
+
+    public function allocate(AllocateProductStockRequest $request, Product $product): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::InventoryManage);
+        $this->refuseIfNotInTenant($product);
+        $this->requireUnitProduct($product);
+
+        $lines = [];
+        foreach ((array) $request->input('allocations') as $row) {
+            $branch = $this->resolveBranch($row['branch_uuid'] ?? null);
+            if ($branch === null) {
+                return response()->json(['message' => 'A selected branch was not found.'], 422);
+            }
+            $lines[] = ['branch' => $branch, 'quantity' => $row['quantity']];
+        }
+
+        try {
+            $this->allocate->handle($product, $lines, $request->input('note'), $request->user());
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return $this->show($request, $product);
+    }
+
+    public function transfer(TransferProductStockRequest $request, Product $product): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::InventoryManage);
+        $this->refuseIfNotInTenant($product);
+        $this->requireUnitProduct($product);
+
+        $from = $this->resolveBranch($request->input('from_branch_uuid'));
+        $to = $this->resolveBranch($request->input('to_branch_uuid'));
+        if ($from === null || $to === null) {
+            return response()->json(['message' => 'Branch not found.'], 422);
+        }
+
+        try {
+            $this->transfer->handle($product, $from, $to, $request->input('quantity'), $request->input('note'), $request->user());
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return $this->show($request, $product);
+    }
+
+    public function adjust(AdjustProductStockRequest $request, Product $product): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::InventoryManage);
+        $this->refuseIfNotInTenant($product);
+        $this->requireUnitProduct($product);
+
+        $branch = null;
+        if ($request->filled('branch_uuid')) {
+            $branch = $this->resolveBranch($request->input('branch_uuid'));
+            if ($branch === null) {
+                return response()->json(['message' => 'Branch not found.'], 422);
+            }
+        }
+
+        try {
+            $this->adjust->handle($product, $branch, $request->input('signed_quantity'), $request->input('note'), $request->user());
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return $this->show($request, $product);
+    }
+
+    public function movements(Request $request, Product $product): LengthAwarePaginator
+    {
+        $this->ensure($request, MerchantPermission::InventoryView);
+        $this->refuseIfNotInTenant($product);
+
+        $query = ProductStockMovement::query()
+            ->where('product_id', $product->id)
+            ->with(['branch', 'recordedByUser']);
+
+        if ($request->filled('type')) {
+            $query->where('movement_type', $request->query('type'));
+        }
+
+        $perPage = min((int) $request->query('per_page', 50), 200);
+
+        return $query
+            ->orderByDesc('occurred_at')
+            ->orderByDesc('id')
+            ->paginate($perPage)
+            ->through(fn (ProductStockMovement $m): array => (new ProductStockMovementResource($m))->resolve($request));
+    }
+
+    // ---- helpers ----------------------------------------------
+
+    private function resolveBranch(?string $uuid): ?Branch
+    {
+        if ($uuid === null || $uuid === '') {
+            return null;
+        }
+
+        return Branch::query()
+            ->where('company_id', $this->tenant->requiredId())
+            ->where('uuid', $uuid)
+            ->first();
+    }
+
+    private function requireUnitProduct(Product $product): void
+    {
+        if ($product->stock_mode !== 'unit') {
+            abort(response()->json([
+                'message' => 'Unit stock is only tracked for finished-good (unit) products. Set the product to "Unit / finished good" first.',
+            ], 422));
+        }
+    }
+
+    private function ensure(Request $request, MerchantPermission $permission): void
+    {
+        $user = $request->user();
+        if ($user === null || ! $user->can($permission->value)) {
+            abort(403);
+        }
+    }
+
+    private function refuseIfNotInTenant(Product $product): void
+    {
+        if ((int) $product->company_id !== $this->tenant->requiredId()) {
+            abort(404);
+        }
+    }
+}

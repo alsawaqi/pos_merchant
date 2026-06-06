@@ -24,6 +24,7 @@ use App\Http\Controllers\Pos\LoyaltyController;
 use App\Http\Controllers\Pos\PosStaffController;
 use App\Http\Controllers\Pos\OrdersController;
 use App\Http\Controllers\Pos\ProductsController;
+use App\Http\Controllers\Pos\ProductStockController;
 use App\Http\Controllers\Pos\ReportsController;
 use App\Http\Controllers\Pos\RestockRequestsController;
 use App\Http\Controllers\Pos\RolesController;
@@ -251,6 +252,21 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // on every change so historical COGS stays accurate.
         Route::put('products/{product:uuid}/recipe', [ProductsController::class, 'updateRecipe'])
             ->name('products.update-recipe');
+
+        // Phase 7 — UNIT (finished-good) product stock: central pool + allocate
+        // to branches + branch->branch transfer + adjust + ledger.
+        Route::get('products/{product:uuid}/stock', [ProductStockController::class, 'show'])
+            ->name('product-stock.show');
+        Route::post('products/{product:uuid}/stock/receive', [ProductStockController::class, 'receive'])
+            ->name('product-stock.receive');
+        Route::post('products/{product:uuid}/stock/allocate', [ProductStockController::class, 'allocate'])
+            ->name('product-stock.allocate');
+        Route::post('products/{product:uuid}/stock/transfer', [ProductStockController::class, 'transfer'])
+            ->name('product-stock.transfer');
+        Route::post('products/{product:uuid}/stock/adjust', [ProductStockController::class, 'adjust'])
+            ->name('product-stock.adjust');
+        Route::get('products/{product:uuid}/stock/movements', [ProductStockController::class, 'movements'])
+            ->name('product-stock.movements');
 
         // -------- Phase 5a — Inventory (Ingredients + Suppliers + Stock) --
         // All gated by inventory.{view,manage}. Branch-nested
