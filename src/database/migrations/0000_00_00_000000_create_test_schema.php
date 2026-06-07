@@ -43,6 +43,13 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // Production safety: pos_merchant owns NO schema on the shared charity_db
+        // (pos_admin owns it). This file is a TEST fixture only — guard it so an
+        // accidental `php artisan migrate` against a real DB is a harmless no-op.
+        if (! app()->environment('testing')) {
+            return;
+        }
+
         // ---- pos_companies ----------------------------------------
         Schema::create('pos_companies', function (Blueprint $table): void {
             $table->id();
@@ -996,6 +1003,14 @@ return new class extends Migration
 
     public function down(): void
     {
+        // Production safety (CRITICAL): never drop shared tables on a real DB.
+        // pos_companies, pos_users, sessions, … are owned by pos_admin / charity
+        // on the shared charity_db — dropping them here would be catastrophic.
+        // Only ever run against the :memory: test DB.
+        if (! app()->environment('testing')) {
+            return;
+        }
+
         // Drop in reverse dependency order. Tests use :memory: so
         // this is essentially never called, but symmetry is cheap.
         Schema::dropIfExists('pos_saved_views');
