@@ -3,7 +3,8 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "vue-tsc --noEmit && vite build",
+        "build": "vite build",
+        "build:check": "vue-tsc --noEmit && vite build",
         "dev": "vite",
         "typecheck": "vue-tsc --noEmit"
     },
