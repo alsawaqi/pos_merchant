@@ -12,7 +12,7 @@
          instead of flashing the guest shell while it waits for an
          /auth/user XHR to come back. The auth store reads it in
          applyInitialAuth() right after createApp(). --}}
-    <script>
+    <script nonce="{{ \Illuminate\Support\Facades\Vite::cspNonce() }}">
         window.__INITIAL_AUTH__ = @json($initialAuth ?? ['authenticated' => false, 'user' => null]);
     </script>
 

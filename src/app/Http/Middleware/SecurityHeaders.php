@@ -6,6 +6,7 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Vite;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -21,6 +22,13 @@ class SecurityHeaders
      */
     public function handle(Request $request, Closure $next): Response
     {
+        // Generate a per-response CSP nonce BEFORE the view renders, so the
+        // @vite bundle tags + the app.blade.php bootstrap <script> (which
+        // injects the initial auth state) can carry it. Without it the
+        // production CSP blocks that inline script and the SPA never learns
+        // who is signed in — producing an endless /login redirect loop.
+        Vite::useCspNonce();
+
         $response = $next($request);
 
         $headers = [
@@ -52,8 +60,14 @@ class SecurityHeaders
         $viteHttpOrigins = $this->viteHttpOrigins();
         $viteWsOrigins = $this->viteWebsocketOrigins($viteHttpOrigins);
 
+        // Production: scripts from 'self' + the per-request nonce (carried by
+        // the @vite bundle tags and the app.blade.php bootstrap <script>). Dev
+        // keeps 'unsafe-inline'/'unsafe-eval' for the Vite HMR client.
+        $nonce = Vite::cspNonce();
+        $nonceSource = ($nonce !== null && $nonce !== '') ? " 'nonce-{$nonce}'" : '';
+
         $scriptSrc = $isProduction
-            ? "'self'"
+            ? "'self'".$nonceSource
             : trim("'self' 'unsafe-inline' 'unsafe-eval' ".implode(' ', $viteHttpOrigins));
 
         $styleSrc = $isProduction
@@ -71,6 +85,11 @@ class SecurityHeaders
         $fontSrc = $isProduction
             ? "'self' data:"
             : trim("'self' data: ".implode(' ', $viteHttpOrigins));
+
+        // Cloudflare auto-injects its Web Analytics beacon when the zone is
+        // proxied (orange-cloud). Allow it so it doesn't spam CSP violations.
+        $scriptSrc = trim($scriptSrc.' https://static.cloudflareinsights.com');
+        $connectSrc = trim($connectSrc.' https://cloudflareinsights.com');
 
         return implode('; ', array_filter([
             "default-src 'self'",
