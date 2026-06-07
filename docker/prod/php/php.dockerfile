@@ -48,6 +48,18 @@ RUN docker-php-ext-install pdo pdo_pgsql pgsql opcache
 # ✅ ADD THIS: install pcntl so Reverb can catch signals
 RUN docker-php-ext-install pcntl
 
+# zip + gd — required by phpoffice/phpspreadsheet (report .xlsx exports).
+RUN apt-get update && apt-get install -y \
+    libzip-dev libpng-dev libjpeg-dev libfreetype6-dev \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install zip gd \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# phpredis — REQUIRED. REDIS_CLIENT=phpredis drives sessions, cache, and queue;
+# without it Laravel throws "Class \"Redis\" not found" on the first cache hit.
+RUN pecl install redis \
+    && docker-php-ext-enable redis
+
 RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 
 # Install Composer
