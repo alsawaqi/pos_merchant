@@ -57,7 +57,10 @@ function reportPath(key: string, filter: ReportFilter): string {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(buildQuery(filter))) {
         if (v === undefined || v === null) continue;
-        q.set(k, String(v));
+        // Laravel's `boolean` validation rule only accepts true/false/1/0/'1'/'0'
+        // — the string 'true' (what String(true) yields) is REJECTED, 422-ing
+        // every report. Serialize booleans as '1'/'0' so `consolidated` passes.
+        q.set(k, typeof v === 'boolean' ? (v ? '1' : '0') : String(v));
     }
     return withBranchScope(`${base}?${q.toString()}`, filter.branch_ids);
 }
