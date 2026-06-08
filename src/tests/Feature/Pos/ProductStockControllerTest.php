@@ -95,6 +95,67 @@ it('rejects allocating more than the central balance', function (): void {
     expect(BranchProduct::query()->where('product_id', $product->id)->exists())->toBeFalse();
 });
 
+it('receives a bulk quantity and distributes it across branches in one call', function (): void {
+    $ctx = makeMerchantActor();
+    $branchB = Branch::factory()->for($ctx['company'], 'company')->create();
+    $product = unitProduct($ctx);
+
+    // 80 in: 50 to branch A, 30 to branch B — all in one request.
+    $res = $this->postJson("/api/products/{$product->uuid}/stock/receive-distribute", [
+        'quantity' => '80',
+        'allocations' => [
+            ['branch_uuid' => $ctx['branch']->uuid, 'quantity' => '50'],
+            ['branch_uuid' => $branchB->uuid, 'quantity' => '30'],
+        ],
+        'note' => 'Bulk bake distribution',
+    ])->assertOk();
+
+    // Fully distributed -> central nets to zero.
+    expect($res->json('data.central_quantity'))->toBe('0.000');
+    expect(branchStockQty($ctx['branch']->id, $product->id))->toBe('50.000');
+    expect(branchStockQty($branchB->id, $product->id))->toBe('30.000');
+
+    // Ledger: received + (allocation_out + allocation_in) x2.
+    expect(ProductStockMovement::query()->where('product_id', $product->id)->count())->toBe(5);
+    expect(ProductStockMovement::query()->where('product_id', $product->id)->where('movement_type', 'received')->count())->toBe(1);
+});
+
+it('leaves the undistributed remainder in the central pool', function (): void {
+    $ctx = makeMerchantActor();
+    $product = unitProduct($ctx);
+
+    // 80 in, only 50 sent out -> 30 stays central.
+    $res = $this->postJson("/api/products/{$product->uuid}/stock/receive-distribute", [
+        'quantity' => '80',
+        'allocations' => [
+            ['branch_uuid' => $ctx['branch']->uuid, 'quantity' => '50'],
+        ],
+    ])->assertOk();
+
+    expect($res->json('data.central_quantity'))->toBe('30.000');
+    expect(branchStockQty($ctx['branch']->id, $product->id))->toBe('50.000');
+});
+
+it('rejects distributing more than the received total and writes nothing', function (): void {
+    $ctx = makeMerchantActor();
+    $branchB = Branch::factory()->for($ctx['company'], 'company')->create();
+    $product = unitProduct($ctx);
+
+    // 50 received but 60 distributed (30 + 30) -> rejected, atomic rollback.
+    $this->postJson("/api/products/{$product->uuid}/stock/receive-distribute", [
+        'quantity' => '50',
+        'allocations' => [
+            ['branch_uuid' => $ctx['branch']->uuid, 'quantity' => '30'],
+            ['branch_uuid' => $branchB->uuid, 'quantity' => '30'],
+        ],
+    ])->assertStatus(422);
+
+    // Nothing moved: no central row, no branch rows, no ledger.
+    expect(ProductStock::query()->where('product_id', $product->id)->exists())->toBeFalse();
+    expect(BranchProduct::query()->where('product_id', $product->id)->exists())->toBeFalse();
+    expect(ProductStockMovement::query()->where('product_id', $product->id)->count())->toBe(0);
+});
+
 it('transfers units between branches', function (): void {
     $ctx = makeMerchantActor();
     $branchB = Branch::factory()->for($ctx['company'], 'company')->create();

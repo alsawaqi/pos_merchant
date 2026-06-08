@@ -6,12 +6,14 @@ namespace App\Http\Controllers\Pos;
 
 use App\Actions\Pos\Inventory\AdjustProductStockAction;
 use App\Actions\Pos\Inventory\AllocateProductStockAction;
+use App\Actions\Pos\Inventory\ReceiveAndDistributeProductStockAction;
 use App\Actions\Pos\Inventory\ReceiveProductStockAction;
 use App\Actions\Pos\Inventory\TransferProductStockAction;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Pos\Inventory\AdjustProductStockRequest;
 use App\Http\Requests\Pos\Inventory\AllocateProductStockRequest;
+use App\Http\Requests\Pos\Inventory\ReceiveAndDistributeProductStockRequest;
 use App\Http\Requests\Pos\Inventory\ReceiveProductStockRequest;
 use App\Http\Requests\Pos\Inventory\TransferProductStockRequest;
 use App\Http\Resources\Pos\Inventory\ProductStockMovementResource;
@@ -45,6 +47,7 @@ class ProductStockController extends Controller
     public function __construct(
         private readonly MerchantTenantContext $tenant,
         private readonly ReceiveProductStockAction $receive,
+        private readonly ReceiveAndDistributeProductStockAction $receiveDistribute,
         private readonly AllocateProductStockAction $allocate,
         private readonly TransferProductStockAction $transfer,
         private readonly AdjustProductStockAction $adjust,
@@ -112,6 +115,41 @@ class ProductStockController extends Controller
 
         try {
             $this->receive->handle($product, $request->input('quantity'), $request->input('note'), $request->user());
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return $this->show($request, $product);
+    }
+
+    /**
+     * Receive a bulk quantity AND split it across branches in one call. Whatever
+     * is not distributed stays in the central pool. `allocations` may be empty —
+     * the operation then behaves like a plain Receive.
+     */
+    public function receiveDistribute(ReceiveAndDistributeProductStockRequest $request, Product $product): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::InventoryManage);
+        $this->refuseIfNotInTenant($product);
+        $this->requireUnitProduct($product);
+
+        $lines = [];
+        foreach ((array) $request->input('allocations', []) as $row) {
+            $branch = $this->resolveBranch($row['branch_uuid'] ?? null);
+            if ($branch === null) {
+                return response()->json(['message' => 'A selected branch was not found.'], 422);
+            }
+            $lines[] = ['branch' => $branch, 'quantity' => $row['quantity']];
+        }
+
+        try {
+            $this->receiveDistribute->handle(
+                $product,
+                $request->input('quantity'),
+                $lines,
+                $request->input('note'),
+                $request->user(),
+            );
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }

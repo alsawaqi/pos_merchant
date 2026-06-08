@@ -12,6 +12,7 @@ import {
     adjustProductStock,
     allocateProductStock,
     getProductStock,
+    receiveAndDistributeProductStock,
     receiveProductStock,
     transferProductStock,
     type ProductStockSummary,
@@ -26,7 +27,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{ (e: 'close'): void }>();
 
-type Action = 'receive' | 'allocate' | 'transfer' | 'adjust';
+type Action = 'distribute' | 'receive' | 'allocate' | 'transfer' | 'adjust';
 
 const loading = ref(false);
 const busy = ref(false);
@@ -34,8 +35,10 @@ const error = ref<string | null>(null);
 const actionError = ref<string | null>(null);
 const actionOk = ref<string | null>(null);
 const summary = ref<ProductStockSummary | null>(null);
-const action = ref<Action>('receive');
+const action = ref<Action>('distribute');
 
+const distributeForm = reactive({ quantity: '', note: '' });
+const distributeRows = ref<{ branch_uuid: string; branch_name: string; quantity: string }[]>([]);
 const receiveForm = reactive({ quantity: '', note: '' });
 const allocateRows = ref<{ branch_uuid: string; branch_name: string; quantity: string }[]>([]);
 const allocateNote = ref('');
@@ -48,7 +51,21 @@ const allocateTotal = computed(() =>
     allocateRows.value.reduce((s, r) => s + (parseFloat(r.quantity) || 0), 0),
 );
 
+const distributeTotal = computed(() =>
+    distributeRows.value.reduce((s, r) => s + (parseFloat(r.quantity) || 0), 0),
+);
+const distributeRemainder = computed(() =>
+    (parseFloat(distributeForm.quantity) || 0) - distributeTotal.value,
+);
+
 function resetForms(): void {
+    distributeForm.quantity = '';
+    distributeForm.note = '';
+    distributeRows.value = branches.value.map((b) => ({
+        branch_uuid: b.branch_uuid,
+        branch_name: b.branch_name,
+        quantity: '',
+    }));
     receiveForm.quantity = '';
     receiveForm.note = '';
     allocateRows.value = branches.value.map((b) => ({
@@ -64,6 +81,10 @@ function resetForms(): void {
     adjustForm.branch_uuid = '';
     adjustForm.signed_quantity = '';
     adjustForm.note = '';
+}
+
+function actionLabel(a: Action): string {
+    return a === 'distribute' ? 'Receive & Distribute' : a;
 }
 
 async function load(): Promise<void> {
@@ -87,7 +108,7 @@ watch(
     () => [props.open, props.productUuid],
     () => {
         if (props.open && props.productUuid) {
-            action.value = 'receive';
+            action.value = 'distribute';
             void load();
         }
     },
@@ -109,6 +130,27 @@ async function run(fn: () => Promise<{ data: ProductStockSummary }>, okMsg: stri
     } finally {
         busy.value = false;
     }
+}
+
+function doDistribute(): void {
+    if (!props.productUuid || distributeForm.quantity.trim() === '') return;
+    const total = parseFloat(distributeForm.quantity) || 0;
+    const lines = distributeRows.value
+        .filter((r) => r.quantity.trim() !== '' && (parseFloat(r.quantity) || 0) > 0)
+        .map((r) => ({ branch_uuid: r.branch_uuid, quantity: r.quantity }));
+    const distributed = lines.reduce((s, l) => s + (parseFloat(String(l.quantity)) || 0), 0);
+    if (distributed > total + 1e-9) {
+        actionError.value = 'You are distributing more than the received total.';
+        return;
+    }
+    void run(
+        () => receiveAndDistributeProductStock(props.productUuid as string, {
+            quantity: distributeForm.quantity,
+            allocations: lines,
+            note: distributeForm.note || null,
+        }),
+        'Received and distributed to branches.',
+    );
 }
 
 function doReceive(): void {
@@ -215,20 +257,42 @@ function fmtType(t: string): string {
                     <div v-if="canManage" class="rounded-xl border border-slate-200 p-4">
                         <div class="mb-3 flex flex-wrap gap-2">
                             <button
-                                v-for="a in (['receive','allocate','transfer','adjust'] as const)"
+                                v-for="a in (['distribute','receive','allocate','transfer','adjust'] as const)"
                                 :key="a"
                                 type="button"
                                 class="rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition"
                                 :class="action === a ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'"
                                 @click="action = a; actionError = null; actionOk = null"
-                            >{{ a }}</button>
+                            >{{ actionLabel(a) }}</button>
                         </div>
 
                         <p v-if="actionError" class="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{{ actionError }}</p>
                         <p v-if="actionOk" class="mb-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">{{ actionOk }}</p>
 
+                        <!-- Receive & Distribute -->
+                        <form v-if="action === 'distribute'" class="space-y-3" @submit.prevent="doDistribute">
+                            <p class="text-xs text-slate-500">Receive a bulk quantity and split it across branches in one step. Anything you don't distribute stays in the central pool.</p>
+                            <div class="flex flex-wrap items-center gap-3">
+                                <label class="text-xs font-semibold text-slate-600">Total received</label>
+                                <input v-model="distributeForm.quantity" type="number" step="0.001" min="0" placeholder="e.g. 80" class="w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
+                            </div>
+                            <div class="space-y-2">
+                                <div v-for="row in distributeRows" :key="row.branch_uuid" class="flex items-center gap-3">
+                                    <span class="flex-1 text-sm text-slate-700">{{ row.branch_name }}</span>
+                                    <input v-model="row.quantity" type="number" step="0.001" min="0" placeholder="0" class="w-28 rounded-lg border border-slate-200 px-3 py-1.5 text-sm tabular-nums">
+                                </div>
+                                <p v-if="branches.length === 0" class="text-xs text-slate-400">No branches yet — the whole amount goes to the central pool.</p>
+                            </div>
+                            <p class="text-xs text-slate-500">
+                                Distributing <span class="font-semibold tabular-nums">{{ distributeTotal }}</span> of {{ parseFloat(distributeForm.quantity) || 0 }} —
+                                <span class="font-semibold tabular-nums" :class="distributeRemainder < 0 ? 'text-rose-600' : 'text-slate-700'">{{ distributeRemainder }}</span> stays in central
+                            </p>
+                            <input v-model="distributeForm.note" type="text" placeholder="Note (optional)" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                            <button type="submit" :disabled="busy || distributeRemainder < 0" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Receive &amp; distribute</button>
+                        </form>
+
                         <!-- Receive -->
-                        <form v-if="action === 'receive'" class="space-y-3" @submit.prevent="doReceive">
+                        <form v-else-if="action === 'receive'" class="space-y-3" @submit.prevent="doReceive">
                             <p class="text-xs text-slate-500">Add finished goods to the central pool.</p>
                             <div class="flex flex-wrap gap-3">
                                 <input v-model="receiveForm.quantity" type="number" step="0.001" min="0" placeholder="Quantity" class="w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">

@@ -259,6 +259,8 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('product-stock.show');
         Route::post('products/{product:uuid}/stock/receive', [ProductStockController::class, 'receive'])
             ->name('product-stock.receive');
+        Route::post('products/{product:uuid}/stock/receive-distribute', [ProductStockController::class, 'receiveDistribute'])
+            ->name('product-stock.receive-distribute');
         Route::post('products/{product:uuid}/stock/allocate', [ProductStockController::class, 'allocate'])
             ->name('product-stock.allocate');
         Route::post('products/{product:uuid}/stock/transfer', [ProductStockController::class, 'transfer'])

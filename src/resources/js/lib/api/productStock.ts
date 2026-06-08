@@ -64,6 +64,17 @@ export function allocateProductStock(
     return apiPost<{ data: ProductStockSummary }>(`/api/products/${uuid}/stock/allocate`, payload as unknown as JsonValue);
 }
 
+/**
+ * Receive a bulk quantity AND split it across branches in one submit. Anything
+ * not distributed stays in the central pool. `allocations` may be empty.
+ */
+export function receiveAndDistributeProductStock(
+    uuid: string,
+    payload: { quantity: string | number; allocations: AllocationLine[]; note?: string | null },
+): Promise<{ data: ProductStockSummary }> {
+    return apiPost<{ data: ProductStockSummary }>(`/api/products/${uuid}/stock/receive-distribute`, payload as unknown as JsonValue);
+}
+
 export function transferProductStock(
     uuid: string,
     payload: { from_branch_uuid: string; to_branch_uuid: string; quantity: string | number; note?: string | null },
