@@ -246,9 +246,9 @@ it('lists waste records paginated + scoped to the route branch + with ingredient
     $response = $this->getJson("/api/branches/{$ctx['branch']->uuid}/waste")->assertOk();
     $data = $response->json('data');
     expect($data)->toHaveCount(3);
-    // Paginator metadata is present (the controller returns
-    // LengthAwarePaginator → JSON includes current_page etc.).
-    expect($response->json('current_page'))->toBe(1);
+    // Paginator metadata is nested under `meta` (the controller returns a
+    // resource collection → JSON { data, meta }, the shape the frontend reads).
+    expect($response->json('meta.current_page'))->toBe(1);
 
     // ingredient eager-loaded on every row.
     foreach ($data as $row) {

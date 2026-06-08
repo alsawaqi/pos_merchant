@@ -21,7 +21,6 @@ use App\Support\MerchantTenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
-use Illuminate\Pagination\LengthAwarePaginator;
 use RuntimeException;
 
 /**
@@ -154,7 +153,7 @@ class StockController extends Controller
      *   ?type=<movement>     filter by movement_type
      *   ?per_page=<n>        page size (default 50, max 200)
      */
-    public function movements(Request $request, Branch $branch): LengthAwarePaginator
+    public function movements(Request $request, Branch $branch): AnonymousResourceCollection
     {
         $this->ensure($request, MerchantPermission::InventoryView);
         $this->refuseIfBranchNotInTenant($branch);
@@ -180,11 +179,16 @@ class StockController extends Controller
 
         $perPage = min((int) $request->query('per_page', 50), 200);
 
-        return $query
-            ->orderByDesc('occurred_at')
-            ->orderByDesc('id')
-            ->paginate($perPage)
-            ->through(fn (StockMovement $m): array => (new StockMovementResource($m))->resolve($request));
+        // Resource collection over the paginator → JSON shape { data, meta }
+        // (the inventory page reads movements.meta.*). A raw LengthAwarePaginator
+        // serializes FLAT (no `meta`), which made the Movements tab throw on
+        // render — the tab appeared unclickable.
+        return StockMovementResource::collection(
+            $query
+                ->orderByDesc('occurred_at')
+                ->orderByDesc('id')
+                ->paginate($perPage),
+        );
     }
 
     // ---- helpers ----------------------------------------------

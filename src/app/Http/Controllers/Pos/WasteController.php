@@ -17,7 +17,7 @@ use App\Support\MerchantTenantContext;
 use DateTimeInterface;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use RuntimeException;
 
 /**
@@ -45,7 +45,7 @@ class WasteController extends Controller
         private readonly RecordWasteAction $record,
     ) {}
 
-    public function index(Request $request, Branch $branch): LengthAwarePaginator
+    public function index(Request $request, Branch $branch): AnonymousResourceCollection
     {
         $this->ensure($request, MerchantPermission::InventoryView);
         $this->refuseIfBranchNotInTenant($branch);
@@ -86,11 +86,16 @@ class WasteController extends Controller
 
         $perPage = min((int) $request->query('per_page', 50), 200);
 
-        return $query
-            ->orderByDesc('occurred_at')
-            ->orderByDesc('id')
-            ->paginate($perPage)
-            ->through(fn (WasteRecord $w): array => (new WasteRecordResource($w))->resolve($request));
+        // Resource collection → JSON { data, meta } (the Waste tab reads
+        // waste.meta.*). A raw paginator serializes flat (no `meta`) and would
+        // crash the tab on render once there is more than an empty list — the
+        // same bug that made the Movements tab appear unclickable.
+        return WasteRecordResource::collection(
+            $query
+                ->orderByDesc('occurred_at')
+                ->orderByDesc('id')
+                ->paginate($perPage),
+        );
     }
 
     public function store(RecordWasteRequest $request, Branch $branch): JsonResponse
