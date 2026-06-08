@@ -57,6 +57,16 @@ const distributeTotal = computed(() =>
 const distributeRemainder = computed(() =>
     (parseFloat(distributeForm.quantity) || 0) - distributeTotal.value,
 );
+// Over-distributed only when it exceeds the total by more than float noise — use
+// the same 1e-9 epsilon as doDistribute() and the server guard, so an exact split
+// (e.g. 0.1+0.1+0.1 vs 0.3) isn't wrongly blocked.
+const distributeOver = computed(() => distributeRemainder.value < -1e-9);
+
+function round3(n: number): number {
+    // Quantities are decimal:3 — round for display so float accumulation
+    // (0.30000000000000004) doesn't surface in the UI.
+    return Math.round(n * 1000) / 1000;
+}
 
 function resetForms(): void {
     distributeForm.quantity = '';
@@ -284,11 +294,11 @@ function fmtType(t: string): string {
                                 <p v-if="branches.length === 0" class="text-xs text-slate-400">No branches yet — the whole amount goes to the central pool.</p>
                             </div>
                             <p class="text-xs text-slate-500">
-                                Distributing <span class="font-semibold tabular-nums">{{ distributeTotal }}</span> of {{ parseFloat(distributeForm.quantity) || 0 }} —
-                                <span class="font-semibold tabular-nums" :class="distributeRemainder < 0 ? 'text-rose-600' : 'text-slate-700'">{{ distributeRemainder }}</span> stays in central
+                                Distributing <span class="font-semibold tabular-nums">{{ round3(distributeTotal) }}</span> of {{ round3(parseFloat(distributeForm.quantity) || 0) }} —
+                                <span class="font-semibold tabular-nums" :class="distributeOver ? 'text-rose-600' : 'text-slate-700'">{{ round3(distributeRemainder) }}</span> stays in central
                             </p>
                             <input v-model="distributeForm.note" type="text" placeholder="Note (optional)" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                            <button type="submit" :disabled="busy || distributeRemainder < 0" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Receive &amp; distribute</button>
+                            <button type="submit" :disabled="busy || distributeOver" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Receive &amp; distribute</button>
                         </form>
 
                         <!-- Receive -->
