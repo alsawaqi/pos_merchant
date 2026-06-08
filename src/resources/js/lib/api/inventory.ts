@@ -534,3 +534,54 @@ export function allocateRestockRequest(
         payload as unknown as JsonValue,
     );
 }
+
+// ---- Branch→branch transfers (§5.6) ----------------------------
+//
+// Immediate, atomic ingredient move between two branches — no
+// approval lifecycle (recording the transfer IS the move). The
+// SOURCE branch is the create URL param; the destination + lines
+// are in the body. The list is a FLAT { data: [...] } collection
+// (NOT paginated — no .meta), mirroring listRestockRequests().
+
+export interface BranchTransferLine {
+    ingredient_id: number;
+    ingredient_name: string | null;
+    quantity: string;
+    unit: string | null;
+    unit_cost_at_time: string;
+}
+
+export interface BranchTransfer {
+    id: number;
+    uuid: string;
+    from_branch_id: number;
+    from_branch_name: string | null;
+    to_branch_id: number;
+    to_branch_name: string | null;
+    transferred_at: string | null;
+    note: string | null;
+    lines: BranchTransferLine[];
+    created_at: string | null;
+}
+
+export interface BranchTransferLinePayload {
+    ingredient_uuid: string;
+    quantity: string | number;
+}
+
+/** GET /api/branch-transfers (optional ?branch= filters EITHER side). */
+export function listBranchTransfers(branchUuid?: string): Promise<{ data: BranchTransfer[] }> {
+    const qs = branchUuid ? `?branch=${encodeURIComponent(branchUuid)}` : '';
+    return apiGet<{ data: BranchTransfer[] }>(`/api/branch-transfers${qs}`);
+}
+
+/** POST /api/branches/{sourceBranchUuid}/transfers — the source branch is the URL param. */
+export function createBranchTransfer(
+    sourceBranchUuid: string,
+    payload: { to_branch_uuid: string; note?: string | null; lines: BranchTransferLinePayload[] },
+): Promise<{ data: BranchTransfer }> {
+    return apiPost<{ data: BranchTransfer }>(
+        `/api/branches/${sourceBranchUuid}/transfers`,
+        payload as unknown as JsonValue,
+    );
+}

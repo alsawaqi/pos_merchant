@@ -603,7 +603,8 @@
             "stock": "مخزون الفروع",
             "movements": "الحركات",
             "waste": "الهدر",
-            "restock_requests": "طلبات التجديد"
+            "restock_requests": "طلبات التجديد",
+            "transfers": "التحويلات"
         },
         "actions": {
             "add_ingredient": "إضافة مكوّن",
@@ -619,7 +620,8 @@
             "reject": "رفض",
             "cancel_request": "إلغاء",
             "allocate": "تخصيص",
-            "view": "عرض"
+            "view": "عرض",
+            "new_transfer": "تحويل جديد"
         },
         "table": {
             "name": "الاسم",
@@ -871,6 +873,36 @@
             "row": {
                 "open": "فتح",
                 "no_lines": "لا توجد بنود"
+            }
+        },
+        "transfers": {
+            "filter_branch": "تصفية حسب الفرع",
+            "filter_branch_all": "كل الفروع",
+            "empty": "لا توجد تحويلات بعد. انقل المكونات بين الفروع باستخدام زر تحويل جديد.",
+            "transferred_at": "التاريخ",
+            "route": "من ← إلى",
+            "lines": "البنود",
+            "items": "الأصناف",
+            "note": "ملاحظة",
+            "create_modal": {
+                "title": "تحويل جديد بين الفروع",
+                "from_branch": "من فرع",
+                "from_placeholder": "اختر الفرع المصدر",
+                "to_branch": "إلى فرع",
+                "to_placeholder": "اختر الفرع الوجهة",
+                "same_branch": "يجب أن يكون الفرع المصدر والوجهة مختلفين.",
+                "no_lines": "أضف بند مكوّن واحدًا على الأقل.",
+                "note": "ملاحظة (اختيارية)",
+                "note_placeholder": "مثلاً لتغطية نقص في الفرع الآخر",
+                "lines_header": "المكونات المراد نقلها",
+                "ingredient_placeholder": "اختر مكوّنًا",
+                "quantity": "الكمية",
+                "remove_line": "إزالة",
+                "add_line": "إضافة بند",
+                "duplicate_warning": "ظهر المكوّن أكثر من مرة — ادمجه في بند واحد.",
+                "cancel": "إلغاء",
+                "submit": "تنفيذ التحويل",
+                "submitting": "جارٍ التحويل…"
             }
         }
     },

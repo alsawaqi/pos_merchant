@@ -21,6 +21,7 @@
 
 import {
     AlertTriangle,
+    ArrowLeftRight,
     Boxes,
     Building2,
     Check,
@@ -52,12 +53,14 @@ import {
     allocateRestockRequest,
     approveRestockRequest,
     cancelRestockRequest,
+    createBranchTransfer,
     createIngredient,
     createRestockRequest,
     createSupplier,
     deleteIngredient,
     deleteSupplier,
     listBranchStock,
+    listBranchTransfers,
     listIngredients,
     listRestockRequests,
     listStockMovements,
@@ -71,6 +74,8 @@ import {
     updateRestockRequest,
     updateSupplier,
     type BranchStockRow,
+    type BranchTransfer,
+    type BranchTransferLinePayload,
     type Ingredient,
     type IngredientUnit,
     type InventoryStatus,
@@ -97,7 +102,7 @@ const canManage = computed(() => can(MerchantPermission.InventoryManage));
 const canCreateRestock = computed(() => can(MerchantPermission.RestockRequestCreate));
 const canReviewRestock = computed(() => can(MerchantPermission.RestockRequestReview));
 
-type TabKey = 'ingredients' | 'suppliers' | 'stock' | 'movements' | 'waste' | 'restock_requests';
+type TabKey = 'ingredients' | 'suppliers' | 'stock' | 'movements' | 'waste' | 'restock_requests' | 'transfers';
 const activeTab = ref<TabKey>('ingredients');
 
 // =================== Shared data =================================
@@ -123,6 +128,23 @@ const restockFilters = reactive<{ status: RestockRequestStatus | ''; branch_uuid
     status: '',
     branch_uuid: '',
 });
+
+// Phase 6 — branch→branch transfer state. NOT branch-scoped (the
+// list shows every transfer; an optional filter narrows to one
+// branch on either side). An immediate atomic move, no lifecycle.
+const branchTransfers = ref<BranchTransfer[]>([]);
+const transferFilters = reactive<{ branch_uuid: string }>({ branch_uuid: '' });
+
+const transferModalOpen = ref(false);
+const transferModalBusy = ref(false);
+const transferModalError = ref<string | null>(null);
+const transferModalErrors = ref<Record<string, string[]>>({});
+const transferForm = reactive<{
+    from_branch_uuid: string;
+    to_branch_uuid: string;
+    note: string;
+    lines: { ingredient_uuid: string; quantity: string }[];
+}>({ from_branch_uuid: '', to_branch_uuid: '', note: '', lines: [] });
 
 const loading = ref(true);
 const error = ref<string | null>(null);
@@ -362,13 +384,22 @@ async function fetchRestockRequests(): Promise<void> {
     }
 }
 
+async function fetchBranchTransfers(): Promise<void> {
+    try {
+        const response = await listBranchTransfers(transferFilters.branch_uuid || undefined);
+        branchTransfers.value = response.data;
+    } catch (err) {
+        error.value = err instanceof Error ? err.message : 'Failed to load transfers';
+    }
+}
+
 async function bootstrap(): Promise<void> {
     loading.value = true;
     error.value = null;
     // Restock requests aren't branch-scoped on the API — load
     // them eagerly so the count badge on the tab is accurate
     // even before the user clicks the tab.
-    await Promise.all([fetchBranches(), fetchIngredients(), fetchSuppliers(), fetchRestockRequests()]);
+    await Promise.all([fetchBranches(), fetchIngredients(), fetchSuppliers(), fetchRestockRequests(), fetchBranchTransfers()]);
     if (selectedBranchUuid.value !== null) {
         await Promise.all([fetchBranchStock(), fetchMovements(), fetchWaste()]);
     }
@@ -402,6 +433,10 @@ watch(
 watch(
     () => [restockFilters.status, restockFilters.branch_uuid],
     () => void fetchRestockRequests(),
+);
+watch(
+    () => transferFilters.branch_uuid,
+    () => void fetchBranchTransfers(),
 );
 
 // =================== Ingredient flows ============================
@@ -928,6 +963,91 @@ function openShow(req: RestockRequest): void {
     showOpen.value = true;
 }
 
+// =================== Phase 6 — Branch transfer flows ============
+
+const transferHasDuplicates = computed<boolean>(() => {
+    const seen = new Set<string>();
+    for (const line of transferForm.lines) {
+        if (!line.ingredient_uuid) continue;
+        if (seen.has(line.ingredient_uuid)) return true;
+        seen.add(line.ingredient_uuid);
+    }
+    return false;
+});
+
+function openCreateTransfer(): void {
+    transferForm.from_branch_uuid = selectedBranchUuid.value ?? (branches.value[0]?.uuid ?? '');
+    transferForm.to_branch_uuid = '';
+    transferForm.note = '';
+    transferForm.lines = [{ ingredient_uuid: '', quantity: '' }];
+    transferModalErrors.value = {};
+    transferModalError.value = null;
+    transferModalOpen.value = true;
+}
+
+function addTransferLine(): void {
+    transferForm.lines.push({ ingredient_uuid: '', quantity: '' });
+}
+
+function removeTransferLine(idx: number): void {
+    transferForm.lines.splice(idx, 1);
+    if (transferForm.lines.length === 0) {
+        addTransferLine();
+    }
+}
+
+async function submitTransferModal(): Promise<void> {
+    transferModalBusy.value = true;
+    transferModalErrors.value = {};
+    transferModalError.value = null;
+    try {
+        if (!transferForm.from_branch_uuid) {
+            transferModalError.value = t('inventory.transfers.create_modal.from_placeholder');
+            return;
+        }
+        if (!transferForm.to_branch_uuid) {
+            transferModalError.value = t('inventory.transfers.create_modal.to_placeholder');
+            return;
+        }
+        if (transferForm.from_branch_uuid === transferForm.to_branch_uuid) {
+            transferModalError.value = t('inventory.transfers.create_modal.same_branch');
+            return;
+        }
+        const cleanLines: BranchTransferLinePayload[] = transferForm.lines
+            .filter((l) => l.ingredient_uuid && l.quantity)
+            .map((l) => ({ ingredient_uuid: l.ingredient_uuid, quantity: l.quantity }));
+        if (cleanLines.length === 0) {
+            transferModalError.value = t('inventory.transfers.create_modal.no_lines');
+            return;
+        }
+
+        await createBranchTransfer(transferForm.from_branch_uuid, {
+            to_branch_uuid: transferForm.to_branch_uuid,
+            note: transferForm.note.trim() || null,
+            lines: cleanLines,
+        });
+        transferModalOpen.value = false;
+        // A transfer moves stock at BOTH branches + writes paired
+        // transfer_out/transfer_in ledger rows, so refresh the list and
+        // (if a branch is being viewed) its stock + movement tabs.
+        await fetchBranchTransfers();
+        if (selectedBranchUuid.value !== null) {
+            await Promise.all([fetchBranchStock(), fetchMovements()]);
+        }
+    } catch (err) {
+        if (err instanceof ApiError && err.isValidationError()) {
+            transferModalErrors.value = err.payload.errors;
+            transferModalError.value = t('inventory.validation_summary');
+        } else if (err instanceof ApiError && err.payload && typeof err.payload === 'object' && 'message' in err.payload) {
+            transferModalError.value = String((err.payload as { message?: unknown }).message ?? 'Failed');
+        } else {
+            transferModalError.value = err instanceof Error ? err.message : 'Failed';
+        }
+    } finally {
+        transferModalBusy.value = false;
+    }
+}
+
 async function doSubmitRequest(req: RestockRequest): Promise<void> {
     try {
         await submitRestockRequest(req.uuid);
@@ -1140,6 +1260,18 @@ function extractMessage(err: unknown, fallback: string): string {
                     <ClipboardList class="size-4" />
                     {{ t('inventory.tabs.restock_requests') }}
                     <span class="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">{{ restockRequests.length }}</span>
+                </button>
+                <!-- Phase 6 — branch→branch transfers tab. NOT branch-
+                     scoped: an immediate atomic move, no approval flow. -->
+                <button
+                    type="button"
+                    class="flex-1 min-w-max inline-flex items-center justify-center gap-2 rounded px-3 py-2 text-sm font-semibold transition"
+                    :class="activeTab === 'transfers' ? 'bg-slate-950 text-white shadow' : 'text-slate-700 hover:bg-slate-50'"
+                    @click="activeTab = 'transfers'"
+                >
+                    <ArrowLeftRight class="size-4" />
+                    {{ t('inventory.tabs.transfers') }}
+                    <span class="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">{{ branchTransfers.length }}</span>
                 </button>
             </div>
 
@@ -1612,6 +1744,63 @@ function extractMessage(err: unknown, fallback: string): string {
                     </table>
                 </div>
             </section>
+
+            <!-- ================== PHASE 6 — BRANCH TRANSFERS ================== -->
+            <section v-if="activeTab === 'transfers'" class="space-y-4">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                    <label class="block sm:flex-1">
+                        <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.transfers.filter_branch') }}</span>
+                        <select v-model="transferFilters.branch_uuid" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm sm:max-w-xs">
+                            <option value="">{{ t('inventory.transfers.filter_branch_all') }}</option>
+                            <option v-for="b in branches" :key="b.uuid" :value="b.uuid">{{ b.name }}</option>
+                        </select>
+                    </label>
+                    <button
+                        v-if="canManage"
+                        type="button"
+                        class="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-indigo-600 to-cyan-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/30 transition hover:-translate-y-0.5 hover:shadow-xl"
+                        @click="openCreateTransfer"
+                    >
+                        <Plus class="size-4" />
+                        {{ t('inventory.actions.new_transfer') }}
+                    </button>
+                </div>
+
+                <div v-if="branchTransfers.length === 0" class="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">
+                    <ArrowLeftRight class="mx-auto size-10 text-slate-300" />
+                    <p class="mt-3 text-sm font-semibold text-slate-600">{{ t('inventory.transfers.empty') }}</p>
+                </div>
+                <div v-else class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <table class="min-w-full divide-y divide-slate-200">
+                        <thead class="bg-slate-50">
+                            <tr>
+                                <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.transfers.transferred_at') }}</th>
+                                <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.transfers.route') }}</th>
+                                <th class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.transfers.lines') }}</th>
+                                <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.transfers.items') }}</th>
+                                <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.transfers.note') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <tr v-for="tr in branchTransfers" :key="tr.uuid" class="align-top hover:bg-slate-50/60">
+                                <td class="px-5 py-3 text-sm text-slate-600">{{ formatDate(tr.transferred_at ?? tr.created_at) }}</td>
+                                <td class="px-5 py-3 text-sm font-medium text-slate-900">
+                                    <span class="inline-flex items-center gap-1.5">
+                                        {{ tr.from_branch_name ?? '—' }}
+                                        <ArrowLeftRight class="size-3.5 text-slate-400" />
+                                        {{ tr.to_branch_name ?? '—' }}
+                                    </span>
+                                </td>
+                                <td class="px-5 py-3 text-end text-sm tabular-nums text-slate-700">{{ tr.lines.length }}</td>
+                                <td class="px-5 py-3 text-sm text-slate-600">
+                                    <span v-for="(l, i) in tr.lines" :key="l.ingredient_id">{{ l.ingredient_name ?? ('#' + l.ingredient_id) }} ({{ l.quantity }}{{ l.unit ? ' ' + l.unit : '' }}){{ i < tr.lines.length - 1 ? ', ' : '' }}</span>
+                                </td>
+                                <td class="px-5 py-3 text-sm text-slate-500">{{ tr.note || '—' }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
         </section>
 
         <!-- ================== INGREDIENT MODAL ================== -->
@@ -1986,6 +2175,75 @@ function extractMessage(err: unknown, fallback: string): string {
                     </button>
                     <button type="submit" form="restock-request-form" :disabled="restockModalBusy || restockHasDuplicates" class="rounded-lg bg-gradient-to-r from-indigo-600 to-cyan-600 px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
                         {{ restockModalBusy ? t('inventory.restock.create_modal.submitting') : (restockModalMode === 'create' ? t('inventory.restock.create_modal.submit_create') : t('inventory.restock.create_modal.submit_edit')) }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
+
+        <!-- ================== PHASE 6 — CREATE BRANCH TRANSFER MODAL ================== -->
+        <BaseModal
+            v-if="transferModalOpen"
+            :title="t('inventory.transfers.create_modal.title')"
+            size="2xl"
+            :loading="transferModalBusy"
+            @close="transferModalOpen = false"
+        >
+                <form id="branch-transfer-form" class="space-y-4" @submit.prevent="submitTransferModal">
+                    <div v-if="transferModalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                        {{ transferModalError }}
+                    </div>
+                    <div class="grid gap-4 sm:grid-cols-2">
+                        <label class="block">
+                            <span class="text-sm font-medium text-slate-700">{{ t('inventory.transfers.create_modal.from_branch') }} *</span>
+                            <select v-model="transferForm.from_branch_uuid" required class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                                <option value="">{{ t('inventory.transfers.create_modal.from_placeholder') }}</option>
+                                <option v-for="b in branches" :key="b.uuid" :value="b.uuid">{{ b.name }}</option>
+                            </select>
+                        </label>
+                        <label class="block">
+                            <span class="text-sm font-medium text-slate-700">{{ t('inventory.transfers.create_modal.to_branch') }} *</span>
+                            <select v-model="transferForm.to_branch_uuid" required class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                                <option value="">{{ t('inventory.transfers.create_modal.to_placeholder') }}</option>
+                                <option v-for="b in branches" :key="b.uuid" :value="b.uuid" :disabled="b.uuid === transferForm.from_branch_uuid">{{ b.name }}</option>
+                            </select>
+                        </label>
+                    </div>
+                    <label class="block">
+                        <span class="text-sm font-medium text-slate-700">{{ t('inventory.transfers.create_modal.note') }}</span>
+                        <textarea v-model="transferForm.note" rows="2" :placeholder="t('inventory.transfers.create_modal.note_placeholder')" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"></textarea>
+                    </label>
+
+                    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <p class="mb-3 text-sm font-semibold text-slate-700">{{ t('inventory.transfers.create_modal.lines_header') }}</p>
+                        <div class="space-y-2">
+                            <div v-for="(line, idx) in transferForm.lines" :key="idx" class="grid gap-2 rounded-lg bg-white p-3 shadow-sm sm:grid-cols-12">
+                                <select v-model="line.ingredient_uuid" class="sm:col-span-7 rounded-lg border border-slate-200 px-2 py-2 text-sm">
+                                    <option value="">{{ t('inventory.transfers.create_modal.ingredient_placeholder') }}</option>
+                                    <option v-for="i in ingredients" :key="i.uuid" :value="i.uuid">{{ isArabic && i.name_ar ? i.name_ar : i.name }} ({{ i.unit }})</option>
+                                </select>
+                                <input v-model="line.quantity" type="number" step="0.001" min="0.001" :placeholder="t('inventory.transfers.create_modal.quantity')" class="sm:col-span-4 rounded-lg border border-slate-200 px-2 py-2 text-sm tabular-nums">
+                                <button type="button" :title="t('inventory.transfers.create_modal.remove_line')" class="sm:col-span-1 inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-2 py-2 text-rose-700 transition hover:bg-rose-100" @click="removeTransferLine(idx)">
+                                    <Minus class="size-4" />
+                                </button>
+                            </div>
+                        </div>
+                        <button type="button" class="mt-3 inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50" @click="addTransferLine">
+                            <Plus class="size-3.5" />
+                            {{ t('inventory.transfers.create_modal.add_line') }}
+                        </button>
+                        <p v-if="transferHasDuplicates" class="mt-2 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700">
+                            <AlertTriangle class="me-1 inline size-3.5" />
+                            {{ t('inventory.transfers.create_modal.duplicate_warning') }}
+                        </p>
+                    </div>
+                </form>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="transferModalOpen = false">
+                        {{ t('inventory.transfers.create_modal.cancel') }}
+                    </button>
+                    <button type="submit" form="branch-transfer-form" :disabled="transferModalBusy || transferHasDuplicates" class="rounded-lg bg-gradient-to-r from-indigo-600 to-cyan-600 px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
+                        {{ transferModalBusy ? t('inventory.transfers.create_modal.submitting') : t('inventory.transfers.create_modal.submit') }}
                     </button>
                 </div>
             </template>

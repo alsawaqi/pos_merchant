@@ -603,7 +603,8 @@
             "stock": "Branch Stock",
             "movements": "Movements",
             "waste": "Waste",
-            "restock_requests": "Restock Requests"
+            "restock_requests": "Restock Requests",
+            "transfers": "Transfers"
         },
         "actions": {
             "add_ingredient": "Add ingredient",
@@ -619,7 +620,8 @@
             "reject": "Reject",
             "cancel_request": "Cancel",
             "allocate": "Allocate",
-            "view": "View"
+            "view": "View",
+            "new_transfer": "New transfer"
         },
         "table": {
             "name": "Name",
@@ -871,6 +873,36 @@
             "row": {
                 "open": "Open",
                 "no_lines": "No lines"
+            }
+        },
+        "transfers": {
+            "filter_branch": "Filter by branch",
+            "filter_branch_all": "All branches",
+            "empty": "No transfers yet. Move ingredients between branches with the New transfer button.",
+            "transferred_at": "Date",
+            "route": "From → To",
+            "lines": "Lines",
+            "items": "Items",
+            "note": "Note",
+            "create_modal": {
+                "title": "New branch transfer",
+                "from_branch": "From branch",
+                "from_placeholder": "Select the source branch",
+                "to_branch": "To branch",
+                "to_placeholder": "Select the destination branch",
+                "same_branch": "Source and destination must be different branches.",
+                "no_lines": "Add at least one ingredient line.",
+                "note": "Note (optional)",
+                "note_placeholder": "e.g. covering a shortfall at the other branch",
+                "lines_header": "Ingredients to move",
+                "ingredient_placeholder": "Select an ingredient",
+                "quantity": "Qty",
+                "remove_line": "Remove",
+                "add_line": "Add line",
+                "duplicate_warning": "An ingredient appears more than once — merge them into a single line.",
+                "cancel": "Cancel",
+                "submit": "Transfer stock",
+                "submitting": "Transferring…"
             }
         }
     },
