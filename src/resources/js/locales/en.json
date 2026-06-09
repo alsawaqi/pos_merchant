@@ -1393,6 +1393,10 @@
                     "title": "Discounts",
                     "desc": "Total discount value, share of gross, by branch (rule + staff land in Phase 8)."
                 },
+                "payouts": {
+                    "title": "Payouts",
+                    "desc": "Commission breakdown: your net take-home, platform fee, bank fee, by branch."
+                },
                 "product_performance": {
                     "title": "Product Performance",
                     "desc": "Top sellers by revenue + qty, slow movers, top add-ons."
@@ -1471,6 +1475,26 @@
             },
             "by_rule": "By rule",
             "by_staff": "By staff"
+        },
+        "payouts": {
+            "page_title": "Payouts & Commission",
+            "headline_labels": {
+                "gross": "Gross sales",
+                "merchant_net": "Your net",
+                "platform": "Platform fee",
+                "bank": "Bank fee",
+                "other": "Other",
+                "num_sales": "Sales"
+            },
+            "parties": {
+                "platform": "Platform",
+                "bank": "Bank",
+                "other": "Other",
+                "merchant": "Your net"
+            },
+            "charts": {
+                "commission_split": "Commission split"
+            }
         },
         "product_performance": {
             "page_title": "Product Performance Report",

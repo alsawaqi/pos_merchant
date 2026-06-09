@@ -258,6 +258,43 @@ export function fetchRestockPurchasingReport(filter: ReportFilter): Promise<{ da
 }
 
 // ============================================================
+// Payouts / Commission Breakdown Report
+// ============================================================
+//
+// Per-merchant commission split: every paid sale is divided into
+// the platform fee, the bank fee (card money only), an "other"
+// bucket, and the merchant's net take-home. Money values arrive as
+// decimal-3 strings; num_sales is an int.
+
+export type PayoutPartyType = 'platform' | 'bank' | 'other' | 'merchant';
+
+export interface PayoutBreakdownPayload {
+    window: { from: string; to: string; consolidated: boolean; branch_ids: number[] | null };
+    headline: {
+        gross: string;
+        platform: string;
+        bank: string;
+        other: string;
+        merchant_net: string;
+        num_sales: number;
+    };
+    parties: { party_type: PayoutPartyType; total: string }[];
+    by_branch: {
+        branch_id: number;
+        gross: string;
+        platform: string;
+        bank: string;
+        other: string;
+        merchant_net: string;
+        num_sales: number;
+    }[];
+}
+
+export function fetchPayoutBreakdown(filter: ReportFilter): Promise<{ data: PayoutBreakdownPayload }> {
+    return apiGet<{ data: PayoutBreakdownPayload }>(reportPath('payouts', filter));
+}
+
+// ============================================================
 // Round-Up Donation Report (§5.11.9) -- STUB until Phase 9
 // ============================================================
 

@@ -23,6 +23,7 @@ import ReportsIndex from '@/Pages/Merchant/Reports/Index.vue';
 import ReportsSales from '@/Pages/Merchant/Reports/Sales.vue';
 import ReportsCustomers from '@/Pages/Merchant/Reports/Customers.vue';
 import ReportsDiscounts from '@/Pages/Merchant/Reports/Discounts.vue';
+import ReportsPayouts from '@/Pages/Merchant/Reports/Payouts.vue';
 import ReportsProductPerformance from '@/Pages/Merchant/Reports/ProductPerformance.vue';
 import ReportsRecipeCost from '@/Pages/Merchant/Reports/RecipeCost.vue';
 import ReportsStaffActivity from '@/Pages/Merchant/Reports/StaffActivity.vue';
@@ -199,6 +200,7 @@ const routes: RouteRecordRaw[] = [
     { path: '/reports/sales', name: 'merchant.reports.sales', component: ReportsSales, meta: { requiresAuth: true } },
     { path: '/reports/customers', name: 'merchant.reports.customers', component: ReportsCustomers, meta: { requiresAuth: true } },
     { path: '/reports/discounts', name: 'merchant.reports.discounts', component: ReportsDiscounts, meta: { requiresAuth: true } },
+    { path: '/reports/payouts', name: 'merchant.reports.payouts', component: ReportsPayouts, meta: { requiresAuth: true } },
     { path: '/reports/product-performance', name: 'merchant.reports.product-performance', component: ReportsProductPerformance, meta: { requiresAuth: true } },
     { path: '/reports/recipe-cost', name: 'merchant.reports.recipe-cost', component: ReportsRecipeCost, meta: { requiresAuth: true } },
     { path: '/reports/staff-activity', name: 'merchant.reports.staff-activity', component: ReportsStaffActivity, meta: { requiresAuth: true } },
