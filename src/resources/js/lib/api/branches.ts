@@ -126,3 +126,74 @@ export interface BranchDevice {
 export function listBranchDevices(uuid: string): Promise<{ data: BranchDevice[] }> {
     return apiGet<{ data: BranchDevice[] }>(`/api/pos/branches/${uuid}/devices`);
 }
+
+// ---- Branch detail (v2 #11): products + staff + activity ----
+
+export interface BranchProductRow {
+    product_id: number;
+    uuid: string;
+    name: string;
+    /** decimal:3 OMR string. */
+    base_price: string;
+    /** 'unit' | 'ingredient' | 'untracked'. */
+    stock_mode: string;
+    is_available: boolean;
+    /** decimal:3 string, or null when not unit-tracked at this branch. */
+    stock_qty: string | null;
+}
+
+export interface BranchStaffMember {
+    id: number;
+    uuid: string;
+    name: string;
+    phone: string | null;
+    staff_code: string | null;
+    position: string | null;
+    status: string | null;
+    hired_at: string | null;
+    last_login_at: string | null;
+}
+
+export interface BranchActivity {
+    sales: {
+        today: { gross: string; count: number };
+        mtd: { gross: string; count: number };
+    };
+    recent_orders: {
+        uuid: string;
+        status: string | null;
+        order_type: string | null;
+        grand_total: string;
+        opened_at: string | null;
+        staff_name: string | null;
+        customer_name: string | null;
+    }[];
+    recent_shifts: {
+        uuid: string;
+        status: string | null;
+        opened_at: string | null;
+        closed_at: string | null;
+        variance: string | null;
+        staff_name: string | null;
+    }[];
+    recent_movements: {
+        movement_type: string | null;
+        quantity: string;
+        occurred_at: string | null;
+        ingredient_name: string | null;
+        unit: string | null;
+        recorded_by: string | null;
+    }[];
+}
+
+export function getBranchProducts(uuid: string): Promise<{ data: BranchProductRow[] }> {
+    return apiGet<{ data: BranchProductRow[] }>(`/api/pos/branches/${uuid}/products`);
+}
+
+export function getBranchStaff(uuid: string): Promise<{ data: BranchStaffMember[] }> {
+    return apiGet<{ data: BranchStaffMember[] }>(`/api/pos/branches/${uuid}/staff`);
+}
+
+export function getBranchActivity(uuid: string): Promise<{ data: BranchActivity }> {
+    return apiGet<{ data: BranchActivity }>(`/api/pos/branches/${uuid}/activity`);
+}

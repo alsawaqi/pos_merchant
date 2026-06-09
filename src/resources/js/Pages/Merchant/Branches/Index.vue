@@ -17,6 +17,7 @@
 import { Building2, MonitorSmartphone, Pencil, Plus } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { RouterLink } from 'vue-router';
 import BaseModal from '@/Components/BaseModal.vue';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import { usePermissions } from '@/composables/usePermissions';
@@ -334,7 +335,7 @@ const canEditStatus = computed(() => can(MerchantPermission.BranchesTransitionSt
                         <tbody class="divide-y divide-slate-100 bg-white">
                             <tr v-for="row in filteredBranches" :key="row.id" class="transition hover:bg-slate-50">
                                 <td class="px-5 py-4">
-                                    <span class="block text-sm font-semibold text-slate-950">{{ row.name }}</span>
+                                    <RouterLink :to="`/branches/${row.uuid}`" class="block text-sm font-semibold text-slate-950 transition hover:text-teal-700">{{ row.name }}</RouterLink>
                                     <span v-if="row.name_ar" class="block text-xs text-slate-500">{{ row.name_ar }}</span>
                                     <span v-if="row.code" class="mt-1 inline-block rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-mono text-slate-600">{{ row.code }}</span>
                                 </td>

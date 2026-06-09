@@ -4,6 +4,7 @@ import ChangePassword from '@/Pages/Auth/ChangePassword.vue';
 import Dashboard from '@/Pages/Merchant/Dashboard.vue';
 import OrdersIndex from '@/Pages/Merchant/Orders/Index.vue';
 import BranchesIndex from '@/Pages/Merchant/Branches/Index.vue';
+import BranchesShow from '@/Pages/Merchant/Branches/Show.vue';
 import CatalogueIndex from '@/Pages/Merchant/Catalogue/Index.vue';
 import TaxesIndex from '@/Pages/Merchant/Taxes/Index.vue';
 import CustomersIndex from '@/Pages/Merchant/Customers/Index.vue';
@@ -83,6 +84,13 @@ const routes: RouteRecordRaw[] = [
         path: '/branches',
         name: 'merchant.branches',
         component: BranchesIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        // Branch detail (v2 #11): products, staff, devices, activity.
+        path: '/branches/:uuid',
+        name: 'merchant.branches.show',
+        component: BranchesShow,
         meta: { requiresAuth: true },
     },
     {

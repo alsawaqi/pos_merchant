@@ -304,6 +304,27 @@
             "read_only_hint": "Devices are assigned and managed by the admin. You can see them here but cannot change them.",
             "empty": "No devices assigned to this branch yet.",
             "last_seen": "last seen"
+        },
+        "show": {
+            "back": "Branches",
+            "loading": "Loading branch…",
+            "load_failed": "Could not load this branch.",
+            "sales_today": "Sales today",
+            "sales_mtd": "Sales (month)",
+            "products": "Products",
+            "no_products": "No products carried at this branch yet.",
+            "available": "Available",
+            "unavailable": "Hidden",
+            "stock": "Stock",
+            "not_tracked": "Not tracked",
+            "staff": "Staff",
+            "no_staff": "No staff assigned to this branch.",
+            "activity": "Recent activity",
+            "recent_orders": "Recent orders",
+            "recent_shifts": "Recent shifts",
+            "recent_movements": "Stock movements",
+            "no_activity": "No activity yet.",
+            "by": "by"
         }
     },
     "roles": {
