@@ -169,6 +169,11 @@ export interface AdjustStockPayload {
     /** Signed — positive = found more, negative = found less. */
     signed_quantity: string | number;
     note: string;
+    /**
+     * v2 #13 — alt-unit NAME the quantity was entered in. null/omit
+     * = the ingredient's base unit. Server converts to base.
+     */
+    unit?: string | null;
 }
 
 export interface RestockPayload {
@@ -179,6 +184,11 @@ export interface RestockPayload {
     unit_cost?: string | number | null;
     supplier_uuid?: string | null;
     note?: string | null;
+    /**
+     * v2 #13 — alt-unit NAME the quantity was entered in. null/omit
+     * = the ingredient's base unit. Server converts to base.
+     */
+    unit?: string | null;
 }
 
 // ---- Ingredients ------------------------------------------------
@@ -458,12 +468,22 @@ export interface RecordWastePayload {
     notes?: string | null;
     /** ISO8601; defaults to now when omitted. */
     occurred_at?: string | null;
+    /**
+     * v2 #13 — alt-unit NAME the quantity was entered in. null/omit
+     * = the ingredient's base unit. Server converts to base.
+     */
+    unit?: string | null;
 }
 
 export interface RestockLinePayload {
     ingredient_uuid: string;
     quantity_requested: string | number;
     note?: string | null;
+    /**
+     * v2 #13 — alt-unit NAME the quantity was entered in. null/omit
+     * = the ingredient's base unit. Server converts to base.
+     */
+    unit?: string | null;
 }
 
 export interface CreateRestockRequestPayload {
@@ -708,6 +728,11 @@ export interface BranchTransfer {
 export interface BranchTransferLinePayload {
     ingredient_uuid: string;
     quantity: string | number;
+    /**
+     * v2 #13 — alt-unit NAME the quantity was entered in. null/omit
+     * = the ingredient's base unit. Server converts to base.
+     */
+    unit?: string | null;
 }
 
 /** GET /api/branch-transfers (optional ?branch= filters EITHER side). */

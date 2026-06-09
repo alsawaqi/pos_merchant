@@ -106,6 +106,11 @@ export interface ProductRecipeLine {
 export interface RecipeLinePayload {
     ingredient_uuid: string;
     quantity: string | number;
+    /**
+     * v2 #13 — alt-unit NAME the quantity was entered in. null/omit
+     * = the ingredient's base unit. Server converts to base.
+     */
+    unit?: string | null;
 }
 
 export interface UpdateProductRecipePayload {

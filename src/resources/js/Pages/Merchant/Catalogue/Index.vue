@@ -167,8 +167,9 @@ const prodForm = reactive<{
     addon_group_uuids: string[];
     // Phase 5b — recipe lines. Empty array on submit = "no
     // recipe / pre-made goods". Each row is mirrored to a
-    // RecipeLinePayload at submitProduct time.
-    recipe_lines: { ingredient_uuid: string; quantity: string }[];
+    // RecipeLinePayload at submitProduct time. `unit` (v2 #13) =
+    // the alt-unit NAME the quantity was entered in, '' = base unit.
+    recipe_lines: { ingredient_uuid: string; quantity: string; unit: string }[];
     // Phase B - per-branch availability + stock. branch_all = available
     // everywhere (no rows). Otherwise one row per company branch.
     branch_all: boolean;
@@ -472,9 +473,12 @@ function openEditProduct(product: Product): void {
     prodForm.addon_group_uuids = (product.addon_groups ?? []).map((g) => g.uuid);
     // Phase 5b — pre-populate recipe lines from the eager-
     // loaded relation. Falls back to [] when none.
+    // Stored recipe quantities are already in BASE units, so default
+    // the entry unit to base ('') when preloading.
     prodForm.recipe_lines = (product.recipe_lines ?? []).map((line) => ({
         ingredient_uuid: line.ingredient?.uuid ?? '',
         quantity: line.quantity,
+        unit: '',
     }));
     // Phase B - no assignments = available everywhere (branch_all on).
     prodForm.branch_all = (product.branches ?? []).length === 0;
@@ -494,7 +498,7 @@ function openEditProduct(product: Product): void {
 function addRecipeLine(): void {
     // Default empty row — the merchant picks the ingredient
     // then enters a quantity. Validation at submit time.
-    prodForm.recipe_lines.push({ ingredient_uuid: '', quantity: '' });
+    prodForm.recipe_lines.push({ ingredient_uuid: '', quantity: '', unit: '' });
 }
 
 function removeRecipeLine(idx: number): void {
@@ -516,7 +520,9 @@ const recipeLiveCost = computed<string>(() => {
         if (!line.ingredient_uuid || line.quantity === '') continue;
         const ingredient = ingredients.value.find((i) => i.uuid === line.ingredient_uuid);
         if (!ingredient) continue;
-        const qty = parseFloat(line.quantity);
+        // default_unit_cost is per BASE unit — convert the entered qty
+        // (which may be in an alt unit) to base before multiplying.
+        const qty = toBaseUnits(parseFloat(line.quantity), ingredient, line.unit);
         const cost = parseFloat(ingredient.default_unit_cost);
         if (!isFinite(qty) || !isFinite(cost)) continue;
         total += qty * cost;
@@ -556,6 +562,33 @@ const recipeHasDuplicates = computed<boolean>(() => {
 function ingredientUnitLabel(uuid: string): string {
     const ingredient = ingredients.value.find((i) => i.uuid === uuid);
     return ingredient?.unit ?? '';
+}
+
+/** Resolve an ingredient (for its alt_units) from a recipe line uuid. */
+function ingredientByUuid(uuid: string): Ingredient | null {
+    if (!uuid) return null;
+    return ingredients.value.find((i) => i.uuid === uuid) ?? null;
+}
+
+// v2 #13 — map a selected entry-unit string to the wire value:
+// '' (base) → null, else the alt-unit name.
+function wireUnit(selected: string): string | null {
+    return selected.trim() === '' ? null : selected;
+}
+
+/**
+ * Convert an entered quantity (number) to base units for the given
+ * ingredient + selected alt-unit NAME ('' = base). Returns the raw
+ * number unchanged when no matching alt unit is found. Local preview
+ * only — never used to rebuild the value that gets sent.
+ */
+function toBaseUnits(qty: number, ingredient: Ingredient | null | undefined, selected: string): number {
+    if (!ingredient || selected.trim() === '') return qty;
+    const alt = (ingredient.alt_units ?? []).find((u) => u.name === selected);
+    if (!alt) return qty;
+    const factor = parseFloat(alt.factor);
+    if (!Number.isFinite(factor)) return qty;
+    return qty * factor;
 }
 
 // ---- Phase B - per-branch availability + stock helpers ----
@@ -631,6 +664,7 @@ async function submitProduct(): Promise<void> {
             .map((l) => ({
                 ingredient_uuid: l.ingredient_uuid,
                 quantity: l.quantity,
+                unit: wireUnit(l.unit),
             }));
         await updateProductRecipe(productUuid, { lines: cleanLines });
 
@@ -2035,6 +2069,7 @@ async function removeOwnedGroup(groupUuid: string): Promise<void> {
                                         <select
                                             v-model="line.ingredient_uuid"
                                             class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                                            @change="line.unit = ''"
                                         >
                                             <option value="">{{ t('catalogue.recipe.pick_ingredient') }}</option>
                                             <option v-for="ing in ingredients" :key="ing.id" :value="ing.uuid">
@@ -2042,19 +2077,26 @@ async function removeOwnedGroup(groupUuid: string): Promise<void> {
                                             </option>
                                         </select>
                                     </label>
-                                    <label class="block w-32">
+                                    <label class="block w-28">
                                         <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.recipe.quantity') }}</span>
-                                        <div class="mt-1 flex items-center gap-1">
-                                            <input
-                                                v-model="line.quantity"
-                                                type="number"
-                                                step="0.001"
-                                                min="0.001"
-                                                placeholder="0.000"
-                                                class="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
-                                            >
-                                            <span class="text-[10px] font-medium text-slate-500 min-w-[2ch]">{{ ingredientUnitLabel(line.ingredient_uuid) }}</span>
-                                        </div>
+                                        <input
+                                            v-model="line.quantity"
+                                            type="number"
+                                            step="0.001"
+                                            min="0.001"
+                                            placeholder="0.000"
+                                            class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                                        >
+                                    </label>
+                                    <label class="block w-24">
+                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.recipe.unit') }}</span>
+                                        <select
+                                            v-model="line.unit"
+                                            class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                                        >
+                                            <option value="">{{ ingredientUnitLabel(line.ingredient_uuid) }}</option>
+                                            <option v-for="au in (ingredientByUuid(line.ingredient_uuid)?.alt_units ?? [])" :key="au.uuid" :value="au.name">{{ au.name }}</option>
+                                        </select>
                                     </label>
                                     <button
                                         type="button"

@@ -596,6 +596,7 @@
             "remove_line": "Remove",
             "pick_ingredient": "Pick an ingredient…",
             "quantity": "Quantity",
+            "unit": "Unit",
             "no_ingredients_hint": "Create an ingredient on the Inventory page first, then come back to build the recipe.",
             "live_cost": "Recipe cost (live)",
             "live_cost_hint": "Sum of (quantity × ingredient default cost) at current prices. Phase 8 sale orders snapshot the historical cost separately.",

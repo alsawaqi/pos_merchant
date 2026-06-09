@@ -152,7 +152,7 @@ const transferForm = reactive<{
     from_branch_uuid: string;
     to_branch_uuid: string;
     note: string;
-    lines: { ingredient_uuid: string; quantity: string }[];
+    lines: { ingredient_uuid: string; quantity: string; unit: string }[];
 }>({ from_branch_uuid: '', to_branch_uuid: '', note: '', lines: [] });
 
 const loading = ref(true);
@@ -243,9 +243,10 @@ const adjustTarget = ref<{ ingredient: Ingredient | null; row: BranchStockRow | 
     ingredient: null,
     row: null,
 });
-const adjustForm = reactive<{ signed_quantity: string; note: string }>({
+const adjustForm = reactive<{ signed_quantity: string; note: string; unit: string }>({
     signed_quantity: '',
     note: '',
+    unit: '',
 });
 
 const restockOpen = ref(false);
@@ -272,7 +273,8 @@ const wasteForm = reactive<{
     reason: WasteReason;
     notes: string;
     occurred_at: string;
-}>({ ingredient_uuid: '', quantity: '', reason: 'spoiled', notes: '', occurred_at: '' });
+    unit: string;
+}>({ ingredient_uuid: '', quantity: '', reason: 'spoiled', notes: '', occurred_at: '', unit: '' });
 
 const restockModalOpen = ref(false);
 const restockModalBusy = ref(false);
@@ -283,7 +285,7 @@ const restockModalTarget = ref<RestockRequest | null>(null);
 const restockForm2 = reactive<{
     branch_uuid: string;
     note: string;
-    lines: { ingredient_uuid: string; quantity: string; note: string }[];
+    lines: { ingredient_uuid: string; quantity: string; note: string; unit: string }[];
 }>({ branch_uuid: '', note: '', lines: [] });
 
 const showOpen = ref(false);
@@ -348,7 +350,8 @@ const restockForm = reactive<{
     unit_cost: string;
     supplier_uuid: string;
     note: string;
-}>({ quantity: '', unit_cost: '', supplier_uuid: '', note: '' });
+    unit: string;
+}>({ quantity: '', unit_cost: '', supplier_uuid: '', note: '', unit: '' });
 
 // =================== Delete confirms =============================
 
@@ -812,6 +815,7 @@ function openAdjust(row: BranchStockRow): void {
     adjustTarget.value = { ingredient, row };
     adjustForm.signed_quantity = '';
     adjustForm.note = '';
+    adjustForm.unit = '';
     adjustErrors.value = {};
     adjustError.value = null;
     adjustOpen.value = true;
@@ -827,6 +831,7 @@ async function submitAdjust(): Promise<void> {
             ingredient_uuid: adjustTarget.value.ingredient.uuid,
             signed_quantity: adjustForm.signed_quantity,
             note: adjustForm.note,
+            unit: wireUnit(adjustForm.unit),
         });
         adjustOpen.value = false;
         await Promise.all([fetchBranchStock(), fetchMovements()]);
@@ -851,10 +856,21 @@ function openRestock(row: BranchStockRow | null, ingredient?: Ingredient): void 
     restockForm.unit_cost = '';
     restockForm.supplier_uuid = '';
     restockForm.note = '';
+    restockForm.unit = '';
     restockErrors.value = {};
     restockError.value = null;
     restockOpen.value = true;
 }
+
+// Reset the entry unit to base whenever the picked ingredient
+// changes (the modal lets the user re-pick the ingredient), so a
+// stale alt-unit name from a different ingredient can't be sent.
+watch(
+    () => restockTarget.value.ingredient?.uuid,
+    () => {
+        restockForm.unit = '';
+    },
+);
 
 async function submitRestock(): Promise<void> {
     if (selectedBranchUuid.value === null || restockTarget.value.ingredient === null) return;
@@ -870,6 +886,7 @@ async function submitRestock(): Promise<void> {
             unit_cost: String(restockForm.unit_cost).trim() === '' ? null : restockForm.unit_cost,
             supplier_uuid: restockForm.supplier_uuid || null,
             note: restockForm.note.trim() || null,
+            unit: wireUnit(restockForm.unit),
         });
         restockOpen.value = false;
         await Promise.all([fetchBranchStock(), fetchMovements()]);
@@ -898,6 +915,37 @@ function unitShort(unit: IngredientUnit | null): string {
     if (!unit) return '';
     // Just the symbol for column displays — full label only in dropdowns.
     return unit;
+}
+
+// =================== v2 #13 — entry-unit helpers =================
+// Each ingredient has a base unit (`ingredient.unit`, factor 1)
+// plus optional `alt_units` (each { name, factor } = base units per
+// 1 of itself). When entering a quantity the user picks the base
+// unit ('' value) or an alt unit (its NAME). The wire field `unit`
+// carries that name, or null/omit for the base unit. Conversion to
+// base = entered × factor (×1 for base) — used by the waste preview
+// + warning so they stay correct in base units. Quantities are kept
+// as STRINGS over the wire (no float round-trip); the conversion
+// below parses ONLY for the local numeric preview, never to rebuild
+// the value that gets sent.
+
+/** Map a selected unit string to the wire value: '' → null, else the name. */
+function wireUnit(selected: string): string | null {
+    return selected.trim() === '' ? null : selected;
+}
+
+/**
+ * Convert an entered quantity (number) to base units for the given
+ * ingredient, given the selected alt-unit NAME ('' = base). Returns
+ * the raw number unchanged when no matching alt unit is found.
+ */
+function toBaseUnits(qty: number, ingredient: Ingredient | null | undefined, selected: string): number {
+    if (!ingredient || selected.trim() === '') return qty;
+    const alt = (ingredient.alt_units ?? []).find((u) => u.name === selected);
+    if (!alt) return qty;
+    const factor = parseFloat(alt.factor);
+    if (!Number.isFinite(factor)) return qty;
+    return qty * factor;
 }
 
 function statusBadgeClass(status: string | null): string {
@@ -963,16 +1011,20 @@ const wasteCurrentBalance = computed<string>(() => {
 
 const wasteInsufficient = computed<boolean>(() => {
     const balance = parseFloat(wasteCurrentBalance.value);
-    const qty = parseFloat(wasteForm.quantity || '0');
+    // The balance is in BASE units — convert the entered amount (which
+    // may be in an alt unit) to base before comparing.
+    const qty = toBaseUnits(parseFloat(wasteForm.quantity || '0'), wasteIngredient.value, wasteForm.unit);
     if (!Number.isFinite(balance) || !Number.isFinite(qty)) return false;
     return qty > 0 && qty > balance;
 });
 
 const wasteCostPreview = computed<string>(() => {
-    if (!wasteForm.ingredient_uuid) return '0.000';
-    const ing = ingredients.value.find((i) => i.uuid === wasteForm.ingredient_uuid);
+    const ing = wasteIngredient.value;
     if (!ing) return '0.000';
-    const cost = parseFloat(ing.default_unit_cost) * parseFloat(wasteForm.quantity || '0');
+    // default_unit_cost is per BASE unit — convert the entered amount
+    // to base units first so the preview stays correct for alt units.
+    const baseQty = toBaseUnits(parseFloat(wasteForm.quantity || '0'), ing, wasteForm.unit);
+    const cost = parseFloat(ing.default_unit_cost) * baseQty;
     if (!Number.isFinite(cost)) return '0.000';
     return cost.toFixed(3);
 });
@@ -985,10 +1037,27 @@ function openRecordWaste(): void {
     wasteForm.reason = 'spoiled';
     wasteForm.notes = '';
     wasteForm.occurred_at = '';
+    wasteForm.unit = '';
     wasteErrors.value = {};
     wasteError.value = null;
     wasteOpen.value = true;
 }
+
+// Reset the entry unit to base when the picked ingredient changes,
+// so a stale alt-unit name from a different ingredient can't ride
+// the submit (and so the balance/cost previews recompute cleanly).
+watch(
+    () => wasteForm.ingredient_uuid,
+    () => {
+        wasteForm.unit = '';
+    },
+);
+
+// The currently-picked waste ingredient (full object, for alt_units).
+const wasteIngredient = computed<Ingredient | null>(() => {
+    if (!wasteForm.ingredient_uuid) return null;
+    return ingredients.value.find((i) => i.uuid === wasteForm.ingredient_uuid) ?? null;
+});
 
 async function submitRecordWaste(): Promise<void> {
     if (selectedBranchUuid.value === null) return;
@@ -1002,6 +1071,7 @@ async function submitRecordWaste(): Promise<void> {
             reason: wasteForm.reason,
             notes: wasteForm.notes.trim() || null,
             occurred_at: wasteForm.occurred_at.trim() || null,
+            unit: wireUnit(wasteForm.unit),
         });
         wasteOpen.value = false;
         // Three things change on waste: the waste list, the
@@ -1071,7 +1141,7 @@ function openCreateRestock(): void {
     restockModalTarget.value = null;
     restockForm2.branch_uuid = selectedBranchUuid.value ?? (branches.value[0]?.uuid ?? '');
     restockForm2.note = '';
-    restockForm2.lines = [{ ingredient_uuid: '', quantity: '', note: '' }];
+    restockForm2.lines = [{ ingredient_uuid: '', quantity: '', note: '', unit: '' }];
     restockModalErrors.value = {};
     restockModalError.value = null;
     restockModalOpen.value = true;
@@ -1082,13 +1152,16 @@ function openEditRestock(req: RestockRequest): void {
     restockModalTarget.value = req;
     restockForm2.branch_uuid = req.branch?.uuid ?? '';
     restockForm2.note = req.note ?? '';
+    // Stored request lines hold quantity in BASE units already, so
+    // preload the entry unit as base ('').
     restockForm2.lines = (req.lines ?? []).map((l) => ({
         ingredient_uuid: l.ingredient?.uuid ?? '',
         quantity: l.quantity_requested,
         note: l.note ?? '',
+        unit: '',
     }));
     if (restockForm2.lines.length === 0) {
-        restockForm2.lines = [{ ingredient_uuid: '', quantity: '', note: '' }];
+        restockForm2.lines = [{ ingredient_uuid: '', quantity: '', note: '', unit: '' }];
     }
     restockModalErrors.value = {};
     restockModalError.value = null;
@@ -1096,7 +1169,7 @@ function openEditRestock(req: RestockRequest): void {
 }
 
 function addRestockLine(): void {
-    restockForm2.lines.push({ ingredient_uuid: '', quantity: '', note: '' });
+    restockForm2.lines.push({ ingredient_uuid: '', quantity: '', note: '', unit: '' });
 }
 
 function removeRestockLine(idx: number): void {
@@ -1123,6 +1196,7 @@ async function submitRestockModal(): Promise<void> {
                 ingredient_uuid: l.ingredient_uuid,
                 quantity_requested: l.quantity,
                 note: l.note.trim() || null,
+                unit: wireUnit(l.unit),
             }));
 
         if (restockModalMode.value === 'create') {
@@ -1177,14 +1251,20 @@ function openCreateTransfer(): void {
     transferForm.from_branch_uuid = selectedBranchUuid.value ?? (branches.value[0]?.uuid ?? '');
     transferForm.to_branch_uuid = '';
     transferForm.note = '';
-    transferForm.lines = [{ ingredient_uuid: '', quantity: '' }];
+    transferForm.lines = [{ ingredient_uuid: '', quantity: '', unit: '' }];
     transferModalErrors.value = {};
     transferModalError.value = null;
     transferModalOpen.value = true;
 }
 
 function addTransferLine(): void {
-    transferForm.lines.push({ ingredient_uuid: '', quantity: '' });
+    transferForm.lines.push({ ingredient_uuid: '', quantity: '', unit: '' });
+}
+
+/** Resolve an ingredient (for its alt_units) from a line's uuid. */
+function ingredientByUuid(uuid: string): Ingredient | null {
+    if (!uuid) return null;
+    return ingredients.value.find((i) => i.uuid === uuid) ?? null;
 }
 
 function removeTransferLine(idx: number): void {
@@ -1213,7 +1293,7 @@ async function submitTransferModal(): Promise<void> {
         }
         const cleanLines: BranchTransferLinePayload[] = transferForm.lines
             .filter((l) => l.ingredient_uuid && l.quantity)
-            .map((l) => ({ ingredient_uuid: l.ingredient_uuid, quantity: l.quantity }));
+            .map((l) => ({ ingredient_uuid: l.ingredient_uuid, quantity: l.quantity, unit: wireUnit(l.unit) }));
         if (cleanLines.length === 0) {
             transferModalError.value = t('inventory.transfers.create_modal.no_lines');
             return;
@@ -2387,11 +2467,18 @@ async function submitSuggestions(): Promise<void> {
                     </div>
                     <label class="block">
                         <span class="text-sm font-medium text-slate-700">
-                            {{ t('inventory.fields.signed_quantity') }} ({{ unitShort(adjustTarget.ingredient.unit) }}) *
+                            {{ t('inventory.fields.signed_quantity') }} *
                         </span>
-                        <input v-model="adjustForm.signed_quantity" required type="number" step="0.001" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <div class="mt-1 flex gap-2">
+                            <input v-model="adjustForm.signed_quantity" required type="number" step="0.001" class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                            <select v-model="adjustForm.unit" :title="t('inventory.fields.unit')" class="shrink-0 rounded-lg border border-slate-200 px-2 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                                <option value="">{{ unitShort(adjustTarget.ingredient.unit) }}</option>
+                                <option v-for="au in (adjustTarget.ingredient.alt_units ?? [])" :key="au.uuid" :value="au.name">{{ au.name }}</option>
+                            </select>
+                        </div>
                         <p class="mt-1 text-xs text-slate-500">{{ t('inventory.fields.signed_quantity_hint') }}</p>
                         <p v-if="adjustErrors.signed_quantity" class="mt-1 text-xs text-rose-600">{{ adjustErrors.signed_quantity[0] }}</p>
+                        <p v-if="adjustErrors.unit" class="mt-1 text-xs text-rose-600">{{ adjustErrors.unit[0] }}</p>
                     </label>
                     <label class="block">
                         <span class="text-sm font-medium text-slate-700">{{ t('inventory.fields.note_required') }} *</span>
@@ -2433,9 +2520,16 @@ async function submitSuggestions(): Promise<void> {
                     </label>
                     <div class="grid gap-3 sm:grid-cols-2">
                         <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('inventory.fields.quantity') }} ({{ unitShort(restockTarget.ingredient?.unit ?? null) }}) *</span>
-                            <input v-model="restockForm.quantity" required type="number" step="0.001" min="0.001" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                            <span class="text-sm font-medium text-slate-700">{{ t('inventory.fields.quantity') }} *</span>
+                            <div class="mt-1 flex gap-2">
+                                <input v-model="restockForm.quantity" required type="number" step="0.001" min="0.001" class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                                <select v-model="restockForm.unit" :title="t('inventory.fields.unit')" class="shrink-0 rounded-lg border border-slate-200 px-2 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                                    <option value="">{{ unitShort(restockTarget.ingredient?.unit ?? null) }}</option>
+                                    <option v-for="au in (restockTarget.ingredient?.alt_units ?? [])" :key="au.uuid" :value="au.name">{{ au.name }}</option>
+                                </select>
+                            </div>
                             <p v-if="restockErrors.quantity" class="mt-1 text-xs text-rose-600">{{ restockErrors.quantity[0] }}</p>
+                            <p v-if="restockErrors.unit" class="mt-1 text-xs text-rose-600">{{ restockErrors.unit[0] }}</p>
                         </label>
                         <label class="block">
                             <span class="text-sm font-medium text-slate-700">{{ t('inventory.fields.unit_cost_override') }}</span>
@@ -2532,8 +2626,15 @@ async function submitSuggestions(): Promise<void> {
                     <div class="grid gap-3 sm:grid-cols-2">
                         <label class="block">
                             <span class="text-sm font-medium text-slate-700">{{ t('inventory.waste.modal.quantity') }} *</span>
-                            <input v-model="wasteForm.quantity" type="number" step="0.001" min="0.001" required class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                            <div class="mt-1 flex gap-2">
+                                <input v-model="wasteForm.quantity" type="number" step="0.001" min="0.001" required class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                                <select v-model="wasteForm.unit" :title="t('inventory.fields.unit')" class="shrink-0 rounded-lg border border-slate-200 px-2 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                                    <option value="">{{ unitShort(wasteIngredient?.unit ?? null) }}</option>
+                                    <option v-for="au in (wasteIngredient?.alt_units ?? [])" :key="au.uuid" :value="au.name">{{ au.name }}</option>
+                                </select>
+                            </div>
                             <p v-if="wasteErrors.quantity" class="mt-1 text-xs text-rose-600">{{ wasteErrors.quantity[0] }}</p>
+                            <p v-if="wasteErrors.unit" class="mt-1 text-xs text-rose-600">{{ wasteErrors.unit[0] }}</p>
                         </label>
                         <label class="block">
                             <span class="text-sm font-medium text-slate-700">{{ t('inventory.waste.modal.reason') }} *</span>
@@ -2603,12 +2704,16 @@ async function submitSuggestions(): Promise<void> {
                         <p class="mb-3 text-sm font-semibold text-slate-700">{{ t('inventory.restock.create_modal.lines_header') }}</p>
                         <div class="space-y-2">
                             <div v-for="(line, idx) in restockForm2.lines" :key="idx" class="grid gap-2 rounded-lg bg-white p-3 shadow-sm sm:grid-cols-12">
-                                <select v-model="line.ingredient_uuid" class="sm:col-span-5 rounded-lg border border-slate-200 px-2 py-2 text-sm">
+                                <select v-model="line.ingredient_uuid" class="sm:col-span-4 rounded-lg border border-slate-200 px-2 py-2 text-sm" @change="line.unit = ''">
                                     <option value="">{{ t('inventory.restock.create_modal.ingredient_placeholder') }}</option>
                                     <option v-for="i in ingredients" :key="i.uuid" :value="i.uuid">{{ isArabic && i.name_ar ? i.name_ar : i.name }} ({{ i.unit }})</option>
                                 </select>
                                 <input v-model="line.quantity" type="number" step="0.001" min="0.001" :placeholder="t('inventory.restock.create_modal.quantity')" class="sm:col-span-2 rounded-lg border border-slate-200 px-2 py-2 text-sm tabular-nums">
-                                <input v-model="line.note" type="text" :placeholder="t('inventory.restock.create_modal.line_note')" class="sm:col-span-4 rounded-lg border border-slate-200 px-2 py-2 text-sm">
+                                <select v-model="line.unit" :title="t('inventory.fields.unit')" class="sm:col-span-2 rounded-lg border border-slate-200 px-2 py-2 text-sm">
+                                    <option value="">{{ unitShort(ingredientByUuid(line.ingredient_uuid)?.unit ?? null) }}</option>
+                                    <option v-for="au in (ingredientByUuid(line.ingredient_uuid)?.alt_units ?? [])" :key="au.uuid" :value="au.name">{{ au.name }}</option>
+                                </select>
+                                <input v-model="line.note" type="text" :placeholder="t('inventory.restock.create_modal.line_note')" class="sm:col-span-3 rounded-lg border border-slate-200 px-2 py-2 text-sm">
                                 <button type="button" :title="t('inventory.restock.create_modal.remove_line')" class="sm:col-span-1 inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-2 py-2 text-rose-700 transition hover:bg-rose-100" @click="removeRestockLine(idx)">
                                     <Minus class="size-4" />
                                 </button>
@@ -2673,11 +2778,15 @@ async function submitSuggestions(): Promise<void> {
                         <p class="mb-3 text-sm font-semibold text-slate-700">{{ t('inventory.transfers.create_modal.lines_header') }}</p>
                         <div class="space-y-2">
                             <div v-for="(line, idx) in transferForm.lines" :key="idx" class="grid gap-2 rounded-lg bg-white p-3 shadow-sm sm:grid-cols-12">
-                                <select v-model="line.ingredient_uuid" class="sm:col-span-7 rounded-lg border border-slate-200 px-2 py-2 text-sm">
+                                <select v-model="line.ingredient_uuid" class="sm:col-span-6 rounded-lg border border-slate-200 px-2 py-2 text-sm" @change="line.unit = ''">
                                     <option value="">{{ t('inventory.transfers.create_modal.ingredient_placeholder') }}</option>
                                     <option v-for="i in ingredients" :key="i.uuid" :value="i.uuid">{{ isArabic && i.name_ar ? i.name_ar : i.name }} ({{ i.unit }})</option>
                                 </select>
-                                <input v-model="line.quantity" type="number" step="0.001" min="0.001" :placeholder="t('inventory.transfers.create_modal.quantity')" class="sm:col-span-4 rounded-lg border border-slate-200 px-2 py-2 text-sm tabular-nums">
+                                <input v-model="line.quantity" type="number" step="0.001" min="0.001" :placeholder="t('inventory.transfers.create_modal.quantity')" class="sm:col-span-3 rounded-lg border border-slate-200 px-2 py-2 text-sm tabular-nums">
+                                <select v-model="line.unit" :title="t('inventory.fields.unit')" class="sm:col-span-2 rounded-lg border border-slate-200 px-2 py-2 text-sm">
+                                    <option value="">{{ unitShort(ingredientByUuid(line.ingredient_uuid)?.unit ?? null) }}</option>
+                                    <option v-for="au in (ingredientByUuid(line.ingredient_uuid)?.alt_units ?? [])" :key="au.uuid" :value="au.name">{{ au.name }}</option>
+                                </select>
                                 <button type="button" :title="t('inventory.transfers.create_modal.remove_line')" class="sm:col-span-1 inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-2 py-2 text-rose-700 transition hover:bg-rose-100" @click="removeTransferLine(idx)">
                                     <Minus class="size-4" />
                                 </button>
