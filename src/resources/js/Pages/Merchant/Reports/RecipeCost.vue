@@ -1,17 +1,52 @@
 <script setup lang="ts">
 /** Recipe & Cost Report — blueprint §5.11.4. */
+import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { fetchRecipeCostReport, type RecipeCostReportPayload } from '@/lib/api/reports';
 import ReportShell from './components/ReportShell.vue';
+import ReportChart from './components/ReportChart.vue';
 import { useReportRunner } from './components/useReportRunner';
 
 const { t } = useI18n();
 const { filter, payload, loading, error, run } = useReportRunner<RecipeCostReportPayload>(fetchRecipeCostReport);
+
+/** Report money values arrive as decimal-3 strings — parse to a number. */
+function num(v: string | number | undefined | null): number {
+    const n = typeof v === 'number' ? v : Number.parseFloat(String(v ?? '0'));
+    return Number.isFinite(n) ? n : 0;
+}
+
+// ---- Chart series (top 20 products by margin %) ----
+const marginChart = computed(() => {
+    const rows = [...(payload.value?.rows ?? [])]
+        .sort((a, b) => b.margin_pct - a.margin_pct)
+        .slice(0, 20);
+    return {
+        categories: rows.map((r) => r.product_name),
+        series: [{ name: t('reports.recipe_cost.columns.margin_pct'), data: rows.map((r) => num(r.margin_pct)) }] as ApexSeries,
+    };
+});
+
+// Local alias so the template stays readable without importing the apex type here.
+type ApexSeries = { name: string; data: number[] }[];
 </script>
 
 <template>
     <ReportShell :title="t('reports.recipe_cost.page_title')" v-model="filter" :loading="loading" :error="error" @run="run">
         <div v-if="payload" class="space-y-4">
+            <ReportChart
+                v-if="payload.rows.length"
+                type="bar"
+                :title="t('reports.recipe_cost.columns.margin_pct')"
+                :series="marginChart.series"
+                :categories="marginChart.categories"
+                :height="Math.max(220, marginChart.categories.length * 40)"
+                horizontal
+                distributed
+                hide-legend
+                :empty-text="t('reports.shared.no_data')"
+            />
+
             <div v-if="payload.rows.length" class="rounded-xl border border-slate-200 bg-white shadow-sm">
                 <table class="w-full text-sm">
                     <thead class="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">

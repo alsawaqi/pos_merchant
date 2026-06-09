@@ -1,13 +1,50 @@
 <script setup lang="ts">
 /** Restock / Purchasing Report — blueprint §5.11.6. */
+import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { fetchRestockPurchasingReport, type RestockPurchasingReportPayload } from '@/lib/api/reports';
 import ReportShell from './components/ReportShell.vue';
 import HeadlineGrid from './components/HeadlineGrid.vue';
+import ReportChart from './components/ReportChart.vue';
 import { useReportRunner } from './components/useReportRunner';
 
 const { t } = useI18n();
 const { filter, payload, loading, error, run } = useReportRunner<RestockPurchasingReportPayload>(fetchRestockPurchasingReport);
+
+/** Report money values arrive as decimal-3 strings — parse to a number. */
+function num(v: string | number | undefined | null): number {
+    const n = typeof v === 'number' ? v : Number.parseFloat(String(v ?? '0'));
+    return Number.isFinite(n) ? n : 0;
+}
+
+// ---- Chart series (all derived from the live payload) ----
+
+const supplierChart = computed(() => {
+    const rows = payload.value?.by_supplier ?? [];
+    return {
+        labels: rows.map((r) => r.supplier_name),
+        series: rows.map((r) => num(r.cost)),
+    };
+});
+
+const branchChart = computed(() => {
+    const rows = payload.value?.by_branch ?? [];
+    return {
+        categories: rows.map((r) => r.branch_name),
+        series: [{ name: t('reports.shared.cost'), data: rows.map((r) => num(r.cost)) }] as ApexSeries,
+    };
+});
+
+const topPurchasedChart = computed(() => {
+    const rows = payload.value?.top_purchased ?? [];
+    return {
+        categories: rows.map((r) => r.ingredient_name),
+        series: [{ name: t('reports.shared.cost'), data: rows.map((r) => num(r.cost)) }] as ApexSeries,
+    };
+});
+
+// Local alias so the template stays readable without importing the apex type here.
+type ApexSeries = { name: string; data: number[] }[];
 </script>
 
 <template>
@@ -19,6 +56,44 @@ const { filter, payload, loading, error, run } = useReportRunner<RestockPurchasi
                     { label: t('reports.restock_purchasing.headline_labels.total_qty'), value: payload.headline.total_qty },
                     { label: t('reports.restock_purchasing.headline_labels.event_count'), value: payload.headline.event_count },
                 ]"
+            />
+
+            <!-- v2 charts: lead with the visuals, exact-figure tables follow below -->
+            <div class="grid gap-6 lg:grid-cols-2">
+                <ReportChart
+                    v-if="payload.by_supplier.length"
+                    type="donut"
+                    :title="t('reports.restock_purchasing.by_supplier')"
+                    :series="supplierChart.series"
+                    :labels="supplierChart.labels"
+                    currency
+                    :empty-text="t('reports.shared.no_data')"
+                />
+                <ReportChart
+                    v-if="payload.by_branch.length > 1"
+                    type="bar"
+                    :title="t('reports.shared.by_branch')"
+                    :series="branchChart.series"
+                    :categories="branchChart.categories"
+                    currency
+                    distributed
+                    hide-legend
+                    :empty-text="t('reports.shared.no_data')"
+                />
+            </div>
+
+            <ReportChart
+                v-if="payload.top_purchased.length"
+                type="bar"
+                :title="t('reports.restock_purchasing.top_purchased')"
+                :series="topPurchasedChart.series"
+                :categories="topPurchasedChart.categories"
+                :height="Math.max(220, payload.top_purchased.length * 40)"
+                currency
+                horizontal
+                distributed
+                hide-legend
+                :empty-text="t('reports.shared.no_data')"
             />
 
             <div class="grid gap-6 lg:grid-cols-2">

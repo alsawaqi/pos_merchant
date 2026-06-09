@@ -1,17 +1,76 @@
 <script setup lang="ts">
 /** Product Performance Report — blueprint §5.11.2. */
+import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { fetchProductPerformanceReport, type ProductPerformanceReportPayload } from '@/lib/api/reports';
 import ReportShell from './components/ReportShell.vue';
+import ReportChart from './components/ReportChart.vue';
 import { useReportRunner } from './components/useReportRunner';
 
 const { t } = useI18n();
 const { filter, payload, loading, error, run } = useReportRunner<ProductPerformanceReportPayload>(fetchProductPerformanceReport);
+
+/** Report money/qty values arrive as decimal-3 strings — parse to a number. */
+function num(v: string | number | undefined | null): number {
+    const n = typeof v === 'number' ? v : Number.parseFloat(String(v ?? '0'));
+    return Number.isFinite(n) ? n : 0;
+}
+
+// ---- Chart series (all derived from the live payload) ----
+
+const revenueChart = computed(() => {
+    const rows = payload.value?.top_by_revenue ?? [];
+    return {
+        categories: rows.map((r) => r.product_name),
+        series: [{ name: t('reports.product_performance.top_by_revenue'), data: rows.map((r) => num(r.revenue)) }] as ApexSeries,
+    };
+});
+
+const qtyChart = computed(() => {
+    const rows = payload.value?.top_by_qty ?? [];
+    return {
+        categories: rows.map((r) => r.product_name),
+        series: [{ name: t('reports.product_performance.top_by_qty'), data: rows.map((r) => num(r.qty)) }] as ApexSeries,
+    };
+});
+
+// Local alias so the template stays readable without importing the apex type here.
+type ApexSeries = { name: string; data: number[] }[];
 </script>
 
 <template>
     <ReportShell :title="t('reports.product_performance.page_title')" v-model="filter" :loading="loading" :error="error" @run="run">
-        <div v-if="payload" class="grid gap-6 lg:grid-cols-2">
+        <div v-if="payload" class="space-y-6">
+            <!-- v2 charts: lead with the visuals, exact-figure tables follow below -->
+            <div class="grid gap-6 lg:grid-cols-2">
+                <ReportChart
+                    v-if="revenueChart.categories.length"
+                    type="bar"
+                    :title="t('reports.product_performance.top_by_revenue')"
+                    :series="revenueChart.series"
+                    :categories="revenueChart.categories"
+                    :height="Math.max(220, revenueChart.categories.length * 40)"
+                    currency
+                    horizontal
+                    distributed
+                    hide-legend
+                    :empty-text="t('reports.shared.no_data')"
+                />
+                <ReportChart
+                    v-if="qtyChart.categories.length"
+                    type="bar"
+                    :title="t('reports.product_performance.top_by_qty')"
+                    :series="qtyChart.series"
+                    :categories="qtyChart.categories"
+                    :height="Math.max(220, qtyChart.categories.length * 40)"
+                    horizontal
+                    distributed
+                    hide-legend
+                    :empty-text="t('reports.shared.no_data')"
+                />
+            </div>
+
+            <div class="grid gap-6 lg:grid-cols-2">
             <section v-if="payload.top_by_revenue && payload.top_by_revenue.length" class="rounded-xl border border-slate-200 bg-white shadow-sm">
                 <h2 class="border-b border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700">{{ t('reports.product_performance.top_by_revenue') }}</h2>
                 <table class="w-full text-sm">
@@ -74,6 +133,7 @@ const { filter, payload, loading, error, run } = useReportRunner<ProductPerforma
                     </tbody>
                 </table>
             </section>
+            </div>
         </div>
 
         <div v-else-if="!loading" class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">

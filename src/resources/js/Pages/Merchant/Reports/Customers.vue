@@ -1,13 +1,57 @@
 <script setup lang="ts">
 /** Customer Report — blueprint §5.11.8. */
+import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { fetchCustomerReport, type CustomerReportPayload } from '@/lib/api/reports';
 import ReportShell from './components/ReportShell.vue';
 import HeadlineGrid from './components/HeadlineGrid.vue';
+import ReportChart from './components/ReportChart.vue';
 import { useReportRunner } from './components/useReportRunner';
 
 const { t } = useI18n();
 const { filter, payload, loading, error, run } = useReportRunner<CustomerReportPayload>(fetchCustomerReport);
+
+/** Report money values arrive as decimal-3 strings — parse to a number. */
+function num(v: string | number | undefined | null): number {
+    const n = typeof v === 'number' ? v : Number.parseFloat(String(v ?? '0'));
+    return Number.isFinite(n) ? n : 0;
+}
+
+// Local alias so the template stays readable without importing the apex type here.
+type ApexSeries = { name: string; data: number[] }[];
+
+// ---- Chart series (all derived from the live payload) ----
+
+const topCustomersChart = computed(() => {
+    const rows = payload.value?.top_customers ?? [];
+    return {
+        categories: rows.map((r) => r.name),
+        series: [{ name: t('reports.shared.value'), data: rows.map((r) => num(r.total_spend)) }] as ApexSeries,
+    };
+});
+
+const cohortChart = computed(() => {
+    const c = payload.value?.cohort;
+    return {
+        labels: [t('reports.customers.new_count'), t('reports.customers.returning_count')],
+        series: [c?.new_count ?? 0, c?.returning_count ?? 0],
+    };
+});
+
+const loyaltyChart = computed(() => {
+    const l = payload.value?.loyalty;
+    return {
+        categories: [
+            t('reports.customers.points_issued'),
+            t('reports.customers.points_redeemed'),
+            t('reports.customers.net_change'),
+        ],
+        series: [{
+            name: t('reports.customers.loyalty'),
+            data: [l?.points_issued ?? 0, l?.points_redeemed ?? 0, l?.net_change ?? 0],
+        }] as ApexSeries,
+    };
+});
 </script>
 
 <template>
@@ -23,6 +67,41 @@ const { filter, payload, loading, error, run } = useReportRunner<CustomerReportP
                     { label: t('reports.customers.outstanding_liability'), value: payload.loyalty.outstanding_liability },
                 ]"
             />
+
+            <!-- v2 charts: lead with the visuals, exact-figure tables follow below -->
+            <ReportChart
+                v-if="payload.top_customers && payload.top_customers.length"
+                type="bar"
+                :title="t('reports.customers.top_customers')"
+                :series="topCustomersChart.series"
+                :categories="topCustomersChart.categories"
+                :height="Math.max(220, payload.top_customers.length * 40)"
+                currency
+                horizontal
+                distributed
+                hide-legend
+                :empty-text="t('reports.shared.no_data')"
+            />
+
+            <div class="grid gap-6 lg:grid-cols-2">
+                <ReportChart
+                    v-if="payload.cohort"
+                    type="donut"
+                    :title="t('reports.customers.cohort')"
+                    :series="cohortChart.series"
+                    :labels="cohortChart.labels"
+                    :empty-text="t('reports.shared.no_data')"
+                />
+                <ReportChart
+                    v-if="payload.loyalty"
+                    type="bar"
+                    :title="t('reports.customers.loyalty')"
+                    :series="loyaltyChart.series"
+                    :categories="loyaltyChart.categories"
+                    hide-legend
+                    :empty-text="t('reports.shared.no_data')"
+                />
+            </div>
 
             <div v-if="payload.top_customers && payload.top_customers.length" class="rounded-xl border border-slate-200 bg-white shadow-sm">
                 <h2 class="border-b border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700">{{ t('reports.customers.top_customers') }}</h2>

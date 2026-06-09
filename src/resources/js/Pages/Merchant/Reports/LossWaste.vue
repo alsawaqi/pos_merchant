@@ -1,13 +1,50 @@
 <script setup lang="ts">
 /** Loss / Waste Report — blueprint §5.11.5. */
+import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { fetchLossWasteReport, type LossWasteReportPayload } from '@/lib/api/reports';
 import ReportShell from './components/ReportShell.vue';
 import HeadlineGrid from './components/HeadlineGrid.vue';
+import ReportChart from './components/ReportChart.vue';
 import { useReportRunner } from './components/useReportRunner';
 
 const { t } = useI18n();
 const { filter, payload, loading, error, run } = useReportRunner<LossWasteReportPayload>(fetchLossWasteReport);
+
+/** Report money values arrive as decimal-3 strings — parse to a number. */
+function num(v: string | number | undefined | null): number {
+    const n = typeof v === 'number' ? v : Number.parseFloat(String(v ?? '0'));
+    return Number.isFinite(n) ? n : 0;
+}
+
+// ---- Chart series (all derived from the live payload) ----
+
+const reasonChart = computed(() => {
+    const rows = payload.value?.by_reason ?? [];
+    return {
+        labels: rows.map((r) => r.reason),
+        series: rows.map((r) => num(r.value)),
+    };
+});
+
+const branchChart = computed(() => {
+    const rows = payload.value?.by_branch ?? [];
+    return {
+        categories: rows.map((r) => r.branch_name),
+        series: [{ name: t('reports.shared.value'), data: rows.map((r) => num(r.value)) }] as ApexSeries,
+    };
+});
+
+const topWastedChart = computed(() => {
+    const rows = payload.value?.top_wasted ?? [];
+    return {
+        categories: rows.map((r) => r.ingredient_name),
+        series: [{ name: t('reports.shared.value'), data: rows.map((r) => num(r.value)) }] as ApexSeries,
+    };
+});
+
+// Local alias so the template stays readable without importing the apex type here.
+type ApexSeries = { name: string; data: number[] }[];
 </script>
 
 <template>
@@ -19,6 +56,44 @@ const { filter, payload, loading, error, run } = useReportRunner<LossWasteReport
                     { label: t('reports.loss_waste.headline_labels.total_qty'), value: payload.headline.total_qty },
                     { label: t('reports.loss_waste.headline_labels.event_count'), value: payload.headline.event_count },
                 ]"
+            />
+
+            <!-- v2 charts: lead with the visuals, exact-figure tables follow below -->
+            <div class="grid gap-6 lg:grid-cols-2">
+                <ReportChart
+                    v-if="reasonChart.labels.length"
+                    type="donut"
+                    :title="t('reports.loss_waste.by_reason')"
+                    :series="reasonChart.series"
+                    :labels="reasonChart.labels"
+                    currency
+                    :empty-text="t('reports.shared.no_data')"
+                />
+                <ReportChart
+                    v-if="branchChart.categories.length > 1"
+                    type="bar"
+                    :title="t('reports.shared.by_branch')"
+                    :series="branchChart.series"
+                    :categories="branchChart.categories"
+                    currency
+                    distributed
+                    hide-legend
+                    :empty-text="t('reports.shared.no_data')"
+                />
+            </div>
+
+            <ReportChart
+                v-if="topWastedChart.categories.length"
+                type="bar"
+                :title="t('reports.loss_waste.top_wasted')"
+                :series="topWastedChart.series"
+                :categories="topWastedChart.categories"
+                :height="Math.max(220, topWastedChart.categories.length * 40)"
+                currency
+                horizontal
+                distributed
+                hide-legend
+                :empty-text="t('reports.shared.no_data')"
             />
 
             <div class="grid gap-6 lg:grid-cols-2">
