@@ -25,10 +25,12 @@ import {
     createAddOnGroup,
     createCategory,
     createProduct,
+    createProductAddOnGroup,
     deleteAddOn,
     deleteAddOnGroup,
     deleteCategory,
     deleteProduct,
+    getProductAddOnGroups,
     listAddOnGroups,
     listCategories,
     listProducts,
@@ -441,6 +443,9 @@ function openCreateProduct(): void {
     prodModalOpen.value = true;
     // Phase 6c — clear the provider-price grid for the create flow.
     void loadProductProviderPrices(null);
+    // v2 #6 — owned add-on groups need a saved product id, so
+    // reset the editor; the template shows a "save first" hint.
+    resetOwnedAddons();
 }
 
 function openEditProduct(product: Product): void {
@@ -479,6 +484,9 @@ function openEditProduct(product: Product): void {
     prodModalOpen.value = true;
     // Phase 6c — load existing provider prices for the grid.
     void loadProductProviderPrices(product.uuid);
+    // v2 #6 — fetch this product's privately-owned add-on groups.
+    resetOwnedAddons();
+    void loadOwnedAddonGroups(product.uuid);
 }
 
 // ===================== Phase 5b — Recipe helpers =====================
@@ -1001,6 +1009,136 @@ async function syncProductProviderPrices(productUuid: string): Promise<void> {
             // sync error -- the modal will still close. The
             // merchant can retry the specific row.
         }
+    }
+}
+
+// =================== v2 #6 — product-unique add-on groups ===================
+// Groups privately owned by THIS product (separate from the
+// shared addon_group_uuids picker). Only meaningful when editing
+// a saved product — owned groups attach to a persisted product
+// id, so create mode shows a "save first" hint instead.
+
+const ownedAddonGroups = ref<AddOnGroup[]>([]);
+const ownedAddonsBusy = ref(false);
+const ownedAddonsError = ref<string | null>(null);
+// Per-group inline "add option" form state, keyed by group uuid.
+const ownedOptionForms = ref<Record<string, { name: string; price_delta: string }>>({});
+// Inline "add a group" form.
+const ownedGroupForm = reactive<{ name: string; selection_mode: AddOnSelectionMode }>({
+    name: '',
+    selection_mode: 'single',
+});
+
+function resetOwnedAddons(): void {
+    ownedAddonGroups.value = [];
+    ownedOptionForms.value = {};
+    ownedAddonsError.value = null;
+    ownedGroupForm.name = '';
+    ownedGroupForm.selection_mode = 'single';
+}
+
+function optionFormFor(groupUuid: string): { name: string; price_delta: string } {
+    return ownedOptionForms.value[groupUuid] ?? { name: '', price_delta: '0.000' };
+}
+
+async function loadOwnedAddonGroups(productUuid: string): Promise<void> {
+    ownedAddonsBusy.value = true;
+    ownedAddonsError.value = null;
+    try {
+        const response = await getProductAddOnGroups(productUuid);
+        ownedAddonGroups.value = response.data;
+        // Seed one inline "add option" form per group so the
+        // template binds to a stable reactive object (no mutation
+        // during render).
+        const forms: Record<string, { name: string; price_delta: string }> = {};
+        for (const group of response.data) {
+            forms[group.uuid] = ownedOptionForms.value[group.uuid] ?? { name: '', price_delta: '0.000' };
+        }
+        ownedOptionForms.value = forms;
+    } catch (err) {
+        ownedAddonsError.value = err instanceof ApiError && err.payload && typeof err.payload === 'object' && 'message' in err.payload
+            ? String((err.payload as { message?: unknown }).message ?? t('catalogue.product_addons.save_failed'))
+            : t('catalogue.product_addons.save_failed');
+    } finally {
+        ownedAddonsBusy.value = false;
+    }
+}
+
+async function refetchOwnedAddonGroups(): Promise<void> {
+    if (!prodModalTarget.value) return;
+    await loadOwnedAddonGroups(prodModalTarget.value.uuid);
+}
+
+async function addOwnedGroup(): Promise<void> {
+    if (!prodModalTarget.value || ownedGroupForm.name.trim() === '') return;
+    ownedAddonsBusy.value = true;
+    ownedAddonsError.value = null;
+    try {
+        await createProductAddOnGroup(prodModalTarget.value.uuid, {
+            name: ownedGroupForm.name.trim(),
+            selection_mode: ownedGroupForm.selection_mode,
+        });
+        ownedGroupForm.name = '';
+        ownedGroupForm.selection_mode = 'single';
+        await refetchOwnedAddonGroups();
+    } catch (err) {
+        ownedAddonsError.value = err instanceof ApiError && err.payload && typeof err.payload === 'object' && 'message' in err.payload
+            ? String((err.payload as { message?: unknown }).message ?? t('catalogue.product_addons.save_failed'))
+            : t('catalogue.product_addons.save_failed');
+    } finally {
+        ownedAddonsBusy.value = false;
+    }
+}
+
+async function addOwnedOption(groupUuid: string): Promise<void> {
+    const form = ownedOptionForms.value[groupUuid];
+    if (!form || form.name.trim() === '') return;
+    ownedAddonsBusy.value = true;
+    ownedAddonsError.value = null;
+    try {
+        await createAddOn(groupUuid, {
+            name: form.name.trim(),
+            price_delta: form.price_delta.trim() === '' ? '0.000' : form.price_delta.trim(),
+        });
+        form.name = '';
+        form.price_delta = '0.000';
+        await refetchOwnedAddonGroups();
+    } catch (err) {
+        ownedAddonsError.value = err instanceof ApiError && err.payload && typeof err.payload === 'object' && 'message' in err.payload
+            ? String((err.payload as { message?: unknown }).message ?? t('catalogue.product_addons.save_failed'))
+            : t('catalogue.product_addons.save_failed');
+    } finally {
+        ownedAddonsBusy.value = false;
+    }
+}
+
+async function removeOwnedOption(addonUuid: string): Promise<void> {
+    ownedAddonsBusy.value = true;
+    ownedAddonsError.value = null;
+    try {
+        await deleteAddOn(addonUuid);
+        await refetchOwnedAddonGroups();
+    } catch (err) {
+        ownedAddonsError.value = err instanceof ApiError && err.payload && typeof err.payload === 'object' && 'message' in err.payload
+            ? String((err.payload as { message?: unknown }).message ?? t('catalogue.product_addons.save_failed'))
+            : t('catalogue.product_addons.save_failed');
+    } finally {
+        ownedAddonsBusy.value = false;
+    }
+}
+
+async function removeOwnedGroup(groupUuid: string): Promise<void> {
+    ownedAddonsBusy.value = true;
+    ownedAddonsError.value = null;
+    try {
+        await deleteAddOnGroup(groupUuid);
+        await refetchOwnedAddonGroups();
+    } catch (err) {
+        ownedAddonsError.value = err instanceof ApiError && err.payload && typeof err.payload === 'object' && 'message' in err.payload
+            ? String((err.payload as { message?: unknown }).message ?? t('catalogue.product_addons.save_failed'))
+            : t('catalogue.product_addons.save_failed');
+    } finally {
+        ownedAddonsBusy.value = false;
     }
 }
 </script>
@@ -1670,6 +1808,144 @@ async function syncProductProviderPrices(productUuid: string): Promise<void> {
                                 <span class="text-[10px] text-slate-400">{{ selectionModeLabel(group.selection_mode) }}</span>
                             </label>
                         </div>
+                    </fieldset>
+
+                    <!-- v2 #6 — product-unique add-on groups. Owned
+                         privately by THIS product (separate from the
+                         shared picker above). Only available once the
+                         product is saved (groups attach to a product
+                         id). Mirrors the Add-ons tab's group/option
+                         card styling for visual consistency. -->
+                    <fieldset class="rounded-lg border border-slate-200 p-3">
+                        <legend class="px-2 text-sm font-semibold text-slate-700">
+                            <Sparkles class="me-1 inline size-3.5 text-indigo-600" />
+                            {{ t('catalogue.product_addons.title') }}
+                        </legend>
+                        <p class="mb-2 text-xs text-slate-500">{{ t('catalogue.product_addons.hint') }}</p>
+
+                        <!-- Create mode: owned groups need a saved product id. -->
+                        <div v-if="prodModalMode === 'create'" class="rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
+                            {{ t('catalogue.product_addons.save_first') }}
+                        </div>
+
+                        <template v-else>
+                            <div v-if="ownedAddonsError" class="mb-2 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+                                {{ ownedAddonsError }}
+                            </div>
+
+                            <div v-if="ownedAddonGroups.length === 0" class="rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
+                                {{ t('catalogue.product_addons.empty') }}
+                            </div>
+
+                            <div v-else class="space-y-3">
+                                <article
+                                    v-for="group in ownedAddonGroups"
+                                    :key="group.id"
+                                    class="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
+                                >
+                                    <header class="flex items-start justify-between gap-3">
+                                        <div class="min-w-0">
+                                            <h3 class="truncate text-sm font-semibold text-slate-950">{{ group.name }}</h3>
+                                            <p class="mt-0.5 text-[11px] text-slate-500">
+                                                <Boxes class="me-1 inline size-3" />
+                                                {{ selectionModeLabel(group.selection_mode) }}
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            :disabled="ownedAddonsBusy"
+                                            class="inline-flex items-center gap-1 rounded border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                            @click="removeOwnedGroup(group.uuid)"
+                                        >
+                                            <Trash2 class="size-3" /> {{ t('catalogue.product_addons.delete_group') }}
+                                        </button>
+                                    </header>
+
+                                    <!-- Options list -->
+                                    <ul v-if="(group.addons ?? []).length > 0" class="mt-2 divide-y divide-slate-100 rounded-lg border border-slate-100 bg-slate-50/40">
+                                        <li
+                                            v-for="option in group.addons"
+                                            :key="option.id"
+                                            class="flex items-center justify-between gap-2 px-3 py-2"
+                                        >
+                                            <span class="min-w-0 flex-1 truncate text-sm font-medium text-slate-900">{{ option.name }}</span>
+                                            <span class="text-xs font-semibold tabular-nums text-slate-700">
+                                                +{{ option.price_delta }}
+                                                <span class="text-[10px] font-normal text-slate-400">OMR</span>
+                                            </span>
+                                            <button
+                                                type="button"
+                                                :disabled="ownedAddonsBusy"
+                                                class="rounded p-1 text-rose-500 transition hover:bg-rose-100 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                                :title="t('catalogue.product_addons.remove')"
+                                                @click="removeOwnedOption(option.uuid)"
+                                            >
+                                                <Trash2 class="size-3.5" />
+                                            </button>
+                                        </li>
+                                    </ul>
+
+                                    <!-- Add option inline form -->
+                                    <div class="mt-2 flex flex-wrap items-end gap-2">
+                                        <label class="block flex-1 min-w-[8rem]">
+                                            <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.product_addons.option_name') }}</span>
+                                            <input
+                                                v-model="optionFormFor(group.uuid).name"
+                                                type="text"
+                                                class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                                            >
+                                        </label>
+                                        <label class="block w-28">
+                                            <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.product_addons.price_delta') }}</span>
+                                            <input
+                                                v-model="optionFormFor(group.uuid).price_delta"
+                                                type="number"
+                                                step="0.001"
+                                                class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                                            >
+                                        </label>
+                                        <button
+                                            type="button"
+                                            :disabled="ownedAddonsBusy || optionFormFor(group.uuid).name.trim() === ''"
+                                            class="inline-flex items-center gap-1 rounded border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-[11px] font-semibold text-teal-700 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                            @click="addOwnedOption(group.uuid)"
+                                        >
+                                            <Plus class="size-3" /> {{ t('catalogue.product_addons.add_option') }}
+                                        </button>
+                                    </div>
+                                </article>
+                            </div>
+
+                            <!-- Add a group inline form -->
+                            <div class="mt-3 flex flex-wrap items-end gap-2 rounded-lg border border-dashed border-slate-200 p-2.5">
+                                <label class="block flex-1 min-w-[8rem]">
+                                    <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.product_addons.group_name') }}</span>
+                                    <input
+                                        v-model="ownedGroupForm.name"
+                                        type="text"
+                                        class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                                    >
+                                </label>
+                                <label class="block w-36">
+                                    <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.selection_modes.single') }} / {{ t('catalogue.selection_modes.multi') }}</span>
+                                    <select
+                                        v-model="ownedGroupForm.selection_mode"
+                                        class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                                    >
+                                        <option value="single">{{ t('catalogue.selection_modes.single') }}</option>
+                                        <option value="multi">{{ t('catalogue.selection_modes.multi') }}</option>
+                                    </select>
+                                </label>
+                                <button
+                                    type="button"
+                                    :disabled="ownedAddonsBusy || ownedGroupForm.name.trim() === ''"
+                                    class="inline-flex items-center gap-1 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                    @click="addOwnedGroup"
+                                >
+                                    <Plus class="size-3.5" /> {{ t('catalogue.product_addons.add_group') }}
+                                </button>
+                            </div>
+                        </template>
                     </fieldset>
 
                     <!-- Phase B - per-branch availability + unit stock.

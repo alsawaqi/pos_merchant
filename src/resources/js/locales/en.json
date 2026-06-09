@@ -561,6 +561,20 @@
             "confirm": "Yes, delete",
             "submitting": "Deleting…"
         },
+        "product_addons": {
+            "title": "Add-ons unique to this product",
+            "hint": "Options only this product offers. Shared add-on groups are managed in the Add-ons tab.",
+            "save_first": "Save the product first to add its own add-ons.",
+            "empty": "No product-specific add-ons yet.",
+            "add_group": "Add a group",
+            "group_name": "Group name",
+            "add_option": "Add option",
+            "option_name": "Option name",
+            "price_delta": "Price +/-",
+            "remove": "Remove",
+            "delete_group": "Delete group",
+            "save_failed": "Could not save. Try again."
+        },
         "cat_modal": {
             "create_title": "Add category",
             "edit_title": "Edit category",

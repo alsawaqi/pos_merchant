@@ -136,6 +136,8 @@ export interface AddOnGroup {
     name_ar: string | null;
     selection_mode: AddOnSelectionMode | null;
     is_global: boolean;
+    /** v2 #6: non-null = a group privately owned by this product. */
+    owner_product_id: number | null;
     display_order: number;
     status: AddOnStatus;
     products_count?: number;
@@ -308,6 +310,22 @@ export function updateAddOnGroup(
 
 export function deleteAddOnGroup(uuid: string): Promise<void> {
     return apiDelete<void>(`/api/addon-groups/${uuid}`);
+}
+
+// ---- v2 #6 — product-unique add-on groups (owned by one product) ----
+
+export function getProductAddOnGroups(productUuid: string): Promise<{ data: AddOnGroup[] }> {
+    return apiGet<{ data: AddOnGroup[] }>(`/api/products/${productUuid}/addon-groups`);
+}
+
+export function createProductAddOnGroup(
+    productUuid: string,
+    payload: CreateAddOnGroupPayload,
+): Promise<{ data: AddOnGroup }> {
+    return apiPost<{ data: AddOnGroup }>(
+        `/api/products/${productUuid}/addon-groups`,
+        payload as unknown as JsonValue,
+    );
 }
 
 // ---- Phase 4.9 — Add-ons (within a group) ----------------------
