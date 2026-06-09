@@ -54,6 +54,37 @@ it('lists products of the actor\'s company with eager-loaded category', function
     expect($response->json('data.0.category.name'))->toBe('Drinks');
 });
 
+// =================== PAGINATION + SEARCH (v2 #12) ===================
+
+it('server-paginates the catalogue with a {data, meta} envelope', function (): void {
+    $ctx = makeMerchantActor();
+    $cat = ProductCategory::factory()->for($ctx['company'], 'company')->create();
+    Product::factory()->count(60)->for($ctx['company'], 'company')->for($cat, 'category')->create();
+
+    $first = $this->getJson('/api/products?per_page=50')->assertOk();
+    expect($first->json('data'))->toHaveCount(50);
+    expect($first->json('meta.total'))->toBe(60);
+    expect($first->json('meta.last_page'))->toBe(2);
+    expect($first->json('meta.current_page'))->toBe(1);
+
+    $second = $this->getJson('/api/products?per_page=50&page=2')->assertOk();
+    expect($second->json('data'))->toHaveCount(10);
+    expect($second->json('meta.current_page'))->toBe(2);
+});
+
+it('filters the catalogue by a case-insensitive name search', function (): void {
+    $ctx = makeMerchantActor();
+    $cat = ProductCategory::factory()->for($ctx['company'], 'company')->create();
+    Product::factory()->for($ctx['company'], 'company')->for($cat, 'category')->create(['name' => 'Iced Latte']);
+    Product::factory()->for($ctx['company'], 'company')->for($cat, 'category')->create(['name' => 'Mocha']);
+    Product::factory()->for($ctx['company'], 'company')->for($cat, 'category')->create(['name' => 'Tea']);
+
+    $res = $this->getJson('/api/products?search=lat')->assertOk();
+    expect($res->json('data'))->toHaveCount(1);
+    expect($res->json('data.0.name'))->toBe('Iced Latte');
+    expect($res->json('meta.total'))->toBe(1);
+});
+
 it('filters products by ?category=uuid', function (): void {
     $ctx = makeMerchantActor();
 

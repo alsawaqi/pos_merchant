@@ -33,7 +33,7 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use RuntimeException;
 
 /**
- *   GET    /api/products                     → list (?category=uuid filter)
+ *   GET    /api/products                     → list (?category=uuid, ?search, ?page, ?per_page)
  *   POST   /api/products                     → create
  *   PATCH  /api/products/{product:uuid}      → update
  *   DELETE /api/products/{product:uuid}      → soft delete
@@ -41,11 +41,10 @@ use RuntimeException;
  * Read gated on CatalogueView; mutations on CatalogueManage.
  * Tenant-scoped via MerchantTenantContext.
  *
- * Index supports an optional ?category={uuid} filter for the
- * UI's category-side picker — the merchant clicks a category
- * tab and we list only its products instead of a flat
- * megadump. Without the filter we return everything ordered
- * by category then name.
+ * Index is SERVER-PAGINATED (v2 #12 — the catalogue is the one merchant list
+ * that grows large) and returns the standard {data, meta} envelope. Optional
+ * ?category={uuid} narrows to one category; ?search matches name / name_ar
+ * (case-insensitive); ?per_page clamps 1..200 (default 50).
  */
 class ProductsController extends Controller
 {
@@ -91,13 +90,24 @@ class ProductsController extends Controller
             $query->where('category_id', $categoryId ?? -1);
         }
 
-        $products = $query
-            ->orderBy('category_id')
-            ->orderBy('display_order')
-            ->orderBy('name')
-            ->get();
+        // v2 #12 — optional case-insensitive text search over name + name_ar.
+        if ($request->filled('search')) {
+            $like = '%'.strtolower(trim((string) $request->query('search'))).'%';
+            $query->where(function ($q) use ($like): void {
+                $q->whereRaw('LOWER(name) LIKE ?', [$like])
+                    ->orWhereRaw('LOWER(name_ar) LIKE ?', [$like]);
+            });
+        }
 
-        return ProductResource::collection($products);
+        $perPage = min((int) $request->query('per_page', 50), 200);
+
+        return ProductResource::collection(
+            $query
+                ->orderBy('category_id')
+                ->orderBy('display_order')
+                ->orderBy('name')
+                ->paginate($perPage),
+        );
     }
 
     public function store(CreateProductRequest $request): JsonResponse
