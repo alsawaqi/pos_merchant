@@ -236,6 +236,10 @@ return new class extends Migration
             $table->id();
             $table->uuid('uuid')->unique();
             $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            // v2 #6 — product-unique add-ons: a group privately owned by one
+            // product (NULL = shared/global). No FK in the test schema to keep
+            // table-create order flexible; the live migration has the real FK.
+            $table->unsignedBigInteger('owner_product_id')->nullable();
             $table->string('name');
             $table->string('name_ar')->nullable();
             $table->string('selection_mode', 16)->default('single');

@@ -249,6 +249,12 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // caller PUTs the full desired list of group uuids.
         Route::put('products/{product:uuid}/addon-groups', [ProductsController::class, 'syncAddOnGroups'])
             ->name('products.sync-addon-groups');
+        // v2 #6 — product-unique add-ons: list + create groups privately owned
+        // by this product (options managed via the addons endpoints above).
+        Route::get('products/{product:uuid}/addon-groups', [ProductsController::class, 'addonGroups'])
+            ->name('products.addon-groups.index');
+        Route::post('products/{product:uuid}/addon-groups', [ProductsController::class, 'createAddonGroup'])
+            ->name('products.addon-groups.store');
 
         Route::put('products/{product:uuid}/branches', [ProductsController::class, 'syncBranches'])
             ->name('products.sync-branches');

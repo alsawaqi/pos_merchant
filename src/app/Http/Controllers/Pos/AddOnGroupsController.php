@@ -50,6 +50,9 @@ class AddOnGroupsController extends Controller
 
         $groups = AddOnGroup::query()
             ->where('company_id', $this->tenant->requiredId())
+            // v2 #6: product-owned groups are managed from their product, not
+            // the shared add-ons list — exclude them here.
+            ->whereNull('owner_product_id')
             ->with(['addOns' => function ($q): void {
                 $q->orderBy('display_order')->orderBy('name');
             }])

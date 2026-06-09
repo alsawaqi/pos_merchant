@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Pos;
 
+use App\Actions\Pos\Catalogue\CreateAddOnGroupAction;
 use App\Actions\Pos\Catalogue\CreateProductAction;
 use App\Actions\Pos\Catalogue\DeleteProductAction;
 use App\Actions\Pos\Catalogue\ImportProductsAction;
@@ -13,6 +14,7 @@ use App\Actions\Pos\Catalogue\UpdateProductAction;
 use App\Actions\Pos\Catalogue\UpdateProductRecipeAction;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Pos\Catalogue\CreateAddOnGroupRequest;
 use App\Http\Requests\Pos\Catalogue\CreateProductRequest;
 use App\Http\Requests\Pos\Catalogue\ImportProductsRequest;
 use App\Http\Requests\Pos\Catalogue\SyncProductAddOnGroupsRequest;
@@ -21,6 +23,7 @@ use App\Http\Requests\Pos\Catalogue\UpdateProductRecipeRequest;
 use App\Http\Requests\Pos\Catalogue\UpdateProductRequest;
 use App\Http\Resources\Pos\Catalogue\AddOnGroupResource;
 use App\Http\Resources\Pos\Catalogue\ProductResource;
+use App\Models\AddOnGroup;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Support\MerchantTenantContext;
@@ -55,6 +58,7 @@ class ProductsController extends Controller
         private readonly SyncProductAddOnGroupsAction $syncAddOnGroups,
         private readonly UpdateProductRecipeAction $updateRecipe,
         private readonly SyncProductBranchesAction $syncBranches,
+        private readonly CreateAddOnGroupAction $createAddOnGroup,
     ) {}
 
     public function index(Request $request): AnonymousResourceCollection
@@ -242,6 +246,55 @@ class ProductsController extends Controller
         $product->load(['category', 'addOnGroups', 'recipeLines.ingredient', 'branchProducts']);
 
         return ProductResource::make($product);
+    }
+
+    /**
+     * GET /api/products/{product:uuid}/addon-groups
+     *
+     * The add-on groups PRIVATELY OWNED by this product (v2 #6) — the
+     * "add-ons unique to this product" editor list, with their options.
+     * Shared/global groups are managed from the Add-ons settings tab.
+     */
+    public function addonGroups(Request $request, Product $product): AnonymousResourceCollection
+    {
+        $this->ensure($request, MerchantPermission::CatalogueView);
+        $this->refuseIfNotInTenant($product);
+
+        $groups = AddOnGroup::query()
+            ->where('company_id', $this->tenant->requiredId())
+            ->where('owner_product_id', $product->id)
+            ->with(['addOns' => function ($q): void {
+                $q->orderBy('display_order')->orderBy('name');
+            }])
+            ->withCount('addOns')
+            ->orderBy('display_order')
+            ->orderBy('name')
+            ->get();
+
+        return AddOnGroupResource::collection($groups);
+    }
+
+    /**
+     * POST /api/products/{product:uuid}/addon-groups
+     *
+     * Create an add-on group PRIVATELY OWNED by this product (v2 #6). It is
+     * never global, auto-attached to this product, and hidden from the shared
+     * Add-ons list. Options are then added via the addons endpoints.
+     */
+    public function createAddonGroup(CreateAddOnGroupRequest $request, Product $product): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::CatalogueManage);
+        $this->refuseIfNotInTenant($product);
+
+        $group = $this->createAddOnGroup->handle(
+            array_merge($request->validated(), ['owner_product_id' => $product->id]),
+            $request->user(),
+        );
+        $group->loadCount('addOns')->load('addOns');
+
+        return response()->json([
+            'data' => (new AddOnGroupResource($group))->resolve($request),
+        ], 201);
     }
 
     private function ensure(Request $request, MerchantPermission $permission): void

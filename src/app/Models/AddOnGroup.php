@@ -33,6 +33,7 @@ use Illuminate\Support\Str;
 #[Fillable([
     'uuid',
     'company_id',
+    'owner_product_id',
     'name',
     'name_ar',
     'selection_mode',

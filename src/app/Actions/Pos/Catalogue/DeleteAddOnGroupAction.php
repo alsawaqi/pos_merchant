@@ -39,12 +39,17 @@ final readonly class DeleteAddOnGroupAction
             abort(404);
         }
 
-        $productCount = $group->products()->count();
-        if ($productCount > 0) {
-            throw new RuntimeException(sprintf(
-                'This add-on group is attached to %d product(s). Detach it from those products first.',
-                $productCount,
-            ));
+        // A product-owned group (v2 #6) is private to its single product and is
+        // deleted from that product — skip the shared-group "detach first"
+        // guard (its lone pivot row cascades cleanly on delete).
+        if ($group->owner_product_id === null) {
+            $productCount = $group->products()->count();
+            if ($productCount > 0) {
+                throw new RuntimeException(sprintf(
+                    'This add-on group is attached to %d product(s). Detach it from those products first.',
+                    $productCount,
+                ));
+            }
         }
 
         DB::transaction(function () use ($group, $actor, $companyId): void {

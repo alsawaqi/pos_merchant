@@ -30,21 +30,34 @@ final readonly class CreateAddOnGroupAction
     /**
      * @param  array{name: string, name_ar?: string|null, selection_mode?: string, is_global?: bool, display_order?: int}  $attributes
      */
+    /**
+     * @param  array{name: string, name_ar?: string|null, selection_mode?: string, is_global?: bool, display_order?: int, owner_product_id?: int|null}  $attributes
+     */
     public function handle(array $attributes, User $actor): AddOnGroup
     {
         $companyId = $this->tenant->requiredId();
 
-        return DB::transaction(function () use ($attributes, $actor, $companyId): AddOnGroup {
+        // v2 #6: a product-owned (product-unique) group is never global and is
+        // auto-attached to its owner product, so it ships in that product's
+        // /device/config add-on group ids — no device/api change needed.
+        $ownerProductId = $attributes['owner_product_id'] ?? null;
+
+        return DB::transaction(function () use ($attributes, $actor, $companyId, $ownerProductId): AddOnGroup {
             /** @var AddOnGroup $group */
             $group = AddOnGroup::query()->create([
                 'company_id' => $companyId,
+                'owner_product_id' => $ownerProductId,
                 'name' => $attributes['name'],
                 'name_ar' => $attributes['name_ar'] ?? null,
                 'selection_mode' => $attributes['selection_mode'] ?? AddOnSelectionMode::Single->value,
-                'is_global' => $attributes['is_global'] ?? false,
+                'is_global' => $ownerProductId !== null ? false : ($attributes['is_global'] ?? false),
                 'display_order' => $attributes['display_order'] ?? 0,
                 'status' => 'active',
             ]);
+
+            if ($ownerProductId !== null) {
+                $group->products()->attach($ownerProductId);
+            }
 
             $this->writeAuditLog->handle(new AuditLogData(
                 event: 'catalogue.addon_group.created',

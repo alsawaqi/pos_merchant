@@ -25,6 +25,8 @@ class AddOnGroupResource extends JsonResource
             'name_ar' => $this->name_ar,
             'selection_mode' => $this->selection_mode?->value,
             'is_global' => (bool) $this->is_global,
+            // v2 #6: non-null = a group privately owned by this product.
+            'owner_product_id' => $this->owner_product_id !== null ? (int) $this->owner_product_id : null,
             'display_order' => $this->display_order,
             'status' => $this->status,
             // products_count surfaces when the controller did
