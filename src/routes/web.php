@@ -21,6 +21,7 @@ use App\Http\Controllers\Pos\ExpenseCategoryController;
 use App\Http\Controllers\Pos\ExpensesController;
 use App\Http\Controllers\Pos\FloorsController;
 use App\Http\Controllers\Pos\IngredientsController;
+use App\Http\Controllers\Pos\IngredientUnitsController;
 use App\Http\Controllers\Pos\LoyaltyController;
 use App\Http\Controllers\Pos\PosStaffController;
 use App\Http\Controllers\Pos\OrderCancellationSettingController;
@@ -297,6 +298,22 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('ingredients.update');
         Route::delete('ingredients/{ingredient:uuid}', [IngredientsController::class, 'destroy'])
             ->name('ingredients.destroy');
+
+        // v2 #13 — per-ingredient alternate units (base unit + factor). Read on
+        // inventory.view, writes on inventory.manage (gated in the controller).
+        Route::get('ingredients/{ingredient:uuid}/units', [IngredientUnitsController::class, 'index'])
+            ->name('ingredients.units.index');
+        Route::post('ingredients/{ingredient:uuid}/units', [IngredientUnitsController::class, 'store'])
+            ->name('ingredients.units.store');
+        // withoutScopedBindings: the param is `unit`, but the relation is
+        // altUnits() (not units()), so Laravel's implicit nested scoping can't
+        // resolve it — the controller does its own on-ingredient ownership check.
+        Route::patch('ingredients/{ingredient:uuid}/units/{unit:uuid}', [IngredientUnitsController::class, 'update'])
+            ->withoutScopedBindings()
+            ->name('ingredients.units.update');
+        Route::delete('ingredients/{ingredient:uuid}/units/{unit:uuid}', [IngredientUnitsController::class, 'destroy'])
+            ->withoutScopedBindings()
+            ->name('ingredients.units.destroy');
 
         Route::get('suppliers', [SuppliersController::class, 'index'])
             ->name('suppliers.index');

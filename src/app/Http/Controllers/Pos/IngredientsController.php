@@ -47,7 +47,7 @@ class IngredientsController extends Controller
 
         $ingredients = Ingredient::query()
             ->where('company_id', $this->tenant->requiredId())
-            ->with('primarySupplier')
+            ->with('primarySupplier', 'altUnits')
             ->orderBy('name')
             ->get();
 

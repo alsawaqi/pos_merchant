@@ -457,6 +457,21 @@ return new class extends Migration
             $table->unique(['company_id', 'name'], 'pos_ingredients_company_name_unique');
         });
 
+        // v2 #13 — per-ingredient alternate units (base unit + factor).
+        Schema::create('pos_ingredient_units', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
+            $table->string('name', 32);
+            $table->string('name_ar', 32)->nullable();
+            $table->decimal('factor', 14, 4);
+            $table->unsignedSmallInteger('sort_order')->default(0);
+            $table->timestamps();
+            $table->softDeletes();
+            $table->unique(['ingredient_id', 'name'], 'pos_ingredient_units_ingredient_name_unique');
+        });
+
         Schema::create('pos_branch_stock', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();

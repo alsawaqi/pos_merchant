@@ -38,6 +38,9 @@ class IngredientResource extends JsonResource
                 ];
             }),
             'status' => $this->status,
+            // v2 #13 — alternate units (when loaded), so the ingredient form can
+            // render its unit list without a second round-trip.
+            'alt_units' => IngredientAltUnitResource::collection($this->whenLoaded('altUnits')),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

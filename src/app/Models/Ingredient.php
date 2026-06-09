@@ -112,6 +112,20 @@ class Ingredient extends Model
     }
 
     /**
+     * v2 #13 — alternate units a merchant can enter quantities in (each with a
+     * factor to the base unit). The base unit itself ({@see $unit}) is implicit
+     * (factor 1) and not stored here.
+     *
+     * @return HasMany<IngredientAltUnit, $this>
+     */
+    public function altUnits(): HasMany
+    {
+        return $this->hasMany(IngredientAltUnit::class)
+            ->orderBy('sort_order')
+            ->orderBy('name');
+    }
+
+    /**
      * @param  Builder<self>  $query
      * @return Builder<self>
      */
