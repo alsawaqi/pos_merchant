@@ -1528,6 +1528,36 @@
             "open": "مفتوح",
             "paid": "مدفوع",
             "void": "ملغى"
+        },
+        "detail": {
+            "title": "تفاصيل الطلب",
+            "served_by": "قُدّم بواسطة",
+            "customer": "العميل",
+            "vehicle": "لوحة المركبة",
+            "note": "ملاحظة",
+            "source": "المصدر",
+            "items": "العناصر",
+            "addons": "الإضافات",
+            "line_discount": "خصم السطر",
+            "discounts": "الخصومات المطبقة",
+            "order_discounts": "خصومات الطلب",
+            "no_discounts": "لا توجد خصومات مطبقة.",
+            "payments": "المدفوعات",
+            "auth_code": "رمز التفويض",
+            "loyalty": "الولاء",
+            "points_earned": "النقاط المكتسبة",
+            "points_redeemed": "النقاط المستبدلة",
+            "stamps_earned": "الأختام المكتسبة",
+            "stamps_redeemed": "الأختام المستبدلة",
+            "no_loyalty": "لا يوجد نشاط ولاء على هذا الطلب.",
+            "subtotal": "المجموع الفرعي",
+            "discount": "الخصم",
+            "tax": "الضريبة",
+            "grand_total": "الإجمالي",
+            "qty": "الكمية",
+            "loading": "جارٍ تحميل الطلب…",
+            "load_failed": "تعذّر تحميل هذا الطلب.",
+            "close": "إغلاق"
         }
     }
 }

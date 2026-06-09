@@ -377,3 +377,66 @@ export function fetchOrders(filter: OrderListFilter): Promise<{ data: OrderListP
     const url = withBranchScope(`/api/orders?${q.toString()}`, filter.branch_ids);
     return apiGet<{ data: OrderListPayload }>(url);
 }
+
+// ---- Single-order detail (v2 #2) -------------------------------
+
+export interface OrderDetailDiscount {
+    name: string;
+    amount_type: string | null;
+    amount: string;
+    applied_at: string | null;
+}
+
+export interface OrderDetailItem {
+    id: number;
+    product_name: string;
+    qty: string;
+    unit_price: string;
+    line_discount: string;
+    line_total: string;
+    notes: string | null;
+    addons: { name: string; price_delta: string }[];
+    discounts: OrderDetailDiscount[];
+}
+
+export interface OrderDetailPayment {
+    method: string | null;
+    amount: string;
+    change_given: string | null;
+    status: string | null;
+    softpos_auth_code: string | null;
+    softpos_reference: string | null;
+    captured_at: string | null;
+}
+
+export interface OrderDetailPayload {
+    order: {
+        id: number;
+        uuid: string;
+        order_type: string | null;
+        status: string | null;
+        source: string | null;
+        plate_number: string | null;
+        note: string | null;
+        opened_at: string | null;
+        closed_at: string | null;
+        branch: { id: number; name: string } | null;
+        customer: { id: number; name: string; phone: string | null } | null;
+        staff: { id: number; name: string } | null;
+        totals: { subtotal: string; discount_total: string; tax_total: string; grand_total: string };
+    };
+    items: OrderDetailItem[];
+    order_discounts: OrderDetailDiscount[];
+    payments: OrderDetailPayment[];
+    loyalty: {
+        points_earned: number;
+        points_redeemed: number;
+        stamps_earned: number;
+        stamps_redeemed: number;
+        transactions: { type: string; points_delta: number; stamps_delta: number; occurred_at: string | null }[];
+    };
+}
+
+export function fetchOrderDetail(uuid: string): Promise<{ data: OrderDetailPayload }> {
+    return apiGet<{ data: OrderDetailPayload }>(`/api/orders/${uuid}`);
+}

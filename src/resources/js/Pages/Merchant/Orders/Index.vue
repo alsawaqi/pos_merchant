@@ -11,6 +11,10 @@ import { listBranches, type Branch } from '@/lib/api/branches';
 import { fetchOrders, type OrderListFilter, type OrderListPayload } from '@/lib/api/reports';
 import { ApiError } from '@/lib/api';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
+import OrderDetailDrawer from './components/OrderDetailDrawer.vue';
+
+// uuid of the order whose detail drawer is open (null = closed).
+const detailUuid = ref<string | null>(null);
 
 const { t } = useI18n();
 
@@ -164,9 +168,14 @@ function statusClass(status: string | null): string {
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="row in payload.rows" :key="row.id" class="border-b border-slate-100 last:border-0">
+                        <tr
+                            v-for="row in payload.rows"
+                            :key="row.id"
+                            class="cursor-pointer border-b border-slate-100 transition last:border-0 hover:bg-slate-50"
+                            @click="detailUuid = row.uuid"
+                        >
                             <td class="px-5 py-2 text-xs tabular-nums text-slate-600">{{ formatDateTime(row.opened_at) }}</td>
-                            <td class="px-5 py-2 font-mono text-xs font-semibold text-slate-900">{{ shortId(row.uuid) }}</td>
+                            <td class="px-5 py-2 font-mono text-xs font-semibold text-teal-700">{{ shortId(row.uuid) }}</td>
                             <td class="px-5 py-2 text-slate-700">{{ row.branch_name ?? '—' }}</td>
                             <td class="px-5 py-2 text-slate-700">{{ row.order_type ? t(`orders.types.${row.order_type}`) : '—' }}</td>
                             <td class="px-5 py-2">
@@ -194,5 +203,7 @@ function statusClass(status: string | null): string {
                 </div>
             </div>
         </div>
+
+        <OrderDetailDrawer v-model:uuid="detailUuid" />
     </MerchantLayout>
 </template>

@@ -1528,6 +1528,36 @@
             "open": "Open",
             "paid": "Paid",
             "void": "Void"
+        },
+        "detail": {
+            "title": "Order detail",
+            "served_by": "Served by",
+            "customer": "Customer",
+            "vehicle": "Vehicle plate",
+            "note": "Note",
+            "source": "Source",
+            "items": "Items",
+            "addons": "Add-ons",
+            "line_discount": "Line discount",
+            "discounts": "Discounts in effect",
+            "order_discounts": "Order discounts",
+            "no_discounts": "No discounts applied.",
+            "payments": "Payments",
+            "auth_code": "Auth code",
+            "loyalty": "Loyalty",
+            "points_earned": "Points earned",
+            "points_redeemed": "Points redeemed",
+            "stamps_earned": "Stamps earned",
+            "stamps_redeemed": "Stamps redeemed",
+            "no_loyalty": "No loyalty activity on this order.",
+            "subtotal": "Subtotal",
+            "discount": "Discount",
+            "tax": "Tax",
+            "grand_total": "Grand total",
+            "qty": "Qty",
+            "loading": "Loading order…",
+            "load_failed": "Could not load this order.",
+            "close": "Close"
         }
     }
 }
