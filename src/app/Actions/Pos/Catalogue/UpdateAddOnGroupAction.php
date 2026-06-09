@@ -10,6 +10,7 @@ use App\Models\AddOnGroup;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 /**
  * Phase 4.9 — partial-update an add-on group.
@@ -43,6 +44,12 @@ final readonly class UpdateAddOnGroupAction
         $companyId = $this->tenant->requiredId();
         if ((int) $group->company_id !== $companyId) {
             abort(404);
+        }
+
+        // v2 #6: a product-owned group is private to one product and can never
+        // become global (it would then apply to every product).
+        if ($group->owner_product_id !== null && (bool) ($attributes['is_global'] ?? false)) {
+            throw new RuntimeException('A product-specific add-on group cannot be made global.');
         }
 
         return DB::transaction(function () use ($group, $attributes, $actor, $companyId): AddOnGroup {

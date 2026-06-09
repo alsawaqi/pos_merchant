@@ -74,6 +74,39 @@ it('deletes an owned group despite its product attachment', function (): void {
     expect($this->getJson("/api/products/{$product->uuid}/addon-groups")->json('data'))->toHaveCount(0);
 });
 
+it('preserves a product owned group when its shared groups are re-synced', function (): void {
+    $ctx = makeMerchantActor();
+    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    $shared = AddOnGroup::factory()->for($ctx['company'], 'company')->create(['name' => 'Sugar', 'is_global' => false]);
+    $owned = $this->postJson("/api/products/{$product->uuid}/addon-groups", ['name' => 'Latte size'])->json('data');
+
+    // Edit the product's SHARED groups (the picker only knows shared ones).
+    $this->putJson("/api/products/{$product->uuid}/addon-groups", ['group_uuids' => [$shared->uuid]])->assertOk();
+
+    // The owned group must survive the shared re-sync (not silently detached).
+    $owledStill = collect($this->getJson("/api/products/{$product->uuid}/addon-groups")->json('data'))
+        ->pluck('uuid')->all();
+    expect($owledStill)->toContain($owned['uuid']);
+});
+
+it('refuses to share a product-owned group to another product', function (): void {
+    $ctx = makeMerchantActor();
+    $a = Product::factory()->for($ctx['company'], 'company')->create();
+    $b = Product::factory()->for($ctx['company'], 'company')->create();
+    $owned = $this->postJson("/api/products/{$a->uuid}/addon-groups", ['name' => 'A private'])->json('data');
+
+    // Passing the owned group's uuid to another product's shared sync is rejected.
+    $this->putJson("/api/products/{$b->uuid}/addon-groups", ['group_uuids' => [$owned['uuid']]])->assertStatus(422);
+});
+
+it('refuses to make a product-owned group global', function (): void {
+    $ctx = makeMerchantActor();
+    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    $owned = $this->postJson("/api/products/{$product->uuid}/addon-groups", ['name' => 'Private'])->json('data');
+
+    $this->patchJson("/api/addon-groups/{$owned['uuid']}", ['is_global' => true])->assertStatus(422);
+});
+
 it('does not leak another tenant product (404)', function (): void {
     makeMerchantActor();
     $foreign = Product::factory()->for(Company::factory()->create(), 'company')->create();

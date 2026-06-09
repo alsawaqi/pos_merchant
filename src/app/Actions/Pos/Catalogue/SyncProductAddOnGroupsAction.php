@@ -66,9 +66,23 @@ final readonly class SyncProductAddOnGroupsAction
             throw new RuntimeException('One or more add-on groups in the payload do not belong to your company.');
         }
 
+        // A product-OWNED group (v2 #6) is private to its product and is never a
+        // shareable group — reject it in this shared-picker payload so it can't
+        // be attached to a second product.
+        if ($resolved->whereNotNull('owner_product_id')->isNotEmpty()) {
+            throw new RuntimeException('A product-specific add-on group cannot be shared to another product.');
+        }
+
         // Skip globals from the pivot — they apply automatically.
         $pivotable = $resolved->where('is_global', false);
-        $desiredIds = $pivotable->pluck('id')->all();
+        // This sync REPLACES the product's whole pivot set, so fold in the
+        // product's existing OWNED-group rows — otherwise editing the shared
+        // picker would silently detach the product's own private groups.
+        $ownedIds = $product->addOnGroups()
+            ->whereNotNull('pos_addon_groups.owner_product_id')
+            ->pluck('pos_addon_groups.id')
+            ->all();
+        $desiredIds = array_values(array_unique(array_merge($pivotable->pluck('id')->all(), $ownedIds)));
 
         return DB::transaction(function () use ($product, $desiredIds, $actor, $companyId): array {
             $before = $product->addOnGroups()->pluck('pos_addon_groups.id')->all();

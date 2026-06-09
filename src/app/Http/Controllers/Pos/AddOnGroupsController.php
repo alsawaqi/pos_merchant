@@ -76,12 +76,16 @@ class AddOnGroupsController extends Controller
         ], 201);
     }
 
-    public function update(UpdateAddOnGroupRequest $request, AddOnGroup $addonGroup): AddOnGroupResource
+    public function update(UpdateAddOnGroupRequest $request, AddOnGroup $addonGroup): AddOnGroupResource|JsonResponse
     {
         $this->ensure($request, MerchantPermission::CatalogueManage);
         $this->refuseIfNotInTenant($addonGroup);
 
-        $updated = $this->update->handle($addonGroup, $request->validated(), $request->user());
+        try {
+            $updated = $this->update->handle($addonGroup, $request->validated(), $request->user());
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
         return AddOnGroupResource::make($updated);
     }
