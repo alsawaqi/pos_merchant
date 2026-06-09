@@ -270,9 +270,36 @@ export function deleteCategory(uuid: string): Promise<void> {
 
 // ---- Products ---------------------------------------------------
 
-export function listProducts(filters?: { category?: string }): Promise<{ data: Product[] }> {
-    const qs = filters?.category ? `?category=${encodeURIComponent(filters.category)}` : '';
-    return apiGet<{ data: Product[] }>(`/api/products${qs}`);
+/** v2 #12 — standard Laravel resource-collection-over-paginator shape. */
+export interface PaginatedProducts {
+    data: Product[];
+    meta: {
+        current_page: number;
+        last_page: number;
+        per_page: number;
+        total: number;
+    };
+}
+
+export interface ListProductsParams {
+    /** Case-insensitive LIKE across name + name_ar. */
+    search?: string;
+    /** Category UUID filter (unchanged behaviour). */
+    category?: string;
+    page?: number;
+    /** Default 50 server-side, clamped 1–200. */
+    per_page?: number;
+}
+
+export function listProducts(params: ListProductsParams = {}): Promise<PaginatedProducts> {
+    return apiGet<PaginatedProducts>('/api/products', {
+        query: {
+            search: params.search,
+            category: params.category,
+            page: params.page,
+            per_page: params.per_page,
+        },
+    });
 }
 
 export function createProduct(payload: CreateProductPayload): Promise<{ data: Product }> {

@@ -69,6 +69,11 @@
         "deleting": "Deleting…",
         "close": "Close"
     },
+    "pagination": {
+        "summary": "Page {current} of {last} ({total} items)",
+        "prev": "Previous",
+        "next": "Next"
+    },
     "dashboard": {
         "title": "Welcome",
         "subtitle": "This is your merchant control panel. As MITHQAL provisions more capabilities, they will appear here.",
@@ -475,6 +480,7 @@
         "empty_addon_groups": "No add-on groups yet. Add one to let cashiers attach modifiers like milk choice, sugar level, or extras.",
         "product_count": "{count} product | {count} products",
         "addon_count": "{count} option | {count} options",
+        "search_placeholder": "Search products by name…",
         "tabs": {
             "categories": "Categories",
             "products": "Products",
@@ -482,6 +488,7 @@
             "providers": "Delivery providers"
         },
         "filter": {
+            "search": "Search",
             "category": "Filter by category",
             "all": "All categories"
         },
@@ -1270,6 +1277,7 @@
         "section_label": "Phase 6d",
         "title": "Discounts",
         "subtitle": "Configure promo rules that the POS applies automatically. Combine percent + fixed amounts across products, categories, and order totals.",
+        "search_placeholder": "Search by name or scope…",
         "empty_state": "No discount rules yet. Add a Ramadan promo or a happy-hour rule to get started.",
         "table": {
             "name": "Name",

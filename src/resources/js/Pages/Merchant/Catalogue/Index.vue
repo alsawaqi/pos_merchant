@@ -13,10 +13,11 @@
  */
 
 import { Beaker, Building2, Boxes, Globe2, Image, Layers, Minus, Package, Pencil, Plus, Sparkles, Tag, Trash2, Truck } from 'lucide-vue-next';
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import BaseModal from '@/Components/BaseModal.vue';
+import Pagination from '@/Components/Pagination.vue';
 import ProductStockDialog from './ProductStockDialog.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
@@ -102,6 +103,21 @@ const error = ref<string | null>(null);
 
 // ---- Filters -----------------------------------------------------
 const productCategoryFilter = ref<string>('');
+
+// v2 #12 — product list is server-paginated + text-searchable. The
+// `products` ref now holds only the CURRENT page, and productsMeta
+// carries the paginator totals. search is debounced; changing the
+// search text OR the category resets back to page 1.
+const productSearch = ref<string>('');
+const productPage = ref<number>(1);
+const productsLoading = ref(false);
+const productsMeta = ref<{ current_page: number; last_page: number; per_page: number; total: number }>({
+    current_page: 1,
+    last_page: 1,
+    per_page: 50,
+    total: 0,
+});
+let productSearchDebounce: ReturnType<typeof setTimeout> | null = null;
 
 // Non-global add-on groups only — used by the product modal's
 // multi-select picker. Global groups apply automatically and
@@ -269,14 +285,41 @@ async function fetchCategories(): Promise<void> {
 }
 
 async function fetchProducts(): Promise<void> {
+    productsLoading.value = true;
     try {
-        const response = await listProducts(
-            productCategoryFilter.value === '' ? undefined : { category: productCategoryFilter.value },
-        );
+        const response = await listProducts({
+            search: productSearch.value.trim() || undefined,
+            category: productCategoryFilter.value === '' ? undefined : productCategoryFilter.value,
+            page: productPage.value,
+        });
         products.value = response.data;
+        productsMeta.value = response.meta;
     } catch (err) {
         error.value = err instanceof Error ? err.message : 'Failed to load products';
+    } finally {
+        productsLoading.value = false;
     }
+}
+
+// Reset to page 1 whenever the search text OR the category changes,
+// then refetch. The category <select> drops its old @change handler
+// in favour of this watcher. Search is debounced ~250ms.
+watch(productSearch, () => {
+    if (productSearchDebounce) clearTimeout(productSearchDebounce);
+    productSearchDebounce = setTimeout(() => {
+        productPage.value = 1;
+        void fetchProducts();
+    }, 250);
+});
+
+watch(productCategoryFilter, () => {
+    productPage.value = 1;
+    void fetchProducts();
+});
+
+function goProductPage(page: number): void {
+    productPage.value = page;
+    void fetchProducts();
 }
 
 async function fetchIngredients(): Promise<void> {
@@ -432,7 +475,9 @@ function openCreateProduct(): void {
     prodForm.delivery_price = '';
     prodForm.cost_price = '';
     prodForm.tax_rate = '';
-    prodForm.display_order = products.value.length;
+    // Default the new product's sort order to the end of the full
+    // catalogue (total across pages, not just the current page).
+    prodForm.display_order = productsMeta.value.total;
     prodForm.status = 'active';
     prodForm.stock_mode = 'untracked';
     prodForm.addon_group_uuids = [];
@@ -1215,7 +1260,7 @@ async function removeOwnedGroup(groupUuid: string): Promise<void> {
                 >
                     <Package class="size-4" />
                     {{ t('catalogue.tabs.products') }}
-                    <span class="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">{{ products.length }}</span>
+                    <span class="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">{{ productsMeta.total }}</span>
                 </button>
                 <button
                     type="button"
@@ -1302,17 +1347,27 @@ async function removeOwnedGroup(groupUuid: string): Promise<void> {
             <!-- =========== PRODUCTS TAB =========== -->
             <section v-if="activeTab === 'products'" class="space-y-4">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                    <label class="block max-w-xs">
-                        <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.filter.category') }}</span>
-                        <select
-                            v-model="productCategoryFilter"
-                            class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 shadow-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
-                            @change="fetchProducts"
-                        >
-                            <option value="">{{ t('catalogue.filter.all') }}</option>
-                            <option v-for="cat in categories" :key="cat.uuid" :value="cat.uuid">{{ cat.name }}</option>
-                        </select>
-                    </label>
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+                        <label class="block w-full max-w-xs">
+                            <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.filter.search') }}</span>
+                            <input
+                                v-model="productSearch"
+                                type="search"
+                                :placeholder="t('catalogue.search_placeholder')"
+                                class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 shadow-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
+                            >
+                        </label>
+                        <label class="block w-full max-w-xs">
+                            <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.filter.category') }}</span>
+                            <select
+                                v-model="productCategoryFilter"
+                                class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 shadow-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
+                            >
+                                <option value="">{{ t('catalogue.filter.all') }}</option>
+                                <option v-for="cat in categories" :key="cat.uuid" :value="cat.uuid">{{ cat.name }}</option>
+                            </select>
+                        </label>
+                    </div>
                     <button
                         v-if="canManage"
                         type="button"
@@ -1404,6 +1459,15 @@ async function removeOwnedGroup(groupUuid: string): Promise<void> {
                         </tbody>
                     </table>
                 </div>
+
+                <!-- v2 #12 — server-side pager. Hidden until there's more
+                     than one page so single-page catalogues stay clean. -->
+                <Pagination
+                    v-if="!loading && productsMeta.last_page > 1"
+                    :meta="productsMeta"
+                    :loading="productsLoading"
+                    @update:page="goProductPage"
+                />
             </section>
 
             <!-- =========== ADD-ONS TAB (Phase 4.9) =========== -->

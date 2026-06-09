@@ -50,13 +50,28 @@ const categories = ref<Category[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
 
+// v2 #12 — client-side search over the (small) discount list, matching
+// the rule name + its translated scope label. No server pagination here.
+const search = ref('');
+const filteredDiscounts = computed<Discount[]>(() => {
+    const term = search.value.trim().toLowerCase();
+    if (term === '') return discounts.value;
+    return discounts.value.filter((d) =>
+        d.name.toLowerCase().includes(term)
+        || t(`discounts.scopes.${d.scope}`).toLowerCase().includes(term),
+    );
+});
+
 const canManage = computed(() => can(MerchantPermission.DiscountsManage));
 
 async function fetchAll(): Promise<void> {
     loading.value = true;
     error.value = null;
     try {
-        const [d, p, c] = await Promise.all([listDiscounts(), listProducts(), listCategories()]);
+        // listProducts is now server-paginated (v2 #12). The discount
+        // product-targets picker needs the full catalogue, so request the
+        // server's max page size (clamped to 200) and read .data.
+        const [d, p, c] = await Promise.all([listDiscounts(), listProducts({ per_page: 200 }), listCategories()]);
         discounts.value = d.data;
         products.value = p.data;
         categories.value = c.data;
@@ -329,6 +344,14 @@ function amountLabel(d: Discount): string {
                 </div>
             </div>
 
+            <!-- Search -->
+            <input
+                v-model="search"
+                type="search"
+                :placeholder="t('discounts.search_placeholder')"
+                class="w-full max-w-md rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
+            >
+
             <div v-if="error" class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
                 {{ error }}
             </div>
@@ -337,7 +360,7 @@ function amountLabel(d: Discount): string {
                 <div v-if="loading" class="p-10 text-center text-sm font-medium text-slate-500">
                     {{ t('common.loading') }}
                 </div>
-                <div v-else-if="discounts.length === 0" class="flex flex-col items-center gap-3 p-12 text-center text-slate-500">
+                <div v-else-if="filteredDiscounts.length === 0" class="flex flex-col items-center gap-3 p-12 text-center text-slate-500">
                     <Tags class="size-10 text-slate-300" />
                     <p class="text-sm font-semibold">{{ t('discounts.empty_state') }}</p>
                 </div>
@@ -354,7 +377,7 @@ function amountLabel(d: Discount): string {
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 bg-white">
-                            <tr v-for="d in discounts" :key="d.id" class="transition hover:bg-slate-50">
+                            <tr v-for="d in filteredDiscounts" :key="d.id" class="transition hover:bg-slate-50">
                                 <td class="px-5 py-4">
                                     <span class="block text-sm font-semibold text-slate-950">{{ d.name }}</span>
                                     <span class="block text-xs text-slate-500">
