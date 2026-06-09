@@ -26,6 +26,7 @@ use App\Http\Controllers\Pos\LoyaltyController;
 use App\Http\Controllers\Pos\PosStaffController;
 use App\Http\Controllers\Pos\OrderCancellationSettingController;
 use App\Http\Controllers\Pos\OrdersController;
+use App\Http\Controllers\Pos\PayoutsController;
 use App\Http\Controllers\Pos\ProductsController;
 use App\Http\Controllers\Pos\ProductStockController;
 use App\Http\Controllers\Pos\ReportsController;
@@ -548,6 +549,10 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // other cuts, merchant net) over a date range.
         Route::get('reports/payouts', [ReportsController::class, 'payouts'])
             ->name('reports.payouts');
+        // v2 #17 Phase B — the merchant's own payout history (read-only; the
+        // platform creates + settles them). reports.view gated.
+        Route::get('payouts', [PayoutsController::class, 'index'])
+            ->name('payouts.index');
         Route::get('reports/product-performance', [ReportsController::class, 'productPerformance'])
             ->name('reports.product-performance');
         Route::get('reports/recipe-cost', [ReportsController::class, 'recipeCost'])

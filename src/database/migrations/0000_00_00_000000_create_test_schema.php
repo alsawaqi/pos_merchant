@@ -992,8 +992,32 @@ return new class extends Migration
             $table->string('client_event_id', 64)->nullable();
             $table->timestamp('occurred_at')->nullable();
             $table->timestamps();
+            $table->unsignedBigInteger('payout_id')->nullable();
             $table->unique(['order_id', 'sort_order'], 'pos_sale_commissions_order_sort_unique');
             $table->index(['company_id', 'occurred_at'], 'pos_sale_commissions_company_occurred_idx');
+        });
+
+        // v2 #17 Phase B — merchant payouts (created + settled by pos_admin; the
+        // merchant portal reads its own). Schema owned by pos_admin.
+        Schema::create('pos_payouts', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->unsignedBigInteger('company_id')->index();
+            $table->timestamp('period_from');
+            $table->timestamp('period_to');
+            $table->string('status', 20)->default('pending');
+            $table->decimal('gross_amount', 12, 3)->default(0);
+            $table->decimal('platform_amount', 12, 3)->default(0);
+            $table->decimal('bank_amount', 12, 3)->default(0);
+            $table->decimal('other_amount', 12, 3)->default(0);
+            $table->decimal('net_amount', 12, 3)->default(0);
+            $table->unsignedInteger('sales_count')->default(0);
+            $table->string('reference', 120)->nullable();
+            $table->text('note')->nullable();
+            $table->unsignedBigInteger('created_by_user_id')->nullable();
+            $table->unsignedBigInteger('paid_by_user_id')->nullable();
+            $table->timestamp('paid_at')->nullable();
+            $table->timestamps();
         });
 
         // Shifts: cashier opens with a float, closes with a count,
