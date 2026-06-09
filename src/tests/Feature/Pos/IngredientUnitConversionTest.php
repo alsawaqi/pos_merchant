@@ -11,6 +11,7 @@ declare(strict_types=1);
  * must persist the base-unit amount; an unknown unit is a clean 422.
  */
 
+use App\Actions\Pos\Inventory\IngredientUnitConverter;
 use App\Models\BranchStock;
 use App\Models\BranchTransferLine;
 use App\Models\Ingredient;
@@ -138,4 +139,32 @@ it('recipe stores consumption in base grams (device contract stays base)', funct
     $line = ProductRecipe::query()->where('product_id', $product->id)->firstOrFail();
     expect((string) $line->quantity)->toBe('250.000'); // 0.25 kg → 250 g
     expect($line->unit_at_set?->value ?? $line->unit_at_set)->toBe('g');
+});
+
+it('rejects a conversion that would overflow the base-stock column (422)', function (): void {
+    $ctx = makeMerchantActor();
+    $ing = Ingredient::factory()->for($ctx['company'], 'company')->create(['unit' => 'g']);
+    IngredientAltUnit::query()->create([
+        'company_id' => $ctx['company']->id, 'ingredient_id' => $ing->id, 'name' => 'megapack', 'factor' => '500000',
+    ]);
+
+    // 10000 × 500000 = 5,000,000,000 > the decimal(12,3) max → clean 422, no write.
+    $this->postJson("/api/branches/{$ctx['branch']->uuid}/stock/restock", [
+        'ingredient_uuid' => $ing->uuid, 'quantity' => '10000', 'unit' => 'megapack',
+    ])->assertStatus(422);
+
+    expect(StockMovement::query()->where('ingredient_id', $ing->id)->exists())->toBeFalse();
+});
+
+it('refuses a non-positive factor at conversion time (no sign flip)', function (): void {
+    $ctx = makeMerchantActor();
+    $ing = Ingredient::factory()->for($ctx['company'], 'company')->create(['unit' => 'g']);
+    // A corrupt negative factor (bypassing request validation) must not sign-flip
+    // a signed adjustment into the wrong direction.
+    IngredientAltUnit::query()->create([
+        'company_id' => $ctx['company']->id, 'ingredient_id' => $ing->id, 'name' => 'bad', 'factor' => '-2',
+    ]);
+
+    $converter = new IngredientUnitConverter();
+    expect(fn () => $converter->toBase($ing, 5, 'bad'))->toThrow(RuntimeException::class);
 });

@@ -26,7 +26,7 @@ class UpdateIngredientUnitRequest extends FormRequest
     {
         return [
             'name_ar' => ['sometimes', 'nullable', 'string', 'max:32'],
-            'factor' => ['sometimes', 'numeric', 'gt:0'],
+            'factor' => ['sometimes', 'numeric', 'gt:0', 'max:1000000'],
             'sort_order' => ['sometimes', 'integer', 'min:0'],
         ];
     }

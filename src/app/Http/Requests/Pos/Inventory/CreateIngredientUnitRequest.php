@@ -27,8 +27,9 @@ class CreateIngredientUnitRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:32'],
             'name_ar' => ['sometimes', 'nullable', 'string', 'max:32'],
-            // base units per ONE of this unit — must be a positive amount.
-            'factor' => ['required', 'numeric', 'gt:0'],
+            // base units per ONE of this unit — a positive amount, capped so a
+            // huge factor can't overflow the decimal(12,3) base-stock columns.
+            'factor' => ['required', 'numeric', 'gt:0', 'max:1000000'],
             'sort_order' => ['sometimes', 'integer', 'min:0'],
         ];
     }
