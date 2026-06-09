@@ -325,15 +325,29 @@ export function fetchMyPayouts(opts?: { status?: MerchantPayoutStatus }): Promis
 }
 
 // ============================================================
-// Round-Up Donation Report (§5.11.9) -- STUB until Phase 9
+// Round-Up Donation Report (§5.11.9)
 // ============================================================
+//
+// Live round-up donations: every paid sale can round up to charity.
+// `headline` counts donations by lifecycle (total raised counts the
+// settled "success" ones; pending + failed are surfaced alongside).
+// `by_branch` lists SUCCESS-only totals, sorted by raised desc, and
+// carries only branch_id (resolve names client-side). `by_status`
+// breaks every donation down by lifecycle status. Money values are
+// decimal-3 strings; counts are ints.
+
+export type RoundUpDonationStatus = 'success' | 'pending' | 'fail' | 'void';
 
 export interface RoundUpDonationReportPayload {
     window: { from: string; to: string; consolidated: boolean; branch_ids: number[] | null };
-    headline: { total_raised: string; donation_count: number; opt_in_rate_pct: number };
-    by_charity: { charity_id: number; charity_name: string; total_raised: string }[];
-    by_branch: { branch_id: number; branch_name: string; total_raised: string }[];
-    _phase?: { donation_stub?: string };
+    headline: {
+        total_raised: string;
+        donation_count: number;
+        pending_count: number;
+        failed_count: number;
+    };
+    by_branch: { branch_id: number; total_raised: string; donation_count: number }[];
+    by_status: { status: RoundUpDonationStatus; total: string; count: number }[];
 }
 
 export function fetchRoundUpDonationReport(filter: ReportFilter): Promise<{ data: RoundUpDonationReportPayload }> {

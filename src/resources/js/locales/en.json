@@ -1423,7 +1423,7 @@
                 },
                 "round_up_donation": {
                     "title": "Round-Up Donations",
-                    "desc": "Total raised, by charity, by branch (lands in Phase 9 — currently zeroed)."
+                    "desc": "Total raised, donations by status, by branch."
                 }
             }
         },
@@ -1578,13 +1578,21 @@
         },
         "round_up_donation": {
             "page_title": "Round-Up Donation Report",
-            "stub_banner": "Round-Up donations land with Phase 9. This report renders zeroed values today and will start filling in once the donation infrastructure ships.",
             "headline_labels": {
                 "total_raised": "Total raised",
                 "donation_count": "Donations",
-                "opt_in_rate_pct": "Opt-in rate %"
+                "pending": "Pending",
+                "failed": "Failed"
             },
-            "by_charity": "By charity"
+            "charts": {
+                "by_status": "Donations by status"
+            },
+            "statuses": {
+                "success": "Success",
+                "pending": "Pending",
+                "fail": "Failed",
+                "void": "Void"
+            }
         }
     },
     "expenses": {
