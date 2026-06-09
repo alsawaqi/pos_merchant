@@ -74,6 +74,9 @@ export const MerchantPermission = {
     ReportsView: 'reports.view',
     ReportsExport: 'reports.export',
     AuditLogView: 'audit_log.view',
+    // v2 #14 — order cancellation policy. Gates the Order Cancellation
+    // settings page (which staff positions may cancel at the POS).
+    OrdersCancel: 'orders.cancel',
 } as const;
 
 export type MerchantPermissionValue =

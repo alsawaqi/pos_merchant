@@ -183,6 +183,9 @@ final class SeedMerchantRolesAction
                     MerchantPermission::ReportsView->value,
                     MerchantPermission::ReportsExport->value,
                     MerchantPermission::AuditLogView->value,
+                    // v2 #14: managers set which staff positions may
+                    // cancel a completed order at the POS.
+                    MerchantPermission::OrdersCancel->value,
                 ],
             ],
 

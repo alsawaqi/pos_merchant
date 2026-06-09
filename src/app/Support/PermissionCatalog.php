@@ -302,6 +302,18 @@ final class PermissionCatalog
                 ],
             ],
             [
+                'key' => 'orders',
+                'label_en' => 'Orders',
+                'label_ar' => 'الطلبات',
+                'permissions' => [
+                    [
+                        'key' => MerchantPermission::OrdersCancel->value,
+                        'label_en' => 'Set which staff positions can cancel orders at the POS',
+                        'label_ar' => 'تحديد المناصب الوظيفية التي يمكنها إلغاء الطلبات في نقطة البيع',
+                    ],
+                ],
+            ],
+            [
                 'key' => 'roles',
                 'label_en' => 'Roles & Permissions',
                 'label_ar' => 'الأدوار والصلاحيات',

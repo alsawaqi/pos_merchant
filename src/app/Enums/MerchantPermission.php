@@ -146,6 +146,14 @@ enum MerchantPermission: string
     case ReportsExport = 'reports.export';
     case AuditLogView = 'audit_log.view';
 
+    // v2 #14 — order cancellation policy. `orders.cancel` gates configuring
+    // WHICH staff positions may cancel a completed order at the POS — the policy
+    // is emitted to the device (in /device/config) and enforced there. It is the
+    // manage lever for the Order Cancellation settings page; no separate view
+    // key (only a user who can change the policy needs to see it). Money-adjacent
+    // (a void reverses loyalty / round-up / commission), so Manager + SuperAdmin.
+    case OrdersCancel = 'orders.cancel';
+
     /**
      * @return list<string>
      */

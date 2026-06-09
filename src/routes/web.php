@@ -23,6 +23,7 @@ use App\Http\Controllers\Pos\FloorsController;
 use App\Http\Controllers\Pos\IngredientsController;
 use App\Http\Controllers\Pos\LoyaltyController;
 use App\Http\Controllers\Pos\PosStaffController;
+use App\Http\Controllers\Pos\OrderCancellationSettingController;
 use App\Http\Controllers\Pos\OrdersController;
 use App\Http\Controllers\Pos\ProductsController;
 use App\Http\Controllers\Pos\ProductStockController;
@@ -578,6 +579,14 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         Route::post('taxes', [TaxesController::class, 'store'])->name('taxes.store');
         Route::patch('taxes/{tax:uuid}', [TaxesController::class, 'update'])->name('taxes.update');
         Route::delete('taxes/{tax:uuid}', [TaxesController::class, 'destroy'])->name('taxes.destroy');
+
+        // v2 #14 — order cancellation policy: which staff positions may cancel a
+        // completed order at the POS. Emitted in /device/config + enforced on the
+        // device. Gated under orders.cancel (Manager + SuperAdmin).
+        Route::get('settings/order-cancellation', [OrderCancellationSettingController::class, 'show'])
+            ->name('settings.order-cancellation.show');
+        Route::put('settings/order-cancellation', [OrderCancellationSettingController::class, 'update'])
+            ->name('settings.order-cancellation.update');
 
         // Per-product price overrides. PUT is upsert: creates
         // on first call, updates on subsequent. The two-uuid

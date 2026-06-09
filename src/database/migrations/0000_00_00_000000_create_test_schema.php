@@ -800,6 +800,16 @@ return new class extends Migration
             $table->unique(['company_id', 'key'], 'pos_expense_categories_company_key_unique');
         });
 
+        // v2 #14 — per-company merchant POS policy (e.g. order_cancel_positions).
+        Schema::create('pos_company_settings', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('company_id')->index();
+            $table->string('key', 64);
+            $table->json('value')->nullable();
+            $table->timestamps();
+            $table->unique(['company_id', 'key'], 'pos_company_settings_company_key_unique');
+        });
+
         Schema::create('pos_product_delivery_prices', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('product_id')->constrained('pos_products')->cascadeOnDelete();

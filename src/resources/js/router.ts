@@ -18,6 +18,7 @@ import InventoryIndex from '@/Pages/Merchant/Inventory/Index.vue';
 import PortalUsersIndex from '@/Pages/Merchant/PortalUsers/Index.vue';
 import PosStaffIndex from '@/Pages/Merchant/PosStaff/Index.vue';
 import RolesIndex from '@/Pages/Merchant/Roles/Index.vue';
+import SettingsOrderCancellation from '@/Pages/Merchant/Settings/OrderCancellation.vue';
 import ReportsIndex from '@/Pages/Merchant/Reports/Index.vue';
 import ReportsSales from '@/Pages/Merchant/Reports/Sales.vue';
 import ReportsCustomers from '@/Pages/Merchant/Reports/Customers.vue';
@@ -205,6 +206,17 @@ const routes: RouteRecordRaw[] = [
     { path: '/reports/loss-waste', name: 'merchant.reports.loss-waste', component: ReportsLossWaste, meta: { requiresAuth: true } },
     { path: '/reports/restock-purchasing', name: 'merchant.reports.restock-purchasing', component: ReportsRestockPurchasing, meta: { requiresAuth: true } },
     { path: '/reports/round-up-donation', name: 'merchant.reports.round-up-donation', component: ReportsRoundUpDonation, meta: { requiresAuth: true } },
+
+    {
+        // Order Cancellation policy (v2 #14) — which staff positions
+        // may cancel an order at the POS. Server enforces orders.cancel
+        // on both GET + PUT; SPA hides the nav entry for users without
+        // it.
+        path: '/settings/order-cancellation',
+        name: 'merchant.settings.order-cancellation',
+        component: SettingsOrderCancellation,
+        meta: { requiresAuth: true },
+    },
 
     // Audit log viewer (§5.12). Server-side audit_log.view gates
     // this; the sidebar entry is independently gated on the same

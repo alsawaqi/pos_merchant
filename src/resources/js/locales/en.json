@@ -56,7 +56,8 @@
         "roles": "Roles & Permissions",
         "sign_out": "Sign out",
         "language": "Language",
-        "orders": "Sales"
+        "orders": "Sales",
+        "order_cancellation": "Order Cancellation"
     },
     "common": {
         "language_english": "English",
@@ -1659,6 +1660,19 @@
             "loading": "Loading order…",
             "load_failed": "Could not load this order.",
             "close": "Close"
+        }
+    },
+    "settings": {
+        "order_cancellation": {
+            "title": "Order Cancellation",
+            "subtitle": "Choose which staff positions may cancel an order at the POS. Only the selected positions can void or cancel orders on the terminal.",
+            "positions_label": "Positions allowed to cancel orders",
+            "empty_state": "No staff positions are available.",
+            "at_least_one": "Select at least one position.",
+            "forbidden": "You don't have permission to manage this setting.",
+            "save": "Save",
+            "save_success": "Order cancellation policy updated.",
+            "save_failed": "Could not save the order cancellation policy."
         }
     }
 }
