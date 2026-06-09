@@ -743,6 +743,29 @@
             "submit": "Save",
             "submitting": "Saving…"
         },
+        "alt_units": {
+            "title": "Alternate units",
+            "hint": "Optional larger or packaged units. The factor is how many base units make up one of this unit (e.g. base g, alt kg, factor 1000).",
+            "base_unit_label": "Base: {unit} — factor 1",
+            "name": "Unit name",
+            "name_placeholder": "e.g. kg, box of 24",
+            "name_ar": "Arabic name",
+            "factor": "Factor",
+            "factor_hint": "Base units per 1 of this unit. Must be greater than 0.",
+            "add": "Add unit",
+            "save": "Save",
+            "saving": "Saving…",
+            "delete": "Delete",
+            "delete_confirm": "Remove this alternate unit?",
+            "save_first_hint": "Save the ingredient first to add alternate units.",
+            "empty": "No alternate units yet.",
+            "name_immutable_hint": "The unit name can't be changed after it's created.",
+            "errors": {
+                "load_failed": "Could not load alternate units.",
+                "save_failed": "Could not save the alternate unit.",
+                "delete_failed": "Could not delete the alternate unit."
+            }
+        },
         "sup_modal": {
             "create_title": "Add supplier",
             "edit_title": "Edit supplier",

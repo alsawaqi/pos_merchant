@@ -44,6 +44,26 @@ export interface Supplier {
     updated_at: string | null;
 }
 
+/**
+ * v2 #13 — an alternate unit for an ingredient. The ingredient's
+ * existing `unit` field is the BASE unit (factor 1); each alt unit
+ * declares how many base units equal one of itself via `factor`
+ * (e.g. base "g", alt "kg" factor 1000). `factor` is a decimal
+ * STRING (decimal(14,4), e.g. "1000.0000") — keep it opaque, never
+ * parseFloat() for round-tripping. `name` is immutable after create.
+ */
+export interface IngredientAltUnit {
+    id: number;
+    uuid: string;
+    ingredient_id: number;
+    name: string;
+    name_ar: string | null;
+    factor: string;
+    sort_order: number;
+    created_at: string | null;
+    updated_at: string | null;
+}
+
 export interface Ingredient {
     id: number;
     uuid: string;
@@ -56,6 +76,8 @@ export interface Ingredient {
     primary_supplier_id: number | null;
     primary_supplier?: { id: number; uuid: string; name: string } | null;
     status: InventoryStatus;
+    /** v2 #13 — eager-loaded alternate units (GET /api/ingredients). */
+    alt_units?: IngredientAltUnit[];
     created_at: string | null;
     updated_at: string | null;
 }
@@ -181,6 +203,65 @@ export function updateIngredient(
 
 export function deleteIngredient(uuid: string): Promise<void> {
     return apiDelete<void>(`/api/ingredients/${uuid}`);
+}
+
+// ---- Ingredient alternate units (v2 #13) -----------------------
+//
+// Per-ingredient sub-resource under the ingredient uuid. `factor`
+// is decimal(14,4) server-side — send the user's raw string/number
+// through so precision survives. `name` is set on create and is
+// IMMUTABLE afterwards (PATCH ignores it). 422s: factor must be
+// > 0, name can't equal the base unit, duplicate active names are
+// rejected — surface them inline.
+
+export interface CreateIngredientUnitPayload {
+    name: string;
+    name_ar?: string | null;
+    factor: string | number;
+    sort_order?: number;
+}
+
+export interface UpdateIngredientUnitPayload {
+    /** name is IMMUTABLE — not sent on update. */
+    name_ar?: string | null;
+    factor?: string | number;
+    sort_order?: number;
+}
+
+export function listIngredientUnits(
+    ingredientUuid: string,
+): Promise<{ data: IngredientAltUnit[] }> {
+    return apiGet<{ data: IngredientAltUnit[] }>(
+        `/api/ingredients/${ingredientUuid}/units`,
+    );
+}
+
+export function createIngredientUnit(
+    ingredientUuid: string,
+    payload: CreateIngredientUnitPayload,
+): Promise<{ data: IngredientAltUnit }> {
+    return apiPost<{ data: IngredientAltUnit }>(
+        `/api/ingredients/${ingredientUuid}/units`,
+        payload as unknown as JsonValue,
+    );
+}
+
+export function updateIngredientUnit(
+    ingredientUuid: string,
+    unitUuid: string,
+    payload: UpdateIngredientUnitPayload,
+): Promise<{ data: IngredientAltUnit }> {
+    return apiPatch<{ data: IngredientAltUnit }>(
+        `/api/ingredients/${ingredientUuid}/units/${unitUuid}`,
+        payload as unknown as JsonValue,
+    );
+}
+
+export function deleteIngredientUnit(
+    ingredientUuid: string,
+    unitUuid: string,
+): Promise<void> {
+    return apiDelete<void>(`/api/ingredients/${ingredientUuid}/units/${unitUuid}`);
 }
 
 // ---- Suppliers --------------------------------------------------

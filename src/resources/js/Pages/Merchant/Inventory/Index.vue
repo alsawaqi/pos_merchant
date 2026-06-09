@@ -56,13 +56,16 @@ import {
     cancelRestockRequest,
     createBranchTransfer,
     createIngredient,
+    createIngredientUnit,
     createRestockRequest,
     createSupplier,
     deleteIngredient,
+    deleteIngredientUnit,
     deleteSupplier,
     listBranchStock,
     listBranchTransfers,
     listIngredients,
+    listIngredientUnits,
     listRestockRequests,
     listStockMovements,
     listSuppliers,
@@ -72,12 +75,14 @@ import {
     restockStock,
     submitRestockRequest,
     updateIngredient,
+    updateIngredientUnit,
     updateRestockRequest,
     updateSupplier,
     type BranchStockRow,
     type BranchTransfer,
     type BranchTransferLinePayload,
     type Ingredient,
+    type IngredientAltUnit,
     type IngredientUnit,
     type InventoryStatus,
     type PaginatedMovements,
@@ -184,6 +189,34 @@ const ingForm = reactive<{
 });
 
 const unitOptions: IngredientUnit[] = ['kg', 'g', 'l', 'ml', 'piece', 'pack', 'box'];
+
+// =================== Alternate units (v2 #13) ====================
+// Sub-editor inside the ingredient EDIT modal. Each row maps to a
+// separate CRUD endpoint under the ingredient uuid, so changes
+// persist immediately (add/save-factor/delete) rather than riding
+// the parent form submit. Only meaningful in edit mode — a brand-
+// new ingredient has no uuid yet, so the section shows a
+// "save first" hint instead. `factor` stays a STRING end-to-end.
+
+const altUnits = ref<IngredientAltUnit[]>([]);
+const altUnitsLoading = ref(false);
+const altUnitsError = ref<string | null>(null);
+// Per-row inline field errors keyed by unit uuid (plus '' for the
+// add-new row), so a 422 highlights the exact row.
+const altUnitFieldErrors = ref<Record<string, Record<string, string[]>>>({});
+// uuid of the row whose save/delete is currently in flight.
+const altUnitBusyUuid = ref<string | null>(null);
+// New-row draft.
+const altUnitNew = reactive<{ name: string; name_ar: string; factor: string }>({
+    name: '',
+    name_ar: '',
+    factor: '',
+});
+const altUnitNewBusy = ref(false);
+// Editable buffers for existing rows, keyed by unit uuid. Lets the
+// user tweak factor / Arabic name without mutating the source list
+// until they hit Save.
+const altUnitDrafts = reactive<Record<string, { name_ar: string; factor: string }>>({});
 
 // =================== Supplier modal ==============================
 
@@ -491,6 +524,7 @@ function openCreateIngredient(): void {
     ingForm.status = 'active';
     ingModalErrors.value = {};
     ingModalError.value = null;
+    resetAltUnits();
     ingModalOpen.value = true;
 }
 
@@ -506,6 +540,10 @@ function openEditIngredient(ingredient: Ingredient): void {
     ingForm.status = ingredient.status;
     ingModalErrors.value = {};
     ingModalError.value = null;
+    // Seed alt units from the eager-loaded array, then refresh from
+    // the API so the editor always reflects server truth.
+    seedAltUnits(ingredient.alt_units ?? []);
+    void loadAltUnits(ingredient.uuid);
     ingModalOpen.value = true;
 }
 
@@ -569,6 +607,128 @@ async function confirmDeleteIngredient(): Promise<void> {
         }
     } finally {
         deleting.value = false;
+    }
+}
+
+// =================== Alternate-unit flows (v2 #13) ===============
+
+function resetAltUnits(): void {
+    altUnits.value = [];
+    altUnitsError.value = null;
+    altUnitFieldErrors.value = {};
+    altUnitBusyUuid.value = null;
+    altUnitNew.name = '';
+    altUnitNew.name_ar = '';
+    altUnitNew.factor = '';
+    altUnitNewBusy.value = false;
+    for (const k of Object.keys(altUnitDrafts)) delete altUnitDrafts[k];
+}
+
+function seedAltUnits(units: IngredientAltUnit[]): void {
+    resetAltUnits();
+    altUnits.value = [...units].sort((a, b) => a.sort_order - b.sort_order);
+    syncAltUnitDrafts();
+}
+
+// Mirror the source list into editable drafts (factor + Arabic
+// name), so editing a row doesn't mutate the canonical data.
+function syncAltUnitDrafts(): void {
+    for (const k of Object.keys(altUnitDrafts)) delete altUnitDrafts[k];
+    for (const u of altUnits.value) {
+        altUnitDrafts[u.uuid] = { name_ar: u.name_ar ?? '', factor: u.factor };
+    }
+}
+
+async function loadAltUnits(ingredientUuid: string): Promise<void> {
+    altUnitsLoading.value = true;
+    altUnitsError.value = null;
+    try {
+        const response = await listIngredientUnits(ingredientUuid);
+        altUnits.value = [...response.data].sort((a, b) => a.sort_order - b.sort_order);
+        syncAltUnitDrafts();
+    } catch (err) {
+        altUnitsError.value =
+            err instanceof Error ? err.message : t('inventory.alt_units.errors.load_failed');
+    } finally {
+        altUnitsLoading.value = false;
+    }
+}
+
+function altUnitErrorMessage(err: unknown, fallbackKey: string): string {
+    if (err instanceof ApiError && err.payload && typeof err.payload === 'object' && 'message' in err.payload) {
+        return String((err.payload as { message?: unknown }).message ?? t(fallbackKey));
+    }
+    return err instanceof Error ? err.message : t(fallbackKey);
+}
+
+async function addAltUnit(): Promise<void> {
+    if (!ingModalTarget.value) return;
+    altUnitNewBusy.value = true;
+    altUnitsError.value = null;
+    altUnitFieldErrors.value = { ...altUnitFieldErrors.value, '': {} };
+    try {
+        await createIngredientUnit(ingModalTarget.value.uuid, {
+            name: altUnitNew.name.trim(),
+            name_ar: altUnitNew.name_ar.trim() || null,
+            // Send the raw string through — decimal(14,4) server-side.
+            factor: altUnitNew.factor,
+        });
+        altUnitNew.name = '';
+        altUnitNew.name_ar = '';
+        altUnitNew.factor = '';
+        await loadAltUnits(ingModalTarget.value.uuid);
+    } catch (err) {
+        if (err instanceof ApiError && err.isValidationError()) {
+            altUnitFieldErrors.value = { ...altUnitFieldErrors.value, '': err.payload.errors };
+            altUnitsError.value = t('inventory.validation_summary');
+        } else {
+            altUnitsError.value = altUnitErrorMessage(err, 'inventory.alt_units.errors.save_failed');
+        }
+    } finally {
+        altUnitNewBusy.value = false;
+    }
+}
+
+async function saveAltUnit(unit: IngredientAltUnit): Promise<void> {
+    if (!ingModalTarget.value) return;
+    altUnitBusyUuid.value = unit.uuid;
+    altUnitsError.value = null;
+    altUnitFieldErrors.value = { ...altUnitFieldErrors.value, [unit.uuid]: {} };
+    const draft = altUnitDrafts[unit.uuid];
+    try {
+        // name is IMMUTABLE — only factor + Arabic name go up.
+        await updateIngredientUnit(ingModalTarget.value.uuid, unit.uuid, {
+            name_ar: draft.name_ar.trim() || null,
+            factor: draft.factor,
+        });
+        await loadAltUnits(ingModalTarget.value.uuid);
+    } catch (err) {
+        if (err instanceof ApiError && err.isValidationError()) {
+            altUnitFieldErrors.value = {
+                ...altUnitFieldErrors.value,
+                [unit.uuid]: err.payload.errors,
+            };
+            altUnitsError.value = t('inventory.validation_summary');
+        } else {
+            altUnitsError.value = altUnitErrorMessage(err, 'inventory.alt_units.errors.save_failed');
+        }
+    } finally {
+        altUnitBusyUuid.value = null;
+    }
+}
+
+async function removeAltUnit(unit: IngredientAltUnit): Promise<void> {
+    if (!ingModalTarget.value) return;
+    if (!window.confirm(t('inventory.alt_units.delete_confirm'))) return;
+    altUnitBusyUuid.value = unit.uuid;
+    altUnitsError.value = null;
+    try {
+        await deleteIngredientUnit(ingModalTarget.value.uuid, unit.uuid);
+        await loadAltUnits(ingModalTarget.value.uuid);
+    } catch (err) {
+        altUnitsError.value = altUnitErrorMessage(err, 'inventory.alt_units.errors.delete_failed');
+    } finally {
+        altUnitBusyUuid.value = null;
     }
 }
 
@@ -2011,6 +2171,151 @@ async function submitSuggestions(): Promise<void> {
                             <option value="inactive">{{ t('inventory.statuses.inactive') }}</option>
                         </select>
                     </label>
+
+                    <!-- v2 #13 — Alternate units. Edit-mode only (needs a
+                         saved ingredient uuid). Each row persists via its
+                         own CRUD endpoint, so add / save-factor / delete
+                         hit the API immediately. `factor` stays a string. -->
+                    <fieldset class="rounded-lg border border-slate-200 p-3">
+                        <legend class="px-2 text-sm font-semibold text-slate-700">
+                            <Boxes class="me-1 inline size-3.5 text-amber-600" />
+                            {{ t('inventory.alt_units.title') }}
+                        </legend>
+
+                        <!-- New, unsaved ingredient: no uuid yet. -->
+                        <div v-if="ingModalMode !== 'edit'" class="rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
+                            {{ t('inventory.alt_units.save_first_hint') }}
+                        </div>
+
+                        <template v-else>
+                            <p class="mb-2 text-xs text-slate-500">{{ t('inventory.alt_units.hint') }}</p>
+
+                            <!-- Base unit reference (read-only). -->
+                            <div class="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600">
+                                {{ t('inventory.alt_units.base_unit_label', { unit: unitLabel(ingForm.unit) }) }}
+                            </div>
+
+                            <!-- Section-level error banner (rose). -->
+                            <div v-if="altUnitsError" class="mb-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+                                {{ altUnitsError }}
+                            </div>
+
+                            <div v-if="altUnitsLoading" class="text-xs text-slate-500">{{ t('common.loading') }}</div>
+
+                            <template v-else>
+                                <div v-if="altUnits.length === 0" class="rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
+                                    {{ t('inventory.alt_units.empty') }}
+                                </div>
+                                <ul v-else class="space-y-2">
+                                    <li
+                                        v-for="unit in altUnits"
+                                        :key="unit.uuid"
+                                        class="flex flex-wrap items-end gap-2 rounded border border-slate-200 bg-slate-50/50 p-2"
+                                    >
+                                        <label class="block flex-1 min-w-[8rem]">
+                                            <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.alt_units.name') }}</span>
+                                            <input
+                                                :value="unit.name"
+                                                type="text"
+                                                readonly
+                                                :title="t('inventory.alt_units.name_immutable_hint')"
+                                                class="mt-1 w-full cursor-not-allowed rounded-lg border border-slate-200 bg-slate-100 px-2.5 py-1.5 text-sm text-slate-600"
+                                            >
+                                        </label>
+                                        <label v-if="altUnitDrafts[unit.uuid]" class="block w-36">
+                                            <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.alt_units.name_ar') }}</span>
+                                            <input
+                                                v-model="altUnitDrafts[unit.uuid].name_ar"
+                                                type="text"
+                                                dir="rtl"
+                                                :disabled="!canManage"
+                                                class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100 disabled:bg-slate-50"
+                                            >
+                                        </label>
+                                        <label v-if="altUnitDrafts[unit.uuid]" class="block w-28">
+                                            <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.alt_units.factor') }}</span>
+                                            <input
+                                                v-model="altUnitDrafts[unit.uuid].factor"
+                                                type="number"
+                                                step="0.0001"
+                                                min="0"
+                                                inputmode="decimal"
+                                                :disabled="!canManage"
+                                                class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100 disabled:bg-slate-50"
+                                            >
+                                            <p v-if="altUnitFieldErrors[unit.uuid] && altUnitFieldErrors[unit.uuid].factor" class="mt-1 text-[11px] text-rose-600">{{ altUnitFieldErrors[unit.uuid].factor[0] }}</p>
+                                        </label>
+                                        <div v-if="canManage" class="flex items-center gap-1">
+                                            <button
+                                                type="button"
+                                                :disabled="altUnitBusyUuid === unit.uuid"
+                                                class="inline-flex h-9 items-center gap-1 rounded-lg border border-teal-200 bg-teal-50 px-2.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100 disabled:cursor-wait disabled:opacity-60"
+                                                @click="saveAltUnit(unit)"
+                                            >
+                                                <Check class="size-3.5" />
+                                                {{ altUnitBusyUuid === unit.uuid ? t('inventory.alt_units.saving') : t('inventory.alt_units.save') }}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                :disabled="altUnitBusyUuid === unit.uuid"
+                                                class="grid size-9 place-items-center rounded-lg border border-rose-200 text-rose-700 transition hover:bg-rose-50 disabled:cursor-wait disabled:opacity-60"
+                                                :title="t('inventory.alt_units.delete')"
+                                                @click="removeAltUnit(unit)"
+                                            >
+                                                <Trash2 class="size-4" />
+                                            </button>
+                                        </div>
+                                    </li>
+                                </ul>
+
+                                <!-- Add-new row — manage-gated. -->
+                                <div v-if="canManage" class="mt-3 flex flex-wrap items-end gap-2 rounded border border-teal-100 bg-teal-50/40 p-2">
+                                    <label class="block flex-1 min-w-[8rem]">
+                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.alt_units.name') }} *</span>
+                                        <input
+                                            v-model="altUnitNew.name"
+                                            type="text"
+                                            :placeholder="t('inventory.alt_units.name_placeholder')"
+                                            class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                                        >
+                                        <p v-if="altUnitFieldErrors[''] && altUnitFieldErrors[''].name" class="mt-1 text-[11px] text-rose-600">{{ altUnitFieldErrors[''].name[0] }}</p>
+                                    </label>
+                                    <label class="block w-36">
+                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.alt_units.name_ar') }}</span>
+                                        <input
+                                            v-model="altUnitNew.name_ar"
+                                            type="text"
+                                            dir="rtl"
+                                            class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                                        >
+                                    </label>
+                                    <label class="block w-28">
+                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.alt_units.factor') }} *</span>
+                                        <input
+                                            v-model="altUnitNew.factor"
+                                            type="number"
+                                            step="0.0001"
+                                            min="0"
+                                            inputmode="decimal"
+                                            placeholder="0"
+                                            class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                                        >
+                                        <p v-if="altUnitFieldErrors[''] && altUnitFieldErrors[''].factor" class="mt-1 text-[11px] text-rose-600">{{ altUnitFieldErrors[''].factor[0] }}</p>
+                                    </label>
+                                    <button
+                                        type="button"
+                                        :disabled="altUnitNewBusy || !altUnitNew.name.trim() || String(altUnitNew.factor).trim() === ''"
+                                        class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 text-xs font-semibold text-teal-700 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                        @click="addAltUnit"
+                                    >
+                                        <Plus class="size-3.5" />
+                                        {{ altUnitNewBusy ? t('inventory.alt_units.saving') : t('inventory.alt_units.add') }}
+                                    </button>
+                                </div>
+                                <p class="mt-2 text-[11px] text-slate-500">{{ t('inventory.alt_units.factor_hint') }}</p>
+                            </template>
+                        </template>
+                    </fieldset>
                 </form>
             <template #footer>
                 <div class="flex justify-end gap-2">
