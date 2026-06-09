@@ -7,7 +7,6 @@ namespace App\Http\Controllers\Pos;
 use App\Actions\Pos\Expenses\LogExpenseAction;
 use App\Actions\Pos\Expenses\RejectExpenseAction;
 use App\Actions\Pos\Expenses\ReviewExpenseAction;
-use App\Enums\ExpenseCategory;
 use App\Enums\ExpenseStatus;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
@@ -68,14 +67,11 @@ class ExpensesController extends Controller
             }
         }
 
-        // category filter — fail-closed on an unknown value.
+        // category filter — by per-company key (v2 #7). An unknown key simply
+        // matches no rows within the tenant scope (effectively fail-closed).
         $category = $request->query('category');
         if (is_string($category) && $category !== '') {
-            if (in_array($category, ExpenseCategory::values(), true)) {
-                $query->where('category', $category);
-            } else {
-                $query->whereRaw('1 = 0');
-            }
+            $query->where('category', $category);
         }
 
         $branchId = $request->query('branch_id');

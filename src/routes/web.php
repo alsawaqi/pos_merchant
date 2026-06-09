@@ -17,6 +17,7 @@ use App\Http\Controllers\Pos\DashboardController;
 use App\Http\Controllers\Pos\DeliveryProvidersController;
 use App\Http\Controllers\Pos\DiscountsController;
 use App\Http\Controllers\Pos\TaxesController;
+use App\Http\Controllers\Pos\ExpenseCategoryController;
 use App\Http\Controllers\Pos\ExpensesController;
 use App\Http\Controllers\Pos\FloorsController;
 use App\Http\Controllers\Pos\IngredientsController;
@@ -471,6 +472,18 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('expenses.review');
         Route::post('expenses/{expense:uuid}/reject', [ExpensesController::class, 'reject'])
             ->name('expenses.reject');
+
+        // v2 #7 — custom expense categories (company-managed). index gated
+        // expenses.view (auto-seeds the company's defaults); writes gated
+        // expenses.manage. The POS /device/config bundle ships the active set.
+        Route::get('expense-categories', [ExpenseCategoryController::class, 'index'])
+            ->name('expense-categories.index');
+        Route::post('expense-categories', [ExpenseCategoryController::class, 'store'])
+            ->name('expense-categories.store');
+        Route::patch('expense-categories/{category:uuid}', [ExpenseCategoryController::class, 'update'])
+            ->name('expense-categories.update');
+        Route::delete('expense-categories/{category:uuid}', [ExpenseCategoryController::class, 'destroy'])
+            ->name('expense-categories.destroy');
 
         // -------- Phase 7b-7 — Dashboard summary --
         // One GET that the landing page hits on mount. Gated

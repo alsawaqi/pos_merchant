@@ -106,11 +106,15 @@ it('returns 422 on missing/invalid fields', function (): void {
         // amount missing
     ])->assertStatus(422)->assertJsonValidationErrors(['amount']);
 
-    $this->postJson('/api/expenses', [
+    // v2 #7: an unknown category is now rejected in LogExpenseAction (a
+    // per-company key lookup), so it surfaces as a {message} 422 rather than
+    // a FormRequest validation error keyed 'category'.
+    $unknownCat = $this->postJson('/api/expenses', [
         'branch_id' => $ctx['branch']->id,
         'category' => 'not-a-category',
         'amount' => '5.000',
-    ])->assertStatus(422)->assertJsonValidationErrors(['category']);
+    ])->assertStatus(422);
+    expect($unknownCat->json('message'))->toContain('category');
 
     $this->postJson('/api/expenses', [
         'branch_id' => $ctx['branch']->id,

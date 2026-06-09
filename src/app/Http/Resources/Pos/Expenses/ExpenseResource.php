@@ -24,7 +24,9 @@ class ExpenseResource extends JsonResource
             // null branch_id = a general / company-wide expense.
             'branch_id' => $this->branch_id !== null ? (int) $this->branch_id : null,
             'branch_name' => $this->whenLoaded('branch', fn () => $this->branch?->name),
-            'category' => $this->category?->value,
+            // v2 #7: the per-company category key (string). The UI maps it to a
+            // display name via the expense-categories list.
+            'category' => $this->category,
             'amount' => (string) $this->amount,
             'note' => $this->note,
             'receipt_photo_path' => $this->receipt_photo_path,

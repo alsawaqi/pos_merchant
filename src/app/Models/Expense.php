@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Enums\ExpenseCategory;
 use App\Enums\ExpenseStatus;
 use Database\Factories\ExpenseFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -60,7 +59,10 @@ class Expense extends Model
     protected function casts(): array
     {
         return [
-            'category' => ExpenseCategory::class,
+            // v2 #7: category is now a free-form per-company key (a slug from
+            // pos_expense_categories), no longer the fixed ExpenseCategory enum
+            // — so custom categories never trip an "undefined enum case" cast.
+            'category' => 'string',
             'amount' => 'decimal:3',
             'logged_at' => 'datetime',
             'status' => ExpenseStatus::class,

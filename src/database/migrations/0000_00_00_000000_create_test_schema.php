@@ -781,6 +781,21 @@ return new class extends Migration
             $table->unique(['company_id', 'name'], 'pos_taxes_company_name_unique');
         });
 
+        // v2 #7 — custom expense categories (company-managed).
+        Schema::create('pos_expense_categories', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->string('name', 64);
+            $table->string('name_ar', 64)->nullable();
+            $table->string('key', 32);
+            $table->boolean('is_active')->default(true);
+            $table->unsignedSmallInteger('sort_order')->default(0);
+            $table->timestamps();
+            $table->softDeletes();
+            $table->unique(['company_id', 'key'], 'pos_expense_categories_company_key_unique');
+        });
+
         Schema::create('pos_product_delivery_prices', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('product_id')->constrained('pos_products')->cascadeOnDelete();

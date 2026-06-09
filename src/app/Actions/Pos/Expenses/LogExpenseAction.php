@@ -6,10 +6,10 @@ namespace App\Actions\Pos\Expenses;
 
 use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
-use App\Enums\ExpenseCategory;
 use App\Enums\ExpenseStatus;
 use App\Models\Branch;
 use App\Models\Expense;
+use App\Models\ExpenseCategory;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
@@ -36,6 +36,7 @@ final readonly class LogExpenseAction
     public function __construct(
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
+        private EnsureDefaultExpenseCategoriesAction $ensureCategories,
     ) {}
 
     /**
@@ -60,7 +61,20 @@ final readonly class LogExpenseAction
             }
         }
 
-        $category = ExpenseCategory::from((string) $attributes['category']);
+        // v2 #7: category is a per-company key (slug) from pos_expense_categories.
+        // Ensure the company's defaults exist, then require the submitted key to
+        // be one of that company's ACTIVE categories.
+        $this->ensureCategories->handle($companyId);
+        $category = trim((string) ($attributes['category'] ?? ''));
+        $categoryValid = ExpenseCategory::query()
+            ->where('company_id', $companyId)
+            ->where('key', $category)
+            ->where('is_active', true)
+            ->exists();
+        if (! $categoryValid) {
+            throw new RuntimeException('Unknown expense category for this company.');
+        }
+
         $amount = (float) $attributes['amount'];
         if ($amount <= 0) {
             throw new RuntimeException('Expense amount must be positive.');
@@ -71,7 +85,7 @@ final readonly class LogExpenseAction
             $expense = Expense::query()->create([
                 'company_id' => $companyId,
                 'branch_id' => $branchId,
-                'category' => $category->value,
+                'category' => $category,
                 'amount' => number_format($amount, 3, '.', ''),
                 'note' => $attributes['note'] ?? null,
                 'receipt_photo_path' => $attributes['receipt_photo_path'] ?? null,
@@ -88,7 +102,7 @@ final readonly class LogExpenseAction
                 auditableType: Expense::class,
                 auditableId: $expense->id,
                 newValues: [
-                    'category' => $category->value,
+                    'category' => $category,
                     'amount' => (string) $expense->amount,
                     'branch_id' => $branchId,
                 ],
