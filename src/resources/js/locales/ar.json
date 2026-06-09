@@ -952,6 +952,35 @@
             "attach_failed": "تعذر إرفاق اللوحة.",
             "detach_failed": "تعذر فصل اللوحة.",
             "delete_failed": "تعذر حذف العميل."
+        },
+        "show": {
+            "back": "العملاء",
+            "member_since": "عميل منذ",
+            "wallet_balance": "رصيد المحفظة",
+            "plates": "لوحات المركبات",
+            "no_plates": "لا توجد لوحات مرفقة.",
+            "rollups": {
+                "total_spend": "إجمالي الإنفاق",
+                "order_count": "الطلبات المدفوعة",
+                "avg_ticket": "متوسط الفاتورة",
+                "last_order": "آخر طلب"
+            },
+            "favorite_item": "العنصر المفضل",
+            "favorite_hint": "{qty} مطلوبة عبر {count} مرة",
+            "no_favorite": "لا توجد طلبات مدفوعة بعد.",
+            "spend_trend": "الإنفاق — آخر ١٢ شهرًا",
+            "loyalty": "الولاء والمحفظة",
+            "loyalty_accounts": "حسابات الولاء",
+            "no_loyalty": "لا توجد حسابات ولاء بعد.",
+            "points": "نقطة",
+            "stamps": "ختم",
+            "recent_loyalty": "نشاط الولاء الأخير",
+            "recent_wallet": "نشاط المحفظة الأخير",
+            "no_activity": "لا يوجد نشاط بعد.",
+            "order_history": "سجل الطلبات",
+            "no_orders": "لا توجد طلبات بعد.",
+            "load_failed": "تعذّر تحميل هذا العميل.",
+            "loading": "جارٍ التحميل…"
         }
     },
     "loyalty": {

@@ -475,7 +475,12 @@ async function submitWalletAdjust(): Promise<void> {
                         <tbody class="divide-y divide-slate-100 bg-white">
                             <tr v-for="row in customers" :key="row.id" class="transition hover:bg-slate-50">
                                 <td class="px-5 py-4">
-                                    <span class="block text-sm font-semibold text-slate-950">{{ row.name }}</span>
+                                    <RouterLink
+                                        :to="`/customers/${row.uuid}`"
+                                        class="block text-sm font-semibold text-slate-950 transition hover:text-teal-700"
+                                    >
+                                        {{ row.name }}
+                                    </RouterLink>
                                 </td>
                                 <td class="px-5 py-4 text-sm font-mono text-slate-600">{{ row.phone }}</td>
                                 <td class="px-5 py-4">

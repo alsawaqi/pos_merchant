@@ -117,3 +117,57 @@ export function attachVehiclePlate(
 export function detachVehiclePlate(plateUuid: string): Promise<void> {
     return apiDelete<void>(`/api/customer-plates/${plateUuid}`);
 }
+
+// ---- Customer 360 (v2 #8) ---------------------------------------
+
+export interface CustomerAnalytics {
+    rollups: {
+        order_count: number;
+        /** decimal:3 OMR string. */
+        total_spend: string;
+        avg_ticket: string;
+        first_order_at: string | null;
+        last_order_at: string | null;
+    };
+    favorite_item: {
+        product_id: number | null;
+        product_name: string;
+        total_qty: string;
+        total_revenue: string;
+        line_count: number;
+    } | null;
+    /** Trailing-12-month paid gross + count, zero-filled. */
+    spend_trend: { month: string; gross: string; count: number }[];
+}
+
+export interface CustomerOrderRow {
+    id: number;
+    uuid: string;
+    branch_name: string | null;
+    order_type: string | null;
+    status: string | null;
+    items_count: number;
+    discount_total: string;
+    grand_total: string;
+    opened_at: string | null;
+}
+
+export interface CustomerOrdersPayload {
+    totals: { count: number; paid_total: string };
+    rows: CustomerOrderRow[];
+    meta: { current_page: number; per_page: number; last_page: number; total: number };
+}
+
+export function getCustomerAnalytics(uuid: string): Promise<{ data: CustomerAnalytics }> {
+    return apiGet<{ data: CustomerAnalytics }>(`/api/customers/${uuid}/analytics`);
+}
+
+export function getCustomerOrders(
+    uuid: string,
+    page = 1,
+    perPage = 20,
+): Promise<{ data: CustomerOrdersPayload }> {
+    return apiGet<{ data: CustomerOrdersPayload }>(`/api/customers/${uuid}/orders`, {
+        query: { page, per_page: perPage },
+    });
+}

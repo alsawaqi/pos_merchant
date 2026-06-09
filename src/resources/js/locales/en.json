@@ -952,6 +952,35 @@
             "attach_failed": "Could not attach the plate.",
             "detach_failed": "Could not detach the plate.",
             "delete_failed": "Could not delete the customer."
+        },
+        "show": {
+            "back": "Customers",
+            "member_since": "Customer since",
+            "wallet_balance": "Wallet balance",
+            "plates": "Vehicle plates",
+            "no_plates": "No plates attached.",
+            "rollups": {
+                "total_spend": "Lifetime spend",
+                "order_count": "Paid orders",
+                "avg_ticket": "Avg ticket",
+                "last_order": "Last order"
+            },
+            "favorite_item": "Favorite item",
+            "favorite_hint": "{qty} ordered across {count} times",
+            "no_favorite": "No paid orders yet.",
+            "spend_trend": "Spend — last 12 months",
+            "loyalty": "Loyalty & wallet",
+            "loyalty_accounts": "Loyalty accounts",
+            "no_loyalty": "No loyalty accounts yet.",
+            "points": "pts",
+            "stamps": "stamps",
+            "recent_loyalty": "Recent loyalty activity",
+            "recent_wallet": "Recent wallet activity",
+            "no_activity": "No activity yet.",
+            "order_history": "Order history",
+            "no_orders": "No orders yet.",
+            "load_failed": "Could not load this customer.",
+            "loading": "Loading…"
         }
     },
     "loyalty": {

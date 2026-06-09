@@ -7,6 +7,7 @@ import BranchesIndex from '@/Pages/Merchant/Branches/Index.vue';
 import CatalogueIndex from '@/Pages/Merchant/Catalogue/Index.vue';
 import TaxesIndex from '@/Pages/Merchant/Taxes/Index.vue';
 import CustomersIndex from '@/Pages/Merchant/Customers/Index.vue';
+import CustomersShow from '@/Pages/Merchant/Customers/Show.vue';
 import DiscountsIndex from '@/Pages/Merchant/Discounts/Index.vue';
 import ExpensesIndex from '@/Pages/Merchant/Expenses/Index.vue';
 import LoyaltyIndex from '@/Pages/Merchant/Loyalty/Index.vue';
@@ -133,6 +134,14 @@ const routes: RouteRecordRaw[] = [
         path: '/customers',
         name: 'merchant.customers',
         component: CustomersIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        // Customer 360 (v2 #8). Detail page: rollups, favorite item,
+        // spend trend, loyalty/wallet, order history.
+        path: '/customers/:uuid',
+        name: 'merchant.customers.show',
+        component: CustomersShow,
         meta: { requiresAuth: true },
     },
     {
