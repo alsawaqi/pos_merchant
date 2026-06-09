@@ -941,6 +941,39 @@
                 "submit": "Transfer stock",
                 "submitting": "Transferring…"
             }
+        },
+        "restock_suggestions": {
+            "action": "Suggest restock",
+            "title": "Smart restock suggestions",
+            "subtitle": "Forecast for {branch}, based on recent consumption. Tick the items to reorder, tweak quantities, then create a restock request.",
+            "window_days": "Look-back window (days)",
+            "window_days_hint": "How many past days of consumption to average. 1–365.",
+            "cover_days": "Cover (days)",
+            "cover_days_hint": "Days of demand the suggested quantity should cover. 1–365.",
+            "include": "Reorder",
+            "ingredient": "Ingredient",
+            "current": "On hand",
+            "avg_daily": "Avg/day",
+            "target": "Target",
+            "reason": "Reason",
+            "suggested": "Suggested qty",
+            "reasons": {
+                "below_threshold_and_forecast": "Below min + forecast",
+                "below_threshold": "Below minimum",
+                "consumption_forecast": "Forecast"
+            },
+            "empty": "Nothing to reorder — stock is healthy for the chosen window.",
+            "note": "Note for HQ (optional)",
+            "note_placeholder": "e.g. ahead of the weekend rush",
+            "read_only_note": "You can review these suggestions, but creating a restock request needs the restock-request permission.",
+            "selected_count": "{count} item selected | {count} items selected",
+            "close": "Close",
+            "create": "Create restock request",
+            "creating": "Creating…",
+            "no_selection": "Tick at least one item with a quantity to create a request.",
+            "created": "Restock request created with {count} item. | Restock request created with {count} items.",
+            "load_failed": "Failed to load suggestions.",
+            "create_failed": "Failed to create the restock request."
         }
     },
     "customers": {

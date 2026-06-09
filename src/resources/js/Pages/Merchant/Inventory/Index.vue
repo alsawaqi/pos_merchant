@@ -29,6 +29,7 @@ import {
     ClipboardList,
     History,
     Image as ImageIcon,
+    Lightbulb,
     Minus,
     Package,
     Pencil,
@@ -81,9 +82,11 @@ import {
     type InventoryStatus,
     type PaginatedMovements,
     type PaginatedWaste,
+    getRestockSuggestions,
     type RestockLinePayload,
     type RestockRequest,
     type RestockRequestStatus,
+    type RestockSuggestion,
     type StockMovementType,
     type Supplier,
     type WasteReason,
@@ -95,6 +98,7 @@ const { t, locale } = useI18n();
 const { can } = usePermissions();
 
 const isArabic = computed(() => locale.value === 'ar');
+const canViewInventory = computed(() => can(MerchantPermission.InventoryView));
 const canManage = computed(() => can(MerchantPermission.InventoryManage));
 // Phase 5c — split restock permissions: create on the requester
 // side, review on the HQ side. Either one gives the user access
@@ -148,6 +152,10 @@ const transferForm = reactive<{
 
 const loading = ref(true);
 const error = ref<string | null>(null);
+// Page-level success banner (emerald) — mirrors the rose `error`
+// banner. Used by the restock-suggestions create flow, which
+// closes its panel on success rather than showing an in-panel note.
+const success = ref<string | null>(null);
 
 // =================== Ingredient modal =============================
 
@@ -267,6 +275,36 @@ const allocateError = ref<string | null>(null);
 const allocateTarget = ref<RestockRequest | null>(null);
 // Map line.id (as string for v-model) → allocated quantity string.
 const allocateOverrides = reactive<Record<string, string>>({});
+
+// =================== Smart restock suggestions ==================
+// Read-only forecast panel (inventory.view). Fetches per the
+// currently-selected branch; each row is editable + includable,
+// and the checked rows can be turned into a restock request
+// (inventory.restock_request.create). Quantities stay STRINGS
+// end-to-end — `qty` is the editable suggested amount.
+
+interface SuggestionRow {
+    suggestion: RestockSuggestion;
+    include: boolean;
+    qty: string;
+}
+
+const suggestOpen = ref(false);
+const suggestLoading = ref(false);
+const suggestError = ref<string | null>(null);
+const suggestCreating = ref(false);
+// Re-fetch knobs — clamped 1..365 server-side; defaults 30 / 14.
+const suggestWindowDays = ref(30);
+const suggestCoverDays = ref(14);
+const suggestRows = ref<SuggestionRow[]>([]);
+// Set true once a fetch has resolved, so the empty-state only
+// renders after a real "nothing to reorder" response.
+const suggestLoaded = ref(false);
+const suggestNote = ref('');
+
+const suggestSelectedCount = computed<number>(() =>
+    suggestRows.value.filter((r) => r.include && String(r.qty).trim() !== '').length,
+);
 
 // =================== Adjust/Restock modal form (Phase 5a) ========
 // (Existing block kept below — only renamed-by-context, not by
@@ -1177,6 +1215,103 @@ function extractMessage(err: unknown, fallback: string): string {
     if (err instanceof Error) return err.message;
     return fallback;
 }
+
+// =================== Smart restock suggestions flows =============
+
+function reasonBadgeClass(reason: RestockSuggestion['reason']): string {
+    switch (reason) {
+        case 'below_threshold_and_forecast':
+            return 'bg-rose-100 text-rose-700';
+        case 'below_threshold':
+            return 'bg-amber-100 text-amber-700';
+        case 'consumption_forecast':
+            return 'bg-indigo-100 text-indigo-700';
+    }
+}
+
+function reasonLabel(reason: RestockSuggestion['reason']): string {
+    return t(`inventory.restock_suggestions.reasons.${reason}`);
+}
+
+async function fetchSuggestions(): Promise<void> {
+    if (selectedBranchUuid.value === null) {
+        suggestRows.value = [];
+        suggestLoaded.value = true;
+        return;
+    }
+    suggestLoading.value = true;
+    suggestError.value = null;
+    try {
+        const response = await getRestockSuggestions(selectedBranchUuid.value, {
+            windowDays: suggestWindowDays.value,
+            coverDays: suggestCoverDays.value,
+        });
+        suggestRows.value = response.data.map((s) => ({
+            suggestion: s,
+            include: true,
+            // Keep the server's decimal:3 string verbatim — never
+            // round-trip through a Number.
+            qty: s.suggested_quantity,
+        }));
+        suggestLoaded.value = true;
+    } catch (err) {
+        suggestError.value = extractMessage(err, t('inventory.restock_suggestions.load_failed'));
+    } finally {
+        suggestLoading.value = false;
+    }
+}
+
+function openSuggestions(): void {
+    if (selectedBranchUuid.value === null) return;
+    suggestOpen.value = true;
+    suggestError.value = null;
+    suggestLoaded.value = false;
+    suggestRows.value = [];
+    suggestNote.value = '';
+    void fetchSuggestions();
+}
+
+// Re-fetch when the window / cover knobs change — but only while
+// the panel is open (avoids a fetch on initial ref creation).
+watch([suggestWindowDays, suggestCoverDays], () => {
+    if (suggestOpen.value) void fetchSuggestions();
+});
+
+async function submitSuggestions(): Promise<void> {
+    if (selectedBranchUuid.value === null) return;
+    const lines: RestockLinePayload[] = suggestRows.value
+        .filter((r) => r.include && String(r.qty).trim() !== '')
+        .map((r) => ({
+            ingredient_uuid: r.suggestion.ingredient_uuid,
+            // Send the (possibly edited) quantity through as a string.
+            quantity_requested: r.qty,
+        }));
+    if (lines.length === 0) {
+        suggestError.value = t('inventory.restock_suggestions.no_selection');
+        return;
+    }
+    suggestCreating.value = true;
+    suggestError.value = null;
+    try {
+        await createRestockRequest(selectedBranchUuid.value, {
+            lines,
+            note: suggestNote.value.trim() || null,
+        });
+        suggestOpen.value = false;
+        success.value = t('inventory.restock_suggestions.created', { count: lines.length });
+        // The page lists restock requests — refresh so the new one
+        // (and the tab count badge) reflect immediately.
+        await fetchRestockRequests();
+    } catch (err) {
+        if (err instanceof ApiError && err.isValidationError()) {
+            suggestError.value = t('inventory.validation_summary');
+        } else {
+            suggestError.value = extractMessage(err, t('inventory.restock_suggestions.create_failed'));
+        }
+    } finally {
+        suggestCreating.value = false;
+    }
+}
 </script>
 
 <template>
@@ -1277,6 +1412,12 @@ function extractMessage(err: unknown, fallback: string): string {
 
             <div v-if="error" class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
                 {{ error }}
+            </div>
+            <div v-if="success" class="flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+                <span>{{ success }}</span>
+                <button type="button" class="rounded p-0.5 text-emerald-600 transition hover:bg-emerald-100" @click="success = null">
+                    <X class="size-4" />
+                </button>
             </div>
 
             <!-- ================== INGREDIENTS TAB ================== -->
@@ -1418,8 +1559,18 @@ function extractMessage(err: unknown, fallback: string): string {
             </section>
 
             <section v-if="activeTab === 'stock' && branches.length > 0" class="space-y-4">
-                <div v-if="canManage && ingredients.length > 0" class="flex justify-end">
+                <div v-if="(canViewInventory || canManage) && ingredients.length > 0" class="flex flex-wrap justify-end gap-2">
                     <button
+                        v-if="canViewInventory && selectedBranchUuid"
+                        type="button"
+                        class="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100"
+                        @click="openSuggestions"
+                    >
+                        <Lightbulb class="size-4" />
+                        {{ t('inventory.restock_suggestions.action') }}
+                    </button>
+                    <button
+                        v-if="canManage"
                         type="button"
                         class="inline-flex items-center gap-2 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-semibold text-teal-700 transition hover:bg-teal-100"
                         @click="openRestock(null, ingredients[0])"
@@ -2412,6 +2563,121 @@ function extractMessage(err: unknown, fallback: string): string {
                     <button type="submit" form="allocate-modal-form" :disabled="allocateBusy || allocateHasOver" class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60">
                         {{ allocateBusy ? t('inventory.restock.allocate_modal.submitting') : t('inventory.restock.allocate_modal.submit') }}
                     </button>
+                </div>
+            </template>
+        </BaseModal>
+
+        <!-- ================== SMART RESTOCK SUGGESTIONS MODAL ================== -->
+        <BaseModal
+            v-if="suggestOpen"
+            size="4xl"
+            :loading="suggestCreating"
+            @close="suggestOpen = false"
+        >
+            <template #icon>
+                <span class="grid size-9 place-items-center rounded-lg bg-indigo-50 text-indigo-600">
+                    <Lightbulb class="size-5" />
+                </span>
+            </template>
+            <template #header>
+                <h2 class="text-lg font-semibold text-slate-950">{{ t('inventory.restock_suggestions.title') }}</h2>
+                <p class="mt-1 text-xs text-slate-600">{{ t('inventory.restock_suggestions.subtitle', { branch: selectedBranchName }) }}</p>
+            </template>
+
+            <div class="space-y-4">
+                <div v-if="suggestError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                    {{ suggestError }}
+                </div>
+
+                <!-- Forecast knobs -->
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <label class="block">
+                        <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.restock_suggestions.window_days') }}</span>
+                        <input v-model.number="suggestWindowDays" type="number" min="1" max="365" step="1" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <p class="mt-1 text-xs text-slate-500">{{ t('inventory.restock_suggestions.window_days_hint') }}</p>
+                    </label>
+                    <label class="block">
+                        <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.restock_suggestions.cover_days') }}</span>
+                        <input v-model.number="suggestCoverDays" type="number" min="1" max="365" step="1" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <p class="mt-1 text-xs text-slate-500">{{ t('inventory.restock_suggestions.cover_days_hint') }}</p>
+                    </label>
+                </div>
+
+                <div v-if="suggestLoading" class="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
+                    {{ t('common.loading') }}
+                </div>
+                <div v-else-if="suggestLoaded && suggestRows.length === 0" class="rounded-2xl border border-slate-200 bg-white p-12 text-center">
+                    <CheckCircle2 class="mx-auto size-10 text-emerald-400" />
+                    <p class="mt-3 text-sm font-semibold text-slate-600">{{ t('inventory.restock_suggestions.empty') }}</p>
+                </div>
+                <div v-else-if="suggestRows.length > 0" class="overflow-x-auto rounded-2xl border border-slate-200">
+                    <table class="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead class="bg-slate-50">
+                            <tr>
+                                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.restock_suggestions.include') }}</th>
+                                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.restock_suggestions.ingredient') }}</th>
+                                <th class="px-3 py-2 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.restock_suggestions.current') }}</th>
+                                <th class="px-3 py-2 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.restock_suggestions.avg_daily') }}</th>
+                                <th class="px-3 py-2 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.restock_suggestions.target') }}</th>
+                                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.restock_suggestions.reason') }}</th>
+                                <th class="px-3 py-2 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.restock_suggestions.suggested') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 bg-white">
+                            <tr v-for="row in suggestRows" :key="row.suggestion.ingredient_uuid" class="align-middle" :class="row.include ? '' : 'opacity-50'">
+                                <td class="px-3 py-2">
+                                    <input v-model="row.include" type="checkbox" class="size-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                </td>
+                                <td class="px-3 py-2 font-medium text-slate-900">
+                                    {{ row.suggestion.name }}
+                                    <span class="ms-1 text-[10px] font-normal text-slate-400">{{ row.suggestion.unit }}</span>
+                                </td>
+                                <td class="px-3 py-2 text-end tabular-nums text-slate-700">{{ row.suggestion.current_quantity }}</td>
+                                <td class="px-3 py-2 text-end tabular-nums text-slate-700">{{ row.suggestion.avg_daily_consumption }}</td>
+                                <td class="px-3 py-2 text-end tabular-nums text-slate-700">{{ row.suggestion.target_level }}</td>
+                                <td class="px-3 py-2">
+                                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider" :class="reasonBadgeClass(row.suggestion.reason)">
+                                        {{ reasonLabel(row.suggestion.reason) }}
+                                    </span>
+                                </td>
+                                <td class="px-3 py-2 text-end">
+                                    <input v-model="row.qty" :disabled="!row.include" type="number" step="0.001" min="0" class="w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-sm tabular-nums text-end focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100 disabled:bg-slate-50 disabled:text-slate-400">
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <label v-if="canCreateRestock && suggestRows.length > 0" class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('inventory.restock_suggestions.note') }}</span>
+                    <textarea v-model="suggestNote" rows="2" :placeholder="t('inventory.restock_suggestions.note_placeholder')" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"></textarea>
+                </label>
+                <p v-else-if="!canCreateRestock && suggestRows.length > 0" class="text-xs text-slate-500">
+                    {{ t('inventory.restock_suggestions.read_only_note') }}
+                </p>
+            </div>
+
+            <template #footer>
+                <div class="flex items-center justify-between gap-2">
+                    <span v-if="canCreateRestock && suggestRows.length > 0" class="text-xs font-medium text-slate-500">
+                        {{ t('inventory.restock_suggestions.selected_count', { count: suggestSelectedCount }) }}
+                    </span>
+                    <span v-else></span>
+                    <div class="flex gap-2">
+                        <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="suggestOpen = false">
+                            {{ t('inventory.restock_suggestions.close') }}
+                        </button>
+                        <button
+                            v-if="canCreateRestock"
+                            type="button"
+                            :disabled="suggestCreating || suggestLoading || suggestSelectedCount === 0"
+                            class="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-indigo-600 to-cyan-600 px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                            @click="submitSuggestions"
+                        >
+                            <ClipboardList class="size-4" />
+                            {{ suggestCreating ? t('inventory.restock_suggestions.creating') : t('inventory.restock_suggestions.create') }}
+                        </button>
+                    </div>
                 </div>
             </template>
         </BaseModal>

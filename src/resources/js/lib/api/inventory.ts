@@ -468,6 +468,66 @@ export function getRestockRequest(uuid: string): Promise<{ data: RestockRequest 
     return apiGet<{ data: RestockRequest }>(`/api/restock-requests/${uuid}`);
 }
 
+// ---- Smart restock suggestions ---------------------------------
+//
+// Read-only forecast: looks back over `window_days` of consumption
+// at one branch, projects an `avg_daily_consumption`, and proposes
+// a `suggested_quantity` to top each ingredient back up to a
+// `target_level` covering `cover_days` of demand. Gated by
+// inventory.view (read), so it's available to anyone who can see
+// stock — turning the output into a real request is the separate
+// inventory.restock_request.create gate (createRestockRequest).
+//
+// All quantities come back as decimal:3 STRINGS — keep them
+// opaque, never parseFloat() for anything that gets sent back.
+
+export type RestockSuggestionReason =
+    | 'below_threshold_and_forecast'
+    | 'below_threshold'
+    | 'consumption_forecast';
+
+export interface RestockSuggestion {
+    ingredient_id: number;
+    ingredient_uuid: string;
+    name: string;
+    unit: string;
+    current_quantity: string;
+    min_stock_threshold: string | null;
+    consumed_in_window: string;
+    avg_daily_consumption: string;
+    target_level: string;
+    suggested_quantity: string;
+    reason: RestockSuggestionReason;
+}
+
+export interface RestockSuggestionsResponse {
+    data: RestockSuggestion[];
+    meta: {
+        branch_id: number;
+        branch_uuid: string;
+        window_days: number;
+        cover_days: number;
+    };
+}
+
+/**
+ * GET /api/branches/{branchUuid}/restock-suggestions.
+ * `windowDays` / `coverDays` are each clamped server-side to
+ * 1..365; defaults 30 / 14 when omitted.
+ */
+export function getRestockSuggestions(
+    branchUuid: string,
+    opts?: { windowDays?: number; coverDays?: number },
+): Promise<RestockSuggestionsResponse> {
+    const params = new URLSearchParams();
+    if (opts?.windowDays !== undefined) params.set('window_days', String(opts.windowDays));
+    if (opts?.coverDays !== undefined) params.set('cover_days', String(opts.coverDays));
+    const qs = params.toString();
+    return apiGet<RestockSuggestionsResponse>(
+        `/api/branches/${branchUuid}/restock-suggestions${qs ? `?${qs}` : ''}`,
+    );
+}
+
 export function createRestockRequest(
     branchUuid: string,
     payload: CreateRestockRequestPayload,
