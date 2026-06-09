@@ -39,6 +39,10 @@ use Illuminate\Support\Facades\DB;
  * BREAKDOWNS:
  *   - by_hour          [{hour: 0..23, gross, count}]
  *   - by_weekday       [{weekday: 0..6 (Sun=0), gross, count}]
+ *   - by_hour_weekday  [{weekday: 0..6 (Sun=0), hour: 0..23, gross, count}]
+ *                       sparse — only buckets with paid orders; the
+ *                       frontend zero-fills the 7×24 grid for the
+ *                       "Sales by Hour" heatmap.
  *   - by_payment_method[{method: cash/card/.., amount, count}]
  *   - by_order_type    [{type: quick/dine_in/.., gross, count}]
  *   - by_branch        [{branch_id, branch_name, gross, count}] (when
@@ -134,6 +138,7 @@ final readonly class SalesReportAction
         // Breakdowns
         $byHour = $this->byHour($paidQuery);
         $byWeekday = $this->byWeekday($paidQuery);
+        $byHourWeekday = $this->byHourWeekday($paidQuery);
         $byPaymentMethod = $this->byPaymentMethod($paidQuery);
         $byOrderType = $this->byOrderType($paidQuery);
         $byBranch = $this->byBranch($paidQuery, $branchScope);
@@ -166,6 +171,7 @@ final readonly class SalesReportAction
             ],
             'by_hour' => $byHour,
             'by_weekday' => $byWeekday,
+            'by_hour_weekday' => $byHourWeekday,
             'by_payment_method' => $byPaymentMethod,
             'by_order_type' => $byOrderType,
             'by_branch' => $byBranch,
@@ -217,6 +223,38 @@ final readonly class SalesReportAction
 
         return $rows->map(static fn ($r): array => [
             'weekday' => (int) $r->weekday,
+            'gross' => self::fmt((float) $r->gross),
+            'count' => (int) $r->cnt,
+        ])->all();
+    }
+
+    /**
+     * Combined (day-of-week × hour) gross matrix for the "Sales by Hour"
+     * heatmap. Sparse: only buckets that have paid orders are returned;
+     * the frontend fills the rest of the 7×24 grid with zeros. Driver-aware
+     * (sqlite strftime in tests, Postgres EXTRACT in prod).
+     *
+     * @return list<array{weekday: int, hour: int, gross: string, count: int}>
+     */
+    private function byHourWeekday($paidQuery): array
+    {
+        $driver = DB::connection()->getDriverName();
+        $hourExpr = $driver === 'sqlite'
+            ? "CAST(strftime('%H', opened_at) AS INTEGER)"
+            : 'EXTRACT(HOUR FROM opened_at)::int';
+        $dowExpr = $driver === 'sqlite'
+            ? "CAST(strftime('%w', opened_at) AS INTEGER)"
+            : 'EXTRACT(DOW FROM opened_at)::int';
+
+        $rows = (clone $paidQuery)
+            ->selectRaw("$dowExpr AS weekday, $hourExpr AS hour, COALESCE(SUM(grand_total), 0) AS gross, COUNT(*) AS cnt")
+            ->groupByRaw("$dowExpr, $hourExpr")
+            ->orderByRaw("$dowExpr, $hourExpr")
+            ->get();
+
+        return $rows->map(static fn ($r): array => [
+            'weekday' => (int) $r->weekday,
+            'hour' => (int) $r->hour,
             'gross' => self::fmt((float) $r->gross),
             'count' => (int) $r->cnt,
         ])->all();

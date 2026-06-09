@@ -96,6 +96,17 @@ it('returns the branch activity feed + sales snapshot', function (): void {
     expect($data['recent_movements'])->toHaveCount(1);
     expect($data['recent_movements'][0]['ingredient_name'])->toBe('Milk');
     expect($data['recent_movements'][0]['quantity'])->toBe('5.000'); // StockMovement factory default
+
+    // Sales-by-hour heatmap matrix (trailing 30 days). Both orders fall in
+    // the window: 2026-06-15 is Monday (weekday 1) @10:00, 2026-06-03 is
+    // Wednesday (weekday 3) @10:00.
+    expect($data['hour_weekday']['window_days'])->toBe(30);
+    $cells = collect($data['hour_weekday']['cells']);
+    $mon = $cells->first(fn ($c) => $c['weekday'] === 1 && $c['hour'] === 10);
+    $wed = $cells->first(fn ($c) => $c['weekday'] === 3 && $c['hour'] === 10);
+    expect($mon['gross'])->toBe('20.000');
+    expect($wed['gross'])->toBe('30.000');
+    expect($cells)->toHaveCount(2);
 });
 
 it('does not leak another tenant branch (404 on every section)', function (): void {

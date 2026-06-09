@@ -14,6 +14,7 @@ import { fetchSalesReport, type SalesReportPayload } from '@/lib/api/reports';
 import ReportShell from './components/ReportShell.vue';
 import HeadlineGrid from './components/HeadlineGrid.vue';
 import ReportChart from './components/ReportChart.vue';
+import SalesHeatmap from './components/SalesHeatmap.vue';
 import { useReportRunner } from './components/useReportRunner';
 
 const { t } = useI18n();
@@ -52,14 +53,6 @@ const pnlChart = computed(() => {
                 num(h.cogs), num(h.operating_expenses), num(h.gross_profit), num(h.net_profit),
             ],
         }],
-    };
-});
-
-const hourChart = computed(() => {
-    const rows = payload.value?.by_hour ?? [];
-    return {
-        categories: rows.map((r) => `${String(r.hour).padStart(2, '0')}:00`),
-        series: [{ name: t('reports.sales.headline_labels.gross_sales'), data: rows.map((r) => num(r.gross)) }] as ApexSeries,
     };
 });
 
@@ -137,26 +130,22 @@ type ApexSeries = { name: string; data: number[] }[];
                 :empty-text="t('reports.shared.no_data')"
             />
 
-            <div class="grid gap-6 lg:grid-cols-2">
-                <ReportChart
-                    type="line"
-                    :title="t('reports.sales.by_hour')"
-                    :series="hourChart.series"
-                    :categories="hourChart.categories"
-                    currency
-                    hide-legend
-                    :empty-text="t('reports.shared.no_data')"
-                />
-                <ReportChart
-                    type="bar"
-                    :title="t('reports.sales.by_weekday')"
-                    :series="weekdayChart.series"
-                    :categories="weekdayChart.categories"
-                    currency
-                    hide-legend
-                    :empty-text="t('reports.shared.no_data')"
-                />
-            </div>
+            <SalesHeatmap
+                :title="t('reports.sales.by_hour')"
+                :subtitle="t('reports.sales.by_hour_sub')"
+                :cells="payload.by_hour_weekday ?? []"
+                :empty-text="t('reports.shared.no_data')"
+            />
+
+            <ReportChart
+                type="bar"
+                :title="t('reports.sales.by_weekday')"
+                :series="weekdayChart.series"
+                :categories="weekdayChart.categories"
+                currency
+                hide-legend
+                :empty-text="t('reports.shared.no_data')"
+            />
 
             <div class="grid gap-6 lg:grid-cols-2">
                 <ReportChart

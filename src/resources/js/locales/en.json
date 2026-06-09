@@ -318,6 +318,8 @@
             "load_failed": "Could not load this branch.",
             "sales_today": "Sales today",
             "sales_mtd": "Sales (month)",
+            "sales_by_hour": "Sales by hour",
+            "sales_by_hour_sub": "Last {days} days · day of week × hour",
             "products": "Products",
             "no_products": "No products carried at this branch yet.",
             "available": "Available",
@@ -1442,7 +1444,8 @@
                 "operating_expenses": "Operating expenses",
                 "net_profit": "Net profit"
             },
-            "by_hour": "By hour",
+            "by_hour": "Sales by hour",
+            "by_hour_sub": "Day of week × hour",
             "by_weekday": "By weekday",
             "by_payment_method": "By payment method",
             "by_order_type": "By order type",

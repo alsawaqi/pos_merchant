@@ -159,6 +159,10 @@ export interface BranchActivity {
         today: { gross: string; count: number };
         mtd: { gross: string; count: number };
     };
+    hour_weekday: {
+        window_days: number;
+        cells: { weekday: number; hour: number; gross: string; count: number }[];
+    };
     recent_orders: {
         uuid: string;
         status: string | null;

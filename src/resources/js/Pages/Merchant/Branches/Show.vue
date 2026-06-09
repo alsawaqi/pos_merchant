@@ -21,6 +21,7 @@ import {
 } from 'lucide-vue-next';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import OrderDetailDrawer from '@/Pages/Merchant/Orders/components/OrderDetailDrawer.vue';
+import SalesHeatmap from '@/Pages/Merchant/Reports/components/SalesHeatmap.vue';
 import {
     showMerchantBranch, getBranchProducts, getBranchStaff, getBranchActivity, listBranchDevices,
     type MerchantBranch, type BranchProductRow, type BranchStaffMember, type BranchActivity, type BranchDevice,
@@ -168,6 +169,15 @@ onMounted(() => {
                         <div class="mt-0.5 text-xs text-slate-500">{{ activity.sales.mtd.count }} {{ t('orders.totals.count') }}</div>
                     </div>
                 </div>
+
+                <!-- Sales-by-hour performance heatmap -->
+                <SalesHeatmap
+                    v-if="activity"
+                    :title="t('branches.show.sales_by_hour')"
+                    :subtitle="t('branches.show.sales_by_hour_sub', { days: activity.hour_weekday.window_days })"
+                    :cells="activity.hour_weekday.cells"
+                    :empty-text="t('branches.show.no_activity')"
+                />
 
                 <!-- Products -->
                 <section v-if="products" class="rounded-2xl border border-slate-200 bg-white shadow-sm">

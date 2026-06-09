@@ -87,6 +87,7 @@ export interface SalesReportPayload {
     };
     by_hour?: { hour: number; gross: string; count: number }[];
     by_weekday?: { weekday: number; gross: string; count: number }[];
+    by_hour_weekday?: { weekday: number; hour: number; gross: string; count: number }[];
     by_payment_method?: { method: string; amount: string; count: number }[];
     by_order_type?: { type: string; gross: string; count: number }[];
     by_branch?: { branch_id: number; branch_name: string; gross: string; count: number }[];

@@ -102,6 +102,7 @@ it('returns zeros when no orders exist in the window', function (): void {
     expect($response->json('data.headline.gross_sales'))->toBe('0.000');
     expect($response->json('data.headline.order_count'))->toBe(0);
     expect($response->json('data.by_hour'))->toBe([]);
+    expect($response->json('data.by_hour_weekday'))->toBe([]);
     expect($response->json('data.by_branch'))->toBe([]);
 });
 
@@ -250,6 +251,34 @@ it('breaks down sales by_hour with a detectable peak', function (): void {
     expect($hour12['count'])->toBe(3);
     expect($hour12['gross'])->toBe('15.000');
     expect($hour19['count'])->toBe(1);
+});
+
+it('breaks down sales by_hour_weekday into a (weekday, hour) matrix', function (): void {
+    $ctx = makeMerchantActor();
+    // 2026-06-15 is a Monday (weekday 1), 12:30 — two orders.
+    foreach ([1, 2] as $_) {
+        Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->paid()->create([
+            'subtotal' => '5.000', 'grand_total' => '5.000',
+            'opened_at' => '2026-06-15 12:30:00',
+        ]);
+    }
+    // 2026-06-16 is a Tuesday (weekday 2), 19:00 — one order.
+    Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->paid()->create([
+        'subtotal' => '3.000', 'grand_total' => '3.000',
+        'opened_at' => '2026-06-16 19:00:00',
+    ]);
+
+    $response = $this->getJson('/api/reports/sales?date_from=2026-06-01&date_to=2026-06-30')->assertOk();
+
+    $cells = collect($response->json('data.by_hour_weekday'));
+    $mon12 = $cells->first(fn ($c) => $c['weekday'] === 1 && $c['hour'] === 12);
+    $tue19 = $cells->first(fn ($c) => $c['weekday'] === 2 && $c['hour'] === 19);
+    expect($mon12['gross'])->toBe('10.000');
+    expect($mon12['count'])->toBe(2);
+    expect($tue19['gross'])->toBe('3.000');
+    expect($tue19['count'])->toBe(1);
+    // Sparse: only buckets with orders are returned (2 here).
+    expect($cells)->toHaveCount(2);
 });
 
 it('breaks down sales by_order_type', function (): void {
