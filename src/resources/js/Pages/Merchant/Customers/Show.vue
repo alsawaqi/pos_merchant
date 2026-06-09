@@ -16,7 +16,7 @@
  * loyalty/wallet stays on the Customers list modal — this page reads.
  */
 
-import { onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, RouterLink } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import {
@@ -29,7 +29,10 @@ import {
     getCustomer, getCustomerAnalytics, getCustomerOrders,
     type Customer, type CustomerAnalytics, type CustomerOrdersPayload,
 } from '@/lib/api/customers';
-import { getCustomerLoyalty, type CustomerLoyaltySummary } from '@/lib/api/loyalty';
+import {
+    getCustomerLoyalty, getLoyaltyTransactions, getWalletLedger,
+    type CustomerLoyaltySummary, type PaginatedTransactions, type PaginatedWallet,
+} from '@/lib/api/loyalty';
 import { ApiError } from '@/lib/api';
 import { usePermissions } from '@/composables/usePermissions';
 import { MerchantPermission } from '@/lib/permissions';
@@ -163,6 +166,41 @@ watch(analytics, (a) => {
     trendCategories.value = pts.map((p) => monthLabel(p.month));
     trendSeries.value = [{ name: t('customers.show.rollups.total_spend'), data: pts.map((p) => num(p.gross)) }];
 });
+
+// ---- #3b: "view all" paginated loyalty + wallet history ----
+// Default view shows the recent slice from getCustomerLoyalty; toggling
+// "view all" loads the full paginated ledger from the dedicated endpoints.
+const PER = 10;
+const loyaltyAll = ref(false);
+const loyaltyTxns = ref<PaginatedTransactions | null>(null);
+const walletAll = ref(false);
+const walletLedger = ref<PaginatedWallet | null>(null);
+
+const loyaltyRows = computed(() =>
+    loyaltyAll.value && loyaltyTxns.value ? loyaltyTxns.value.data : (loyalty.value?.recent_transactions ?? []),
+);
+const walletRows = computed(() =>
+    walletAll.value && walletLedger.value ? walletLedger.value.data : (loyalty.value?.recent_wallet ?? []),
+);
+
+async function loadLoyaltyTxns(page: number): Promise<void> {
+    try {
+        loyaltyTxns.value = await getLoyaltyTransactions(uuid, page, PER);
+    } catch { /* keep current view */ }
+}
+async function toggleLoyaltyAll(): Promise<void> {
+    loyaltyAll.value = !loyaltyAll.value;
+    if (loyaltyAll.value && loyaltyTxns.value === null) await loadLoyaltyTxns(1);
+}
+async function loadWalletLedger(page: number): Promise<void> {
+    try {
+        walletLedger.value = await getWalletLedger(uuid, page, PER);
+    } catch { /* keep current view */ }
+}
+async function toggleWalletAll(): Promise<void> {
+    walletAll.value = !walletAll.value;
+    if (walletAll.value && walletLedger.value === null) await loadWalletLedger(1);
+}
 </script>
 
 <template>
@@ -277,9 +315,14 @@ watch(analytics, (a) => {
 
                     <div class="mt-5 grid gap-5 lg:grid-cols-2">
                         <div>
-                            <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('customers.show.recent_loyalty') }}</h3>
-                            <ul v-if="loyalty.recent_transactions.length" class="space-y-1.5 text-sm">
-                                <li v-for="tx in loyalty.recent_transactions" :key="tx.id" class="flex items-center justify-between gap-3">
+                            <div class="mb-2 flex items-center justify-between">
+                                <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('customers.show.recent_loyalty') }}</h3>
+                                <button type="button" class="text-xs font-semibold text-teal-700 transition hover:underline" @click="toggleLoyaltyAll">
+                                    {{ loyaltyAll ? t('customers.show.show_recent') : t('customers.show.view_all') }}
+                                </button>
+                            </div>
+                            <ul v-if="loyaltyRows.length" class="space-y-1.5 text-sm">
+                                <li v-for="tx in loyaltyRows" :key="tx.id" class="flex items-center justify-between gap-3">
                                     <span class="text-slate-600">{{ formatDateTime(tx.occurred_at) }}</span>
                                     <span class="font-semibold tabular-nums" :class="(tx.points_delta + tx.stamps_delta) >= 0 ? 'text-emerald-600' : 'text-rose-600'">
                                         <template v-if="tx.points_delta">{{ tx.points_delta > 0 ? '+' : '' }}{{ tx.points_delta }} {{ t('customers.show.points') }}</template>
@@ -288,16 +331,35 @@ watch(analytics, (a) => {
                                 </li>
                             </ul>
                             <p v-else class="text-sm text-slate-400">{{ t('customers.show.no_activity') }}</p>
+                            <div v-if="loyaltyAll && loyaltyTxns && loyaltyTxns.last_page > 1" class="mt-2 flex items-center justify-between text-xs text-slate-500">
+                                <span>{{ t('orders.pagination', { page: loyaltyTxns.current_page, last: loyaltyTxns.last_page, total: loyaltyTxns.total }) }}</span>
+                                <span class="flex gap-1.5">
+                                    <button type="button" class="rounded border border-slate-200 px-2 py-1 font-semibold disabled:opacity-50" :disabled="loyaltyTxns.current_page <= 1" @click="loadLoyaltyTxns(loyaltyTxns!.current_page - 1)">{{ t('orders.prev') }}</button>
+                                    <button type="button" class="rounded border border-slate-200 px-2 py-1 font-semibold disabled:opacity-50" :disabled="loyaltyTxns.current_page >= loyaltyTxns.last_page" @click="loadLoyaltyTxns(loyaltyTxns!.current_page + 1)">{{ t('orders.next') }}</button>
+                                </span>
+                            </div>
                         </div>
                         <div>
-                            <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('customers.show.recent_wallet') }}</h3>
-                            <ul v-if="loyalty.recent_wallet.length" class="space-y-1.5 text-sm">
-                                <li v-for="w in loyalty.recent_wallet" :key="w.id" class="flex items-center justify-between gap-3">
+                            <div class="mb-2 flex items-center justify-between">
+                                <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('customers.show.recent_wallet') }}</h3>
+                                <button type="button" class="text-xs font-semibold text-teal-700 transition hover:underline" @click="toggleWalletAll">
+                                    {{ walletAll ? t('customers.show.show_recent') : t('customers.show.view_all') }}
+                                </button>
+                            </div>
+                            <ul v-if="walletRows.length" class="space-y-1.5 text-sm">
+                                <li v-for="w in walletRows" :key="w.id" class="flex items-center justify-between gap-3">
                                     <span class="text-slate-600">{{ formatDateTime(w.occurred_at) }}</span>
                                     <span class="font-semibold tabular-nums" :class="num(w.amount_delta) >= 0 ? 'text-emerald-600' : 'text-rose-600'">{{ w.amount_delta }} <span class="text-xs text-slate-400">OMR</span></span>
                                 </li>
                             </ul>
                             <p v-else class="text-sm text-slate-400">{{ t('customers.show.no_activity') }}</p>
+                            <div v-if="walletAll && walletLedger && walletLedger.last_page > 1" class="mt-2 flex items-center justify-between text-xs text-slate-500">
+                                <span>{{ t('orders.pagination', { page: walletLedger.current_page, last: walletLedger.last_page, total: walletLedger.total }) }}</span>
+                                <span class="flex gap-1.5">
+                                    <button type="button" class="rounded border border-slate-200 px-2 py-1 font-semibold disabled:opacity-50" :disabled="walletLedger.current_page <= 1" @click="loadWalletLedger(walletLedger!.current_page - 1)">{{ t('orders.prev') }}</button>
+                                    <button type="button" class="rounded border border-slate-200 px-2 py-1 font-semibold disabled:opacity-50" :disabled="walletLedger.current_page >= walletLedger.last_page" @click="loadWalletLedger(walletLedger!.current_page + 1)">{{ t('orders.next') }}</button>
+                                </span>
+                            </div>
                         </div>
                     </div>
                 </section>

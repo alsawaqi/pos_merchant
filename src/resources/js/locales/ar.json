@@ -997,6 +997,8 @@
             "stamps": "ختم",
             "recent_loyalty": "نشاط الولاء الأخير",
             "recent_wallet": "نشاط المحفظة الأخير",
+            "view_all": "عرض الكل",
+            "show_recent": "عرض الأخير",
             "no_activity": "لا يوجد نشاط بعد.",
             "order_history": "سجل الطلبات",
             "no_orders": "لا توجد طلبات بعد.",

@@ -997,6 +997,8 @@
             "stamps": "stamps",
             "recent_loyalty": "Recent loyalty activity",
             "recent_wallet": "Recent wallet activity",
+            "view_all": "View all",
+            "show_recent": "Show recent",
             "no_activity": "No activity yet.",
             "order_history": "Order history",
             "no_orders": "No orders yet.",
