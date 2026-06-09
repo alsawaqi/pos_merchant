@@ -24,6 +24,12 @@ export interface DashboardAuditEvent {
     created_at: string | null;
 }
 
+export interface SalesTrendPoint {
+    date: string;     // YYYY-MM-DD
+    gross: string;    // decimal-3 OMR
+    count: number;
+}
+
 export interface DashboardSummaryPayload {
     today: DashboardSnapshot;
     yesterday: DashboardSnapshot;
@@ -31,6 +37,13 @@ export interface DashboardSummaryPayload {
     top_product_today: TopProductToday | null;
     low_stock_count: number;
     recent_audit_events: DashboardAuditEvent[];
+    // v2 graphs (§5.2): trailing-14-day trend + MTD top-N breakdowns.
+    sales_trend: SalesTrendPoint[];
+    top_products: { product_name: string; revenue: string }[];
+    top_branches: { branch_name: string; gross: string }[];
+    top_customers: { customer_name: string; total_spend: string }[];
+    top_staff: { staff_name: string; revenue: string }[];
+    top_ingredients: { ingredient_name: string; unit: string; consumed: string }[];
 }
 
 export function fetchDashboardSummary(): Promise<{ data: DashboardSummaryPayload }> {

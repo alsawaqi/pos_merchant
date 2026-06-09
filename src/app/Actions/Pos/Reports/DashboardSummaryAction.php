@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Pos\Reports;
 
 use App\Enums\OrderStatus;
+use App\Enums\StockMovementType;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -31,6 +32,23 @@ use Illuminate\Support\Facades\DB;
  */
 final readonly class DashboardSummaryAction
 {
+    /** Days of daily sales history fed to the trend chart. */
+    private const TREND_DAYS = 14;
+
+    /** Top-N size for the dashboard breakdown charts. */
+    private const TOP_N = 5;
+
+    /**
+     * Movement types that represent ingredient CONSUMPTION (negative
+     * quantities). Mirrors InventoryConsumptionReportAction so the
+     * "top ingredients" widget agrees with the full report.
+     */
+    private const CONSUMPTION_TYPES = [
+        StockMovementType::SaleConsumption->value,
+        StockMovementType::AddOnConsumption->value,
+        StockMovementType::Adjustment->value,
+    ];
+
     public function __construct(
         private MerchantTenantContext $tenant,
     ) {}
@@ -56,7 +74,189 @@ final readonly class DashboardSummaryAction
             'top_product_today' => $this->topProductInWindow($companyId, $todayStart, $todayEnd),
             'low_stock_count' => $this->lowStockCount($companyId),
             'recent_audit_events' => $this->recentAuditEvents($companyId),
+            // v2 dashboard graphs (blueprint §5.2): a daily trend plus
+            // MTD top-N breakdowns. Windows: trend = trailing TREND_DAYS,
+            // every top-N = month-to-date.
+            'sales_trend' => $this->salesTrend($companyId, self::TREND_DAYS),
+            'top_products' => $this->topProducts($companyId, $monthStart, $todayEnd),
+            'top_branches' => $this->topBranches($companyId, $monthStart, $todayEnd),
+            'top_customers' => $this->topCustomers($companyId, $monthStart, $todayEnd),
+            'top_staff' => $this->topStaff($companyId, $monthStart, $todayEnd),
+            'top_ingredients' => $this->topIngredients($companyId, $monthStart, $todayEnd),
         ];
+    }
+
+    /**
+     * Daily paid-sales gross + count for the trailing $days, with
+     * zero-filled gaps so the chart line stays continuous. Date
+     * expression is driver-aware (sqlite tests vs Postgres prod).
+     *
+     * @return list<array{date: string, gross: string, count: int}>
+     */
+    private function salesTrend(int $companyId, int $days): array
+    {
+        $driver = DB::connection()->getDriverName();
+        $dayExpr = $driver === 'sqlite'
+            ? "strftime('%Y-%m-%d', opened_at)"
+            : "to_char(opened_at, 'YYYY-MM-DD')";
+
+        $now = Carbon::now();
+        $start = $now->copy()->startOfDay()->subDays($days - 1);
+
+        $rows = DB::table('pos_orders')
+            ->where('company_id', $companyId)
+            ->where('status', OrderStatus::Paid->value)
+            ->whereBetween('opened_at', [$start, $now->copy()->endOfDay()])
+            ->selectRaw("$dayExpr AS day, COALESCE(SUM(grand_total), 0) AS gross, COUNT(*) AS cnt")
+            ->groupByRaw($dayExpr)
+            ->get()
+            ->keyBy('day');
+
+        $series = [];
+        for ($i = 0; $i < $days; $i++) {
+            $d = $start->copy()->addDays($i)->format('Y-m-d');
+            $r = $rows->get($d);
+            $series[] = [
+                'date' => $d,
+                'gross' => number_format((float) ($r->gross ?? 0), 3, '.', ''),
+                'count' => (int) ($r->cnt ?? 0),
+            ];
+        }
+
+        return $series;
+    }
+
+    /**
+     * MTD top products by revenue (snapshot name).
+     *
+     * @return list<array{product_name: string, revenue: string}>
+     */
+    private function topProducts(int $companyId, Carbon $from, Carbon $to): array
+    {
+        return DB::table('pos_order_items')
+            ->join('pos_orders', 'pos_orders.id', '=', 'pos_order_items.order_id')
+            ->where('pos_orders.company_id', $companyId)
+            ->where('pos_orders.status', OrderStatus::Paid->value)
+            ->whereBetween('pos_orders.opened_at', [$from, $to])
+            ->selectRaw('
+                pos_order_items.product_id AS product_id,
+                pos_order_items.product_name_snapshot AS product_name,
+                COALESCE(SUM(pos_order_items.qty * pos_order_items.unit_price_snapshot), 0) AS revenue
+            ')
+            ->groupBy('pos_order_items.product_id', 'pos_order_items.product_name_snapshot')
+            ->orderByDesc('revenue')
+            ->limit(self::TOP_N)
+            ->get()
+            ->map(static fn ($r): array => [
+                'product_name' => (string) $r->product_name,
+                'revenue' => number_format((float) $r->revenue, 3, '.', ''),
+            ])->all();
+    }
+
+    /**
+     * MTD top branches by gross.
+     *
+     * @return list<array{branch_name: string, gross: string}>
+     */
+    private function topBranches(int $companyId, Carbon $from, Carbon $to): array
+    {
+        return DB::table('pos_orders')
+            ->join('pos_branches', 'pos_branches.id', '=', 'pos_orders.branch_id')
+            ->where('pos_orders.company_id', $companyId)
+            ->where('pos_orders.status', OrderStatus::Paid->value)
+            ->whereBetween('pos_orders.opened_at', [$from, $to])
+            ->selectRaw('pos_branches.name AS branch_name, COALESCE(SUM(pos_orders.grand_total), 0) AS gross')
+            ->groupBy('pos_branches.id', 'pos_branches.name')
+            ->orderByDesc('gross')
+            ->limit(self::TOP_N)
+            ->get()
+            ->map(static fn ($r): array => [
+                'branch_name' => (string) $r->branch_name,
+                'gross' => number_format((float) $r->gross, 3, '.', ''),
+            ])->all();
+    }
+
+    /**
+     * MTD top customers by spend (orders with a linked customer).
+     *
+     * @return list<array{customer_name: string, total_spend: string}>
+     */
+    private function topCustomers(int $companyId, Carbon $from, Carbon $to): array
+    {
+        return DB::table('pos_orders')
+            ->join('pos_customers', 'pos_customers.id', '=', 'pos_orders.customer_id')
+            ->where('pos_orders.company_id', $companyId)
+            ->where('pos_orders.status', OrderStatus::Paid->value)
+            ->whereNotNull('pos_orders.customer_id')
+            ->whereBetween('pos_orders.opened_at', [$from, $to])
+            ->selectRaw('
+                pos_customers.name AS customer_name,
+                COALESCE(SUM(pos_orders.grand_total), 0) AS total_spend
+            ')
+            ->groupBy('pos_customers.id', 'pos_customers.name')
+            ->orderByDesc('total_spend')
+            ->limit(self::TOP_N)
+            ->get()
+            ->map(static fn ($r): array => [
+                'customer_name' => (string) ($r->customer_name ?? ''),
+                'total_spend' => number_format((float) $r->total_spend, 3, '.', ''),
+            ])->all();
+    }
+
+    /**
+     * MTD top staff by paid revenue (orders with a linked staff).
+     *
+     * @return list<array{staff_name: string, revenue: string}>
+     */
+    private function topStaff(int $companyId, Carbon $from, Carbon $to): array
+    {
+        return DB::table('pos_orders')
+            ->join('pos_staff', 'pos_staff.id', '=', 'pos_orders.staff_id')
+            ->where('pos_orders.company_id', $companyId)
+            ->where('pos_orders.status', OrderStatus::Paid->value)
+            ->whereNotNull('pos_orders.staff_id')
+            ->whereBetween('pos_orders.opened_at', [$from, $to])
+            ->selectRaw('
+                pos_staff.name AS staff_name,
+                COALESCE(SUM(pos_orders.grand_total), 0) AS revenue
+            ')
+            ->groupBy('pos_staff.id', 'pos_staff.name')
+            ->orderByDesc('revenue')
+            ->limit(self::TOP_N)
+            ->get()
+            ->map(static fn ($r): array => [
+                'staff_name' => (string) $r->staff_name,
+                'revenue' => number_format((float) $r->revenue, 3, '.', ''),
+            ])->all();
+    }
+
+    /**
+     * MTD top consumed ingredients (negative consumption movements).
+     *
+     * @return list<array{ingredient_name: string, unit: string, consumed: string}>
+     */
+    private function topIngredients(int $companyId, Carbon $from, Carbon $to): array
+    {
+        return DB::table('pos_stock_movements')
+            ->join('pos_ingredients', 'pos_ingredients.id', '=', 'pos_stock_movements.ingredient_id')
+            ->where('pos_ingredients.company_id', $companyId)
+            ->whereIn('pos_stock_movements.movement_type', self::CONSUMPTION_TYPES)
+            ->where('pos_stock_movements.quantity', '<', 0)
+            ->whereBetween('pos_stock_movements.occurred_at', [$from, $to])
+            ->selectRaw('
+                pos_ingredients.name AS ingredient_name,
+                pos_ingredients.unit AS unit,
+                ABS(SUM(pos_stock_movements.quantity)) AS consumed
+            ')
+            ->groupBy('pos_ingredients.id', 'pos_ingredients.name', 'pos_ingredients.unit')
+            ->orderByDesc('consumed')
+            ->limit(self::TOP_N)
+            ->get()
+            ->map(static fn ($r): array => [
+                'ingredient_name' => (string) $r->ingredient_name,
+                'unit' => (string) $r->unit,
+                'consumed' => number_format((float) $r->consumed, 3, '.', ''),
+            ])->all();
     }
 
     /**

@@ -24,6 +24,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Sparkles, TrendingUp, TrendingDown, Minus, Trophy, AlertTriangle, History, CheckCircle2 } from 'lucide-vue-next';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
+import ReportChart from '@/Pages/Merchant/Reports/components/ReportChart.vue';
 import { authState } from '@/stores/auth';
 import { fetchDashboardSummary, type DashboardSummaryPayload } from '@/lib/api/dashboard';
 import { ApiError } from '@/lib/api';
@@ -76,6 +77,70 @@ const todayVsYesterdayPct = computed<number | null>(() => {
     const yesterday = Number(summary.value.yesterday.gross);
     if (!Number.isFinite(today) || !Number.isFinite(yesterday) || yesterday === 0) return null;
     return Math.round(((today - yesterday) / yesterday) * 100);
+});
+
+/** Report money values arrive as decimal-3 strings — parse to a number. */
+function num(v: string | number | undefined | null): number {
+    const n = typeof v === 'number' ? v : Number.parseFloat(String(v ?? '0'));
+    return Number.isFinite(n) ? n : 0;
+}
+
+type ApexSeries = { name: string; data: number[] }[];
+
+// ---- Dashboard chart series (derived from the summary payload) ----
+
+const trendChart = computed(() => {
+    const pts = summary.value?.sales_trend ?? [];
+    return {
+        // Short day label (e.g. "02 Jun"); keep Latin for chart axis readability.
+        categories: pts.map((p) => {
+            const d = new Date(`${p.date}T00:00:00`);
+            return Number.isNaN(d.getTime())
+                ? p.date
+                : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+        }),
+        series: [{ name: t('dashboard_widgets.gross'), data: pts.map((p) => num(p.gross)) }] as ApexSeries,
+    };
+});
+
+const topProductsChart = computed(() => {
+    const rows = summary.value?.top_products ?? [];
+    return {
+        categories: rows.map((r) => r.product_name),
+        series: [{ name: t('dashboard_widgets.gross'), data: rows.map((r) => num(r.revenue)) }] as ApexSeries,
+    };
+});
+
+const topBranchesChart = computed(() => {
+    const rows = summary.value?.top_branches ?? [];
+    return {
+        categories: rows.map((r) => r.branch_name),
+        series: [{ name: t('dashboard_widgets.gross'), data: rows.map((r) => num(r.gross)) }] as ApexSeries,
+    };
+});
+
+const topCustomersChart = computed(() => {
+    const rows = summary.value?.top_customers ?? [];
+    return {
+        categories: rows.map((r) => r.customer_name || '—'),
+        series: [{ name: t('dashboard_widgets.gross'), data: rows.map((r) => num(r.total_spend)) }] as ApexSeries,
+    };
+});
+
+const topStaffChart = computed(() => {
+    const rows = summary.value?.top_staff ?? [];
+    return {
+        categories: rows.map((r) => r.staff_name),
+        series: [{ name: t('dashboard_widgets.gross'), data: rows.map((r) => num(r.revenue)) }] as ApexSeries,
+    };
+});
+
+const topIngredientsChart = computed(() => {
+    const rows = summary.value?.top_ingredients ?? [];
+    return {
+        categories: rows.map((r) => `${r.ingredient_name} (${r.unit})`),
+        series: [{ name: t('reports.inventory_consumption.columns.consumed'), data: rows.map((r) => num(r.consumed)) }] as ApexSeries,
+    };
 });
 </script>
 
@@ -148,6 +213,86 @@ const todayVsYesterdayPct = computed<number | null>(() => {
                     </div>
                     <div class="mt-1 text-xs text-slate-500">{{ t('dashboard_widgets.low_stock_subtitle') }}</div>
                 </div>
+            </div>
+
+            <!-- v2 dashboard graphs -->
+            <div v-if="summary" class="space-y-6">
+                <ReportChart
+                    type="area"
+                    :title="t('dashboard_widgets.sales_trend')"
+                    :series="trendChart.series"
+                    :categories="trendChart.categories"
+                    :height="260"
+                    currency
+                    hide-legend
+                    :empty-text="t('dashboard_widgets.no_data')"
+                />
+
+                <div class="grid gap-6 lg:grid-cols-2">
+                    <ReportChart
+                        v-if="topProductsChart.categories.length"
+                        type="bar"
+                        :title="t('dashboard_widgets.top_products')"
+                        :series="topProductsChart.series"
+                        :categories="topProductsChart.categories"
+                        :height="Math.max(220, topProductsChart.categories.length * 44)"
+                        currency
+                        horizontal
+                        distributed
+                        hide-legend
+                    />
+                    <ReportChart
+                        v-if="topBranchesChart.categories.length"
+                        type="bar"
+                        :title="t('dashboard_widgets.top_branches')"
+                        :series="topBranchesChart.series"
+                        :categories="topBranchesChart.categories"
+                        :height="Math.max(220, topBranchesChart.categories.length * 44)"
+                        currency
+                        horizontal
+                        distributed
+                        hide-legend
+                    />
+                </div>
+
+                <div class="grid gap-6 lg:grid-cols-2">
+                    <ReportChart
+                        v-if="topCustomersChart.categories.length"
+                        type="bar"
+                        :title="t('dashboard_widgets.top_customers')"
+                        :series="topCustomersChart.series"
+                        :categories="topCustomersChart.categories"
+                        :height="Math.max(220, topCustomersChart.categories.length * 44)"
+                        currency
+                        horizontal
+                        distributed
+                        hide-legend
+                    />
+                    <ReportChart
+                        v-if="topStaffChart.categories.length"
+                        type="bar"
+                        :title="t('dashboard_widgets.top_staff')"
+                        :series="topStaffChart.series"
+                        :categories="topStaffChart.categories"
+                        :height="Math.max(220, topStaffChart.categories.length * 44)"
+                        currency
+                        horizontal
+                        distributed
+                        hide-legend
+                    />
+                </div>
+
+                <ReportChart
+                    v-if="topIngredientsChart.categories.length"
+                    type="bar"
+                    :title="t('dashboard_widgets.top_ingredients')"
+                    :series="topIngredientsChart.series"
+                    :categories="topIngredientsChart.categories"
+                    :height="Math.max(220, topIngredientsChart.categories.length * 44)"
+                    horizontal
+                    distributed
+                    hide-legend
+                />
             </div>
 
             <!-- Recent activity (audit log peek) -->

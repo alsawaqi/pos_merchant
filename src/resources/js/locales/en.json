@@ -1460,7 +1460,13 @@
         "recent_audit": "Recent activity",
         "no_data": "No data yet.",
         "vs_yesterday": "vs yesterday",
-        "load_failed": "Could not load the dashboard summary."
+        "load_failed": "Could not load the dashboard summary.",
+        "sales_trend": "Sales — last 14 days",
+        "top_products": "Top products (month)",
+        "top_branches": "Top branches (month)",
+        "top_customers": "Top customers (month)",
+        "top_staff": "Top staff (month)",
+        "top_ingredients": "Top ingredients used (month)"
     },
     "audit_log": {
         "section_label": "Phase 7b",
