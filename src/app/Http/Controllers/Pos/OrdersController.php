@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Pos;
 
+use App\Actions\Pos\Reports\OrderDetailAction;
 use App\Actions\Pos\Reports\OrdersListAction;
 use App\Data\Reports\ReportFilter;
 use App\Enums\MerchantPermission;
@@ -27,6 +28,7 @@ class OrdersController extends Controller
 {
     public function __construct(
         private readonly OrdersListAction $ordersList,
+        private readonly OrderDetailAction $orderDetail,
     ) {}
 
     public function index(ReportFilterRequest $request): JsonResponse
@@ -39,6 +41,22 @@ class OrdersController extends Controller
             'page' => (int) $request->query('page', '1'),
             'per_page' => (int) $request->query('per_page', '50'),
         ]);
+
+        return response()->json(['data' => $payload]);
+    }
+
+    /**
+     * Full detail for one order (v2 #2). uuid-keyed, tenant-scoped:
+     * an unknown / cross-tenant uuid is a 404, never a leak.
+     */
+    public function show(Request $request, string $order): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::ReportsView);
+
+        $payload = $this->orderDetail->handle($order);
+        if ($payload === null) {
+            abort(404);
+        }
 
         return response()->json(['data' => $payload]);
     }

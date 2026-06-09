@@ -518,6 +518,9 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // gated; tenant-scoped to the company's own orders.
         Route::get('orders', [OrdersController::class, 'index'])
             ->name('orders.index');
+        // Single-order detail (v2 #2). uuid-keyed, tenant-scoped.
+        Route::get('orders/{order}', [OrdersController::class, 'show'])
+            ->name('orders.show');
 
         // -------- Phase 6c — Delivery providers + per-product prices --
         // Per-merchant 3rd-party delivery aggregators (Talabat,
