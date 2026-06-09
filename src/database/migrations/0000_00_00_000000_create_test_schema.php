@@ -997,6 +997,23 @@ return new class extends Migration
             $table->index(['company_id', 'occurred_at'], 'pos_sale_commissions_company_occurred_idx');
         });
 
+        // v2 #18 — POS-owned charity round-up donations (written by pos_api; the
+        // merchant + admin round-up reports read it). Schema owned by pos_admin.
+        Schema::create('pos_roundup_donations', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->unsignedBigInteger('company_id')->index();
+            $table->unsignedBigInteger('branch_id')->index();
+            $table->unsignedBigInteger('device_id')->nullable();
+            $table->unsignedBigInteger('order_id')->nullable();
+            $table->unsignedBigInteger('payment_id')->nullable();
+            $table->decimal('amount', 12, 3);
+            $table->string('status', 30)->default('pending');
+            $table->string('source', 30)->default('pos_roundup');
+            $table->timestamp('occurred_at')->nullable();
+            $table->timestamps();
+        });
+
         // v2 #17 Phase B — merchant payouts (created + settled by pos_admin; the
         // merchant portal reads its own). Schema owned by pos_admin.
         Schema::create('pos_payouts', function (Blueprint $table): void {

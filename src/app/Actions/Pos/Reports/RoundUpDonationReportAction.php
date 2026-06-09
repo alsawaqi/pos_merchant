@@ -6,32 +6,29 @@ namespace App\Actions\Pos\Reports;
 
 use App\Data\Reports\ReportFilter;
 use App\Support\MerchantTenantContext;
+use Illuminate\Support\Facades\DB;
 
 /**
- * Phase 7b — Round-Up Donation Report (blueprint §5.11.9).
+ * v2 #18 — Round-Up Donation Report (blueprint §5.11.9).
  *
- * STUBBED for Phase 7b. The blueprint Round-Up flow is:
+ * The charity round-up is LIVE: a card payment's rounded-off slice is recorded
+ * in pos_roundup_donations (written by pos_api's donation.record handler; status
+ * success | pending | fail, and 'void' once its sale is voided). This report
+ * aggregates that table for the merchant's company over the window: total raised
+ * (successful donations), how many, the pending/failed counts, plus per-branch
+ * and per-status breakdowns.
  *
- *   - Cashier (or kiosk) offers "round up to nearest 100 baisas
- *     and donate the difference to {charity}"
- *   - The pos_orders row gets a donation_amount + donation_charity_id
- *     column on payment
- *   - This report aggregates: total raised in window, per-charity
- *     breakdown, per-branch breakdown, opt-in rate, payout schedule
+ * (Was a Phase-7b zero stub — the donation infra has since shipped, so this now
+ * reads the real table. No per-charity breakdown exists: round-ups are POS-owned
+ * and forwarded to the single platform charity, not a per-charity directory.)
  *
- * None of the donation infrastructure (round_up config, charity
- * directory, donation_amount column on pos_orders) is in the
- * schema yet -- those land in Phase 9 (the explicit blueprint
- * sequencing is Roundup -> charity invoicing -> charity payout).
- *
- * This Action returns a well-formed empty payload so:
- *   1) the Reports landing UI in 7b-6 can list every blueprint
- *      report (no missing tile), and
- *   2) when Phase 9 ships the donation columns, only the inside
- *      of this Action changes -- consumers keep working.
+ * Money is decimal-3 strings; filtered on occurred_at, tenant-scoped.
  */
 final readonly class RoundUpDonationReportAction
 {
+    /** Donation statuses written by pos_api's donation.record / void path. */
+    private const STATUSES = ['success', 'pending', 'fail', 'void'];
+
     public function __construct(
         private MerchantTenantContext $tenant,
     ) {}
@@ -41,28 +38,67 @@ final readonly class RoundUpDonationReportAction
      */
     public function handle(ReportFilter $filter): array
     {
-        // Tenant scope still required so cross-tenant calls fail
-        // (even though we return zeros, the act of CALLING for
-        // another tenant should be prevented by the same surface).
-        $this->tenant->requiredId();
+        $companyId = $this->tenant->requiredId();
+        $branchScope = $filter->branchScope();
+
+        $base = DB::table('pos_roundup_donations')
+            ->where('company_id', $companyId)
+            ->whereBetween('occurred_at', [$filter->dateFrom, $filter->dateTo]);
+        if ($branchScope !== null) {
+            $base->whereIn('branch_id', $branchScope);
+        }
+
+        // Per-status totals.
+        $byStatusRows = (clone $base)
+            ->selectRaw('status, COALESCE(SUM(amount), 0) AS total, COUNT(*) AS cnt')
+            ->groupBy('status')
+            ->get()
+            ->keyBy('status');
+
+        $statusTotal = static fn (string $s): float => (float) ($byStatusRows[$s]->total ?? 0);
+        $statusCount = static fn (string $s): int => (int) ($byStatusRows[$s]->cnt ?? 0);
+
+        $byStatus = [];
+        foreach (self::STATUSES as $s) {
+            if (! $byStatusRows->has($s)) {
+                continue;
+            }
+            $byStatus[] = [
+                'status' => $s,
+                'total' => number_format($statusTotal($s), 3, '.', ''),
+                'count' => $statusCount($s),
+            ];
+        }
+
+        // Per-branch raised (successful donations only — that's money actually
+        // collected for charity).
+        $byBranch = (clone $base)
+            ->where('status', 'success')
+            ->selectRaw('branch_id, COALESCE(SUM(amount), 0) AS total, COUNT(*) AS cnt')
+            ->groupBy('branch_id')
+            ->orderByDesc('total')
+            ->get()
+            ->map(static fn ($r): array => [
+                'branch_id' => (int) $r->branch_id,
+                'total_raised' => number_format((float) $r->total, 3, '.', ''),
+                'donation_count' => (int) $r->cnt,
+            ])->all();
 
         return [
             'window' => [
                 'from' => $filter->dateFrom->format('Y-m-d\TH:i:s'),
                 'to' => $filter->dateTo->format('Y-m-d\TH:i:s'),
                 'consolidated' => $filter->consolidated,
-                'branch_ids' => $filter->branchScope(),
+                'branch_ids' => $branchScope,
             ],
             'headline' => [
-                'total_raised' => '0.000',
-                'donation_count' => 0,
-                'opt_in_rate_pct' => 0.0,
+                'total_raised' => number_format($statusTotal('success'), 3, '.', ''),
+                'donation_count' => $statusCount('success'),
+                'pending_count' => $statusCount('pending'),
+                'failed_count' => $statusCount('fail'),
             ],
-            'by_charity' => [],
-            'by_branch' => [],
-            '_phase' => [
-                'donation_stub' => 'Round-Up donation aggregation lands with Phase 9: pos_orders.donation_amount + pos_charities directory + Round-Up config. This Action returns a zeroed payload so the Reports landing UI can list the tile now.',
-            ],
+            'by_branch' => $byBranch,
+            'by_status' => $byStatus,
         ];
     }
 }
