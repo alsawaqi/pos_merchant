@@ -1576,8 +1576,11 @@
         },
         "statuses": {
             "open": "Open",
+            "held": "Held",
+            "kitchen": "In kitchen",
             "paid": "Paid",
-            "void": "Void"
+            "void": "Void",
+            "refunded": "Refunded"
         },
         "detail": {
             "title": "Order detail",

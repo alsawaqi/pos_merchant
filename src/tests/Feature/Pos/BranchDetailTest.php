@@ -89,10 +89,13 @@ it('returns the branch activity feed + sales snapshot', function (): void {
     expect($data['recent_orders'])->toHaveCount(2);
     expect($data['recent_orders'][0]['staff_name'])->toBe('Sam');     // newest first
     expect($data['recent_orders'][0]['customer_name'])->toBe('Alice');
+    // Money/qty in the activity arrays keep exact 3-decimal strings (decimal:3 cast).
+    expect($data['recent_orders'][0]['grand_total'])->toBe('20.000');
     expect($data['recent_shifts'])->toHaveCount(1);
     expect($data['recent_shifts'][0]['staff_name'])->toBe('Sam');
     expect($data['recent_movements'])->toHaveCount(1);
     expect($data['recent_movements'][0]['ingredient_name'])->toBe('Milk');
+    expect($data['recent_movements'][0]['quantity'])->toBe('5.000'); // StockMovement factory default
 });
 
 it('does not leak another tenant branch (404 on every section)', function (): void {
