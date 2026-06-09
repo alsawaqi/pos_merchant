@@ -153,6 +153,9 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('pos.branches.activity');
         Route::patch('pos/branches/{branch:uuid}', [PosBranchesController::class, 'update'])
             ->name('pos.branches.update');
+        // Per-branch custom POS receipt template (header/CR/VAT/footer).
+        Route::put('pos/branches/{branch:uuid}/receipt-template', [PosBranchesController::class, 'updateReceiptTemplate'])
+            ->name('pos.branches.receipt-template');
 
         // -------- Phase 4.8 — Roles & Permissions ----------
         // Role builder for merchant SuperAdmins. The catalog

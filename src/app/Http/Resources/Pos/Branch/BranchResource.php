@@ -59,6 +59,10 @@ class BranchResource extends JsonResource
             'default_order_type' => $this->default_order_type?->value,
             'status' => $this->status?->value,
 
+            // Per-branch custom POS receipt template (header/CR/VAT/footer);
+            // null until the merchant authors one (device uses its default).
+            'receipt_template' => $this->receipt_template,
+
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

@@ -22,6 +22,7 @@ import {
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import OrderDetailDrawer from '@/Pages/Merchant/Orders/components/OrderDetailDrawer.vue';
 import SalesHeatmap from '@/Pages/Merchant/Reports/components/SalesHeatmap.vue';
+import ReceiptTemplateDialog from '@/Pages/Merchant/Branches/components/ReceiptTemplateDialog.vue';
 import {
     showMerchantBranch, getBranchProducts, getBranchStaff, getBranchActivity, listBranchDevices,
     type MerchantBranch, type BranchProductRow, type BranchStaffMember, type BranchActivity, type BranchDevice,
@@ -45,10 +46,17 @@ const devices = ref<BranchDevice[] | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const detailUuid = ref<string | null>(null);
+const showReceiptDialog = ref(false);
 
 const canCatalogue = can(MerchantPermission.CatalogueView);
 const canStaff = can(MerchantPermission.PosStaffView);
 const canReports = can(MerchantPermission.ReportsView);
+const canManageBranch = can(MerchantPermission.BranchesUpdate);
+
+function onReceiptSaved(updated: MerchantBranch): void {
+    branch.value = updated;
+    showReceiptDialog.value = false;
+}
 
 function humanize(v: string | null): string {
     return v ? v.replace(/_/g, ' ') : '—';
@@ -153,6 +161,17 @@ onMounted(() => {
                                 <div v-if="branch.address" class="flex gap-2"><dt class="text-slate-500">{{ t('branches.fields.address') }}:</dt><dd class="font-medium text-slate-800">{{ branch.address }}</dd></div>
                             </dl>
                         </div>
+
+                        <button
+                            v-if="canManageBranch"
+                            type="button"
+                            class="inline-flex shrink-0 items-center gap-2 rounded-xl border border-teal-200 bg-teal-50 px-3.5 py-2 text-sm font-semibold text-teal-800 transition hover:bg-teal-100"
+                            :title="t('branches.show.receipt_template_hint')"
+                            @click="showReceiptDialog = true"
+                        >
+                            <Receipt class="size-4" />
+                            {{ t('branches.show.receipt_template') }}
+                        </button>
                     </div>
                 </header>
 
@@ -309,5 +328,12 @@ onMounted(() => {
         </div>
 
         <OrderDetailDrawer v-model:uuid="detailUuid" />
+
+        <ReceiptTemplateDialog
+            v-if="showReceiptDialog && branch"
+            :branch="branch"
+            @close="showReceiptDialog = false"
+            @saved="onReceiptSaved"
+        />
     </MerchantLayout>
 </template>

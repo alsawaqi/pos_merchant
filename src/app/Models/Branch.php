@@ -56,6 +56,7 @@ class Branch extends Model
         'default_order_type',
         'status',
         'settings',
+        'receipt_template',
     ];
 
     /**
@@ -73,6 +74,7 @@ class Branch extends Model
             'geofence_radius_m' => 'integer',
             'opening_hours_json' => 'array',
             'settings' => 'array',
+            'receipt_template' => 'array',
             'status' => BranchStatus::class,
             'default_order_type' => BranchOrderType::class,
         ];

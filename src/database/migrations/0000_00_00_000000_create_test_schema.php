@@ -123,6 +123,7 @@ return new class extends Migration
             $table->decimal('longitude', 10, 7)->nullable();
             $table->string('status')->default('active');
             $table->json('settings')->nullable();
+            $table->json('receipt_template')->nullable();
             $table->timestamps();
             $table->softDeletes();
 

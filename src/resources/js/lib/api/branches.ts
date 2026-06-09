@@ -16,7 +16,7 @@
  *                              surfaces as 403 with a message).
  */
 
-import { apiGet, apiPatch, type JsonValue } from '@/lib/api';
+import { apiGet, apiPatch, apiPut, type JsonValue } from '@/lib/api';
 
 export type BranchStatus = 'active' | 'inactive';
 export type BranchOrderType =
@@ -61,6 +61,8 @@ export interface MerchantBranch {
     opening_hours_json: Record<string, OpeningDay> | null;
     default_order_type: BranchOrderType | null;
     status: BranchStatus | null;
+    /** Custom POS receipt template; null until the merchant authors one. */
+    receipt_template: ReceiptTemplate | null;
     created_at: string | null;
     updated_at: string | null;
 }
@@ -69,6 +71,22 @@ export interface OpeningDay {
     open?: string;
     close?: string;
     closed?: boolean;
+}
+
+/**
+ * Per-branch custom receipt template — what the POS device prints.
+ * All fields optional; an all-empty template = device built-in default.
+ */
+export interface ReceiptTemplate {
+    business_name: string | null;
+    business_name_ar: string | null;
+    cr_number: string | null;
+    vat_number: string | null;
+    address: string | null;
+    phone: string | null;
+    header_lines: string[];
+    footer_lines: string[];
+    show_qr: boolean;
 }
 
 export interface UpdateMerchantBranchPayload {
@@ -105,6 +123,16 @@ export function updateMerchantBranch(
 ): Promise<{ data: MerchantBranch }> {
     return apiPatch<{ data: MerchantBranch }>(
         `/api/pos/branches/${uuid}`,
+        payload as unknown as JsonValue,
+    );
+}
+
+export function updateBranchReceiptTemplate(
+    uuid: string,
+    payload: ReceiptTemplate,
+): Promise<{ data: MerchantBranch }> {
+    return apiPut<{ data: MerchantBranch }>(
+        `/api/pos/branches/${uuid}/receipt-template`,
         payload as unknown as JsonValue,
     );
 }

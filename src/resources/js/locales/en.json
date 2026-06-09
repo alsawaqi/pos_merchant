@@ -333,7 +333,25 @@
             "recent_shifts": "Recent shifts",
             "recent_movements": "Stock movements",
             "no_activity": "No activity yet.",
-            "by": "by"
+            "by": "by",
+            "receipt_template": "Receipt template",
+            "receipt_template_hint": "Customize what this branch's POS prints"
+        },
+        "receipt": {
+            "title": "Branch receipt template",
+            "intro": "Set what this branch's POS device prints on each receipt. Leave a field blank to omit it; an empty template falls back to the default receipt.",
+            "business_name": "Business name",
+            "business_name_ar": "Business name (Arabic)",
+            "cr_number": "CR number",
+            "vat_number": "VAT number",
+            "address": "Address",
+            "phone": "Phone",
+            "header_lines": "Header lines",
+            "footer_lines": "Footer lines",
+            "add_line": "Add line",
+            "show_qr": "Print the QR code",
+            "preview": "Receipt preview",
+            "save_failed": "Could not save the receipt template."
         }
     },
     "roles": {

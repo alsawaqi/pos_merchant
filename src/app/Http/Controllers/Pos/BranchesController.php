@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Pos;
 
+use App\Actions\Pos\Branch\UpdateBranchReceiptTemplateAction;
 use App\Actions\Pos\Branch\UpdateMerchantBranchAction;
 use App\Actions\Pos\Reports\BranchActivityAction;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Pos\Branch\UpdateBranchReceiptTemplateRequest;
 use App\Http\Requests\Pos\Branch\UpdateMerchantBranchRequest;
 use App\Http\Resources\Pos\Branch\BranchResource;
 use App\Http\Resources\Pos\Branch\DeviceResource;
@@ -52,6 +54,7 @@ class BranchesController extends Controller
     public function __construct(
         private readonly MerchantTenantContext $tenant,
         private readonly UpdateMerchantBranchAction $update,
+        private readonly UpdateBranchReceiptTemplateAction $updateReceiptTemplate,
         private readonly BranchActivityAction $branchActivity,
     ) {}
 
@@ -112,6 +115,23 @@ class BranchesController extends Controller
             $isPermissionError = str_contains($e->getMessage(), 'permission');
             return response()->json(['message' => $e->getMessage()], $isPermissionError ? 403 : 422);
         }
+
+        return BranchResource::make($updated);
+    }
+
+    /**
+     * PUT /api/pos/branches/{branch:uuid}/receipt-template
+     *
+     * Replace this branch's custom POS-receipt template (header /
+     * CR / VAT / footer). The whole template is sent as one object;
+     * the action normalizes + audits it. branches.update gated.
+     */
+    public function updateReceiptTemplate(UpdateBranchReceiptTemplateRequest $request, Branch $branch): BranchResource
+    {
+        $this->ensure($request, MerchantPermission::BranchesUpdate);
+        $this->refuseIfNotInTenant($branch);
+
+        $updated = $this->updateReceiptTemplate->handle($branch, $request->validated(), $request->user());
 
         return BranchResource::make($updated);
     }
