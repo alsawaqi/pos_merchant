@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Pos\Branch;
 
+use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
@@ -44,6 +45,29 @@ class UpdateBranchReceiptTemplateRequest extends FormRequest
             'footer_lines.*' => ['nullable', 'string', 'max:120'],
 
             'show_qr' => ['sometimes', 'boolean'],
+
+            // Logo: a base64-encoded PNG (no data: prefix). The browser resizes
+            // + greyscales it to a receipt-friendly bitmap before upload, so the
+            // server only validates it's a real, size-capped PNG (no GD needed).
+            // ~200k chars ≈ 150 KB decoded — ample for a 384px monochrome logo.
+            'logo_base64' => ['nullable', 'string', 'max:200000', $this->pngRule()],
         ];
+    }
+
+    /**
+     * Closure rule: the value must base64-decode to bytes that start with the
+     * 8-byte PNG signature. Empty/null is allowed (no logo).
+     */
+    private function pngRule(): Closure
+    {
+        return static function (string $attribute, mixed $value, Closure $fail): void {
+            if (! is_string($value) || $value === '') {
+                return;
+            }
+            $binary = base64_decode($value, true);
+            if ($binary === false || strncmp($binary, "\x89PNG\r\n\x1a\n", 8) !== 0) {
+                $fail('The logo must be a valid PNG image.');
+            }
+        };
     }
 }

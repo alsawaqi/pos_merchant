@@ -103,6 +103,26 @@ final readonly class UpdateBranchReceiptTemplateAction
             'header_lines' => $lines('header_lines'),
             'footer_lines' => $lines('footer_lines'),
             'show_qr' => (bool) ($a['show_qr'] ?? true),
+            'logo_base64' => $this->logo($a['logo_base64'] ?? null),
         ];
+    }
+
+    /**
+     * Keep the logo only when it's a valid base64-encoded PNG; anything else
+     * (null, blank, non-PNG) stores as null. Defence in depth on top of the
+     * request's PNG rule, so internal callers can't persist garbage either.
+     */
+    private function logo(mixed $value): ?string
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+        $value = trim($value);
+        $binary = base64_decode($value, true);
+        if ($binary === false || strncmp($binary, "\x89PNG\r\n\x1a\n", 8) !== 0) {
+            return null;
+        }
+
+        return $value;
     }
 }

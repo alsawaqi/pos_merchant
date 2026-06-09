@@ -81,6 +81,45 @@ it('writes a branch.receipt_template.updated audit row', function (): void {
     expect(DB::table('pos_audit_logs')->where('event', 'branch.receipt_template.updated')->count())->toBe(1);
 });
 
+it('stores a valid base64 PNG logo and echoes it back', function (): void {
+    $ctx = makeMerchantActor();
+    // Bytes that begin with the 8-byte PNG signature → a valid (if tiny) PNG.
+    $logo = base64_encode("\x89PNG\r\n\x1a\nfake-png-body");
+
+    $data = $this->putJson("/api/pos/branches/{$ctx['branch']->uuid}/receipt-template", [
+        'business_name' => 'Aroma Cafe',
+        'logo_base64' => $logo,
+    ])->assertOk()->json('data.receipt_template');
+
+    expect($data['logo_base64'])->toBe($logo);
+
+    $branch = Branch::query()->whereKey($ctx['branch']->id)->first();
+    expect($branch->receipt_template['logo_base64'])->toBe($logo);
+});
+
+it('rejects a logo that is not a PNG (422)', function (): void {
+    $ctx = makeMerchantActor();
+
+    $this->putJson("/api/pos/branches/{$ctx['branch']->uuid}/receipt-template", [
+        'logo_base64' => base64_encode('this is not a png'),
+    ])->assertStatus(422)->assertJsonValidationErrors(['logo_base64']);
+});
+
+it('clears the logo when null is sent', function (): void {
+    $ctx = makeMerchantActor();
+    $logo = base64_encode("\x89PNG\r\n\x1a\nbody");
+
+    $this->putJson("/api/pos/branches/{$ctx['branch']->uuid}/receipt-template", [
+        'logo_base64' => $logo,
+    ])->assertOk();
+
+    $data = $this->putJson("/api/pos/branches/{$ctx['branch']->uuid}/receipt-template", [
+        'logo_base64' => null,
+    ])->assertOk()->json('data.receipt_template');
+
+    expect($data['logo_base64'])->toBeNull();
+});
+
 it('does not leak another tenant branch (404)', function (): void {
     makeMerchantActor();
 

@@ -87,6 +87,8 @@ export interface ReceiptTemplate {
     header_lines: string[];
     footer_lines: string[];
     show_qr: boolean;
+    /** Base64-encoded PNG (no data: prefix); browser-resized to a receipt logo. */
+    logo_base64: string | null;
 }
 
 export interface UpdateMerchantBranchPayload {

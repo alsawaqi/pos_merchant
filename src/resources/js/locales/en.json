@@ -350,6 +350,13 @@
             "footer_lines": "Footer lines",
             "add_line": "Add line",
             "show_qr": "Print the QR code",
+            "logo": "Logo",
+            "logo_upload": "Upload logo",
+            "logo_replace": "Replace logo",
+            "logo_remove": "Remove",
+            "logo_hint": "PNG/JPG; resized to 384px and printed in greyscale.",
+            "logo_invalid": "That file isn't a valid image.",
+            "logo_too_large": "Image is too large (max 5 MB).",
             "preview": "Receipt preview",
             "save_failed": "Could not save the receipt template."
         }

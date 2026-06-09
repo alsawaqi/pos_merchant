@@ -13,7 +13,7 @@
 
 import { computed, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Plus, Trash2 } from 'lucide-vue-next';
+import { ImagePlus, Plus, Trash2 } from 'lucide-vue-next';
 import BaseModal from '@/Components/BaseModal.vue';
 import { ApiError } from '@/lib/api';
 import {
@@ -41,10 +41,87 @@ const form = reactive<ReceiptTemplate>({
     header_lines: [...(existing?.header_lines ?? [])],
     footer_lines: existing?.footer_lines ? [...existing.footer_lines] : ['Thank you for your visit'],
     show_qr: existing?.show_qr ?? true,
+    logo_base64: existing?.logo_base64 ?? null,
 });
 
 const saving = ref(false);
 const error = ref<string | null>(null);
+const logoError = ref<string | null>(null);
+
+// Browser-side logo processing — resize to the receipt printer width and
+// greyscale, so the device gets a small, print-ready PNG. Keeps the server
+// free of any image library (no GD / container rebuild needed).
+const MAX_LOGO_WIDTH = 384;
+
+const logoSrc = computed(() =>
+    form.logo_base64 ? `data:image/png;base64,${form.logo_base64}` : null,
+);
+
+function readFileAsDataUrl(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('read failed'));
+        reader.readAsDataURL(file);
+    });
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('decode failed'));
+        img.src = src;
+    });
+}
+
+async function onLogoFile(e: Event): Promise<void> {
+    logoError.value = null;
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = ''; // let the same file be re-picked after a remove
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+        logoError.value = t('branches.receipt.logo_invalid');
+        return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+        logoError.value = t('branches.receipt.logo_too_large');
+        return;
+    }
+    try {
+        const img = await loadImage(await readFileAsDataUrl(file));
+        const scale = Math.min(1, MAX_LOGO_WIDTH / img.width);
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            logoError.value = t('branches.receipt.logo_invalid');
+            return;
+        }
+        ctx.fillStyle = '#ffffff'; // flatten transparency to white (thermal paper)
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        const data = ctx.getImageData(0, 0, w, h);
+        const px = data.data;
+        for (let i = 0; i < px.length; i += 4) {
+            const g = Math.round(0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2]);
+            px[i] = px[i + 1] = px[i + 2] = g;
+        }
+        ctx.putImageData(data, 0, 0);
+        form.logo_base64 = canvas.toDataURL('image/png').split(',')[1] ?? null;
+    } catch {
+        logoError.value = t('branches.receipt.logo_invalid');
+    }
+}
+
+function removeLogo(): void {
+    form.logo_base64 = null;
+    logoError.value = null;
+}
 
 function addLine(which: 'header_lines' | 'footer_lines'): void {
     if (form[which].length < 6) form[which].push('');
@@ -71,6 +148,7 @@ function payload(): ReceiptTemplate {
         header_lines: lines(form.header_lines),
         footer_lines: lines(form.footer_lines),
         show_qr: form.show_qr,
+        logo_base64: form.logo_base64,
     };
 }
 
@@ -91,7 +169,10 @@ async function save(): Promise<void> {
 const preview = computed(() => {
     const p = payload();
     const lines: { text: string; center?: boolean; bold?: boolean }[] = [];
-    lines.push({ text: p.business_name ?? 'MITHQAL 2.0', center: true, bold: true });
+    // The logo (rendered above) substitutes for the default name; only show the
+    // "MITHQAL 2.0" fallback when there's neither a business name nor a logo.
+    const name = p.business_name ?? (p.logo_base64 ? null : 'MITHQAL 2.0');
+    if (name) lines.push({ text: name, center: true, bold: true });
     if (p.business_name_ar) lines.push({ text: p.business_name_ar, center: true, bold: true });
     for (const l of p.header_lines) lines.push({ text: l, center: true });
     if (p.address) lines.push({ text: p.address, center: true });
@@ -143,6 +224,27 @@ const preview = computed(() => {
                     <textarea v-model="form.address" rows="2" maxlength="280" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500" />
                 </label>
 
+                <!-- Logo -->
+                <div>
+                    <span class="mb-1 block text-xs font-semibold text-slate-600">{{ t('branches.receipt.logo') }}</span>
+                    <div class="flex items-center gap-3">
+                        <div class="grid size-16 shrink-0 place-items-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                            <img v-if="logoSrc" :src="logoSrc" alt="logo" class="max-h-16 max-w-16 object-contain" />
+                            <ImagePlus v-else class="size-5 text-slate-300" />
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <label class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                                <ImagePlus class="size-3.5" />
+                                {{ logoSrc ? t('branches.receipt.logo_replace') : t('branches.receipt.logo_upload') }}
+                                <input type="file" accept="image/*" class="hidden" @change="onLogoFile" />
+                            </label>
+                            <button v-if="logoSrc" type="button" class="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50" @click="removeLogo">{{ t('branches.receipt.logo_remove') }}</button>
+                        </div>
+                    </div>
+                    <p class="mt-1 text-[11px] text-slate-400">{{ t('branches.receipt.logo_hint') }}</p>
+                    <p v-if="logoError" class="mt-1 text-xs text-rose-600">{{ logoError }}</p>
+                </div>
+
                 <!-- Header lines -->
                 <div>
                     <div class="mb-1 flex items-center justify-between">
@@ -183,6 +285,7 @@ const preview = computed(() => {
             <div>
                 <span class="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('branches.receipt.preview') }}</span>
                 <div class="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3">
+                    <img v-if="logoSrc" :src="logoSrc" alt="logo" class="mx-auto mb-2 max-h-20 object-contain grayscale" />
                     <pre class="whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-slate-800">{{ preview.map((l) => l.text).join('\n') }}</pre>
                 </div>
             </div>
