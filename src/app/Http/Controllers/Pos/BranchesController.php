@@ -5,13 +5,17 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Pos;
 
 use App\Actions\Pos\Branch\UpdateMerchantBranchAction;
+use App\Actions\Pos\Reports\BranchActivityAction;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Pos\Branch\UpdateMerchantBranchRequest;
 use App\Http\Resources\Pos\Branch\BranchResource;
 use App\Http\Resources\Pos\Branch\DeviceResource;
+use App\Http\Resources\Pos\Staff\PosStaffResource;
 use App\Models\Branch;
 use App\Models\Device;
+use App\Models\PosStaff;
+use App\Models\Product;
 use App\Support\MerchantTenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -48,6 +52,7 @@ class BranchesController extends Controller
     public function __construct(
         private readonly MerchantTenantContext $tenant,
         private readonly UpdateMerchantBranchAction $update,
+        private readonly BranchActivityAction $branchActivity,
     ) {}
 
     /**
@@ -130,6 +135,78 @@ class BranchesController extends Controller
             ->get();
 
         return DeviceResource::collection($devices);
+    }
+
+    /**
+     * GET /api/pos/branches/{branch:uuid}/products  (v2 #11)
+     *
+     * Products carried at this branch (have a pos_branch_product row),
+     * with the per-branch availability + unit stock from the pivot.
+     * catalogue.view gated. NULL stock_qty = not unit-tracked here.
+     */
+    public function products(Request $request, Branch $branch): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::CatalogueView);
+        $this->refuseIfNotInTenant($branch);
+
+        $products = Product::query()
+            ->where('company_id', $this->tenant->requiredId())
+            ->whereHas('branchProducts', fn ($q) => $q->where('branch_id', $branch->id))
+            ->with(['branchProducts' => fn ($q) => $q->where('branch_id', $branch->id)])
+            ->orderBy('name')
+            ->get();
+
+        $data = $products->map(static function (Product $p): array {
+            $bp = $p->branchProducts->first();
+
+            return [
+                'product_id' => (int) $p->id,
+                'uuid' => $p->uuid,
+                'name' => (string) $p->name,
+                'base_price' => (string) $p->base_price,
+                'stock_mode' => (string) $p->stock_mode,
+                'is_available' => $bp !== null ? (bool) $bp->is_available : true,
+                'stock_qty' => $bp !== null && $bp->stock_qty !== null ? (string) $bp->stock_qty : null,
+            ];
+        })->values()->all();
+
+        return response()->json(['data' => $data]);
+    }
+
+    /**
+     * GET /api/pos/branches/{branch:uuid}/staff  (v2 #11)
+     *
+     * Staff assigned to this branch (pos_staff.branch_id). pos_staff.view
+     * gated. Phone is decrypted by the resource; pin_hash never serialized.
+     */
+    public function staff(Request $request, Branch $branch): AnonymousResourceCollection
+    {
+        $this->ensure($request, MerchantPermission::PosStaffView);
+        $this->refuseIfNotInTenant($branch);
+
+        $staff = PosStaff::query()
+            ->where('company_id', $this->tenant->requiredId())
+            ->where('branch_id', $branch->id)
+            ->orderBy('name')
+            ->get();
+
+        return PosStaffResource::collection($staff);
+    }
+
+    /**
+     * GET /api/pos/branches/{branch:uuid}/activity  (v2 #11)
+     *
+     * Branch sales snapshot (today + MTD) + recent orders / shifts /
+     * stock movements. reports.view gated.
+     */
+    public function activity(Request $request, Branch $branch): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::ReportsView);
+        $this->refuseIfNotInTenant($branch);
+
+        return response()->json([
+            'data' => $this->branchActivity->handle($this->tenant->requiredId(), (int) $branch->id),
+        ]);
     }
 
     private function ensure(Request $request, MerchantPermission $permission): void

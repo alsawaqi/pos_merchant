@@ -140,6 +140,13 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // sees, can't control).
         Route::get('pos/branches/{branch:uuid}/devices', [PosBranchesController::class, 'devices'])
             ->name('pos.branches.devices');
+        // Branch detail (v2 #11): per-branch products + staff + activity.
+        Route::get('pos/branches/{branch:uuid}/products', [PosBranchesController::class, 'products'])
+            ->name('pos.branches.products');
+        Route::get('pos/branches/{branch:uuid}/staff', [PosBranchesController::class, 'staff'])
+            ->name('pos.branches.staff');
+        Route::get('pos/branches/{branch:uuid}/activity', [PosBranchesController::class, 'activity'])
+            ->name('pos.branches.activity');
         Route::patch('pos/branches/{branch:uuid}', [PosBranchesController::class, 'update'])
             ->name('pos.branches.update');
 
