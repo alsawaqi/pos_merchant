@@ -1494,6 +1494,24 @@
             },
             "charts": {
                 "commission_split": "توزيع العمولة"
+            },
+            "history": {
+                "section_title": "سجل المستحقات",
+                "columns": {
+                    "period": "الفترة",
+                    "net": "صافي المبلغ",
+                    "status": "الحالة",
+                    "sales": "المبيعات",
+                    "paid_on": "تاريخ الدفع",
+                    "reference": "المرجع"
+                },
+                "statuses": {
+                    "pending": "قيد الانتظار",
+                    "paid": "مدفوع",
+                    "cancelled": "ملغي"
+                },
+                "empty": "لا توجد مستحقات بعد.",
+                "paid_on_none": "—"
             }
         },
         "product_performance": {

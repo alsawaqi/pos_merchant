@@ -294,6 +294,36 @@ export function fetchPayoutBreakdown(filter: ReportFilter): Promise<{ data: Payo
     return apiGet<{ data: PayoutBreakdownPayload }>(reportPath('payouts', filter));
 }
 
+// ---- Payout history (stateful payouts the platform creates/settles) ----
+//
+// The breakdown above is a live date-window aggregation; this lists the
+// actual payout records (own company only, reports.view gated). Money
+// values are decimal-3 strings; sales_count is an int. Paginated 50/page
+// but merchants have few payouts, so callers just read `.data`.
+
+export type MerchantPayoutStatus = 'pending' | 'paid' | 'cancelled';
+
+export interface MerchantPayoutRow {
+    uuid: string;
+    period_from: string;        // ISO date
+    period_to: string;          // ISO date
+    status: MerchantPayoutStatus;
+    gross_amount: string;       // decimal-3
+    platform_amount: string;    // decimal-3
+    bank_amount: string;        // decimal-3
+    other_amount: string;       // decimal-3
+    net_amount: string;         // decimal-3
+    sales_count: number;
+    reference: string | null;
+    paid_at: string | null;     // ISO datetime
+    created_at: string | null;  // ISO datetime
+}
+
+export function fetchMyPayouts(opts?: { status?: MerchantPayoutStatus }): Promise<{ data: MerchantPayoutRow[]; meta?: Record<string, unknown> }> {
+    const url = opts?.status ? `/api/payouts?status=${opts.status}` : '/api/payouts';
+    return apiGet<{ data: MerchantPayoutRow[]; meta?: Record<string, unknown> }>(url);
+}
+
 // ============================================================
 // Round-Up Donation Report (§5.11.9) -- STUB until Phase 9
 // ============================================================

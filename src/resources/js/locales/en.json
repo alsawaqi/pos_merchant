@@ -1494,6 +1494,24 @@
             },
             "charts": {
                 "commission_split": "Commission split"
+            },
+            "history": {
+                "section_title": "Payout history",
+                "columns": {
+                    "period": "Period",
+                    "net": "Net amount",
+                    "status": "Status",
+                    "sales": "Sales",
+                    "paid_on": "Paid on",
+                    "reference": "Reference"
+                },
+                "statuses": {
+                    "pending": "Pending",
+                    "paid": "Paid",
+                    "cancelled": "Cancelled"
+                },
+                "empty": "No payouts yet.",
+                "paid_on_none": "—"
             }
         },
         "product_performance": {

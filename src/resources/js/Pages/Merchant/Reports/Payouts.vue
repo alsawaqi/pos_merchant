@@ -14,7 +14,14 @@
  */
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { fetchPayoutBreakdown, type PayoutBreakdownPayload, type PayoutPartyType } from '@/lib/api/reports';
+import {
+    fetchPayoutBreakdown,
+    fetchMyPayouts,
+    type PayoutBreakdownPayload,
+    type PayoutPartyType,
+    type MerchantPayoutRow,
+    type MerchantPayoutStatus,
+} from '@/lib/api/reports';
 import { listBranches, type Branch } from '@/lib/api/branches';
 import { ApiError } from '@/lib/api';
 import ReportShell from './components/ReportShell.vue';
@@ -35,6 +42,15 @@ function num(v: string | number | undefined | null): number {
 
 const branchNames = ref<Map<number, string>>(new Map());
 
+// ---- Payout history (independent of the breakdown Run button) ----
+//
+// These are the actual stateful payout records the platform creates and
+// settles. They aren't window-filtered like the breakdown above — we just
+// list them all on mount. Read-only.
+
+const payouts = ref<MerchantPayoutRow[]>([]);
+const payoutsLoading = ref(false);
+
 onMounted(async () => {
     try {
         const r = await listBranches();
@@ -43,7 +59,43 @@ onMounted(async () => {
         // Non-fatal: fall back to "Branch #id" labels.
         if (!(err instanceof ApiError)) throw err;
     }
+
+    payoutsLoading.value = true;
+    try {
+        const r = await fetchMyPayouts();
+        payouts.value = r.data;
+    } catch (err) {
+        // Non-fatal: leave the history empty.
+        if (!(err instanceof ApiError)) throw err;
+    } finally {
+        payoutsLoading.value = false;
+    }
 });
+
+// ---- Payout history helpers ----
+
+function formatDate(iso: string | null): string {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString();
+}
+
+function payoutPeriod(row: MerchantPayoutRow): string {
+    return `${formatDate(row.period_from)} – ${formatDate(row.period_to)}`;
+}
+
+function paidOnLabel(row: MerchantPayoutRow): string {
+    return row.paid_at ? formatDate(row.paid_at) : t('reports.payouts.history.paid_on_none');
+}
+
+function payoutStatusClass(status: MerchantPayoutStatus): string {
+    switch (status) {
+        case 'paid': return 'bg-emerald-100 text-emerald-700';
+        case 'pending': return 'bg-amber-100 text-amber-700';
+        case 'cancelled': return 'bg-slate-100 text-slate-600';
+        default: return 'bg-slate-100 text-slate-600';
+    }
+}
 
 function branchLabel(id: number): string {
     return branchNames.value.get(id) ?? `${t('reports.shared.branch')} #${id}`;
@@ -118,5 +170,39 @@ const partyChart = computed(() => {
         <div v-else-if="!loading" class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
             {{ t('reports.shared.no_data') }}
         </div>
+
+        <!-- Payout history: the actual stateful payouts (read-only) -->
+        <section class="mt-8">
+            <h2 class="mb-3 text-lg font-semibold text-slate-900">{{ t('reports.payouts.history.section_title') }}</h2>
+
+            <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+                <table v-if="payouts.length" class="w-full text-sm">
+                    <thead class="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                            <th class="px-5 py-2 text-start">{{ t('reports.payouts.history.columns.period') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.payouts.history.columns.net') }}</th>
+                            <th class="px-5 py-2 text-start">{{ t('reports.payouts.history.columns.status') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.payouts.history.columns.sales') }}</th>
+                            <th class="px-5 py-2 text-start">{{ t('reports.payouts.history.columns.paid_on') }}</th>
+                            <th class="px-5 py-2 text-start">{{ t('reports.payouts.history.columns.reference') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="row in payouts" :key="row.uuid" class="border-b border-slate-100 last:border-0">
+                            <td class="px-5 py-2 text-slate-700 tabular-nums">{{ payoutPeriod(row) }}</td>
+                            <td class="px-5 py-2 text-end font-semibold tabular-nums text-slate-900">{{ row.net_amount }}</td>
+                            <td class="px-5 py-2">
+                                <span class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold" :class="payoutStatusClass(row.status)">{{ t(`reports.payouts.history.statuses.${row.status}`) }}</span>
+                            </td>
+                            <td class="px-5 py-2 text-end tabular-nums text-slate-600">{{ row.sales_count }}</td>
+                            <td class="px-5 py-2 text-slate-700 tabular-nums">{{ paidOnLabel(row) }}</td>
+                            <td class="px-5 py-2 text-slate-600">{{ row.reference ?? '—' }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div v-else-if="!payoutsLoading" class="p-8 text-center text-sm text-slate-500">{{ t('reports.payouts.history.empty') }}</div>
+            </div>
+        </section>
     </ReportShell>
 </template>
