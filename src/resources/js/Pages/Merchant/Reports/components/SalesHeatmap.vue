@@ -69,8 +69,9 @@ function num(v: string | number | undefined | null): number {
 const grid = computed<number[][]>(() => {
     const g: number[][] = Array.from({ length: 24 }, () => Array.from({ length: 7 }, () => 0));
     for (const c of props.cells ?? []) {
-        if (c.hour >= 0 && c.hour < 24 && c.weekday >= 0 && c.weekday < 7) {
-            g[c.hour][c.weekday] = num(c.gross);
+        const row = g[c.hour];
+        if (row && c.weekday >= 0 && c.weekday < 7) {
+            row[c.weekday] = num(c.gross);
         }
     }
     return g;
@@ -92,9 +93,10 @@ const series = computed(() => {
     const dayLabels = DAY_ORDER.map(dayLabel);
     const out: { name: string; data: { x: string; y: number }[] }[] = [];
     for (let hour = 23; hour >= 0; hour--) {
+        const row = grid.value[hour] ?? [];
         out.push({
             name: hourLabel(hour),
-            data: DAY_ORDER.map((wd, i) => ({ x: dayLabels[i], y: grid.value[hour][wd] })),
+            data: DAY_ORDER.map((wd, i) => ({ x: dayLabels[i] ?? '', y: row[wd] ?? 0 })),
         });
     }
     return out;
@@ -113,7 +115,7 @@ const colorRanges = computed(() => {
             ranges.push({
                 from: i === 0 ? 0.0001 : step * i,
                 to: i === shades.length - 1 ? max : step * (i + 1),
-                color: shades[i],
+                color: shades[i] ?? '#ea580c',
             });
         }
     }
