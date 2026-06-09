@@ -33,6 +33,9 @@ class RecordWasteRequest extends FormRequest
         return [
             'ingredient_uuid' => ['required', 'string', 'uuid'],
             'quantity' => ['required', 'numeric', 'gt:0', 'max:999999.999'],
+            // #13 — entered unit (alt-unit name, or null = base); converted to
+            // base before write. Validity enforced by IngredientUnitConverter → 422.
+            'unit' => ['nullable', 'string', 'max:32'],
             'reason' => ['required', 'string', Rule::in(WasteReason::values())],
             'notes' => ['nullable', 'string', 'max:1000'],
             // Optional retroactive timestamp — defaults to now

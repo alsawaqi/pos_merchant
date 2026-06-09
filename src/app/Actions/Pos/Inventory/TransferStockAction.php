@@ -41,10 +41,11 @@ final readonly class TransferStockAction
         private WriteStockMovementAction $writeMovement,
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
+        private IngredientUnitConverter $units,
     ) {}
 
     /**
-     * @param  list<array{ingredient_uuid: string, quantity: string|float|int}>  $lines
+     * @param  list<array{ingredient_uuid: string, quantity: string|float|int, unit?: string|null}>  $lines
      */
     public function handle(Branch $from, Branch $to, array $lines, User $actor, ?string $note = null): BranchTransfer
     {
@@ -78,7 +79,9 @@ final readonly class TransferStockAction
             }
             $seen[$ingredient->id] = true;
 
-            $quantity = (float) $line['quantity'];
+            // #13 — convert the entered quantity to base units before the
+            // positivity + available-stock checks (so both compare base-to-base).
+            $quantity = $this->units->toBase($ingredient, $line['quantity'], $line['unit'] ?? null);
             if ($quantity <= 0) {
                 throw new RuntimeException('Transfer quantity for "'.$ingredient->name.'" must be positive.');
             }

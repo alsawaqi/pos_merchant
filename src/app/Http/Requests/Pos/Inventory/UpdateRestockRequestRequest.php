@@ -30,6 +30,8 @@ class UpdateRestockRequestRequest extends FormRequest
             'lines' => ['required', 'array', 'min:1', 'max:50'],
             'lines.*.ingredient_uuid' => ['required', 'string', 'uuid'],
             'lines.*.quantity_requested' => ['required', 'numeric', 'gt:0', 'max:999999.999'],
+            // #13 — per-line entered unit (alt-unit name, or null = base).
+            'lines.*.unit' => ['nullable', 'string', 'max:32'],
             'lines.*.note' => ['nullable', 'string', 'max:500'],
             'note' => ['nullable', 'string', 'max:1000'],
         ];

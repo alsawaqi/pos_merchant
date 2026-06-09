@@ -60,10 +60,13 @@ final readonly class RecordWasteAction
         private WriteStockMovementAction $writeStockMovement,
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
+        private IngredientUnitConverter $units,
     ) {}
 
     /**
-     * @param  string|float|int  $quantity  ABSOLUTE positive amount
+     * @param  string|float|int  $quantity  ABSOLUTE positive amount, in [$unit]
+     * @param  string|null       $unit      Entered unit (alt-unit name, or null =
+     *                                       base); converted to base before write (#13).
      */
     public function handle(
         Branch $branch,
@@ -73,6 +76,7 @@ final readonly class RecordWasteAction
         User $actor,
         ?string $notes = null,
         ?DateTimeInterface $occurredAt = null,
+        ?string $unit = null,
     ): WasteRecord {
         $companyId = $this->tenant->requiredId();
 
@@ -83,9 +87,9 @@ final readonly class RecordWasteAction
             throw new RuntimeException('Ingredient does not belong to your company.');
         }
 
-        // Coerce to a positive float for the comparison; cast
-        // back to string for the DB write.
-        $absQty = (float) $quantity;
+        // #13 — convert the entered quantity to base units (the unit branch stock
+        // is in), so the positivity + sufficient-stock checks compare like-for-like.
+        $absQty = $this->units->toBase($ingredient, $quantity, $unit);
         if ($absQty <= 0) {
             throw new RuntimeException('Waste quantity must be positive.');
         }

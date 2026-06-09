@@ -86,6 +86,7 @@ class StockController extends Controller
                 signedQuantity: $request->input('signed_quantity'),
                 note: $request->input('note'),
                 actor: $request->user(),
+                unit: $request->input('unit'),
             );
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
@@ -133,6 +134,7 @@ class StockController extends Controller
                 supplier: $supplier,
                 note: $request->input('note'),
                 actor: $request->user(),
+                unit: $request->input('unit'),
             );
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);

@@ -29,6 +29,9 @@ class CreateRestockRequestRequest extends FormRequest
             'lines' => ['required', 'array', 'min:1', 'max:50'],
             'lines.*.ingredient_uuid' => ['required', 'string', 'uuid'],
             'lines.*.quantity_requested' => ['required', 'numeric', 'gt:0', 'max:999999.999'],
+            // #13 — per-line entered unit (alt-unit name, or null = base);
+            // converted to base before storage. Validity enforced in the action.
+            'lines.*.unit' => ['nullable', 'string', 'max:32'],
             'lines.*.note' => ['nullable', 'string', 'max:500'],
             // Parent-level note — context the requester wants HQ
             // to see (e.g. "for the weekend rush").

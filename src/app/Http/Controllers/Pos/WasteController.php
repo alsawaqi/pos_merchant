@@ -128,6 +128,7 @@ class WasteController extends Controller
                 actor: $request->user(),
                 notes: $request->input('notes'),
                 occurredAt: $occurredAt,
+                unit: $request->input('unit'),
             );
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);

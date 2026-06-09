@@ -33,11 +33,15 @@ final readonly class AdjustStockAction
 {
     public function __construct(
         private WriteStockMovementAction $writeMovement,
+        private IngredientUnitConverter $units,
     ) {}
 
     /**
-     * @param  string|float|int  $signedQuantity  Required; signed delta
+     * @param  string|float|int  $signedQuantity  Required; signed delta in [$unit]
      * @param  string            $note            Required; reason for the adjustment
+     * @param  string|null       $unit            Entered unit (alt-unit name, or null
+     *                                            = base); the signed delta is converted
+     *                                            to base before it touches stock (#13).
      */
     public function handle(
         Branch $branch,
@@ -45,11 +49,16 @@ final readonly class AdjustStockAction
         string|float|int $signedQuantity,
         string $note,
         User $actor,
+        ?string $unit = null,
     ): StockMovement {
         $note = trim($note);
         if ($note === '') {
             throw new RuntimeException('Adjustment note is required — explain why the stock count changed.');
         }
+
+        // #13 — convert the signed delta to base units (sign preserved; factor > 0).
+        $signedQuantity = $this->units->toBase($ingredient, $signedQuantity, $unit);
+
         if ((float) $signedQuantity === 0.0) {
             throw new RuntimeException('Adjustment quantity cannot be zero.');
         }

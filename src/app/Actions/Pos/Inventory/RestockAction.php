@@ -35,11 +35,16 @@ final readonly class RestockAction
 {
     public function __construct(
         private WriteStockMovementAction $writeMovement,
+        private IngredientUnitConverter $units,
     ) {}
 
     /**
-     * @param  string|float|int       $quantity   Positive only
+     * @param  string|float|int       $quantity   Positive only, in [$unit]
      * @param  string|float|int|null  $unitCost   NULL = use ingredient's default_unit_cost
+     * @param  string|null            $unit       Entered unit (an alt-unit name, or
+     *                                            null = the ingredient's base unit).
+     *                                            The qty is converted to base before
+     *                                            it touches stock (#13).
      */
     public function handle(
         Branch $branch,
@@ -49,7 +54,12 @@ final readonly class RestockAction
         ?Supplier $supplier,
         ?string $note,
         User $actor,
+        ?string $unit = null,
     ): StockMovement {
+        // #13 — convert the entered quantity to the ingredient's base unit (the
+        // unit ALL stock is stored in). Unknown unit ⇒ RuntimeException ⇒ 422.
+        $quantity = $this->units->toBase($ingredient, $quantity, $unit);
+
         if ((float) $quantity <= 0) {
             throw new RuntimeException('Restock quantity must be positive.');
         }

@@ -36,6 +36,9 @@ class UpdateProductRecipeRequest extends FormRequest
             // 999,999.999 of any unit. Negative + zero
             // rejected because both make no recipe sense.
             'lines.*.quantity' => ['required', 'numeric', 'gt:0', 'max:999999.999'],
+            // #13 — per-line entered unit (alt-unit name, or null = base); the
+            // quantity is converted to base before storage (kept base on device).
+            'lines.*.unit' => ['nullable', 'string', 'max:32'],
             // Optional free-text the merchant can attach to
             // significant edits (e.g. "switched to organic
             // milk supplier"). Stored on the version row.

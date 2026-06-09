@@ -30,6 +30,9 @@ class AdjustStockRequest extends FormRequest
             // Signed — positive = found more, negative = found
             // less. Zero is rejected by the Action layer.
             'signed_quantity' => ['required', 'numeric', 'between:-999999.999,999999.999'],
+            // #13 — entered unit (alt-unit name, or null = base); converted to
+            // base before write. Validity enforced by IngredientUnitConverter → 422.
+            'unit' => ['nullable', 'string', 'max:32'],
             'note' => ['required', 'string', 'min:1', 'max:1000'],
         ];
     }

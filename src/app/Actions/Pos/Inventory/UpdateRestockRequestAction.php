@@ -40,10 +40,11 @@ final readonly class UpdateRestockRequestAction
     public function __construct(
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
+        private IngredientUnitConverter $units,
     ) {}
 
     /**
-     * @param  array<int, array{ingredient_uuid: string, quantity_requested: numeric-string|float|int, note?: ?string}>  $lines
+     * @param  array<int, array{ingredient_uuid: string, quantity_requested: numeric-string|float|int, unit?: ?string, note?: ?string}>  $lines
      */
     public function handle(RestockRequest $request, array $lines, User $actor, ?string $note = null): RestockRequest
     {
@@ -76,12 +77,14 @@ final readonly class UpdateRestockRequestAction
             throw new RuntimeException('One or more ingredients in the request do not belong to your company.');
         }
 
-        // Diff comparison — same ingredients + same quantities
-        // + same parent note → no-op skip.
-        $newShape = collect($lines)->mapWithKeys(static function (array $l) use ($ingredients): array {
+        // Diff comparison — same ingredients + same quantities (compared in BASE
+        // units, so an alt-unit re-entry that resolves to the same base is a
+        // no-op) + same parent note → no-op skip.
+        $newShape = collect($lines)->mapWithKeys(function (array $l) use ($ingredients): array {
             /** @var Ingredient $ing */
             $ing = $ingredients[$l['ingredient_uuid']];
-            return [$ing->id => (string) $l['quantity_requested']];
+            $qty = $this->units->toBase($ing, $l['quantity_requested'], $l['unit'] ?? null);
+            return [$ing->id => number_format($qty, 3, '.', '')];
         });
         $currentShape = $request->lines()
             ->get(['ingredient_id', 'quantity_requested'])
@@ -114,14 +117,15 @@ final readonly class UpdateRestockRequestAction
             foreach ($lines as $idx => $line) {
                 /** @var Ingredient $ing */
                 $ing = $ingredients[$line['ingredient_uuid']];
-                $qty = (float) $line['quantity_requested'];
+                // #13 — store the requested amount in the ingredient's base unit.
+                $qty = $this->units->toBase($ing, $line['quantity_requested'], $line['unit'] ?? null);
                 if ($qty <= 0) {
                     throw new RuntimeException('Each line quantity_requested must be positive.');
                 }
                 RestockRequestLine::query()->create([
                     'restock_request_id' => $request->id,
                     'ingredient_id' => $ing->id,
-                    'quantity_requested' => (string) $line['quantity_requested'],
+                    'quantity_requested' => number_format($qty, 3, '.', ''),
                     'quantity_allocated' => '0.000',
                     'unit_at_set' => $ing->unit?->value,
                     'note' => $line['note'] ?? null,

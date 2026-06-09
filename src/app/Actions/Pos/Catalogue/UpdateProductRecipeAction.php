@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Pos\Catalogue;
 
+use App\Actions\Pos\Inventory\IngredientUnitConverter;
 use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
 use App\Models\Ingredient;
@@ -54,10 +55,11 @@ final readonly class UpdateProductRecipeAction
     public function __construct(
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
+        private IngredientUnitConverter $units,
     ) {}
 
     /**
-     * @param  array<int, array{ingredient_uuid: string, quantity: numeric-string|float|int}>  $lines
+     * @param  array<int, array{ingredient_uuid: string, quantity: numeric-string|float|int, unit?: ?string}>  $lines
      */
     public function handle(Product $product, array $lines, User $actor, ?string $note = null): Product
     {
@@ -84,12 +86,16 @@ final readonly class UpdateProductRecipeAction
             throw new RuntimeException('One or more ingredients in the recipe do not belong to your company.');
         }
 
-        // Build a normalised representation of the new recipe
-        // for diff comparison: [(ingredient_id => quantity)].
-        $newShape = collect($lines)->mapWithKeys(static function (array $l) use ($ingredients): array {
+        // Build a normalised representation of the new recipe for diff
+        // comparison: [(ingredient_id => base-unit quantity)]. #13 — the qty is
+        // converted to the ingredient's base unit, so a re-entry in an alt unit
+        // that resolves to the same base is a no-op (and storage stays base, so
+        // the device + pos_api consumption are unchanged).
+        $newShape = collect($lines)->mapWithKeys(function (array $l) use ($ingredients): array {
             /** @var Ingredient $ing */
             $ing = $ingredients[$l['ingredient_uuid']];
-            return [$ing->id => (string) $l['quantity']];
+            $qty = $this->units->toBase($ing, $l['quantity'], $l['unit'] ?? null);
+            return [$ing->id => number_format($qty, 3, '.', '')];
         });
 
         $currentShape = $product->recipeLines()
@@ -135,10 +141,13 @@ final readonly class UpdateProductRecipeAction
             foreach ($lines as $idx => $l) {
                 /** @var Ingredient $ing */
                 $ing = $ingredients[$l['ingredient_uuid']];
+                // #13 — store recipe consumption in the ingredient's BASE unit
+                // (what the device + pos_api deduct in); unit_at_set stays base.
+                $qty = $this->units->toBase($ing, $l['quantity'], $l['unit'] ?? null);
                 ProductRecipe::query()->create([
                     'product_id' => $product->id,
                     'ingredient_id' => $ing->id,
-                    'quantity' => (string) $l['quantity'],
+                    'quantity' => number_format($qty, 3, '.', ''),
                     // Denormalised — survives later unit edits
                     // on the ingredient master.
                     'unit_at_set' => $ing->unit?->value,
