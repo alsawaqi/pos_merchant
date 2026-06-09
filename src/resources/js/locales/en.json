@@ -356,7 +356,7 @@
             "logo_remove": "Remove",
             "logo_hint": "PNG/JPG; resized to 384px and printed in greyscale.",
             "logo_invalid": "That file isn't a valid image.",
-            "logo_too_large": "Image is too large (max 5 MB).",
+            "logo_too_large": "That logo is too large — try a smaller or simpler image.",
             "preview": "Receipt preview",
             "save_failed": "Could not save the receipt template."
         }

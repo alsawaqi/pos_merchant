@@ -52,6 +52,11 @@ const logoError = ref<string | null>(null);
 // greyscale, so the device gets a small, print-ready PNG. Keeps the server
 // free of any image library (no GD / container rebuild needed).
 const MAX_LOGO_WIDTH = 384;
+// Cap height too (aspect-preserving) so a tall/portrait image can't balloon
+// the PNG. MAX_LOGO_BASE64 mirrors the server's char cap so an over-budget
+// logo is caught here with immediate feedback instead of a failed save.
+const MAX_LOGO_HEIGHT = 512;
+const MAX_LOGO_BASE64 = 200000;
 
 const logoSrc = computed(() =>
     form.logo_base64 ? `data:image/png;base64,${form.logo_base64}` : null,
@@ -91,7 +96,9 @@ async function onLogoFile(e: Event): Promise<void> {
     }
     try {
         const img = await loadImage(await readFileAsDataUrl(file));
-        const scale = Math.min(1, MAX_LOGO_WIDTH / img.width);
+        // Single aspect-preserving scale that fits BOTH the width and height
+        // caps, so a tall portrait logo shrinks instead of producing a huge PNG.
+        const scale = Math.min(1, MAX_LOGO_WIDTH / img.width, MAX_LOGO_HEIGHT / img.height);
         const w = Math.max(1, Math.round(img.width * scale));
         const h = Math.max(1, Math.round(img.height * scale));
         const canvas = document.createElement('canvas');
@@ -112,7 +119,15 @@ async function onLogoFile(e: Event): Promise<void> {
             px[i] = px[i + 1] = px[i + 2] = g;
         }
         ctx.putImageData(data, 0, 0);
-        form.logo_base64 = canvas.toDataURL('image/png').split(',')[1] ?? null;
+        const encoded = canvas.toDataURL('image/png').split(',')[1] ?? '';
+        // Catch an over-budget logo here (e.g. a busy photo that doesn't
+        // compress) instead of letting the save fail server-side. Keep any
+        // previously-saved logo rather than wiping it on a rejected re-upload.
+        if (encoded.length > MAX_LOGO_BASE64) {
+            logoError.value = t('branches.receipt.logo_too_large');
+            return;
+        }
+        form.logo_base64 = encoded;
     } catch {
         logoError.value = t('branches.receipt.logo_invalid');
     }
