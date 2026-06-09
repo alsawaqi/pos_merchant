@@ -7,6 +7,7 @@ import BranchesIndex from '@/Pages/Merchant/Branches/Index.vue';
 import BranchesShow from '@/Pages/Merchant/Branches/Show.vue';
 import CatalogueIndex from '@/Pages/Merchant/Catalogue/Index.vue';
 import TaxesIndex from '@/Pages/Merchant/Taxes/Index.vue';
+import ExpenseCategoriesIndex from '@/Pages/Merchant/ExpenseCategories/Index.vue';
 import CustomersIndex from '@/Pages/Merchant/Customers/Index.vue';
 import CustomersShow from '@/Pages/Merchant/Customers/Show.vue';
 import DiscountsIndex from '@/Pages/Merchant/Discounts/Index.vue';
@@ -124,6 +125,14 @@ const routes: RouteRecordRaw[] = [
         path: '/taxes',
         name: 'merchant.taxes',
         component: TaxesIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        // Expense categories (v2 #7) — company-managed; the POS fetches the
+        // active set via /device/config. Server gates by expenses.view.
+        path: '/expense-categories',
+        name: 'merchant.expense-categories',
+        component: ExpenseCategoriesIndex,
         meta: { requiresAuth: true },
     },
     {

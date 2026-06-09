@@ -9,7 +9,10 @@
 
 import { apiGet, apiPost, type JsonValue } from '@/lib/api';
 
-export type ExpenseCategory = 'utilities' | 'supplies' | 'ingredients' | 'maintenance' | 'salaries' | 'other';
+// v2 #7: categories are now company-managed (a per-company key/slug), so this
+// is a free-form string rather than a fixed union. Fetch the labelled set via
+// listExpenseCategories() in @/lib/api/expenseCategories.
+export type ExpenseCategory = string;
 export type ExpenseStatus = 'recorded' | 'reviewed' | 'rejected';
 
 export interface Expense {
@@ -65,15 +68,6 @@ export interface LogExpensePayload {
     receipt_photo_path?: string | null;
     logged_at?: string;
 }
-
-export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
-    'utilities',
-    'supplies',
-    'ingredients',
-    'maintenance',
-    'salaries',
-    'other',
-];
 
 export const EXPENSE_STATUSES: ExpenseStatus[] = ['recorded', 'reviewed', 'rejected'];
 

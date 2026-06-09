@@ -48,6 +48,7 @@
         "loyalty": "Loyalty",
         "discounts": "Discounts",
         "expenses": "Expenses",
+        "expense_categories": "Expense Categories",
         "reports": "Reports",
         "audit_log": "Audit Log",
         "portal_users": "Portal Users",
@@ -1119,6 +1120,37 @@
         },
         "delete_confirm": "Delete {name}? It stops applying at the POS on the next sync.",
         "save_failed": "Could not save the tax."
+    },
+    "expense_categories": {
+        "title": "Expense categories",
+        "subtitle": "Define the categories your team picks when logging expenses. The POS fetches the active set; existing expenses keep their category even if you hide it.",
+        "empty_state": "No categories yet. Add your first one.",
+        "add": "Add category",
+        "edit": "Edit",
+        "delete": "Delete",
+        "save": "Save",
+        "cancel": "Cancel",
+        "table": {
+            "name": "Name",
+            "key": "Key",
+            "status": "Status",
+            "actions": "Actions"
+        },
+        "fields": {
+            "name": "Category name",
+            "name_ar": "Arabic name (optional)",
+            "is_active": "Active (offered at the POS)"
+        },
+        "statuses": {
+            "active": "Active",
+            "inactive": "Inactive"
+        },
+        "modal": {
+            "create_title": "Add a category",
+            "edit_title": "Edit category"
+        },
+        "delete_confirm": "Delete {name}? It stops being offered at the POS; past expenses keep it.",
+        "save_failed": "Could not save the category."
     },
     "delivery_providers": {
         "subtitle": "Manage the third-party aggregators your branches deliver through. Per-product prices live on each product (see the Provider Pricing section in the product modal).",

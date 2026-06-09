@@ -29,13 +29,13 @@ import {
     logExpense,
     reviewExpense,
     rejectExpense,
-    EXPENSE_CATEGORIES,
     EXPENSE_STATUSES,
     type Expense,
     type ExpenseCategory,
     type ExpenseStatus,
     type PaginationMeta,
 } from '@/lib/api/expenses';
+import { listExpenseCategories, type ExpenseCategory as ExpenseCategoryItem } from '@/lib/api/expenseCategories';
 
 const { t } = useI18n();
 const { can } = usePermissions();
@@ -46,6 +46,14 @@ const meta = ref<PaginationMeta | null>(null);
 const branches = ref<Branch[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
+
+// v2 #7: the company's expense categories drive the filter + log dropdowns and
+// resolve a key → display name in the table.
+const categories = ref<ExpenseCategoryItem[]>([]);
+function categoryName(key: string | null): string {
+    if (!key) return '—';
+    return categories.value.find((c) => c.key === key)?.name ?? key.replace(/_/g, ' ');
+}
 
 const filters = reactive<{
     status: ExpenseStatus | '';
@@ -94,6 +102,14 @@ onMounted(async () => {
     } catch (err) {
         if (!(err instanceof ApiError)) throw err;
     }
+    try {
+        categories.value = (await listExpenseCategories()).data;
+        if (logForm.category === '') {
+            logForm.category = categories.value[0]?.key ?? '';
+        }
+    } catch (err) {
+        if (!(err instanceof ApiError)) throw err;
+    }
     void fetchExpenses();
 });
 
@@ -103,7 +119,7 @@ const logBusy = ref(false);
 const logError = ref<string | null>(null);
 const logForm = reactive<{ branch_id: number | null; category: ExpenseCategory; amount: string; note: string; logged_at: string }>({
     branch_id: null,
-    category: 'utilities',
+    category: '',
     amount: '',
     note: '',
     logged_at: '',
@@ -111,7 +127,7 @@ const logForm = reactive<{ branch_id: number | null; category: ExpenseCategory; 
 
 function openLog(): void {
     logForm.branch_id = branches.value[0]?.id ?? null;
-    logForm.category = 'utilities';
+    logForm.category = categories.value[0]?.key ?? '';
     logForm.amount = '';
     logForm.note = '';
     logForm.logged_at = new Date().toISOString().slice(0, 10);
@@ -245,7 +261,7 @@ function fmt(dt: string | null): string {
                     {{ t('expenses.filters.category') }}
                     <select v-model="filters.category" class="w-40 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900">
                         <option value="">{{ t('expenses.filters.all') }}</option>
-                        <option v-for="c in EXPENSE_CATEGORIES" :key="c" :value="c">{{ t(`expenses.category.${c}`) }}</option>
+                        <option v-for="c in categories" :key="c.key" :value="c.key">{{ c.name }}</option>
                     </select>
                 </label>
                 <label class="flex flex-col gap-1 text-xs font-semibold text-slate-500">
@@ -299,7 +315,7 @@ function fmt(dt: string | null): string {
                             <tr v-for="e in expenses" :key="e.id" class="align-top transition hover:bg-slate-50">
                                 <td class="px-5 py-4 text-sm tabular-nums text-slate-700">{{ fmt(e.logged_at) }}</td>
                                 <td class="px-5 py-4 text-sm text-slate-700">{{ e.branch_name ?? t('expenses.general') }}</td>
-                                <td class="px-5 py-4 text-sm capitalize text-slate-700">{{ t(`expenses.category.${e.category}`) }}</td>
+                                <td class="px-5 py-4 text-sm capitalize text-slate-700">{{ categoryName(e.category) }}</td>
                                 <td class="px-5 py-4 text-end text-sm font-semibold tabular-nums text-slate-900">{{ e.amount }}</td>
                                 <td class="px-5 py-4 text-sm text-slate-700">
                                     {{ e.logged_by_name ?? '—' }}
@@ -360,7 +376,7 @@ function fmt(dt: string | null): string {
                 <label class="block text-sm font-semibold text-slate-700">
                     {{ t('expenses.log_modal.category') }}
                     <select v-model="logForm.category" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                        <option v-for="c in EXPENSE_CATEGORIES" :key="c" :value="c">{{ t(`expenses.category.${c}`) }}</option>
+                        <option v-for="c in categories" :key="c.key" :value="c.key">{{ c.name }}</option>
                     </select>
                 </label>
                 <label class="block text-sm font-semibold text-slate-700">
