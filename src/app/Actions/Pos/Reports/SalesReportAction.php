@@ -228,8 +228,11 @@ final readonly class SalesReportAction
     private function byPaymentMethod($paidQuery): array
     {
         // Sum payments on the paid orders, scoped to status=success.
+        // NOTE: clone before ->select('id') — $paidQuery is shared across every
+        // breakdown; mutating it here would bake a bare `id` into the later
+        // byOrderType / byBranch grouped selects (Postgres GROUP BY error).
         $rows = DB::table('pos_payments')
-            ->joinSub($paidQuery->select('id'), 'orders', 'orders.id', '=', 'pos_payments.order_id')
+            ->joinSub((clone $paidQuery)->select('id'), 'orders', 'orders.id', '=', 'pos_payments.order_id')
             ->where('pos_payments.status', 'success')
             ->selectRaw('pos_payments.method AS method, COALESCE(SUM(pos_payments.amount), 0) AS amount, COUNT(*) AS cnt')
             ->groupBy('pos_payments.method')

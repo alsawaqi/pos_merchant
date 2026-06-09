@@ -60,7 +60,15 @@ final readonly class StaffActivityReportAction
             ->orderByDesc('revenue')
             ->get();
 
-        // Shifts: hours logged in for closed shifts in window.
+        // Shifts: hours logged in for closed shifts in window. The per-shift
+        // duration-in-seconds expression differs by driver — sqlite (test
+        // schema) has strftime; Postgres (prod) subtracts timestamps into an
+        // interval and EXTRACTs the epoch. Build the right one and run ONE query.
+        $driver = DB::connection()->getDriverName();
+        $shiftSeconds = $driver === 'sqlite'
+            ? "(strftime('%s', pos_shifts.closed_at) - strftime('%s', pos_shifts.opened_at))"
+            : 'EXTRACT(EPOCH FROM (pos_shifts.closed_at - pos_shifts.opened_at))';
+
         $shiftRows = DB::table('pos_shifts')
             ->where('pos_shifts.company_id', $companyId)
             ->whereNotNull('pos_shifts.staff_id')
@@ -68,32 +76,13 @@ final readonly class StaffActivityReportAction
             ->whereBetween('pos_shifts.opened_at', [$filter->dateFrom, $filter->dateTo])
             ->when($branchScope !== null, fn ($q) => $q->whereIn('pos_shifts.branch_id', $branchScope))
             ->groupBy('pos_shifts.staff_id')
-            ->selectRaw('
+            ->selectRaw("
                 pos_shifts.staff_id,
                 COUNT(*) AS shift_count,
-                SUM((strftime("%s", pos_shifts.closed_at) - strftime("%s", pos_shifts.opened_at))) AS total_seconds
-            ')
+                SUM($shiftSeconds) AS total_seconds
+            ")
             ->get()
             ->keyBy('staff_id');
-
-        $driver = DB::connection()->getDriverName();
-        // Postgres needs a different time-delta expression.
-        if ($driver !== 'sqlite') {
-            $shiftRows = DB::table('pos_shifts')
-                ->where('pos_shifts.company_id', $companyId)
-                ->whereNotNull('pos_shifts.staff_id')
-                ->whereNotNull('pos_shifts.closed_at')
-                ->whereBetween('pos_shifts.opened_at', [$filter->dateFrom, $filter->dateTo])
-                ->when($branchScope !== null, fn ($q) => $q->whereIn('pos_shifts.branch_id', $branchScope))
-                ->groupBy('pos_shifts.staff_id')
-                ->selectRaw('
-                    pos_shifts.staff_id,
-                    COUNT(*) AS shift_count,
-                    EXTRACT(EPOCH FROM SUM(pos_shifts.closed_at - pos_shifts.opened_at)) AS total_seconds
-                ')
-                ->get()
-                ->keyBy('staff_id');
-        }
 
         $result = $rows->map(static function ($r) use ($shiftRows): array {
             $ordersPaid = (int) $r->orders_paid;
