@@ -1277,7 +1277,12 @@
             "by_hour": "حسب الساعة",
             "by_weekday": "حسب يوم الأسبوع",
             "by_payment_method": "حسب طريقة الدفع",
-            "by_order_type": "حسب نوع الطلب"
+            "by_order_type": "حسب نوع الطلب",
+            "charts": {
+                "profit_overview": "نظرة عامة على الأرباح والخسائر",
+                "payment_mix": "توزيع طرق الدفع",
+                "order_type_mix": "توزيع أنواع الطلبات"
+            }
         },
         "customers": {
             "page_title": "تقرير العملاء",

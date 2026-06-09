@@ -85,11 +85,11 @@ export interface SalesReportPayload {
         refund_count: number;
         avg_ticket: string;
     };
-    by_hour?: { hour: number; gross: string; order_count: number }[];
-    by_weekday?: { weekday: number; gross: string; order_count: number }[];
-    by_payment_method?: { payment_method: string; gross: string; order_count: number }[];
-    by_order_type?: { order_type: string; gross: string; order_count: number }[];
-    by_branch?: { branch_id: number; branch_name: string; gross: string; order_count: number }[];
+    by_hour?: { hour: number; gross: string; count: number }[];
+    by_weekday?: { weekday: number; gross: string; count: number }[];
+    by_payment_method?: { method: string; amount: string; count: number }[];
+    by_order_type?: { type: string; gross: string; count: number }[];
+    by_branch?: { branch_id: number; branch_name: string; gross: string; count: number }[];
 }
 
 export function fetchSalesReport(filter: ReportFilter): Promise<{ data: SalesReportPayload }> {

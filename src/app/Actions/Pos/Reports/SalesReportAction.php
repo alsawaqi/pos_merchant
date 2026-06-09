@@ -41,7 +41,7 @@ use Illuminate\Support\Facades\DB;
  *   - by_weekday       [{weekday: 0..6 (Sun=0), gross, count}]
  *   - by_payment_method[{method: cash/card/.., amount, count}]
  *   - by_order_type    [{type: quick/dine_in/.., gross, count}]
- *   - by_branch        [{branch_id, gross, count}] (when
+ *   - by_branch        [{branch_id, branch_name, gross, count}] (when
  *                       consolidated=false OR multi-branch in scope)
  *
  * Money columns are returned as decimal-3 STRINGS so the JSON layer
@@ -266,18 +266,28 @@ final readonly class SalesReportAction
 
     /**
      * @param  list<int>|null  $branchScope
-     * @return list<array{branch_id: int, gross: string, count: int}>
+     * @return list<array{branch_id: int, branch_name: string, gross: string, count: int}>
      */
     private function byBranch($paidQuery, ?array $branchScope): array
     {
-        $rows = (clone $paidQuery)
-            ->selectRaw('branch_id, COALESCE(SUM(grand_total), 0) AS gross, COUNT(*) AS cnt')
-            ->groupBy('branch_id')
-            ->orderBy('branch_id')
+        // joinSub keeps the paid-order filters intact without making
+        // pos_orders.company_id ambiguous once pos_branches is joined.
+        $rows = DB::table('pos_branches')
+            ->joinSub(
+                (clone $paidQuery)->select('branch_id', 'grand_total'),
+                'orders',
+                'orders.branch_id',
+                '=',
+                'pos_branches.id',
+            )
+            ->selectRaw('pos_branches.id AS branch_id, pos_branches.name AS branch_name, COALESCE(SUM(orders.grand_total), 0) AS gross, COUNT(*) AS cnt')
+            ->groupBy('pos_branches.id', 'pos_branches.name')
+            ->orderBy('pos_branches.id')
             ->get();
 
         return $rows->map(static fn ($r): array => [
             'branch_id' => (int) $r->branch_id,
+            'branch_name' => (string) $r->branch_name,
             'gross' => self::fmt((float) $r->gross),
             'count' => (int) $r->cnt,
         ])->all();

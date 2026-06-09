@@ -1277,7 +1277,12 @@
             "by_hour": "By hour",
             "by_weekday": "By weekday",
             "by_payment_method": "By payment method",
-            "by_order_type": "By order type"
+            "by_order_type": "By order type",
+            "charts": {
+                "profit_overview": "Profit & loss overview",
+                "payment_mix": "Payment method mix",
+                "order_type_mix": "Order type mix"
+            }
         },
         "customers": {
             "page_title": "Customer Report",
