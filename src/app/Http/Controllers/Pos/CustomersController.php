@@ -10,6 +10,8 @@ use App\Actions\Pos\Customers\DeleteCustomerAction;
 use App\Actions\Pos\Customers\DetachVehiclePlateAction;
 use App\Actions\Pos\Customers\MergeCustomersAction;
 use App\Actions\Pos\Customers\UpdateCustomerAction;
+use App\Actions\Pos\Reports\CustomerAnalyticsAction;
+use App\Actions\Pos\Reports\CustomerOrdersAction;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Pos\Customers\AttachVehiclePlateRequest;
@@ -61,6 +63,8 @@ class CustomersController extends Controller
         private readonly AttachVehiclePlateAction $attachPlate,
         private readonly DetachVehiclePlateAction $detachPlate,
         private readonly MergeCustomersAction $merge,
+        private readonly CustomerAnalyticsAction $customerAnalytics,
+        private readonly CustomerOrdersAction $customerOrders,
     ) {}
 
     public function index(Request $request): LengthAwarePaginator
@@ -107,6 +111,33 @@ class CustomersController extends Controller
         $customer->load('vehiclePlates')->loadCount('vehiclePlates');
 
         return CustomerResource::make($customer);
+    }
+
+    /**
+     * Customer 360 analytics (v2 #8): lifetime rollups + favorite item +
+     * monthly spend trend. Sales data → reports.view gated.
+     */
+    public function analytics(Request $request, Customer $customer): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::ReportsView);
+        $this->refuseIfNotInTenant($customer);
+
+        return response()->json(['data' => $this->customerAnalytics->handle((int) $customer->id)]);
+    }
+
+    /**
+     * Customer 360 order history (v2 #8): paginated, newest-first, all
+     * statuses. Sales data → reports.view gated.
+     */
+    public function orders(Request $request, Customer $customer): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::ReportsView);
+        $this->refuseIfNotInTenant($customer);
+
+        return response()->json(['data' => $this->customerOrders->handle((int) $customer->id, [
+            'page' => (int) $request->query('page', '1'),
+            'per_page' => (int) $request->query('per_page', '20'),
+        ])]);
     }
 
     public function store(CreateCustomerRequest $request): JsonResponse

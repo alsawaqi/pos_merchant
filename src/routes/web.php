@@ -376,6 +376,11 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('customers.index');
         Route::get('customers/{customer:uuid}', [CustomersController::class, 'show'])
             ->name('customers.show');
+        // Customer 360 (v2 #8): analytics rollups + paginated order history.
+        Route::get('customers/{customer:uuid}/analytics', [CustomersController::class, 'analytics'])
+            ->name('customers.analytics');
+        Route::get('customers/{customer:uuid}/orders', [CustomersController::class, 'orders'])
+            ->name('customers.orders');
         Route::post('customers', [CustomersController::class, 'store'])
             ->name('customers.store');
         Route::patch('customers/{customer:uuid}', [CustomersController::class, 'update'])
