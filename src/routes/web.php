@@ -544,6 +544,10 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('reports.customers');
         Route::get('reports/discounts', [ReportsController::class, 'discounts'])
             ->name('reports.discounts');
+        // v2 #17 — merchant payout / commission breakdown (gross, platform/bank/
+        // other cuts, merchant net) over a date range.
+        Route::get('reports/payouts', [ReportsController::class, 'payouts'])
+            ->name('reports.payouts');
         Route::get('reports/product-performance', [ReportsController::class, 'productPerformance'])
             ->name('reports.product-performance');
         Route::get('reports/recipe-cost', [ReportsController::class, 'recipeCost'])

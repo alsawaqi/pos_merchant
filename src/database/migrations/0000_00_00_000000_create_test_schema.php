@@ -971,6 +971,31 @@ return new class extends Migration
             $table->timestamps();
         });
 
+        // v2 #17 — per-sale commission breakdown (one row per party: platform /
+        // bank / other + merchant residual). Written by pos_api; the merchant
+        // payout report + admin settlement read it. Schema owned by pos_admin.
+        Schema::create('pos_sale_commissions', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->unsignedBigInteger('branch_id');
+            $table->unsignedBigInteger('device_id')->nullable();
+            $table->unsignedBigInteger('order_id');
+            $table->unsignedBigInteger('payment_id')->nullable();
+            $table->unsignedBigInteger('commission_profile_id')->nullable();
+            $table->string('party_type', 20);
+            $table->string('party_label', 120);
+            $table->decimal('percent', 5, 2);
+            $table->decimal('gross_amount', 12, 3);
+            $table->decimal('commission_amount', 12, 3);
+            $table->unsignedInteger('sort_order')->default(0);
+            $table->string('client_event_id', 64)->nullable();
+            $table->timestamp('occurred_at')->nullable();
+            $table->timestamps();
+            $table->unique(['order_id', 'sort_order'], 'pos_sale_commissions_order_sort_unique');
+            $table->index(['company_id', 'occurred_at'], 'pos_sale_commissions_company_occurred_idx');
+        });
+
         // Shifts: cashier opens with a float, closes with a count,
         // variance is the audit trigger. Tied to a device (which
         // POS terminal) + a staff (which cashier).

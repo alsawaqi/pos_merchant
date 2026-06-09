@@ -9,6 +9,7 @@ use App\Actions\Pos\Reports\CustomerReportAction;
 use App\Actions\Pos\Reports\DiscountReportAction;
 use App\Actions\Pos\Reports\InventoryConsumptionReportAction;
 use App\Actions\Pos\Reports\LossWasteReportAction;
+use App\Actions\Pos\Reports\PayoutBreakdownReportAction;
 use App\Actions\Pos\Reports\ProductPerformanceReportAction;
 use App\Actions\Pos\Reports\RecipeCostReportAction;
 use App\Actions\Pos\Reports\RestockPurchasingReportAction;
@@ -54,7 +55,18 @@ class ReportsController extends Controller
         private readonly RestockPurchasingReportAction $restockPurchasingReport,
         private readonly RoundUpDonationReportAction $roundUpDonationReport,
         private readonly AuditLogReportAction $auditLogReport,
+        private readonly PayoutBreakdownReportAction $payoutBreakdownReport,
     ) {}
+
+    public function payouts(ReportFilterRequest $request): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::ReportsView);
+
+        $filter = ReportFilter::fromArray($request->validated());
+        $payload = $this->payoutBreakdownReport->handle($filter);
+
+        return response()->json(['data' => $payload]);
+    }
 
     public function sales(ReportFilterRequest $request): JsonResponse
     {
