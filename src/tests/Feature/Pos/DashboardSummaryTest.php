@@ -12,6 +12,9 @@ declare(strict_types=1);
  *   - Top product today derived from order_items snapshot
  *   - Low-stock count from pos_branch_stock vs ingredient min
  *   - Recent audit events surfaced (limit 5)
+ *   - Payment mix today (success tenders on today's paid orders)
+ *   - Round-up today (successful donations, today window)
+ *   - Active devices (heartbeat within 5 minutes vs total)
  *   - Tenant isolation
  */
 
@@ -22,14 +25,55 @@ use App\Models\Customer;
 use App\Models\Ingredient;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\Payment;
 use App\Models\PosStaff;
 use App\Models\Product;
 use App\Models\StockMovement;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
+
+/**
+ * Helper — seed a pos_roundup_donations row (same column shape
+ * pos_api's donation.record handler writes).
+ */
+function dashboardSeedRoundup(int $companyId, string $amount, string $status, Carbon $occurredAt): void
+{
+    DB::table('pos_roundup_donations')->insert([
+        'uuid' => (string) Str::uuid(),
+        'company_id' => $companyId,
+        'branch_id' => 10,
+        'amount' => $amount,
+        'status' => $status,
+        'source' => 'pos_roundup',
+        'occurred_at' => $occurredAt,
+        'created_at' => $occurredAt,
+        'updated_at' => $occurredAt,
+    ]);
+}
+
+/**
+ * Helper — seed a pos_devices row (the merchant Device model is a
+ * read-only mirror with no factory; same DB::table approach as
+ * BranchDevicesTest).
+ */
+function dashboardSeedDevice(int $companyId, int $branchId, ?Carbon $lastSeenAt): void
+{
+    DB::table('pos_devices')->insert([
+        'uuid' => (string) Str::uuid(),
+        'company_id' => $companyId,
+        'branch_id' => $branchId,
+        'name' => 'POS-' . Str::random(6),
+        'device_type' => 'cashier',
+        'status' => 'active',
+        'last_seen_at' => $lastSeenAt,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+}
 
 it('is gated under reports.view', function (): void {
     $ctx = makeMerchantActor();
@@ -58,6 +102,11 @@ it('returns zeros when no data exists', function (): void {
     expect($response->json('data.top_customers'))->toBe([]);
     expect($response->json('data.top_staff'))->toBe([]);
     expect($response->json('data.top_ingredients'))->toBe([]);
+
+    // §5.2 tiles: empty mix, zeroed round-up + device fleet.
+    expect($response->json('data.payment_mix_today'))->toBe([]);
+    expect($response->json('data.roundup_today'))->toBe(['total' => '0.000', 'count' => 0]);
+    expect($response->json('data.active_devices'))->toBe(['online' => 0, 'total' => 0]);
     $trend = $response->json('data.sales_trend');
     expect($trend)->toHaveCount(14);
     expect($trend[13]['gross'])->toBe('0.000');
@@ -249,24 +298,95 @@ it('returns the latest 5 audit events newest first', function (): void {
     expect($events[4]['event'])->toBe('evt.4');
 });
 
+it('splits today\'s tenders by payment method', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-15 12:00:00'));
+    $ctx = makeMerchantActor();
+
+    // Today: 10.000 cash order + 25.000 card order (plus a failed
+    // 99.000 card tender that must be excluded).
+    $cashOrder = Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->paid()->create([
+        'grand_total' => '10.000', 'opened_at' => Carbon::now()->setTime(9, 0),
+    ]);
+    Payment::factory()->for($cashOrder, 'order')->create(['amount' => '10.000']);
+
+    $cardOrder = Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->paid()->create([
+        'grand_total' => '25.000', 'opened_at' => Carbon::now()->setTime(10, 0),
+    ]);
+    Payment::factory()->for($cardOrder, 'order')->card()->create(['amount' => '25.000']);
+    Payment::factory()->for($cardOrder, 'order')->failed()->create(['amount' => '99.000']);
+
+    // Yesterday's order: outside the today window.
+    $yesterdayOrder = Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->paid()->create([
+        'grand_total' => '50.000', 'opened_at' => Carbon::now()->subDay(),
+    ]);
+    Payment::factory()->for($yesterdayOrder, 'order')->create(['amount' => '50.000']);
+
+    $mix = $this->getJson('/api/dashboard/summary')->assertOk()->json('data.payment_mix_today');
+
+    // Ordered by method: card before cash.
+    expect($mix)->toHaveCount(2);
+    expect($mix[0])->toBe(['method' => 'card', 'amount' => '25.000', 'count' => 1]);
+    expect($mix[1])->toBe(['method' => 'cash', 'amount' => '10.000', 'count' => 1]);
+});
+
+it('totals today\'s successful round-up donations only', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-15 12:00:00'));
+    $ctx = makeMerchantActor();
+    $cid = $ctx['company']->id;
+
+    dashboardSeedRoundup($cid, '0.200', 'success', Carbon::now()->setTime(9, 0));
+    dashboardSeedRoundup($cid, '0.300', 'success', Carbon::now()->setTime(10, 0));
+    // Pending today: not yet collected — excluded.
+    dashboardSeedRoundup($cid, '0.100', 'pending', Carbon::now()->setTime(11, 0));
+    // Successful but YESTERDAY: outside the today window.
+    dashboardSeedRoundup($cid, '9.000', 'success', Carbon::now()->subDay());
+
+    $roundup = $this->getJson('/api/dashboard/summary')->assertOk()->json('data.roundup_today');
+
+    expect($roundup)->toBe(['total' => '0.500', 'count' => 2]);
+});
+
+it('counts online devices within the 5-minute heartbeat window', function (): void {
+    $ctx = makeMerchantActor();
+
+    // Online: heartbeat 1 minute ago.
+    dashboardSeedDevice($ctx['company']->id, $ctx['branch']->id, Carbon::now()->subMinute());
+    // Offline: stale heartbeat (10 minutes ago).
+    dashboardSeedDevice($ctx['company']->id, $ctx['branch']->id, Carbon::now()->subMinutes(10));
+    // Offline: never seen.
+    dashboardSeedDevice($ctx['company']->id, $ctx['branch']->id, null);
+
+    $devices = $this->getJson('/api/dashboard/summary')->assertOk()->json('data.active_devices');
+
+    expect($devices)->toBe(['online' => 1, 'total' => 3]);
+});
+
 it('does not leak other tenants data', function (): void {
     $ctx = makeMerchantActor();
 
     $foreign = Company::factory()->create();
     $foreignBranch = \App\Models\Branch::factory()->for($foreign, 'company')->create();
 
-    Order::factory()->for($foreign, 'company')->for($foreignBranch, 'branch')->paid()->create([
+    $foreignOrder = Order::factory()->for($foreign, 'company')->for($foreignBranch, 'branch')->paid()->create([
         'grand_total' => '999.000',
         'opened_at' => Carbon::now(),
     ]);
+    Payment::factory()->for($foreignOrder, 'order')->create(['amount' => '999.000']);
     DB::table('pos_audit_logs')->insert([
         'company_id' => $foreign->id,
         'event' => 'foreign.secret',
         'created_at' => Carbon::now(),
     ]);
+    // Foreign round-up + online device must not bleed into this
+    // tenant's tiles either.
+    dashboardSeedRoundup($foreign->id, '5.000', 'success', Carbon::now());
+    dashboardSeedDevice($foreign->id, $foreignBranch->id, Carbon::now());
 
     $response = $this->getJson('/api/dashboard/summary')->assertOk();
 
     expect($response->json('data.today.gross'))->toBe('0.000');
     expect($response->json('data.recent_audit_events'))->toBe([]);
+    expect($response->json('data.payment_mix_today'))->toBe([]);
+    expect($response->json('data.roundup_today'))->toBe(['total' => '0.000', 'count' => 0]);
+    expect($response->json('data.active_devices'))->toBe(['online' => 0, 'total' => 0]);
 });

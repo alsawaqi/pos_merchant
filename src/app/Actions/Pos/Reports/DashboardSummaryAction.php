@@ -25,6 +25,11 @@ use Illuminate\Support\Facades\DB;
  *     the actor has scope to). NULL threshold = excluded.
  *   - recent_audit_events: latest 5 audit rows for the tenant
  *     (UI hides these for users without audit_log.view)
+ *   - payment_mix_today: cash/card/split tender split for today's
+ *     paid orders (blueprint §5.2 "Payment mix today")
+ *   - roundup_today: successful charity round-up donations today
+ *   - active_devices: tenant devices online (heartbeat within
+ *     5 minutes) vs total
  *
  * One round trip through the controller. Each query is scoped
  * to the tenant; this is NOT a public report so it doesn't go
@@ -37,6 +42,13 @@ final readonly class DashboardSummaryAction
 
     /** Top-N size for the dashboard breakdown charts. */
     private const TOP_N = 5;
+
+    /**
+     * A device counts as "online" when its heartbeat (pos_api
+     * /device/heartbeat → pos_devices.last_seen_at) is within this
+     * many minutes. Matches the admin dashboard's window.
+     */
+    private const ONLINE_WINDOW_MINUTES = 5;
 
     /**
      * Movement types that represent ingredient CONSUMPTION (negative
@@ -74,6 +86,11 @@ final readonly class DashboardSummaryAction
             'top_product_today' => $this->topProductInWindow($companyId, $todayStart, $todayEnd),
             'low_stock_count' => $this->lowStockCount($companyId),
             'recent_audit_events' => $this->recentAuditEvents($companyId),
+            // §5.2 tiles: tender split + charity round-up for today,
+            // plus the live device fleet snapshot.
+            'payment_mix_today' => $this->paymentMixToday($companyId, $todayStart, $todayEnd),
+            'roundup_today' => $this->roundupToday($companyId, $todayStart, $todayEnd),
+            'active_devices' => $this->activeDevices($companyId),
             // v2 dashboard graphs (blueprint §5.2): a daily trend plus
             // MTD top-N breakdowns. Windows: trend = trailing TREND_DAYS,
             // every top-N = month-to-date.
@@ -257,6 +274,83 @@ final readonly class DashboardSummaryAction
                 'unit' => (string) $r->unit,
                 'consumed' => number_format((float) $r->consumed, 3, '.', ''),
             ])->all();
+    }
+
+    /**
+     * Today's tender split (blueprint §5.2 "Payment mix today").
+     * Same joinSub shape as SalesReportAction::byPaymentMethod —
+     * successful payments attached to today's paid orders.
+     *
+     * @return list<array{method: string, amount: string, count: int}>
+     */
+    private function paymentMixToday(int $companyId, Carbon $from, Carbon $to): array
+    {
+        $paidToday = DB::table('pos_orders')
+            ->where('company_id', $companyId)
+            ->where('status', OrderStatus::Paid->value)
+            ->whereBetween('opened_at', [$from, $to])
+            ->select('id');
+
+        return DB::table('pos_payments')
+            ->joinSub($paidToday, 'orders', 'orders.id', '=', 'pos_payments.order_id')
+            ->where('pos_payments.status', 'success')
+            ->selectRaw('pos_payments.method AS method, COALESCE(SUM(pos_payments.amount), 0) AS amount, COUNT(*) AS cnt')
+            ->groupBy('pos_payments.method')
+            ->orderBy('pos_payments.method')
+            ->get()
+            ->map(static fn ($r): array => [
+                'method' => (string) $r->method,
+                'amount' => number_format((float) $r->amount, 3, '.', ''),
+                'count' => (int) $r->cnt,
+            ])->all();
+    }
+
+    /**
+     * Today's successful charity round-up donations (§5.2 "Round-up
+     * today"). Success only — money actually collected; the full
+     * Round-Up report breaks down pending/failed. Same occurred_at
+     * semantics as RoundUpDonationReportAction.
+     *
+     * @return array{total: string, count: int}
+     */
+    private function roundupToday(int $companyId, Carbon $from, Carbon $to): array
+    {
+        $row = DB::table('pos_roundup_donations')
+            ->where('company_id', $companyId)
+            ->where('status', 'success')
+            ->whereBetween('occurred_at', [$from, $to])
+            ->selectRaw('COALESCE(SUM(amount), 0) AS total, COUNT(*) AS cnt')
+            ->first();
+
+        return [
+            'total' => number_format((float) ($row?->total ?? 0), 3, '.', ''),
+            'count' => (int) ($row?->cnt ?? 0),
+        ];
+    }
+
+    /**
+     * Tenant device fleet snapshot (§5.2 "Active devices"). Online =
+     * heartbeat (last_seen_at, written by pos_api) within the window;
+     * NULL last_seen_at = never seen = offline. Soft-deleted
+     * (decommission-erased) devices are excluded.
+     *
+     * @return array{online: int, total: int}
+     */
+    private function activeDevices(int $companyId): array
+    {
+        $row = DB::table('pos_devices')
+            ->where('company_id', $companyId)
+            ->whereNull('deleted_at')
+            ->selectRaw(
+                'COUNT(*) AS total, COALESCE(SUM(CASE WHEN last_seen_at >= ? THEN 1 ELSE 0 END), 0) AS online',
+                [Carbon::now()->subMinutes(self::ONLINE_WINDOW_MINUTES)],
+            )
+            ->first();
+
+        return [
+            'online' => (int) ($row?->online ?? 0),
+            'total' => (int) ($row?->total ?? 0),
+        ];
     }
 
     /**

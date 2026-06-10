@@ -9,6 +9,8 @@
  *   - Month-to-date gross + order count tile
  *   - Top product today tile (snapshot name; null when no orders)
  *   - Low-stock ingredient count tile
+ *   - Round-up donations today tile + active devices tile (§5.2)
+ *   - Payment mix today donut (cash vs card vs split tenders)
  *   - Recent activity feed (last 5 audit events) -- only shown
  *     to roles with audit_log.view, since the user otherwise
  *     wouldn't see event names anywhere in the SPA
@@ -22,7 +24,7 @@
 
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Sparkles, TrendingUp, TrendingDown, Minus, Trophy, AlertTriangle, History, CheckCircle2 } from 'lucide-vue-next';
+import { Sparkles, TrendingUp, TrendingDown, Minus, Trophy, AlertTriangle, History, CheckCircle2, HeartHandshake, MonitorSmartphone } from 'lucide-vue-next';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import ReportChart from '@/Pages/Merchant/Reports/components/ReportChart.vue';
 import { authState } from '@/stores/auth';
@@ -142,6 +144,16 @@ const topIngredientsChart = computed(() => {
         series: [{ name: t('reports.inventory_consumption.columns.consumed'), data: rows.map((r) => num(r.consumed)) }] as ApexSeries,
     };
 });
+
+// Payment mix today donut (§5.2). Method labels are capitalised the
+// same way the Sales report's donut does it.
+const paymentMixChart = computed(() => {
+    const rows = summary.value?.payment_mix_today ?? [];
+    return {
+        labels: rows.map((r) => r.method.charAt(0).toUpperCase() + r.method.slice(1)),
+        series: rows.map((r) => num(r.amount)),
+    };
+});
 </script>
 
 <template>
@@ -165,8 +177,9 @@ const topIngredientsChart = computed(() => {
 
             <div v-if="error" class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">{{ error }}</div>
 
-            <!-- KPI tiles (only when payload loaded) -->
-            <div v-if="summary" class="u-stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <!-- KPI tiles (only when payload loaded). Six tiles →
+                 3-up on large screens keeps the two rows balanced. -->
+            <div v-if="summary" class="u-stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <!-- Today -->
                 <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm card-hover">
                     <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('dashboard_widgets.today') }}</div>
@@ -213,6 +226,31 @@ const topIngredientsChart = computed(() => {
                     </div>
                     <div class="mt-1 text-xs text-slate-500">{{ t('dashboard_widgets.low_stock_subtitle') }}</div>
                 </div>
+
+                <!-- Round-up donations today (§5.2) -->
+                <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm card-hover">
+                    <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <HeartHandshake class="size-3.5 text-teal-500" />
+                        {{ t('dashboard_widgets.roundup_today') }}
+                    </div>
+                    <div class="mt-2 text-3xl font-bold text-slate-950 tabular-nums">{{ summary.roundup_today.total }}</div>
+                    <div class="mt-1 text-xs text-slate-500">{{ t('dashboard_widgets.roundup_count', { count: summary.roundup_today.count }) }}</div>
+                </div>
+
+                <!-- Active devices (§5.2): online-now vs fleet total. -->
+                <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm card-hover">
+                    <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <MonitorSmartphone
+                            class="size-3.5"
+                            :class="summary.active_devices.total > 0 && summary.active_devices.online === 0 ? 'text-rose-500' : 'text-emerald-500'"
+                        />
+                        {{ t('dashboard_widgets.active_devices') }}
+                    </div>
+                    <div class="mt-2 text-3xl font-bold tabular-nums" :class="summary.active_devices.total > 0 && summary.active_devices.online === 0 ? 'text-rose-700' : 'text-slate-950'">
+                        {{ summary.active_devices.online }}
+                    </div>
+                    <div class="mt-1 text-xs text-slate-500">{{ t('dashboard_widgets.devices_online', { total: summary.active_devices.total }) }}</div>
+                </div>
             </div>
 
             <!-- v2 dashboard graphs -->
@@ -229,6 +267,16 @@ const topIngredientsChart = computed(() => {
                 />
 
                 <div class="grid gap-6 lg:grid-cols-2">
+                    <!-- Payment mix today (§5.2) — donut of successful
+                         tenders on today's paid orders. -->
+                    <ReportChart
+                        v-if="paymentMixChart.series.length"
+                        type="donut"
+                        :title="t('dashboard_widgets.payment_mix_today')"
+                        :series="paymentMixChart.series"
+                        :labels="paymentMixChart.labels"
+                        currency
+                    />
                     <ReportChart
                         v-if="topProductsChart.categories.length"
                         type="bar"
@@ -241,6 +289,9 @@ const topIngredientsChart = computed(() => {
                         distributed
                         hide-legend
                     />
+                </div>
+
+                <div class="grid gap-6 lg:grid-cols-2">
                     <ReportChart
                         v-if="topBranchesChart.categories.length"
                         type="bar"
@@ -253,9 +304,6 @@ const topIngredientsChart = computed(() => {
                         distributed
                         hide-legend
                     />
-                </div>
-
-                <div class="grid gap-6 lg:grid-cols-2">
                     <ReportChart
                         v-if="topCustomersChart.categories.length"
                         type="bar"
@@ -268,6 +316,9 @@ const topIngredientsChart = computed(() => {
                         distributed
                         hide-legend
                     />
+                </div>
+
+                <div class="grid gap-6 lg:grid-cols-2">
                     <ReportChart
                         v-if="topStaffChart.categories.length"
                         type="bar"
@@ -280,19 +331,18 @@ const topIngredientsChart = computed(() => {
                         distributed
                         hide-legend
                     />
+                    <ReportChart
+                        v-if="topIngredientsChart.categories.length"
+                        type="bar"
+                        :title="t('dashboard_widgets.top_ingredients')"
+                        :series="topIngredientsChart.series"
+                        :categories="topIngredientsChart.categories"
+                        :height="Math.max(220, topIngredientsChart.categories.length * 44)"
+                        horizontal
+                        distributed
+                        hide-legend
+                    />
                 </div>
-
-                <ReportChart
-                    v-if="topIngredientsChart.categories.length"
-                    type="bar"
-                    :title="t('dashboard_widgets.top_ingredients')"
-                    :series="topIngredientsChart.series"
-                    :categories="topIngredientsChart.categories"
-                    :height="Math.max(220, topIngredientsChart.categories.length * 44)"
-                    horizontal
-                    distributed
-                    hide-legend
-                />
             </div>
 
             <!-- Recent activity (audit log peek) -->

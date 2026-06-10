@@ -1865,7 +1865,12 @@
         "top_branches": "Top branches (month)",
         "top_customers": "Top customers (month)",
         "top_staff": "Top staff (month)",
-        "top_ingredients": "Top ingredients used (month)"
+        "top_ingredients": "Top ingredients used (month)",
+        "payment_mix_today": "Payment mix today",
+        "roundup_today": "Round-up today",
+        "roundup_count": "{count} successful donations collected today.",
+        "active_devices": "Active devices",
+        "devices_online": "Online now, of {total} devices in your fleet."
     },
     "audit_log": {
         "section_label": "Phase 7b",

@@ -1865,7 +1865,12 @@
         "top_branches": "أعلى الفروع (الشهر)",
         "top_customers": "أعلى العملاء (الشهر)",
         "top_staff": "أعلى الموظفين (الشهر)",
-        "top_ingredients": "أكثر المكونات استهلاكًا (الشهر)"
+        "top_ingredients": "أكثر المكونات استهلاكًا (الشهر)",
+        "payment_mix_today": "توزيع طرق الدفع اليوم",
+        "roundup_today": "تبرعات التقريب اليوم",
+        "roundup_count": "{count} تبرعًا ناجحًا تم تحصيله اليوم.",
+        "active_devices": "الأجهزة النشطة",
+        "devices_online": "متصلة الآن، من أصل {total} جهازًا في أسطولك."
     },
     "audit_log": {
         "section_label": "المرحلة 7ب",

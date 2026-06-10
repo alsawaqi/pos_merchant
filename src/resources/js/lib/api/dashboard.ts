@@ -30,6 +30,13 @@ export interface SalesTrendPoint {
     count: number;
 }
 
+export interface PaymentMixSlice {
+    method: string;
+    /** Decimal-3 OMR. */
+    amount: string;
+    count: number;
+}
+
 export interface DashboardSummaryPayload {
     today: DashboardSnapshot;
     yesterday: DashboardSnapshot;
@@ -44,6 +51,11 @@ export interface DashboardSummaryPayload {
     top_customers: { customer_name: string; total_spend: string }[];
     top_staff: { staff_name: string; revenue: string }[];
     top_ingredients: { ingredient_name: string; unit: string; consumed: string }[];
+    // §5.2 tiles: today's tender split, charity round-up, device fleet.
+    payment_mix_today: PaymentMixSlice[];
+    roundup_today: { total: string; count: number };
+    /** Online = heartbeat within the last 5 minutes. */
+    active_devices: { online: number; total: number };
 }
 
 export function fetchDashboardSummary(): Promise<{ data: DashboardSummaryPayload }> {
