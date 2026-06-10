@@ -39,7 +39,7 @@ class CreateCustomerRequest extends FormRequest
             'tags.*' => ['required', 'string', 'max:32', 'distinct:ignore_case'],
             // Optional initial plates array. Cap at 10 — far
             // more than realistic per customer; the (company_id,
-            // plate_number) unique constraint catches dupes.
+            // customer_id, plate_number) link unique catches dupes.
             'plates' => ['nullable', 'array', 'max:10'],
             'plates.*' => ['required', 'string', 'max:32'],
         ];

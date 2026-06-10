@@ -19,8 +19,13 @@ use RuntimeException;
  * Plate normalisation: trim + collapse internal whitespace
  * to single space + uppercase. This makes "12345  a" and
  * " 12345 A " resolve to the same canonical "12345 A" so
- * the (company_id, plate_number) unique constraint catches
- * near-duplicates the merchant might enter by accident.
+ * the (company_id, customer_id, plate_number) link unique
+ * catches near-duplicates the merchant might enter by accident.
+ *
+ * P-F2 — plates are many-to-many: the same plate CAN belong to
+ * several customers in the same company (family car shared by
+ * several loyalty members). The only duplicate is re-attaching
+ * a plate THIS customer already holds.
  *
  * Duplicate handling: a pre-flight existence check produces
  * a clean "plate already attached" error before the DB-level
@@ -52,10 +57,11 @@ final readonly class AttachVehiclePlateAction
 
         $duplicate = CustomerVehiclePlate::query()
             ->where('company_id', $companyId)
+            ->where('customer_id', $customer->id)
             ->where('plate_number', $normalised)
             ->exists();
         if ($duplicate) {
-            throw new RuntimeException('This plate is already attached to a customer in your book.');
+            throw new RuntimeException('This plate is already attached to this customer.');
         }
 
         return DB::transaction(function () use ($customer, $normalised, $actor, $companyId): CustomerVehiclePlate {

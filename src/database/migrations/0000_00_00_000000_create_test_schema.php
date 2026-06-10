@@ -751,9 +751,10 @@ return new class extends Migration
         // Per-merchant customer book. Phone is the natural lookup
         // key at the POS; the (company_id, phone) unique constraint
         // makes find-or-create a single round-trip.
-        // Plates live in a 1:N sibling table with company_id
-        // denormalised so the drive-thru "plate → customer" lookup
-        // is a single index hit + FK follow.
+        // Plates live in a sibling LINK table (P-F2: many-to-many —
+        // one customer ↔ many plates AND one plate ↔ many customers)
+        // with company_id denormalised so the drive-thru
+        // "plate → customer(s)" lookup is a single index hit + FK follow.
         Schema::create('pos_customers', function (Blueprint $table): void {
             $table->id();
             $table->uuid('uuid')->unique();
@@ -781,12 +782,16 @@ return new class extends Migration
             $table->uuid('uuid')->unique();
             $table->foreignId('customer_id')->constrained('pos_customers')->cascadeOnDelete();
             // Denormalised from the parent customer; powers the
-            // (company_id, plate_number) unique constraint without
-            // a join through customers.
+            // per-company link unique + lookup index without a join
+            // through customers.
             $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
             $table->string('plate_number', 32);
             $table->timestamps();
-            $table->unique(['company_id', 'plate_number'], 'pos_customer_vehicle_plates_company_plate_unique');
+            // P-F2 — many-to-many: one row per customer↔plate LINK
+            // (a family car shared by several loyalty members), plus a
+            // plain index serving the "plate → customer(s)" hot path.
+            $table->unique(['company_id', 'customer_id', 'plate_number'], 'pos_cvp_company_customer_plate_unique');
+            $table->index(['company_id', 'plate_number'], 'pos_cvp_company_plate_index');
         });
 
         // ---- Loyalty: rules + accounts + transactions (blueprint §5.8 / §10.6) ---

@@ -13,12 +13,15 @@ declare(strict_types=1);
  *   - CREATE: happy path + audit row; trims name/phone; rejects
  *     empty fields; duplicate (company_id, phone) → 422;
  *     create-with-initial-plates atomicity (a duplicate plate
- *     aborts the WHOLE create, no partial customer row)
+ *     IN THE PAYLOAD aborts the WHOLE create, no partial
+ *     customer row; P-F2 — a plate held by ANOTHER customer is
+ *     fine, plates are many-to-many)
  *   - UPDATE: idempotent diff-aware audit, phone uniqueness re-
  *     checked excluding self, 404 on cross-tenant
  *   - DELETE: soft delete + audit; cross-tenant 404
  *   - PLATE ATTACH: normalises plate (trim + uppercase); duplicate
- *     within tenant → 422; cross-tenant customer → 404
+ *     on the SAME customer → 422 (P-F2: another customer sharing
+ *     the plate is allowed); cross-tenant customer → 404
  *   - PLATE DETACH: cross-tenant plate → 404; frees the slot for
  *     a re-attach
  *   - PERMISSION MATRIX:
@@ -161,25 +164,39 @@ it('returns 422 when name or phone is empty', function (): void {
         ->assertStatus(422)->assertJsonValidationErrors(['phone']);
 });
 
-it('creates with initial plates atomically — a duplicate plate aborts the WHOLE create', function (): void {
-    $ctx = makeMerchantActor();
-    // Pre-existing customer with a plate that will conflict.
-    $existing = Customer::factory()->for($ctx['company'], 'company')->create();
-    CustomerVehiclePlate::factory()->for($existing, 'customer')->for($ctx['company'], 'company')
-        ->create(['plate_number' => 'DUPE 1']);
+it('creates with initial plates atomically — a duplicate plate in the payload aborts the WHOLE create', function (): void {
+    makeMerchantActor();
 
     $response = $this->postJson('/api/customers', [
         'name' => 'New Customer',
         'phone' => '+968 90000200',
-        'plates' => ['CLEAN 1', 'DUPE 1'], // second one conflicts
+        // 'dupe  1' normalises to 'DUPE 1' — a duplicate LINK for this
+        // same customer (P-F2: only same-customer duplicates conflict).
+        'plates' => ['CLEAN 1', 'DUPE 1', 'dupe  1'],
     ])->assertStatus(422);
     expect($response->json('message'))->toContain('already attached');
 
     // The atomic-create promise: no orphan customer + no orphan
-    // first-plate sneaked through. Customers count is just the
-    // pre-existing one.
-    expect(Customer::query()->count())->toBe(1);
-    expect(CustomerVehiclePlate::query()->count())->toBe(1);
+    // earlier plates sneaked through.
+    expect(Customer::query()->count())->toBe(0);
+    expect(CustomerVehiclePlate::query()->count())->toBe(0);
+});
+
+it('creates with a plate another customer already holds — P-F2 plates are many-to-many', function (): void {
+    $ctx = makeMerchantActor();
+    // Pre-existing customer holding the same plate (the family car).
+    $existing = Customer::factory()->for($ctx['company'], 'company')->create();
+    CustomerVehiclePlate::factory()->for($existing, 'customer')->for($ctx['company'], 'company')
+        ->create(['plate_number' => 'SHARED 1']);
+
+    $this->postJson('/api/customers', [
+        'name' => 'Second Driver',
+        'phone' => '+968 90000201',
+        'plates' => ['SHARED 1'],
+    ])->assertCreated();
+
+    // BOTH links exist — the original owner kept theirs.
+    expect(CustomerVehiclePlate::query()->where('plate_number', 'SHARED 1')->count())->toBe(2);
 });
 
 it('creates with initial plates happy path — all plates persist', function (): void {
@@ -298,17 +315,23 @@ it('attaches a plate normalising whitespace + case (trim, collapse spaces, upper
     ]);
 });
 
-it('returns 422 on duplicate plate within the same tenant', function (): void {
+it('returns 422 only when re-attaching a plate the same customer already holds (P-F2 m2m)', function (): void {
     $ctx = makeMerchantActor();
     $a = Customer::factory()->for($ctx['company'], 'company')->create();
     $b = Customer::factory()->for($ctx['company'], 'company')->create();
     CustomerVehiclePlate::factory()->for($a, 'customer')->for($ctx['company'], 'company')
         ->create(['plate_number' => 'TAKEN 1']);
 
-    // Try to attach the same plate to a DIFFERENT customer in
-    // the same tenant — must fail.
-    $response = $this->postJson("/api/customers/{$b->uuid}/plates", [
-        'plate_number' => 'taken 1', // even with messy case → normalises to TAKEN 1
+    // P-F2 — a DIFFERENT customer in the same tenant CAN now share the
+    // plate (family car, several loyalty members): a second link.
+    $this->postJson("/api/customers/{$b->uuid}/plates", [
+        'plate_number' => 'taken 1', // messy case → normalises to TAKEN 1
+    ])->assertCreated()
+        ->assertJsonPath('data.plate_number', 'TAKEN 1');
+
+    // Re-attaching to the SAME customer is the duplicate that fails.
+    $response = $this->postJson("/api/customers/{$a->uuid}/plates", [
+        'plate_number' => 'taken 1',
     ])->assertStatus(422);
     expect($response->json('message'))->toContain('already attached');
 });
@@ -334,8 +357,9 @@ it('detaches a plate, freeing the slot for re-attachment to a different customer
 
     $this->deleteJson("/api/customer-plates/{$plate->uuid}")->assertNoContent();
 
-    // The unique (company_id, plate_number) slot is now free —
-    // attach to a different customer should succeed.
+    // The detached plate can be attached to a different customer
+    // (always true under P-F2 many-to-many; the detach itself is
+    // what this asserts).
     $this->postJson("/api/customers/{$b->uuid}/plates", [
         'plate_number' => 'FREE 1',
     ])->assertCreated();

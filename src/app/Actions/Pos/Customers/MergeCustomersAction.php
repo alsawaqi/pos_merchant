@@ -25,8 +25,9 @@ use RuntimeException;
  * ('customers.merged') records what moved.
  *
  *   - orders         → re-pointed (customer_id).
- *   - vehicle plates → re-pointed; a plate the survivor ALREADY has (unique
- *     company_id + plate_number) is dropped instead, to avoid a clash.
+ *   - vehicle plates → re-pointed; a plate the survivor ALREADY has (P-F2
+ *     link unique company_id + customer_id + plate_number) is dropped
+ *     instead, to avoid a duplicate link.
  *   - loyalty        → per loyalty_rule_id: if the survivor already has an
  *     account for that rule, the source's stamp_count + point_balance are
  *     summed in, its transactions re-pointed to the survivor's account, and
@@ -83,9 +84,23 @@ final readonly class MergeCustomersAction
                 ->update(['customer_id' => $survivor->id]);
 
             // --- Vehicle plates ---
-            // (company_id, plate_number) is unique, so two customers in one
-            // company can never share a plate — the source's plates can't
-            // collide with the survivor's. A straight re-point is safe.
+            // P-F2 — plates are many-to-many, so the source CAN share a
+            // plate with the survivor (family car). A shared plate would
+            // collide with the survivor's existing link under the
+            // (company_id, customer_id, plate_number) unique — drop the
+            // source's duplicate links first, then re-point the rest.
+            $survivorPlates = CustomerVehiclePlate::query()
+                ->where('company_id', $companyId)
+                ->where('customer_id', $survivor->id)
+                ->pluck('plate_number')
+                ->all();
+            if ($survivorPlates !== []) {
+                CustomerVehiclePlate::query()
+                    ->where('company_id', $companyId)
+                    ->where('customer_id', $source->id)
+                    ->whereIn('plate_number', $survivorPlates)
+                    ->delete();
+            }
             $summary['plates_moved'] = CustomerVehiclePlate::query()
                 ->where('company_id', $companyId)
                 ->where('customer_id', $source->id)

@@ -25,11 +25,10 @@ use Illuminate\Support\Facades\DB;
  *   - future Phase 7+ order rows that reference customer_id
  *     can still resolve withTrashed() for historical reports
  *
- * Plates are not detached on customer soft-delete — the
- * (company_id, plate_number) unique constraint still blocks
- * re-using the plate elsewhere. The merchant can manually
- * detach if they really want to re-issue the plate to another
- * customer.
+ * Plates are not detached on customer soft-delete. Since P-F2
+ * plates are many-to-many, the surviving links don't block the
+ * plate from being attached to another customer; the merchant
+ * can still manually detach the retired customer's links.
  */
 final readonly class DeleteCustomerAction
 {

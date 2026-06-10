@@ -101,8 +101,7 @@ it('moves all of the source customer plates to the survivor', function (): void 
     $survivor = Customer::factory()->for($ctx['company'], 'company')->create();
     $source = Customer::factory()->for($ctx['company'], 'company')->create();
 
-    // (company_id, plate_number) is unique, so the survivor + source can only
-    // ever hold DISTINCT plates — all of the source's move across.
+    // Distinct plates — all of the source's move across.
     CustomerVehiclePlate::factory()->for($ctx['company'], 'company')->create(['customer_id' => $survivor->id, 'plate_number' => 'KEEP-1']);
     CustomerVehiclePlate::factory()->for($ctx['company'], 'company')->create(['customer_id' => $source->id, 'plate_number' => 'MOVE-1']);
     CustomerVehiclePlate::factory()->for($ctx['company'], 'company')->create(['customer_id' => $source->id, 'plate_number' => 'MOVE-2']);
@@ -112,6 +111,28 @@ it('moves all of the source customer plates to the survivor', function (): void 
     expect($res->json('summary.plates_moved'))->toBe(2);
     expect(CustomerVehiclePlate::where('customer_id', $survivor->id)->pluck('plate_number')->sort()->values()->all())
         ->toBe(['KEEP-1', 'MOVE-1', 'MOVE-2']);
+});
+
+it('drops a shared plate instead of duplicating the link when merging (P-F2 m2m)', function (): void {
+    // P-F2 made plates many-to-many, so the survivor + source CAN both hold
+    // the same plate (family car). The merge must not create a duplicate
+    // (company, customer, plate) link — the source's shared link is dropped.
+    $ctx = makeMerchantActor();
+    $survivor = Customer::factory()->for($ctx['company'], 'company')->create();
+    $source = Customer::factory()->for($ctx['company'], 'company')->create();
+
+    CustomerVehiclePlate::factory()->for($ctx['company'], 'company')->create(['customer_id' => $survivor->id, 'plate_number' => 'SHARED-1']);
+    CustomerVehiclePlate::factory()->for($ctx['company'], 'company')->create(['customer_id' => $source->id, 'plate_number' => 'SHARED-1']);
+    CustomerVehiclePlate::factory()->for($ctx['company'], 'company')->create(['customer_id' => $source->id, 'plate_number' => 'MOVE-1']);
+
+    $res = mergeCustomers($survivor->uuid, $source->uuid)->assertOk();
+
+    // Only the novel plate counts as moved; the shared one was dropped.
+    expect($res->json('summary.plates_moved'))->toBe(1);
+    expect(CustomerVehiclePlate::where('customer_id', $survivor->id)->pluck('plate_number')->sort()->values()->all())
+        ->toBe(['MOVE-1', 'SHARED-1']);
+    // No orphan link left on the retired source.
+    expect(CustomerVehiclePlate::where('customer_id', $source->id)->count())->toBe(0);
 });
 
 // =================== TAGS + DOB FOLDING (Phase D3) ===================
