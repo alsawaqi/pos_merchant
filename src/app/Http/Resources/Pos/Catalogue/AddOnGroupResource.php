@@ -24,6 +24,11 @@ class AddOnGroupResource extends JsonResource
             'name' => $this->name,
             'name_ar' => $this->name_ar,
             'selection_mode' => $this->selection_mode?->value,
+            // Phase B — selection constraints (NULL = unbounded; min>=1 = required).
+            'min_selections' => $this->min_selections !== null ? (int) $this->min_selections : null,
+            'max_selections' => $this->max_selections !== null ? (int) $this->max_selections : null,
+            // Phase B — bound category ids (when eager-loaded).
+            'category_ids' => $this->whenLoaded('categories', fn () => $this->categories->pluck('id')->all()),
             'is_global' => (bool) $this->is_global,
             // v2 #6: non-null = a group privately owned by this product.
             'owner_product_id' => $this->owner_product_id !== null ? (int) $this->owner_product_id : null,

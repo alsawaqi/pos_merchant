@@ -27,6 +27,7 @@ class CreateAddOnRequest extends FormRequest
             // add-on that lowers the price is a discount, not
             // an add-on — separate concept in §5.9).
             'price_delta' => ['nullable', 'numeric', 'min:0', 'max:999.999'],
+            'is_default' => ['nullable', 'boolean'],
             'display_order' => ['nullable', 'integer', 'between:0,999'],
         ];
     }

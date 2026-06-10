@@ -28,6 +28,8 @@ final readonly class UpdateAddOnAction
         'name',
         'name_ar',
         'price_delta',
+        // Phase B — pre-selected default in the customize sheet.
+        'is_default',
         'display_order',
         'status',
     ];
@@ -77,6 +79,18 @@ final readonly class UpdateAddOnAction
             }
 
             $addon->save();
+
+            // A single-select group can only have ONE default — making
+            // this option the default clears any sibling's flag.
+            if (isset($changes['is_default']) && $addon->is_default) {
+                $addon->loadMissing('group');
+                if ($addon->group?->selection_mode?->value === 'single') {
+                    AddOn::query()
+                        ->where('add_on_group_id', $addon->add_on_group_id)
+                        ->where('id', '!=', $addon->id)
+                        ->update(['is_default' => false]);
+                }
+            }
 
             $this->writeAuditLog->handle(new AuditLogData(
                 event: 'catalogue.addon.updated',

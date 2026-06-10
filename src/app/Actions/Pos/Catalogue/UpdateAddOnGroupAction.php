@@ -26,6 +26,9 @@ final readonly class UpdateAddOnGroupAction
         'name',
         'name_ar',
         'selection_mode',
+        // Phase B — selection constraints.
+        'min_selections',
+        'max_selections',
         'is_global',
         'display_order',
         'status',
@@ -66,6 +69,18 @@ final readonly class UpdateAddOnGroupAction
                 }
                 $changes[$field] = ['old' => $oldComparable, 'new' => $newValue];
                 $group->{$field} = $newValue;
+            }
+
+            // Phase B — category bindings sync (idempotent full-list PUT,
+            // mirroring product attachments). Outside the diff loop because
+            // a pivot has no scalar column on the group row.
+            if (array_key_exists('category_ids', $attributes)) {
+                $before = $group->categories()->pluck('pos_product_categories.id')->sort()->values()->all();
+                $after = collect($attributes['category_ids'] ?? [])->map(fn ($id): int => (int) $id)->sort()->values()->all();
+                if ($before !== $after) {
+                    $group->categories()->sync($after);
+                    $changes['category_ids'] = ['old' => $before, 'new' => $after];
+                }
             }
 
             if ($changes === []) {

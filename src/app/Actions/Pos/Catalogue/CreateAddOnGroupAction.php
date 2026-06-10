@@ -50,6 +50,9 @@ final readonly class CreateAddOnGroupAction
                 'name' => $attributes['name'],
                 'name_ar' => $attributes['name_ar'] ?? null,
                 'selection_mode' => $attributes['selection_mode'] ?? AddOnSelectionMode::Single->value,
+                // Phase B — selection constraints (NULL = unbounded).
+                'min_selections' => $attributes['min_selections'] ?? null,
+                'max_selections' => $attributes['max_selections'] ?? null,
                 'is_global' => $ownerProductId !== null ? false : ($attributes['is_global'] ?? false),
                 'display_order' => $attributes['display_order'] ?? 0,
                 'status' => 'active',
@@ -57,6 +60,14 @@ final readonly class CreateAddOnGroupAction
 
             if ($ownerProductId !== null) {
                 $group->products()->attach($ownerProductId);
+            }
+
+            // Phase B — category-level bindings (validated tenant-owned
+            // by the request layer).
+            if (! empty($attributes['category_ids'])) {
+                $group->categories()->sync(
+                    collect($attributes['category_ids'])->map(fn ($id): int => (int) $id)->all(),
+                );
             }
 
             $this->writeAuditLog->handle(new AuditLogData(

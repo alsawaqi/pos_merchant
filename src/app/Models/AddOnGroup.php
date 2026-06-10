@@ -37,6 +37,8 @@ use Illuminate\Support\Str;
     'name',
     'name_ar',
     'selection_mode',
+    'min_selections',
+    'max_selections',
     'is_global',
     'display_order',
     'status',
@@ -55,6 +57,10 @@ class AddOnGroup extends Model
     {
         return [
             'selection_mode' => AddOnSelectionMode::class,
+            // Phase B — selection constraints (NULL = unbounded;
+            // min >= 1 makes the group REQUIRED at the POS).
+            'min_selections' => 'integer',
+            'max_selections' => 'integer',
             'is_global' => 'boolean',
             'display_order' => 'integer',
         ];
@@ -108,5 +114,22 @@ class AddOnGroup extends Model
             'add_on_group_id',
             'product_id',
         )->withPivot('display_order')->withTimestamps();
+    }
+
+    /**
+     * Phase B — categories this group is bound to ("attach a group to
+     * a category"; the device unions category + product bindings, so
+     * the more specific binding wins by construction).
+     *
+     * @return BelongsToMany<ProductCategory, $this>
+     */
+    public function categories(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            ProductCategory::class,
+            'pos_addon_group_categories',
+            'add_on_group_id',
+            'category_id',
+        );
     }
 }

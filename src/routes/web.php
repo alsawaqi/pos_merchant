@@ -24,7 +24,9 @@ use App\Http\Controllers\Pos\IngredientsController;
 use App\Http\Controllers\Pos\IngredientUnitsController;
 use App\Http\Controllers\Pos\LoyaltyController;
 use App\Http\Controllers\Pos\PosStaffController;
+use App\Http\Controllers\Pos\CompReasonsController;
 use App\Http\Controllers\Pos\OrderCancellationSettingController;
+use App\Http\Controllers\Pos\VoidReasonsController;
 use App\Http\Controllers\Pos\OrdersController;
 use App\Http\Controllers\Pos\PayoutsController;
 use App\Http\Controllers\Pos\ProductsController;
@@ -629,6 +631,26 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('settings.order-cancellation.show');
         Route::put('settings/order-cancellation', [OrderCancellationSettingController::class, 'update'])
             ->name('settings.order-cancellation.update');
+
+        // Phase B (Additions §1.2) — void + comp reason code lists. Same
+        // orders.cancel gate as the cancellation policy they ride with;
+        // both ship to the device in /device/config.
+        Route::get('void-reasons', [VoidReasonsController::class, 'index'])
+            ->name('void-reasons.index');
+        Route::post('void-reasons', [VoidReasonsController::class, 'store'])
+            ->name('void-reasons.store');
+        Route::patch('void-reasons/{voidReason:uuid}', [VoidReasonsController::class, 'update'])
+            ->name('void-reasons.update');
+        Route::delete('void-reasons/{voidReason:uuid}', [VoidReasonsController::class, 'destroy'])
+            ->name('void-reasons.destroy');
+        Route::get('comp-reasons', [CompReasonsController::class, 'index'])
+            ->name('comp-reasons.index');
+        Route::post('comp-reasons', [CompReasonsController::class, 'store'])
+            ->name('comp-reasons.store');
+        Route::patch('comp-reasons/{compReason:uuid}', [CompReasonsController::class, 'update'])
+            ->name('comp-reasons.update');
+        Route::delete('comp-reasons/{compReason:uuid}', [CompReasonsController::class, 'destroy'])
+            ->name('comp-reasons.destroy');
 
         // Per-product price overrides. PUT is upsert: creates
         // on first call, updates on subsequent. The two-uuid

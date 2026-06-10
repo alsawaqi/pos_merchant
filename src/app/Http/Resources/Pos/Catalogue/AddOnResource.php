@@ -27,6 +27,8 @@ class AddOnResource extends JsonResource
             // Money as string — decimal:3 cast preserves
             // precision (NEVER parseFloat for money).
             'price_delta' => (string) $this->price_delta,
+            // Phase B — pre-selected in the POS customize sheet.
+            'is_default' => (bool) $this->is_default,
             'display_order' => $this->display_order,
             'status' => $this->status,
             'created_at' => $this->created_at?->toIso8601String(),

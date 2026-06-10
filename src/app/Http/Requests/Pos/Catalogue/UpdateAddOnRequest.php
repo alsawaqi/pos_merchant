@@ -18,6 +18,7 @@ class UpdateAddOnRequest extends FormRequest
             'name' => ['sometimes', 'string', 'max:100'],
             'name_ar' => ['sometimes', 'nullable', 'string', 'max:100'],
             'price_delta' => ['sometimes', 'numeric', 'min:0', 'max:999.999'],
+            'is_default' => ['sometimes', 'boolean'],
             'display_order' => ['sometimes', 'integer', 'between:0,999'],
             'status' => ['sometimes', 'string', Rule::in(['active', 'inactive'])],
         ];

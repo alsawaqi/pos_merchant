@@ -48,9 +48,20 @@ final readonly class CreateAddOnAction
                 'name' => $attributes['name'],
                 'name_ar' => $attributes['name_ar'] ?? null,
                 'price_delta' => $attributes['price_delta'] ?? 0,
+                // Phase B — pre-selected default in the customize sheet.
+                'is_default' => (bool) ($attributes['is_default'] ?? false),
                 'display_order' => $attributes['display_order'] ?? 0,
                 'status' => 'active',
             ]);
+
+            // A single-select group can only have ONE default — making
+            // this option the default clears any sibling's flag.
+            if ($addon->is_default && $group->selection_mode?->value === 'single') {
+                AddOn::query()
+                    ->where('add_on_group_id', $group->id)
+                    ->where('id', '!=', $addon->id)
+                    ->update(['is_default' => false]);
+            }
 
             $this->writeAuditLog->handle(new AuditLogData(
                 event: 'catalogue.addon.created',

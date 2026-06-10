@@ -33,6 +33,7 @@ use Illuminate\Support\Str;
     'name',
     'name_ar',
     'price_delta',
+    'is_default',
     'ingredient_id',
     'ingredient_qty',
     'ingredient_unit',
@@ -53,6 +54,8 @@ class AddOn extends Model
     {
         return [
             'price_delta' => 'decimal:3',
+            // Phase B — pre-selected in the POS customize sheet.
+            'is_default' => 'boolean',
             'ingredient_qty' => 'decimal:3',
             'display_order' => 'integer',
         ];

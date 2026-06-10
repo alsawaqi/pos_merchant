@@ -222,6 +222,10 @@ const agForm = reactive<{
     name: string;
     name_ar: string;
     selection_mode: AddOnSelectionMode;
+    // Phase B — selection constraints ('' = unbounded) + category bindings.
+    min_selections: string;
+    max_selections: string;
+    category_ids: number[];
     is_global: boolean;
     display_order: number;
     status: AddOnStatus;
@@ -229,6 +233,9 @@ const agForm = reactive<{
     name: '',
     name_ar: '',
     selection_mode: 'single',
+    min_selections: '',
+    max_selections: '',
+    category_ids: [],
     is_global: false,
     display_order: 0,
     status: 'active',
@@ -249,11 +256,13 @@ const aoForm = reactive<{
     name: string;
     name_ar: string;
     price_delta: string;
+    is_default: boolean;
     display_order: number;
     status: AddOnStatus;
 }>({
     name: '',
     name_ar: '',
+    is_default: false,
     price_delta: '0',
     display_order: 0,
     status: 'active',
@@ -769,6 +778,9 @@ function openCreateAddOnGroup(): void {
     agForm.name = '';
     agForm.name_ar = '';
     agForm.selection_mode = 'single';
+    agForm.min_selections = '';
+    agForm.max_selections = '';
+    agForm.category_ids = [];
     agForm.is_global = false;
     agForm.display_order = addOnGroups.value.length;
     agForm.status = 'active';
@@ -783,6 +795,9 @@ function openEditAddOnGroup(group: AddOnGroup): void {
     agForm.name = group.name;
     agForm.name_ar = group.name_ar ?? '';
     agForm.selection_mode = (group.selection_mode ?? 'single') as AddOnSelectionMode;
+    agForm.min_selections = group.min_selections !== null ? String(group.min_selections) : '';
+    agForm.max_selections = group.max_selections !== null ? String(group.max_selections) : '';
+    agForm.category_ids = [...(group.category_ids ?? [])];
     agForm.is_global = group.is_global;
     agForm.display_order = group.display_order;
     agForm.status = (group.status ?? 'active') as AddOnStatus;
@@ -800,6 +815,10 @@ async function submitAddOnGroup(): Promise<void> {
             name: agForm.name.trim(),
             name_ar: agForm.name_ar.trim() || null,
             selection_mode: agForm.selection_mode,
+            // Phase B — '' = unbounded → null on the wire.
+            min_selections: String(agForm.min_selections).trim() === '' ? null : Number(agForm.min_selections),
+            max_selections: String(agForm.max_selections).trim() === '' ? null : Number(agForm.max_selections),
+            category_ids: agForm.category_ids,
             is_global: agForm.is_global,
             display_order: agForm.display_order,
         };
@@ -852,6 +871,7 @@ function openCreateAddOn(group: AddOnGroup): void {
     aoForm.name = '';
     aoForm.name_ar = '';
     aoForm.price_delta = '0';
+    aoForm.is_default = false;
     aoForm.display_order = (group.addons ?? []).length;
     aoForm.status = 'active';
     aoModalErrors.value = {};
@@ -866,6 +886,7 @@ function openEditAddOn(group: AddOnGroup, addon: AddOn): void {
     aoForm.name = addon.name;
     aoForm.name_ar = addon.name_ar ?? '';
     aoForm.price_delta = addon.price_delta;
+    aoForm.is_default = addon.is_default;
     aoForm.display_order = addon.display_order;
     aoForm.status = (addon.status ?? 'active') as AddOnStatus;
     aoModalErrors.value = {};
@@ -882,6 +903,7 @@ async function submitAddOn(): Promise<void> {
             name: aoForm.name.trim(),
             name_ar: aoForm.name_ar.trim() || null,
             price_delta: aoForm.price_delta,
+            is_default: aoForm.is_default,
             display_order: aoForm.display_order,
         };
         if (aoModalMode.value === 'create' && aoModalParentGroup.value) {
@@ -2319,6 +2341,35 @@ async function removeOwnedGroup(groupUuid: string): Promise<void> {
                         <option value="multi">{{ t('catalogue.selection_modes.multi') }}</option>
                     </select>
                 </label>
+                <!-- Phase B — selection constraints. min >= 1 makes the group
+                     REQUIRED at the POS; blank = unbounded. -->
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <label class="block">
+                        <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.min_selections') }}</span>
+                        <input v-model="agForm.min_selections" type="number" min="0" max="99" :placeholder="t('catalogue.fields.selections_unbounded')" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <p class="mt-1 text-xs text-slate-500">{{ t('catalogue.fields.min_selections_hint') }}</p>
+                        <p v-if="agModalErrors.min_selections" class="mt-1 text-xs text-rose-600">{{ agModalErrors.min_selections[0] }}</p>
+                    </label>
+                    <label class="block">
+                        <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.max_selections') }}</span>
+                        <input v-model="agForm.max_selections" type="number" min="1" max="99" :placeholder="t('catalogue.fields.selections_unbounded')" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <p v-if="agModalErrors.max_selections" class="mt-1 text-xs text-rose-600">{{ agModalErrors.max_selections[0] }}</p>
+                    </label>
+                </div>
+                <!-- Phase B — category-level bindings: the group applies to
+                     every product in the ticked categories. -->
+                <fieldset class="rounded-lg border border-slate-200 p-3">
+                    <legend class="px-2 text-sm font-semibold text-slate-700">{{ t('catalogue.fields.bound_categories') }}</legend>
+                    <p class="mb-2 text-xs text-slate-500">{{ t('catalogue.fields.bound_categories_hint') }}</p>
+                    <p v-if="categories.length === 0" class="text-xs italic text-slate-400">{{ t('catalogue.empty_categories') }}</p>
+                    <div v-else class="flex max-h-32 flex-wrap gap-2 overflow-y-auto">
+                        <label v-for="cat in categories" :key="cat.id" class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium" :class="agForm.category_ids.includes(cat.id) ? 'border-teal-300 bg-teal-50 text-teal-800' : 'border-slate-200 text-slate-600'">
+                            <input v-model="agForm.category_ids" type="checkbox" :value="cat.id" class="size-3 rounded border-slate-300 text-teal-600 focus:ring-teal-500">
+                            {{ cat.name }}
+                        </label>
+                    </div>
+                    <p v-if="agModalErrors.category_ids" class="mt-1 text-xs text-rose-600">{{ agModalErrors.category_ids[0] }}</p>
+                </fieldset>
                 <label class="flex items-start gap-2 rounded-lg border border-slate-200 p-3">
                     <input v-model="agForm.is_global" type="checkbox" class="mt-0.5 rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200">
                     <span>
@@ -2379,6 +2430,15 @@ async function removeOwnedGroup(groupUuid: string): Promise<void> {
                     <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.price_delta') }} (OMR)</span>
                     <input v-model="aoForm.price_delta" type="number" step="0.001" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                     <p v-if="aoModalErrors.price_delta" class="mt-1 text-xs text-rose-600">{{ aoModalErrors.price_delta[0] }}</p>
+                </label>
+                <!-- Phase B — pre-selected default in the POS customize sheet
+                     (in a single-select group only one option can be default). -->
+                <label class="flex items-start gap-2 rounded-lg border border-slate-200 p-3">
+                    <input v-model="aoForm.is_default" type="checkbox" class="mt-0.5 rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200">
+                    <span>
+                        <span class="block text-sm font-medium text-slate-700">{{ t('catalogue.fields.is_default') }}</span>
+                        <span class="block text-xs text-slate-500">{{ t('catalogue.fields.is_default_hint') }}</span>
+                    </span>
                 </label>
                 <div v-if="aoModalMode === 'edit'" class="grid gap-3 sm:grid-cols-2">
                     <label class="block">

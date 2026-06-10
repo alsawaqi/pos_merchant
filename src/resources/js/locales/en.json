@@ -560,6 +560,14 @@
             "selection_mode": "Selection mode",
             "is_global": "Apply to every product",
             "is_global_hint": "Global groups attach automatically to every product. Otherwise pick which products use this group from each product's edit screen.",
+            "min_selections": "Minimum selections",
+            "min_selections_hint": "1 or more makes this group required — the POS blocks add-to-cart until satisfied.",
+            "max_selections": "Maximum selections",
+            "selections_unbounded": "no limit",
+            "bound_categories": "Bound categories",
+            "bound_categories_hint": "The group applies to every product in the ticked categories (in addition to per-product attachments).",
+            "is_default": "Pre-selected by default",
+            "is_default_hint": "This option starts selected in the POS customize sheet. A single-choice group can only have one default.",
             "price_delta": "Price",
             "addon_groups": "Add-on groups",
             "addon_groups_hint": "Pick which add-on groups appear when this product is selected on the POS. Global groups are always included and not shown here."
@@ -1883,6 +1891,31 @@
             "save": "Save",
             "save_success": "Order cancellation policy updated.",
             "save_failed": "Could not save the order cancellation policy."
+        },
+        "reasons": {
+            "void_title": "Void reasons",
+            "void_subtitle": "Every order void at the POS must pick one of these. \"Food was made\" keeps the ingredients consumed and shows the loss in the Loss/Waste report.",
+            "comp_title": "Comp reasons",
+            "comp_subtitle": "Manager-approved write-offs (free items, service recovery). Inventory deducts as if sold; the value is reported separately from discounts.",
+            "add": "Add reason",
+            "name": "Name",
+            "name_ar": "Arabic name",
+            "affects_inventory": "Food was made",
+            "affects_inventory_hint": "Tick when the items were actually prepared (Quality Issue) — voiding then keeps the ingredients consumed. Untick when nothing was made (Wrong Order Entry) — stock is restored.",
+            "requires_manager": "Requires manager",
+            "max_amount": "Max amount",
+            "max_amount_hint": "The largest single comp allowed under this reason. Leave blank for no cap.",
+            "no_cap": "no cap",
+            "food_made": "Food made",
+            "status": "Status",
+            "active": "Active",
+            "inactive": "Inactive",
+            "edit_title": "Edit reason",
+            "add_void_title": "Add void reason",
+            "add_comp_title": "Add comp reason",
+            "delete": "Delete",
+            "delete_title": "Delete reason",
+            "delete_confirm": "Delete \"{name}\"? Historical orders keep their snapshot of it."
         }
     }
 }

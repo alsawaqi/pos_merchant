@@ -220,3 +220,53 @@ it('lets an InventoryManager create + edit add-on groups', function (): void {
     $group = AddOnGroup::query()->where('name', 'Drinks Mods')->firstOrFail();
     $this->patchJson("/api/addon-groups/{$group->uuid}", ['name' => 'Drink Modifiers'])->assertOk();
 });
+
+// =================== Phase B — modifier-group constraints ====================
+
+it('persists min/max selections, default option, and category bindings', function (): void {
+    $ctx = makeMerchantActor();
+    $category = App\Models\ProductCategory::factory()->for($ctx['company'], 'company')->create(['name' => 'Drinks']);
+
+    // Group with constraints + a category binding.
+    $group = $this->postJson('/api/addon-groups', [
+        'name' => 'Milk Choice',
+        'selection_mode' => 'single',
+        'min_selections' => 1,
+        'max_selections' => 1,
+        'category_ids' => [$category->id],
+    ])->assertCreated()->json('data');
+    expect($group['min_selections'])->toBe(1);
+    expect($group['max_selections'])->toBe(1);
+
+    // Listed group carries the binding + constraints.
+    $listed = collect($this->getJson('/api/addon-groups')->assertOk()->json('data'))
+        ->firstWhere('uuid', $group['uuid']);
+    expect($listed['category_ids'])->toBe([$category->id]);
+
+    // Default option: making one default in a SINGLE group clears siblings.
+    $a = $this->postJson("/api/addon-groups/{$group['uuid']}/addons", [
+        'name' => 'Whole Milk', 'is_default' => true,
+    ])->assertCreated()->json('data');
+    $b = $this->postJson("/api/addon-groups/{$group['uuid']}/addons", [
+        'name' => 'Oat Milk', 'is_default' => true,
+    ])->assertCreated()->json('data');
+    expect($b['is_default'])->toBeTrue();
+    $this->assertDatabaseHas('pos_addons', ['id' => $a['id'], 'is_default' => false]);
+
+    // max below min -> 422 (against the merged PATCH state).
+    $this->patchJson("/api/addon-groups/{$group['uuid']}", ['max_selections' => null])->assertOk();
+    $this->patchJson("/api/addon-groups/{$group['uuid']}", ['min_selections' => 3, 'max_selections' => 2])
+        ->assertUnprocessable();
+
+    // Cross-tenant category binding -> 422.
+    $other = makeMerchantActor();
+    app(App\Support\MerchantTenantContext::class)->set($ctx['company']->id);
+    $this->actingAs($ctx['user']);
+    $foreignCat = App\Models\ProductCategory::factory()->for($other['company'], 'company')->create(['name' => 'Foreign']);
+    $this->patchJson("/api/addon-groups/{$group['uuid']}", ['category_ids' => [$foreignCat->id]])
+        ->assertUnprocessable();
+
+    // Unbinding via empty list works.
+    $this->patchJson("/api/addon-groups/{$group['uuid']}", ['category_ids' => []])->assertOk();
+    $this->assertDatabaseCount('pos_addon_group_categories', 0);
+});

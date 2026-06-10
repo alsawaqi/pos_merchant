@@ -56,6 +56,8 @@ class AddOnGroupsController extends Controller
             ->with(['addOns' => function ($q): void {
                 $q->orderBy('display_order')->orderBy('name');
             }])
+            // Phase B — bound categories ship as category_ids on the resource.
+            ->with('categories')
             ->withCount(['products', 'addOns'])
             ->orderBy('is_global', 'desc')
             ->orderBy('display_order')

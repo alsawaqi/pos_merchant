@@ -128,6 +128,8 @@ export interface AddOn {
     name_ar: string | null;
     /** OMR delta added to base price when selected. String for precision. */
     price_delta: string;
+    /** Phase B — pre-selected in the POS customize sheet. */
+    is_default: boolean;
     display_order: number;
     status: AddOnStatus;
     created_at: string | null;
@@ -140,6 +142,14 @@ export interface AddOnGroup {
     name: string;
     name_ar: string | null;
     selection_mode: AddOnSelectionMode | null;
+    /**
+     * Phase B — selection constraints. NULL = unbounded; min >= 1 makes
+     * the group REQUIRED at the POS (add-to-cart blocked until satisfied).
+     */
+    min_selections: number | null;
+    max_selections: number | null;
+    /** Phase B — bound category ids (present when eager-loaded). */
+    category_ids?: number[];
     is_global: boolean;
     /** v2 #6: non-null = a group privately owned by this product. */
     owner_product_id: number | null;
@@ -216,6 +226,9 @@ export interface CreateAddOnGroupPayload {
     name: string;
     name_ar?: string | null;
     selection_mode?: AddOnSelectionMode;
+    min_selections?: number | null;
+    max_selections?: number | null;
+    category_ids?: number[];
     is_global?: boolean;
     display_order?: number;
 }
@@ -224,6 +237,10 @@ export interface UpdateAddOnGroupPayload {
     name?: string;
     name_ar?: string | null;
     selection_mode?: AddOnSelectionMode;
+    min_selections?: number | null;
+    max_selections?: number | null;
+    /** Full-list sync — send [] to unbind every category. */
+    category_ids?: number[];
     is_global?: boolean;
     display_order?: number;
     status?: AddOnStatus;
@@ -233,6 +250,7 @@ export interface CreateAddOnPayload {
     name: string;
     name_ar?: string | null;
     price_delta?: string | number;
+    is_default?: boolean;
     display_order?: number;
 }
 
@@ -240,6 +258,7 @@ export interface UpdateAddOnPayload {
     name?: string;
     name_ar?: string | null;
     price_delta?: string | number;
+    is_default?: boolean;
     display_order?: number;
     status?: AddOnStatus;
 }

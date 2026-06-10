@@ -244,6 +244,9 @@ return new class extends Migration
             $table->string('name');
             $table->string('name_ar')->nullable();
             $table->string('selection_mode', 16)->default('single');
+            // Phase B — selection constraints (NULL = unbounded; min>=1 = required).
+            $table->unsignedSmallInteger('min_selections')->nullable();
+            $table->unsignedSmallInteger('max_selections')->nullable();
             $table->boolean('is_global')->default(false);
             $table->unsignedSmallInteger('display_order')->default(0);
             $table->string('status', 32)->default('active');
@@ -260,6 +263,8 @@ return new class extends Migration
             $table->string('name');
             $table->string('name_ar')->nullable();
             $table->decimal('price_delta', 12, 3)->default(0);
+            // Phase B — pre-selected option in the POS customize sheet.
+            $table->boolean('is_default')->default(false);
             $table->unsignedBigInteger('ingredient_id')->nullable();
             $table->decimal('ingredient_qty', 10, 3)->nullable();
             $table->string('ingredient_unit', 16)->nullable();
@@ -276,6 +281,15 @@ return new class extends Migration
             $table->unsignedSmallInteger('display_order')->default(0);
             $table->timestamps();
             $table->unique(['add_on_group_id', 'product_id'], 'pos_addon_group_products_unique');
+        });
+
+        // Phase B — category-level group binding ("the more specific
+        // binding wins" resolution happens device-side as a union).
+        Schema::create('pos_addon_group_categories', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('add_on_group_id')->constrained('pos_addon_groups')->cascadeOnDelete();
+            $table->foreignId('category_id')->constrained('pos_product_categories')->cascadeOnDelete();
+            $table->unique(['add_on_group_id', 'category_id'], 'pos_addon_group_categories_unique');
         });
 
         // ---- pos_floors (Phase 5) ---------------------------------
@@ -911,10 +925,16 @@ return new class extends Migration
             $table->foreignId('table_id')->nullable()->constrained('pos_tables')->nullOnDelete();
             $table->string('order_type', 32);
             $table->string('status', 32)->default('open');
+            // Phase B — void reason snapshot (FK-less in the test schema for
+            // create-order flexibility; the live migration has the real FK).
+            $table->unsignedBigInteger('void_reason_id')->nullable();
+            $table->string('void_reason_label', 64)->nullable();
             $table->string('source', 32);
             $table->string('plate_number', 32)->nullable();
             $table->decimal('subtotal', 12, 3)->default(0);
             $table->decimal('discount_total', 12, 3)->default(0);
+            // Phase B — cached sum of pos_order_comps for this order.
+            $table->decimal('comp_total', 12, 3)->default(0);
             $table->decimal('tax_total', 12, 3)->default(0);
             $table->decimal('grand_total', 12, 3)->default(0);
             $table->timestamp('opened_at')->useCurrent();
@@ -1002,6 +1022,54 @@ return new class extends Migration
             $table->string('name_snapshot');
             $table->string('amount_type_snapshot', 32)->nullable();
             $table->decimal('amount', 12, 3)->default(0);
+            $table->timestamp('applied_at')->nullable();
+            $table->timestamps();
+        });
+
+        // ---- Phase B — void/comp reason masters + order comps ----
+        Schema::create('pos_void_reasons', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->string('code', 32);
+            $table->string('name', 64);
+            $table->string('name_ar', 64)->nullable();
+            $table->boolean('affects_inventory')->default(false);
+            $table->boolean('requires_manager')->default(true);
+            $table->boolean('is_active')->default(true);
+            $table->unsignedSmallInteger('sort_order')->default(0);
+            $table->timestamps();
+            $table->softDeletes();
+            $table->unique(['company_id', 'code'], 'pos_void_reasons_company_code_unique');
+        });
+
+        Schema::create('pos_comp_reasons', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->string('code', 32);
+            $table->string('name', 64);
+            $table->string('name_ar', 64)->nullable();
+            $table->decimal('max_amount', 12, 3)->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->unsignedSmallInteger('sort_order')->default(0);
+            $table->timestamps();
+            $table->softDeletes();
+            $table->unique(['company_id', 'code'], 'pos_comp_reasons_company_code_unique');
+        });
+
+        Schema::create('pos_order_comps', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->foreignId('order_id')->constrained('pos_orders')->cascadeOnDelete();
+            $table->foreignId('order_item_id')->nullable()->constrained('pos_order_items')->nullOnDelete();
+            $table->foreignId('comp_reason_id')->nullable()->constrained('pos_comp_reasons')->nullOnDelete();
+            $table->string('reason_code_snapshot', 32);
+            $table->string('reason_name_snapshot', 64);
+            $table->decimal('amount', 12, 3)->default(0);
+            $table->foreignId('approved_by_pos_staff_id')->nullable()->constrained('pos_staff')->nullOnDelete();
+            $table->text('note')->nullable();
             $table->timestamp('applied_at')->nullable();
             $table->timestamps();
         });
