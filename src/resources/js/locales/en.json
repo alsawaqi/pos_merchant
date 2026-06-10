@@ -1484,6 +1484,14 @@
                     "title": "Discounts",
                     "desc": "Total discount value, share of gross, by branch (rule + staff land in Phase 8)."
                 },
+                "comps": {
+                    "title": "Comps",
+                    "desc": "Manager write-offs: total comp value, by reason, by approving manager, recent comps."
+                },
+                "shifts": {
+                    "title": "Shifts",
+                    "desc": "Cash variance per shift: float, expected vs counted, short drawers, same-day re-open."
+                },
                 "payouts": {
                     "title": "Payouts",
                     "desc": "Commission breakdown: your net take-home, platform fee, bank fee, by branch."
@@ -1567,6 +1575,47 @@
             },
             "by_rule": "By rule",
             "by_staff": "By staff"
+        },
+        "comps": {
+            "page_title": "Comp Report",
+            "headline_labels": {
+                "total_value": "Total comp value",
+                "comp_count": "Comps",
+                "comped_orders": "Comped orders"
+            },
+            "by_reason": "By reason",
+            "by_staff": "By approving manager",
+            "reason": "Reason",
+            "count": "Count",
+            "recent": "Recent comps",
+            "applied_at": "Applied",
+            "scope": "Scope",
+            "note": "Note",
+            "whole_order": "Whole order",
+            "single_line": "Single line"
+        },
+        "shifts": {
+            "page_title": "Shift Report",
+            "headline_labels": {
+                "shift_count": "Shifts",
+                "closed_count": "Closed",
+                "total_variance": "Total variance",
+                "total_short": "Total short"
+            },
+            "columns": {
+                "opened": "Opened",
+                "staff": "Staff",
+                "status": "Status",
+                "opening": "Opening float",
+                "expected": "Expected cash",
+                "counted": "Counted cash",
+                "variance": "Variance",
+                "cash_collected": "Cash collected"
+            },
+            "open": "Open",
+            "closed": "Closed",
+            "reopen": "Re-open",
+            "reopening": "Re-opening…"
         },
         "payouts": {
             "page_title": "Payouts & Commission",
@@ -1667,6 +1716,14 @@
                 "actual": "Actual depletion",
                 "shortfall": "Overage",
                 "variance_pct": "Variance %"
+            },
+            "voids": {
+                "by_reason": "Voids by reason",
+                "by_staff": "Voids by staff",
+                "reason": "Reason",
+                "staff": "Staff",
+                "count": "Count",
+                "order_value": "Order value"
             }
         },
         "restock_purchasing": {

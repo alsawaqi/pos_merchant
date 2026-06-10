@@ -183,6 +183,40 @@ type ApexSeries = { name: string; data: number[] }[];
                 </table>
             </section>
 
+            <!-- Phase B — voided orders by reason / staff (Additions §1.2). -->
+            <div v-if="payload.voids_by_reason.length || payload.voids_by_staff.length" class="grid gap-6 lg:grid-cols-2">
+                <section v-if="payload.voids_by_reason.length" class="rounded-xl border border-slate-200 bg-white shadow-sm">
+                    <h2 class="border-b border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700">{{ t('reports.loss_waste.voids.by_reason') }}</h2>
+                    <table class="w-full text-sm">
+                        <thead class="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                            <tr><th class="px-5 py-2 text-start">{{ t('reports.loss_waste.voids.reason') }}</th><th class="px-5 py-2 text-end">{{ t('reports.loss_waste.voids.count') }}</th><th class="px-5 py-2 text-end">{{ t('reports.loss_waste.voids.order_value') }}</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="r in payload.voids_by_reason" :key="r.reason" class="border-b border-slate-100 last:border-0">
+                                <td class="px-5 py-2 font-medium text-slate-900">{{ r.reason }}</td>
+                                <td class="px-5 py-2 text-end tabular-nums">{{ r.void_count }}</td>
+                                <td class="px-5 py-2 text-end tabular-nums">{{ r.order_value }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </section>
+                <section v-if="payload.voids_by_staff.length" class="rounded-xl border border-slate-200 bg-white shadow-sm">
+                    <h2 class="border-b border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700">{{ t('reports.loss_waste.voids.by_staff') }}</h2>
+                    <table class="w-full text-sm">
+                        <thead class="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                            <tr><th class="px-5 py-2 text-start">{{ t('reports.loss_waste.voids.staff') }}</th><th class="px-5 py-2 text-end">{{ t('reports.loss_waste.voids.count') }}</th><th class="px-5 py-2 text-end">{{ t('reports.loss_waste.voids.order_value') }}</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="r in payload.voids_by_staff" :key="r.staff_id" class="border-b border-slate-100 last:border-0">
+                                <td class="px-5 py-2 font-medium text-slate-900">{{ r.staff_name }}</td>
+                                <td class="px-5 py-2 text-end tabular-nums">{{ r.void_count }}</td>
+                                <td class="px-5 py-2 text-end tabular-nums">{{ r.order_value }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </section>
+            </div>
+
             <div v-if="payload._phase?.shortfall_stub" class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                 {{ payload._phase.shortfall_stub }}
             </div>

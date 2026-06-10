@@ -13,6 +13,8 @@
 
 import {
     BarChart3,
+    Clock4,
+    Gift,
     Users,
     Percent,
     Wallet,
@@ -43,6 +45,8 @@ const tiles: Tile[] = [
     { key: 'sales', to: '/reports/sales', icon: BarChart3 },
     { key: 'customers', to: '/reports/customers', icon: Users },
     { key: 'discounts', to: '/reports/discounts', icon: Percent },
+    { key: 'comps', to: '/reports/comps', icon: Gift },
+    { key: 'shifts', to: '/reports/shifts', icon: Clock4 },
     { key: 'payouts', to: '/reports/payouts', icon: Wallet },
     { key: 'product_performance', to: '/reports/product-performance', icon: Package2 },
     { key: 'recipe_cost', to: '/reports/recipe-cost', icon: ChefHat },

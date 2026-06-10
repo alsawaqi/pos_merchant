@@ -158,6 +158,53 @@ final readonly class LossWasteReportAction
             ->values()
             ->all();
 
+        // ---- Phase B — VOIDS by reason + staff (Additions §1.2: "Voids
+        // surface in the Loss/Waste report broken down by reason code and by
+        // staff"). Driven by voided pos_orders + the reason label snapshotted
+        // at void time; the order value is what the void wrote off.
+        $voidBase = DB::table('pos_orders')
+            ->where('company_id', $companyId)
+            ->where('status', 'void')
+            ->whereBetween('closed_at', [$filter->dateFrom, $filter->dateTo]);
+        if ($branchScope !== null) {
+            $voidBase->whereIn('branch_id', $branchScope);
+        }
+        $voidsByReason = (clone $voidBase)
+            ->selectRaw("
+                COALESCE(void_reason_label, 'No reason') AS reason,
+                COUNT(*) AS void_count,
+                COALESCE(SUM(grand_total), 0) AS order_value
+            ")
+            ->groupBy('void_reason_label')
+            ->orderByDesc('order_value')
+            ->get()
+            ->map(static fn ($r): array => [
+                'reason' => (string) $r->reason,
+                'void_count' => (int) $r->void_count,
+                'order_value' => number_format((float) $r->order_value, 3, '.', ''),
+            ])->all();
+        $voidsByStaff = DB::table('pos_orders')
+            ->join('pos_staff', 'pos_staff.id', '=', 'pos_orders.staff_id')
+            ->where('pos_orders.company_id', $companyId)
+            ->where('pos_orders.status', 'void')
+            ->whereBetween('pos_orders.closed_at', [$filter->dateFrom, $filter->dateTo])
+            ->when($branchScope !== null, fn ($q) => $q->whereIn('pos_orders.branch_id', $branchScope))
+            ->selectRaw('
+                pos_orders.staff_id AS staff_id,
+                pos_staff.name AS staff_name,
+                COUNT(*) AS void_count,
+                COALESCE(SUM(pos_orders.grand_total), 0) AS order_value
+            ')
+            ->groupBy('pos_orders.staff_id', 'pos_staff.name')
+            ->orderByDesc('void_count')
+            ->get()
+            ->map(static fn ($r): array => [
+                'staff_id' => (int) $r->staff_id,
+                'staff_name' => (string) $r->staff_name,
+                'void_count' => (int) $r->void_count,
+                'order_value' => number_format((float) $r->order_value, 3, '.', ''),
+            ])->all();
+
         return [
             'window' => [
                 'from' => $filter->dateFrom->format('Y-m-d\TH:i:s'),
@@ -174,6 +221,8 @@ final readonly class LossWasteReportAction
             'by_reason' => $byReason,
             'top_wasted' => $topWasted,
             'shortfall' => $shortfall,
+            'voids_by_reason' => $voidsByReason,
+            'voids_by_staff' => $voidsByStaff,
         ];
     }
 }

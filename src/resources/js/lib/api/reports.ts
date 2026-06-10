@@ -253,7 +253,64 @@ export interface LossWasteReportPayload {
         shortfall: string;
         variance_pct: string | null;
     }[];
+    /** Phase B — voided orders by reason code / by staff (Additions §1.2). */
+    voids_by_reason: { reason: string; void_count: number; order_value: string }[];
+    voids_by_staff: { staff_id: number; staff_name: string; void_count: number; order_value: string }[];
     _phase?: { shortfall_stub?: string };
+}
+
+// ============================================================
+// Phase B — Comp Report (Additions §1.2)
+// ============================================================
+
+export interface CompReportPayload {
+    window: { from: string; to: string; consolidated: boolean; branch_ids: number[] | null };
+    headline: { total_value: string; comp_count: number; comped_order_count: number };
+    by_reason: { code: string; name: string; value: string; comp_count: number }[];
+    by_branch: { branch_id: number; branch_name: string; value: string; comp_count: number }[];
+    by_staff: { staff_id: number; staff_name: string; value: string; comp_count: number }[];
+    recent: {
+        id: number;
+        reason: string;
+        amount: string;
+        scope: 'line' | 'order';
+        note: string | null;
+        applied_at: string | null;
+        order_uuid: string;
+    }[];
+}
+
+export function fetchCompReport(filter: ReportFilter): Promise<{ data: CompReportPayload }> {
+    return apiGet<{ data: CompReportPayload }>(reportPath('comps', filter));
+}
+
+// ============================================================
+// Phase B — Shift Report (cash variance per shift)
+// ============================================================
+
+export interface ShiftReportRow {
+    id: number;
+    uuid: string;
+    status: string;
+    branch_name: string;
+    staff_name: string | null;
+    opened_at: string;
+    closed_at: string | null;
+    opening_cash: string;
+    expected_cash: string | null;
+    counted_cash: string | null;
+    variance: string | null;
+    cash_collected: string | null;
+}
+
+export interface ShiftReportPayload {
+    window: { from: string; to: string; consolidated: boolean; branch_ids: number[] | null };
+    summary: { shift_count: number; closed_count: number; total_variance: string; total_short: string };
+    shifts: ShiftReportRow[];
+}
+
+export function fetchShiftReport(filter: ReportFilter): Promise<{ data: ShiftReportPayload }> {
+    return apiGet<{ data: ShiftReportPayload }>(reportPath('shifts', filter));
 }
 
 export function fetchLossWasteReport(filter: ReportFilter): Promise<{ data: LossWasteReportPayload }> {

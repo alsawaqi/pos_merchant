@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Pos;
 
 use App\Actions\Pos\Reports\AuditLogReportAction;
+use App\Actions\Pos\Reports\CompReportAction;
 use App\Actions\Pos\Reports\CustomerReportAction;
 use App\Actions\Pos\Reports\DiscountReportAction;
 use App\Actions\Pos\Reports\InventoryConsumptionReportAction;
@@ -15,6 +16,7 @@ use App\Actions\Pos\Reports\RecipeCostReportAction;
 use App\Actions\Pos\Reports\RestockPurchasingReportAction;
 use App\Actions\Pos\Reports\RoundUpDonationReportAction;
 use App\Actions\Pos\Reports\SalesReportAction;
+use App\Actions\Pos\Reports\ShiftReportAction;
 use App\Actions\Pos\Reports\StaffActivityReportAction;
 use App\Data\Reports\ReportFilter;
 use App\Enums\MerchantPermission;
@@ -56,7 +58,29 @@ class ReportsController extends Controller
         private readonly RoundUpDonationReportAction $roundUpDonationReport,
         private readonly AuditLogReportAction $auditLogReport,
         private readonly PayoutBreakdownReportAction $payoutBreakdownReport,
+        private readonly CompReportAction $compReport,
+        private readonly ShiftReportAction $shiftReport,
     ) {}
+
+    /** Phase B — Comp Report (Additions §1.2). */
+    public function comps(ReportFilterRequest $request): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::ReportsView);
+
+        $filter = ReportFilter::fromArray($request->validated());
+
+        return response()->json(['data' => $this->compReport->handle($filter)]);
+    }
+
+    /** Phase B — Shift Report (cash variance per shift). */
+    public function shifts(ReportFilterRequest $request): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::ReportsView);
+
+        $filter = ReportFilter::fromArray($request->validated());
+
+        return response()->json(['data' => $this->shiftReport->handle($filter)]);
+    }
 
     public function payouts(ReportFilterRequest $request): JsonResponse
     {
@@ -210,6 +234,8 @@ class ReportsController extends Controller
             'sales' => $this->salesReport,
             'customers' => $this->customerReport,
             'discounts' => $this->discountReport,
+            'comps' => $this->compReport,
+            'shifts' => $this->shiftReport,
             'product-performance' => $this->productPerformanceReport,
             'recipe-cost' => $this->recipeCostReport,
             'staff-activity' => $this->staffActivityReport,

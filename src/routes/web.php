@@ -35,6 +35,7 @@ use App\Http\Controllers\Pos\ReportsController;
 use App\Http\Controllers\Pos\RestockRequestsController;
 use App\Http\Controllers\Pos\RolesController;
 use App\Http\Controllers\Pos\SavedViewsController;
+use App\Http\Controllers\Pos\ShiftsController;
 use App\Http\Controllers\Pos\StockController;
 use App\Http\Controllers\Pos\StockCountsController;
 use App\Http\Controllers\Pos\SuppliersController;
@@ -563,6 +564,14 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('reports.customers');
         Route::get('reports/discounts', [ReportsController::class, 'discounts'])
             ->name('reports.discounts');
+        // Phase B — comp write-offs + per-shift cash variance.
+        Route::get('reports/comps', [ReportsController::class, 'comps'])
+            ->name('reports.comps');
+        Route::get('reports/shifts', [ReportsController::class, 'shifts'])
+            ->name('reports.shifts');
+        // Phase B — manager re-open of a closed shift (same business day).
+        Route::post('shifts/{shift:uuid}/reopen', [ShiftsController::class, 'reopen'])
+            ->name('shifts.reopen');
         // v2 #17 — merchant payout / commission breakdown (gross, platform/bank/
         // other cuts, merchant net) over a date range.
         Route::get('reports/payouts', [ReportsController::class, 'payouts'])
