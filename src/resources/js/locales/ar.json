@@ -1104,6 +1104,10 @@
         "subtitle": "دفتر عملائك — ابحث بالاسم أو الهاتف أو رقم المركبة. أرفق عدة لوحات لكل عميل للتعرف عليه في خدمة السيارات.",
         "search_placeholder": "البحث بالاسم أو الهاتف أو رقم المركبة…",
         "empty_state": "لا يوجد عملاء بعد. أضف أول عميل لتبدأ.",
+        "birthday_soon": "عيد ميلاد قريب",
+        "filters": {
+            "all_tags": "كل الوسوم"
+        },
         "table": {
             "name": "الاسم",
             "phone": "الهاتف",
@@ -1113,7 +1117,8 @@
         "fields": {
             "name": "الاسم",
             "phone": "الهاتف",
-            "phone_placeholder": "+968 9123 4567"
+            "phone_placeholder": "+968 9123 4567",
+            "date_of_birth": "تاريخ الميلاد"
         },
         "actions": {
             "add": "إضافة عميل",
@@ -1122,7 +1127,8 @@
             "remove": "إزالة",
             "detach": "فصل",
             "add_plate": "إضافة",
-            "attach_plate": "إرفاق"
+            "attach_plate": "إرفاق",
+            "add_tag": "إضافة"
         },
         "modal": {
             "create_title": "إضافة عميل",
@@ -1131,7 +1137,12 @@
             "plates_hint": "اختياري — واحد لكل مركبة",
             "add_plate_label": "رقم المركبة",
             "add_plate_placeholder": "12345 أ",
-            "no_plates": "لا توجد لوحات مرفقة بعد."
+            "no_plates": "لا توجد لوحات مرفقة بعد.",
+            "tags_title": "الوسوم",
+            "tags_hint": "اختياري — مثل VIP أو محظور",
+            "add_tag_label": "وسم",
+            "add_tag_placeholder": "VIP",
+            "no_tags": "لا توجد وسوم بعد."
         },
         "delete": {
             "title": "حذف العميل؟",
@@ -1139,6 +1150,7 @@
         },
         "errors": {
             "duplicate_plate_local": "هذه اللوحة موجودة بالفعل في قائمتك المعلقة.",
+            "duplicate_tag_local": "هذا الوسم موجود بالفعل في القائمة.",
             "validation_summary": "بعض الحقول تحتاج إلى مراجعة.",
             "save_failed": "تعذر حفظ بيانات العميل. حاول مرة أخرى.",
             "attach_failed": "تعذر إرفاق اللوحة.",
@@ -1148,6 +1160,7 @@
         "show": {
             "back": "العملاء",
             "member_since": "عميل منذ",
+            "date_of_birth": "تاريخ الميلاد",
             "wallet_balance": "رصيد المحفظة",
             "plates": "لوحات المركبات",
             "no_plates": "لا توجد لوحات مرفقة.",

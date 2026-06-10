@@ -29,6 +29,15 @@ class CustomerResource extends JsonResource
             // Points moved to per-rule pos_loyalty_accounts in the
             // loyalty refactor; fetch them via /customers/{uuid}/loyalty.
             'wallet_balance' => (string) $this->wallet_balance,
+            // Phase D3 — CRM profile fields (§5.7.2). Tags are a
+            // flat array of trimmed strings (NULL column → []);
+            // dob is date-only Y-m-d. upcoming_birthday = birthday
+            // (month+day) within the next 30 days, today included,
+            // timezone-naive — powers the list's cake indicator
+            // without the frontend re-deriving year-wrap logic.
+            'date_of_birth' => $this->date_of_birth?->toDateString(),
+            'tags' => $this->tags_json ?? [],
+            'upcoming_birthday' => $this->upcomingBirthday(),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
             // vehicle_plates surfaces when the controller did

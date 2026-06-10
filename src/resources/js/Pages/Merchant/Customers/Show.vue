@@ -20,7 +20,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, RouterLink } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import {
-    ArrowLeft, Car, Wallet, Trophy, Receipt, History, Coins,
+    ArrowLeft, Cake, Car, Tag, Wallet, Trophy, Receipt, History, Coins,
 } from 'lucide-vue-next';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import ReportChart from '@/Pages/Merchant/Reports/components/ReportChart.vue';
@@ -228,6 +228,22 @@ async function toggleWalletAll(): Promise<void> {
                         <div class="min-w-0">
                             <h1 class="text-2xl font-bold text-slate-950">{{ customer.name }}</h1>
                             <p class="mt-0.5 text-sm text-slate-500">{{ customer.phone }}</p>
+                            <!-- D3 — tag chips + upcoming-birthday badge -->
+                            <div v-if="(customer.tags ?? []).length > 0 || customer.upcoming_birthday" class="mt-3 flex flex-wrap gap-2">
+                                <span
+                                    v-for="tg in customer.tags"
+                                    :key="tg"
+                                    class="inline-flex items-center gap-1 rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700"
+                                >
+                                    <Tag class="size-3" />{{ tg }}
+                                </span>
+                                <span
+                                    v-if="customer.upcoming_birthday"
+                                    class="inline-flex items-center gap-1 rounded-full bg-pink-50 px-2.5 py-1 text-xs font-semibold text-pink-600"
+                                >
+                                    <Cake class="size-3" />{{ t('customers.birthday_soon') }}
+                                </span>
+                            </div>
                             <div v-if="customer.vehicle_plates && customer.vehicle_plates.length" class="mt-3 flex flex-wrap gap-2">
                                 <span
                                     v-for="p in customer.vehicle_plates"
@@ -237,6 +253,9 @@ async function toggleWalletAll(): Promise<void> {
                                     <Car class="size-3.5 text-slate-400" />{{ p.plate_number }}
                                 </span>
                             </div>
+                            <p v-if="customer.date_of_birth" class="mt-3 text-xs text-slate-400">
+                                {{ t('customers.show.date_of_birth') }}: {{ formatDate(customer.date_of_birth) }}
+                            </p>
                             <p class="mt-3 text-xs text-slate-400">{{ t('customers.show.member_since') }}: {{ formatDate(customer.created_at) }}</p>
                         </div>
                         <div class="rounded-xl bg-emerald-50 px-4 py-3 text-end">

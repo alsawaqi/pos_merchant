@@ -39,6 +39,8 @@ use Illuminate\Support\Str;
     'company_id',
     'name',
     'phone',
+    'date_of_birth',
+    'tags_json',
     'wallet_balance',
 ])]
 class Customer extends Model
@@ -58,7 +60,33 @@ class Customer extends Model
             // SUM(wallet_ledger) via WriteWalletLedgerEntryAction.
             // Points live per-rule on pos_loyalty_accounts now.
             'wallet_balance' => 'decimal:3',
+            // Phase D3 — optional CRM profile fields (§5.7.2).
+            // DOB is date-only + timezone-naive; tags are a flat
+            // JSON array of trimmed strings (NULL = no tags).
+            'date_of_birth' => 'date:Y-m-d',
+            'tags_json' => 'array',
         ];
+    }
+
+    /**
+     * Phase D3 — TRUE when the customer's birthday (month + day)
+     * falls within the next 30 days, today included. Timezone-naive
+     * by design; a Feb-29 birthday rolls to Mar-1 on non-leap years
+     * (Carbon month/day overflow), which is the friendly behaviour.
+     */
+    public function upcomingBirthday(): bool
+    {
+        if ($this->date_of_birth === null) {
+            return false;
+        }
+
+        $today = now()->startOfDay();
+        $next = $this->date_of_birth->copy()->year((int) $today->year)->startOfDay();
+        if ($next->lessThan($today)) {
+            $next = $this->date_of_birth->copy()->year((int) $today->year + 1)->startOfDay();
+        }
+
+        return $today->diffInDays($next) <= 30;
     }
 
     protected static function booted(): void

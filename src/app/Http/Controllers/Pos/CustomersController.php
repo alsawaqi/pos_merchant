@@ -33,7 +33,8 @@ use RuntimeException;
 /**
  * Phase 6a — customers CRUD + vehicle plate attach/detach.
  *
- *   GET    /api/customers                          → paginated list, ?search=...
+ *   GET    /api/customers                          → paginated list, ?search=... ?tag=...
+ *   GET    /api/customers/tags                     → distinct tag list (filter dropdown)
  *   GET    /api/customers/{customer:uuid}          → show with plates
  *   POST   /api/customers                          → create (optional initial plates)
  *   PATCH  /api/customers/{customer:uuid}          → update name/phone
@@ -95,12 +96,59 @@ class CustomersController extends Controller
             });
         }
 
+        // Phase D3 — ?tag= narrows to customers carrying that exact
+        // tag. The filter dropdown is fed by tags() below, so the
+        // value arrives in the stored canonical form (exact match,
+        // including case). whereJsonContains compares DECODED JSON
+        // values — portable across the sqlite test connection and
+        // the live Postgres, and immune to PHP's \uXXXX escaping
+        // of non-ASCII (Arabic) tags in the stored column.
+        if ($request->filled('tag')) {
+            $query->whereJsonContains('tags_json', trim((string) $request->query('tag')));
+        }
+
         $perPage = min((int) $request->query('per_page', 50), 200);
 
         return $query
             ->orderBy('name')
             ->paginate($perPage)
             ->through(fn (Customer $c): array => (new CustomerResource($c))->resolve($request));
+    }
+
+    /**
+     * Phase D3 — the company's distinct customer tags, for the list
+     * page's filter dropdown. Flattened in PHP: per-tenant customer
+     * books are small (company_id prefilters) and the column is a
+     * flat JSON array, so no DB-specific json_each gymnastics.
+     * Case-insensitive dedupe mirrors the write-side normalisation;
+     * first-seen casing wins, sorted for a stable dropdown.
+     *
+     * @return array{data: array<int, string>}
+     */
+    public function tags(Request $request): array
+    {
+        $this->ensure($request, MerchantPermission::CustomersView);
+
+        $distinct = [];
+        Customer::query()
+            ->where('company_id', $this->tenant->requiredId())
+            ->whereNotNull('tags_json')
+            // Deterministic "first-seen casing wins": without an
+            // ORDER BY the DB is free to return rows in index
+            // order, which varies run to run.
+            ->orderBy('id')
+            ->pluck('tags_json')
+            ->each(function ($tags) use (&$distinct): void {
+                foreach (($tags ?? []) as $tag) {
+                    $key = mb_strtolower((string) $tag);
+                    if (! array_key_exists($key, $distinct)) {
+                        $distinct[$key] = (string) $tag;
+                    }
+                }
+            });
+        ksort($distinct);
+
+        return ['data' => array_values($distinct)];
     }
 
     public function show(Request $request, Customer $customer): CustomerResource
@@ -153,7 +201,12 @@ class CustomersController extends Controller
             // attach action) rolls back the customer too.
             $customer = DB::transaction(function () use ($payload, $plates, $request): Customer {
                 $c = $this->create->handle(
-                    ['name' => $payload['name'], 'phone' => $payload['phone']],
+                    [
+                        'name' => $payload['name'],
+                        'phone' => $payload['phone'],
+                        'date_of_birth' => $payload['date_of_birth'] ?? null,
+                        'tags' => $payload['tags'] ?? null,
+                    ],
                     $request->user(),
                 );
                 foreach ($plates as $plate) {

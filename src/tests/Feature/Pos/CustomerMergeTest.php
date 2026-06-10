@@ -114,6 +114,37 @@ it('moves all of the source customer plates to the survivor', function (): void 
         ->toBe(['KEEP-1', 'MOVE-1', 'MOVE-2']);
 });
 
+// =================== TAGS + DOB FOLDING (Phase D3) ===================
+
+it('unions tags case-insensitively into the survivor (survivor order + casing win)', function (): void {
+    $ctx = makeMerchantActor();
+    $survivor = Customer::factory()->for($ctx['company'], 'company')->create(['tags_json' => ['VIP', 'Gold']]);
+    $source = Customer::factory()->for($ctx['company'], 'company')->create(['tags_json' => ['vip', 'Blocked']]);
+
+    $res = mergeCustomers($survivor->uuid, $source->uuid)->assertOk();
+
+    // 'vip' collides with the survivor's 'VIP' (case-insensitive);
+    // only 'Blocked' is novel.
+    expect($res->json('summary.tags_merged'))->toBe(1);
+    expect($survivor->fresh()->tags_json)->toBe(['VIP', 'Gold', 'Blocked']);
+});
+
+it('keeps the survivor date of birth, adopting the source one only when unset', function (): void {
+    $ctx = makeMerchantActor();
+
+    // Survivor has a dob → it wins.
+    $a = Customer::factory()->for($ctx['company'], 'company')->create(['date_of_birth' => '1985-01-01']);
+    $b = Customer::factory()->for($ctx['company'], 'company')->create(['date_of_birth' => '1990-05-10']);
+    mergeCustomers($a->uuid, $b->uuid)->assertOk();
+    expect($a->fresh()->date_of_birth->toDateString())->toBe('1985-01-01');
+
+    // Survivor has none → adopts the source's.
+    $c = Customer::factory()->for($ctx['company'], 'company')->create();
+    $d = Customer::factory()->for($ctx['company'], 'company')->create(['date_of_birth' => '1992-12-24']);
+    mergeCustomers($c->uuid, $d->uuid)->assertOk();
+    expect($c->fresh()->date_of_birth->toDateString())->toBe('1992-12-24');
+});
+
 it('refuses to merge a customer into itself', function (): void {
     $ctx = makeMerchantActor();
     $c = Customer::factory()->for($ctx['company'], 'company')->create();

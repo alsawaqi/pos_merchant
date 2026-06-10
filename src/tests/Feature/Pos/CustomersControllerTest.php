@@ -409,3 +409,163 @@ it('lets a Manager run the full customer + plate lifecycle', function (): void {
     $this->deleteJson("/api/customer-plates/{$plateUuid}")->assertNoContent();
     $this->deleteJson("/api/customers/{$uuid}")->assertNoContent();
 });
+
+// =================== TAGS + DATE OF BIRTH (Phase D3) ===================
+
+it('creates a customer with tags + date of birth and the resource echoes both', function (): void {
+    $ctx = makeMerchantActor();
+
+    $response = $this->postJson('/api/customers', [
+        'name' => 'Tagged Customer',
+        'phone' => '+968 90002000',
+        'date_of_birth' => '1990-05-10',
+        'tags' => ['VIP', '  Blocked '], // messy whitespace → trimmed
+    ])->assertCreated();
+
+    expect($response->json('data.date_of_birth'))->toBe('1990-05-10');
+    expect($response->json('data.tags'))->toBe(['VIP', 'Blocked']);
+    expect($response->json('data.upcoming_birthday'))->toBeBool();
+
+    $row = Customer::query()->where('uuid', $response->json('data.uuid'))->firstOrFail();
+    expect($row->tags_json)->toBe(['VIP', 'Blocked']);
+    expect($row->date_of_birth->toDateString())->toBe('1990-05-10');
+
+    $this->assertDatabaseHas('pos_audit_logs', [
+        'event' => 'customers.created',
+        'auditable_id' => $row->id,
+        'company_id' => $ctx['company']->id,
+    ]);
+});
+
+it('rejects whitespace-variant case-duplicate tags (TrimStrings runs before validation)', function (): void {
+    makeMerchantActor();
+
+    // The global TrimStrings middleware trims each tag BEFORE
+    // validation, so ' VIP ' vs 'vip ' arrive as 'VIP' vs 'vip'
+    // and distinct:ignore_case rejects them — the Action-level
+    // dedupe stays as defence in depth for non-HTTP callers.
+    $this->postJson('/api/customers', [
+        'name' => 'Dupe Tags',
+        'phone' => '+968 90002001',
+        'tags' => [' VIP ', 'vip '],
+    ])->assertStatus(422)->assertJsonValidationErrors(['tags.0']);
+});
+
+it('returns 422 for invalid tags or a future date of birth', function (): void {
+    makeMerchantActor();
+
+    // Future dob.
+    $this->postJson('/api/customers', [
+        'name' => 'Future Baby', 'phone' => '+968 90002002',
+        'date_of_birth' => now()->addDay()->toDateString(),
+    ])->assertStatus(422)->assertJsonValidationErrors(['date_of_birth']);
+
+    // tags must be an array.
+    $this->postJson('/api/customers', [
+        'name' => 'X', 'phone' => '+968 90002003', 'tags' => 'vip',
+    ])->assertStatus(422)->assertJsonValidationErrors(['tags']);
+
+    // A single tag over 32 chars.
+    $this->postJson('/api/customers', [
+        'name' => 'X', 'phone' => '+968 90002004', 'tags' => [str_repeat('a', 33)],
+    ])->assertStatus(422)->assertJsonValidationErrors(['tags.0']);
+
+    // Exact case-insensitive duplicates rejected up front.
+    $this->postJson('/api/customers', [
+        'name' => 'X', 'phone' => '+968 90002005', 'tags' => ['VIP', 'vip'],
+    ])->assertStatus(422);
+});
+
+it('replaces the tag set and clears the date of birth on PATCH, with audit', function (): void {
+    $ctx = makeMerchantActor();
+    $c = Customer::factory()->for($ctx['company'], 'company')->create([
+        'date_of_birth' => '1990-05-10',
+        'tags_json' => ['VIP'],
+    ]);
+
+    $response = $this->patchJson("/api/customers/{$c->uuid}", [
+        'date_of_birth' => null,
+        'tags' => ['Blocked', 'Gold'],
+    ])->assertOk();
+
+    expect($response->json('data.date_of_birth'))->toBeNull();
+    expect($response->json('data.tags'))->toBe(['Blocked', 'Gold']);
+
+    $fresh = Customer::query()->findOrFail($c->id);
+    expect($fresh->date_of_birth)->toBeNull();
+    expect($fresh->tags_json)->toBe(['Blocked', 'Gold']);
+
+    $this->assertDatabaseHas('pos_audit_logs', [
+        'event' => 'customers.updated',
+        'auditable_id' => $c->id,
+    ]);
+});
+
+it('writes no audit row when PATCHing identical dob + tags (no-op diff)', function (): void {
+    $ctx = makeMerchantActor();
+    $c = Customer::factory()->for($ctx['company'], 'company')->create([
+        'date_of_birth' => '1990-05-10',
+        'tags_json' => ['VIP', 'Gold'],
+    ]);
+
+    $this->patchJson("/api/customers/{$c->uuid}", [
+        'date_of_birth' => '1990-05-10',
+        'tags' => ['VIP', 'Gold'],
+    ])->assertOk();
+
+    $audits = \Illuminate\Support\Facades\DB::table('pos_audit_logs')
+        ->where('event', 'customers.updated')
+        ->where('auditable_id', $c->id)
+        ->count();
+    expect($audits)->toBe(0);
+});
+
+it('filters the index by ?tag= and stays tenant-scoped', function (): void {
+    $ctx = makeMerchantActor();
+    $vip = Customer::factory()->for($ctx['company'], 'company')->create(['tags_json' => ['VIP', 'Gold']]);
+    Customer::factory()->for($ctx['company'], 'company')->create(['tags_json' => ['Blocked']]);
+    Customer::factory()->for($ctx['company'], 'company')->create(); // untagged
+
+    // Foreign tenant's identically-tagged customer must not leak.
+    $otherCompany = Company::factory()->create();
+    Customer::factory()->for($otherCompany, 'company')->create(['tags_json' => ['VIP']]);
+
+    $r = $this->getJson('/api/customers?tag=VIP')->assertOk();
+    expect($r->json('data'))->toHaveCount(1);
+    expect($r->json('data.0.uuid'))->toBe($vip->uuid);
+
+    $r = $this->getJson('/api/customers?tag=Nope')->assertOk();
+    expect($r->json('data'))->toHaveCount(0);
+});
+
+it('lists the company distinct tags, deduped case-insensitively and sorted', function (): void {
+    $ctx = makeMerchantActor();
+    Customer::factory()->for($ctx['company'], 'company')->create(['tags_json' => ['VIP', 'Gold']]);
+    Customer::factory()->for($ctx['company'], 'company')->create(['tags_json' => ['vip', 'Blocked']]);
+    Customer::factory()->for($ctx['company'], 'company')->create(); // no tags
+
+    $otherCompany = Company::factory()->create();
+    Customer::factory()->for($otherCompany, 'company')->create(['tags_json' => ['Foreign']]);
+
+    $r = $this->getJson('/api/customers/tags')->assertOk();
+    // Case-insensitive distinct (first-seen casing), sorted: no
+    // 'vip' duplicate, no foreign-tenant 'Foreign'.
+    expect($r->json('data'))->toBe(['Blocked', 'Gold', 'VIP']);
+});
+
+it('flags upcoming_birthday when the birthday falls within the next 30 days', function (): void {
+    $ctx = makeMerchantActor();
+    $soon = Customer::factory()->for($ctx['company'], 'company')->create([
+        'phone' => '+968 90002100',
+        'date_of_birth' => now()->addDays(10)->subYears(30)->toDateString(),
+    ]);
+    $far = Customer::factory()->for($ctx['company'], 'company')->create([
+        'phone' => '+968 90002101',
+        'date_of_birth' => now()->addDays(60)->subYears(30)->toDateString(),
+    ]);
+
+    $r = $this->getJson('/api/customers')->assertOk();
+    $rows = collect($r->json('data'));
+    expect($rows->firstWhere('uuid', $soon->uuid)['upcoming_birthday'])->toBeTrue();
+    expect($rows->firstWhere('uuid', $far->uuid)['upcoming_birthday'])->toBeFalse();
+});

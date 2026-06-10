@@ -1104,6 +1104,10 @@
         "subtitle": "Your customer book — lookup by name, phone, or vehicle plate. Attach multiple plates per customer for drive-thru recognition.",
         "search_placeholder": "Search by name, phone, or plate…",
         "empty_state": "No customers yet. Add your first one to get started.",
+        "birthday_soon": "Birthday soon",
+        "filters": {
+            "all_tags": "All tags"
+        },
         "table": {
             "name": "Name",
             "phone": "Phone",
@@ -1113,7 +1117,8 @@
         "fields": {
             "name": "Name",
             "phone": "Phone",
-            "phone_placeholder": "+968 9123 4567"
+            "phone_placeholder": "+968 9123 4567",
+            "date_of_birth": "Date of birth"
         },
         "actions": {
             "add": "Add customer",
@@ -1122,7 +1127,8 @@
             "remove": "Remove",
             "detach": "Detach",
             "add_plate": "Add",
-            "attach_plate": "Attach"
+            "attach_plate": "Attach",
+            "add_tag": "Add"
         },
         "modal": {
             "create_title": "Add a customer",
@@ -1131,7 +1137,12 @@
             "plates_hint": "Optional — attach one per car",
             "add_plate_label": "Plate number",
             "add_plate_placeholder": "12345 A",
-            "no_plates": "No plates attached yet."
+            "no_plates": "No plates attached yet.",
+            "tags_title": "Tags",
+            "tags_hint": "Optional — e.g. VIP, Blocked",
+            "add_tag_label": "Tag",
+            "add_tag_placeholder": "VIP",
+            "no_tags": "No tags yet."
         },
         "delete": {
             "title": "Delete customer?",
@@ -1139,6 +1150,7 @@
         },
         "errors": {
             "duplicate_plate_local": "That plate is already in your pending list.",
+            "duplicate_tag_local": "That tag is already in the list.",
             "validation_summary": "Some fields need attention.",
             "save_failed": "Could not save the customer. Try again.",
             "attach_failed": "Could not attach the plate.",
@@ -1148,6 +1160,7 @@
         "show": {
             "back": "Customers",
             "member_since": "Customer since",
+            "date_of_birth": "Date of birth",
             "wallet_balance": "Wallet balance",
             "plates": "Vehicle plates",
             "no_plates": "No plates attached.",

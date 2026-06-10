@@ -26,6 +26,12 @@ export interface Customer {
      *  (wallet) — separate from loyalty. Loyalty points/stamps live
      *  per-rule; fetch via getCustomerLoyalty(). */
     wallet_balance: string;
+    /** Phase D3 — optional Y-m-d date (timezone-naive). */
+    date_of_birth: string | null;
+    /** Phase D3 — free-form tag strings (VIP, Blocked…); [] = none. */
+    tags: string[];
+    /** Phase D3 — server-derived: birthday within the next 30 days. */
+    upcoming_birthday: boolean;
     created_at: string | null;
     updated_at: string | null;
     /** Always populated on the show endpoint + the list endpoint. */
@@ -45,6 +51,10 @@ export interface PaginatedCustomers {
 export interface CreateCustomerPayload {
     name: string;
     phone: string;
+    /** Y-m-d, never in the future. */
+    date_of_birth?: string | null;
+    /** Trimmed server-side; case-insensitive dupes rejected. */
+    tags?: string[];
     /** Optional initial plates attached in the same transaction. */
     plates?: string[];
 }
@@ -52,6 +62,10 @@ export interface CreateCustomerPayload {
 export interface UpdateCustomerPayload {
     name?: string;
     phone?: string;
+    /** Explicit null CLEARS the stored date. */
+    date_of_birth?: string | null;
+    /** Replaces the whole tag set; [] clears it. */
+    tags?: string[];
 }
 
 export interface AttachPlatePayload {
@@ -61,6 +75,8 @@ export interface AttachPlatePayload {
 export interface ListCustomersParams {
     /** Case-insensitive LIKE across name + phone + plate. */
     search?: string;
+    /** Exact stored tag (from listCustomerTags) narrows the list. */
+    tag?: string;
     per_page?: number;
     page?: number;
 }
@@ -71,10 +87,16 @@ export function listCustomers(params: ListCustomersParams = {}): Promise<Paginat
     return apiGet<PaginatedCustomers>('/api/customers', {
         query: {
             search: params.search,
+            tag: params.tag,
             per_page: params.per_page,
             page: params.page,
         },
     });
+}
+
+/** Phase D3 — the company's distinct customer tags (filter dropdown). */
+export function listCustomerTags(): Promise<{ data: string[] }> {
+    return apiGet<{ data: string[] }>('/api/customers/tags');
 }
 
 export function getCustomer(uuid: string): Promise<{ data: Customer }> {

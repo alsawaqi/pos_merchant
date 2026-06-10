@@ -15,7 +15,7 @@
  *   - Loyalty view/adjust gated by LoyaltyView / LoyaltyManage
  */
 
-import { Car, Coins, Gift, Pencil, Plus, Settings, Stamp, Trash2, Users, Wallet } from 'lucide-vue-next';
+import { Cake, Car, Coins, Gift, Pencil, Plus, Settings, Stamp, Tag, Trash2, Users, Wallet } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { RouterLink } from 'vue-router';
@@ -29,6 +29,7 @@ import {
     deleteCustomer,
     detachVehiclePlate,
     listCustomers,
+    listCustomerTags,
     updateCustomer,
     type Customer,
     type CustomerVehiclePlate,
@@ -54,12 +55,18 @@ const error = ref<string | null>(null);
 const search = ref('');
 let searchDebounce: ReturnType<typeof setTimeout> | null = null;
 const total = ref(0);
+// D3 — server-side tag filter ('' = all) + the dropdown's options.
+const tagFilter = ref('');
+const availableTags = ref<string[]>([]);
 
 async function fetchCustomers(): Promise<void> {
     loading.value = true;
     error.value = null;
     try {
-        const response = await listCustomers({ search: search.value.trim() || undefined });
+        const response = await listCustomers({
+            search: search.value.trim() || undefined,
+            tag: tagFilter.value || undefined,
+        });
         customers.value = response.data;
         total.value = response.total;
     } catch (err) {
@@ -69,12 +76,24 @@ async function fetchCustomers(): Promise<void> {
     }
 }
 
+async function fetchTags(): Promise<void> {
+    try {
+        availableTags.value = (await listCustomerTags()).data;
+    } catch {
+        // Non-fatal — the filter dropdown just stays empty.
+    }
+}
+
 watch(search, () => {
     if (searchDebounce) clearTimeout(searchDebounce);
     searchDebounce = setTimeout(() => { void fetchCustomers(); }, 250);
 });
+watch(tagFilter, () => { void fetchCustomers(); });
 
-onMounted(() => { void fetchCustomers(); });
+onMounted(() => {
+    void fetchCustomers();
+    void fetchTags();
+});
 
 // ---- Modal state -----------------------------------------------
 type ModalMode = 'create' | 'edit';
@@ -84,19 +103,30 @@ const modalBusy = ref(false);
 const modalError = ref<string | null>(null);
 const modalFieldErrors = ref<Record<string, string[]>>({});
 const modalTarget = ref<Customer | null>(null);
-const modalForm = reactive<{ name: string; phone: string }>({ name: '', phone: '' });
+const modalForm = reactive<{ name: string; phone: string; date_of_birth: string }>({
+    name: '',
+    phone: '',
+    date_of_birth: '',
+});
 const pendingPlates = ref<string[]>([]);
 const newPlateInput = ref('');
 const editPlates = ref<CustomerVehiclePlate[]>([]);
+// D3 — the modal's working tag set (sent whole on save, unlike
+// plates which attach/detach live in edit mode).
+const pendingTags = ref<string[]>([]);
+const newTagInput = ref('');
 
 function openCreate(): void {
     modalMode.value = 'create';
     modalTarget.value = null;
     modalForm.name = '';
     modalForm.phone = '';
+    modalForm.date_of_birth = '';
     pendingPlates.value = [];
     newPlateInput.value = '';
     editPlates.value = [];
+    pendingTags.value = [];
+    newTagInput.value = '';
     modalError.value = null;
     modalFieldErrors.value = {};
     modalOpen.value = true;
@@ -107,12 +137,31 @@ function openEdit(customer: Customer): void {
     modalTarget.value = customer;
     modalForm.name = customer.name;
     modalForm.phone = customer.phone;
+    modalForm.date_of_birth = customer.date_of_birth ?? '';
     pendingPlates.value = [];
     newPlateInput.value = '';
     editPlates.value = [...(customer.vehicle_plates ?? [])];
+    pendingTags.value = [...(customer.tags ?? [])];
+    newTagInput.value = '';
     modalError.value = null;
     modalFieldErrors.value = {};
     modalOpen.value = true;
+}
+
+function addPendingTag(): void {
+    const tag = newTagInput.value.trim();
+    if (tag === '') return;
+    if (pendingTags.value.some((x) => x.toLowerCase() === tag.toLowerCase())) {
+        modalError.value = t('customers.errors.duplicate_tag_local');
+        return;
+    }
+    pendingTags.value.push(tag);
+    newTagInput.value = '';
+    modalError.value = null;
+}
+
+function removePendingTag(tag: string): void {
+    pendingTags.value = pendingTags.value.filter((x) => x !== tag);
 }
 
 function addPendingPlate(): void {
@@ -192,6 +241,8 @@ async function submitModal(): Promise<void> {
             const response = await createCustomer({
                 name: modalForm.name,
                 phone: modalForm.phone,
+                date_of_birth: modalForm.date_of_birth || undefined,
+                tags: pendingTags.value.length > 0 ? pendingTags.value : undefined,
                 plates: pendingPlates.value.length > 0 ? pendingPlates.value : undefined,
             });
             customers.value = [response.data, ...customers.value];
@@ -201,6 +252,10 @@ async function submitModal(): Promise<void> {
             const response = await updateCustomer(modalTarget.value.uuid, {
                 name: modalForm.name,
                 phone: modalForm.phone,
+                // '' (cleared input) → explicit null clears the dob.
+                date_of_birth: modalForm.date_of_birth || null,
+                // Always sent — [] clears the whole tag set.
+                tags: pendingTags.value,
             });
             const idx = customers.value.findIndex((c) => c.uuid === response.data.uuid);
             if (idx >= 0) {
@@ -212,6 +267,9 @@ async function submitModal(): Promise<void> {
             }
             modalOpen.value = false;
         }
+        // A save can introduce a brand-new tag → refresh the filter
+        // dropdown options (cheap, fire-and-forget).
+        void fetchTags();
     } catch (err) {
         if (err instanceof ApiError && err.isValidationError()) {
             modalFieldErrors.value = err.payload.errors;
@@ -438,13 +496,23 @@ async function submitWalletAdjust(): Promise<void> {
                 </div>
             </div>
 
-            <!-- Search -->
-            <input
-                v-model="search"
-                type="search"
-                :placeholder="t('customers.search_placeholder')"
-                class="w-full max-w-md rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
-            >
+            <!-- Search + tag filter -->
+            <div class="flex flex-wrap items-center gap-3">
+                <input
+                    v-model="search"
+                    type="search"
+                    :placeholder="t('customers.search_placeholder')"
+                    class="w-full max-w-md rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
+                >
+                <select
+                    v-if="availableTags.length > 0"
+                    v-model="tagFilter"
+                    class="rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-700 shadow-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
+                >
+                    <option value="">{{ t('customers.filters.all_tags') }}</option>
+                    <option v-for="tg in availableTags" :key="tg" :value="tg">{{ tg }}</option>
+                </select>
+            </div>
 
             <div v-if="error" class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
                 {{ error }}
@@ -480,7 +548,22 @@ async function submitWalletAdjust(): Promise<void> {
                                         class="block text-sm font-semibold text-slate-950 transition hover:text-teal-700"
                                     >
                                         {{ row.name }}
+                                        <Cake
+                                            v-if="row.upcoming_birthday"
+                                            class="inline size-3.5 text-pink-500"
+                                            :aria-label="t('customers.birthday_soon')"
+                                        />
                                     </RouterLink>
+                                    <div v-if="(row.tags ?? []).length > 0" class="mt-1 flex flex-wrap gap-1">
+                                        <span
+                                            v-for="tg in row.tags"
+                                            :key="tg"
+                                            class="inline-flex items-center gap-1 rounded-full bg-teal-50 px-2 py-0.5 text-[11px] font-semibold text-teal-700"
+                                        >
+                                            <Tag class="size-2.5" />
+                                            {{ tg }}
+                                        </span>
+                                    </div>
                                 </td>
                                 <td class="px-5 py-4 text-sm font-mono text-slate-600">{{ row.phone }}</td>
                                 <td class="px-5 py-4">
@@ -574,6 +657,64 @@ async function submitWalletAdjust(): Promise<void> {
                             class="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
                         >
                         <p v-if="modalFieldErrors.phone" class="mt-1 text-xs text-rose-600">{{ modalFieldErrors.phone[0] }}</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700">{{ t('customers.fields.date_of_birth') }}</label>
+                        <input
+                            v-model="modalForm.date_of_birth"
+                            type="date"
+                            :max="new Date().toISOString().slice(0, 10)"
+                            class="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                        >
+                        <p v-if="modalFieldErrors.date_of_birth" class="mt-1 text-xs text-rose-600">{{ modalFieldErrors.date_of_birth[0] }}</p>
+                    </div>
+
+                    <!-- Tags section (D3) -->
+                    <div class="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-3">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-sm font-semibold text-slate-700">{{ t('customers.modal.tags_title') }}</h3>
+                            <span class="text-xs text-slate-500">{{ t('customers.modal.tags_hint') }}</span>
+                        </div>
+
+                        <div v-if="pendingTags.length > 0" class="flex flex-wrap gap-1.5">
+                            <button
+                                v-for="tg in pendingTags"
+                                :key="tg"
+                                type="button"
+                                :title="t('customers.actions.remove')"
+                                class="inline-flex items-center gap-1 rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700 transition hover:bg-rose-50 hover:text-rose-600"
+                                @click="removePendingTag(tg)"
+                            >
+                                <Tag class="size-3" />
+                                {{ tg }}
+                                <span aria-hidden="true">×</span>
+                            </button>
+                        </div>
+                        <p v-else class="text-xs text-slate-400">{{ t('customers.modal.no_tags') }}</p>
+
+                        <div class="flex items-end gap-2">
+                            <div class="flex-1">
+                                <label class="block text-xs font-medium text-slate-600">{{ t('customers.modal.add_tag_label') }}</label>
+                                <input
+                                    v-model="newTagInput"
+                                    type="text"
+                                    maxlength="32"
+                                    :placeholder="t('customers.modal.add_tag_placeholder')"
+                                    class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                                    @keyup.enter.prevent="addPendingTag"
+                                >
+                            </div>
+                            <button
+                                type="button"
+                                class="inline-flex items-center gap-1.5 rounded-lg border border-teal-300 bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-700 transition hover:bg-teal-100"
+                                @click="addPendingTag"
+                            >
+                                <Plus class="size-3.5" />
+                                {{ t('customers.actions.add_tag') }}
+                            </button>
+                        </div>
+                        <p v-if="modalFieldErrors.tags" class="text-xs text-rose-600">{{ modalFieldErrors.tags[0] }}</p>
                     </div>
 
                     <!-- Plates section -->

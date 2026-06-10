@@ -725,6 +725,11 @@ return new class extends Migration
             $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
             $table->string('name');
             $table->string('phone', 32);
+            // Phase D3 -- optional CRM profile fields (blueprint
+            // §5.7.2): birthday indicator + free-form tag strings
+            // (VIP, Blocked...). tags_json NULL means "no tags".
+            $table->date('date_of_birth')->nullable();
+            $table->json('tags_json')->nullable();
             // Phase 6b -- denormalised wallet balance kept in
             // lock-step with SUM(wallet_ledger). Points moved to
             // pos_loyalty_accounts.point_balance in the loyalty

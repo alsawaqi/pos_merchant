@@ -426,6 +426,11 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         //     re-checks tenancy before any work
         Route::get('customers', [CustomersController::class, 'index'])
             ->name('customers.index');
+        // Phase D3 — distinct tag list for the filter dropdown.
+        // MUST be declared before the {customer:uuid} wildcard or
+        // the literal "tags" segment would bind as a uuid → 404.
+        Route::get('customers/tags', [CustomersController::class, 'tags'])
+            ->name('customers.tags');
         Route::get('customers/{customer:uuid}', [CustomersController::class, 'show'])
             ->name('customers.show');
         // Customer 360 (v2 #8): analytics rollups + paginated order history.

@@ -35,6 +35,9 @@ use RuntimeException;
  *     denormalised wallet_balance bumped by the source's (the running fold
  *     stays correct). Each moved entry keeps its historical
  *     wallet_balance_after — those are point-in-time values, not recomputed.
+ *   - profile (D3)   → tags become the case-insensitive union (survivor's
+ *     order first, then the source's novel tags); date_of_birth keeps the
+ *     survivor's when set, otherwise adopts the source's.
  *
  * Both customers must belong to the actor's company; a customer cannot be
  * merged into itself. Soft delete only — Phase 7+ orders reference
@@ -70,6 +73,7 @@ final readonly class MergeCustomersAction
                 'loyalty_accounts_moved' => 0,
                 'loyalty_accounts_merged' => 0,
                 'wallet_entries_moved' => 0,
+                'tags_merged' => 0,
             ];
 
             // --- Orders ---
@@ -126,6 +130,25 @@ final readonly class MergeCustomersAction
                 (float) $survivor->wallet_balance + (float) $source->wallet_balance, 3, '.', '',
             );
             $source->wallet_balance = '0.000';
+
+            // --- Profile (D3): tags union + dob survivor-precedence ---
+            // Case-insensitive union so "VIP" + "vip" don't split into
+            // two tags; the survivor's casing + order win, the source's
+            // novel tags append in their own order.
+            $mergedTags = $survivor->tags_json ?? [];
+            $seen = array_map(mb_strtolower(...), $mergedTags);
+            foreach (($source->tags_json ?? []) as $tag) {
+                if (! in_array(mb_strtolower($tag), $seen, true)) {
+                    $mergedTags[] = $tag;
+                    $seen[] = mb_strtolower($tag);
+                    $summary['tags_merged']++;
+                }
+            }
+            $survivor->tags_json = $mergedTags === [] ? null : $mergedTags;
+            if ($survivor->date_of_birth === null && $source->date_of_birth !== null) {
+                $survivor->date_of_birth = $source->date_of_birth->toDateString();
+            }
+
             $survivor->save();
             $source->save();
 
@@ -139,6 +162,9 @@ final readonly class MergeCustomersAction
                 newValues: array_merge($summary, [
                     'source_customer_id' => $source->id,
                     'source_customer_phone' => $source->phone,
+                    // D3 — the survivor's folded profile fields.
+                    'tags' => $survivor->tags_json,
+                    'date_of_birth' => $survivor->date_of_birth?->toDateString(),
                 ]),
             ));
 
