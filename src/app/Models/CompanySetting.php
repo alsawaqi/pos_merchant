@@ -25,6 +25,14 @@ class CompanySetting extends Model
     public const KEY_ORDER_CANCEL_POSITIONS = 'order_cancel_positions';
 
     /**
+     * P-F1 — the staff positions whose PIN authorizes sensitive POS actions
+     * (comps, cancellations, gifts), the manager-fingerprint fallback.
+     * pos_api emits it in /device/config and enforces it on
+     * /device/auth/verify-manager-pin.
+     */
+    public const KEY_MANAGER_APPROVAL_POSITIONS = 'manager_approval_positions';
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

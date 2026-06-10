@@ -2078,6 +2078,13 @@
             "save_success": "Order cancellation policy updated.",
             "save_failed": "Could not save the order cancellation policy."
         },
+        "manager_approval": {
+            "title": "Manager Approval",
+            "subtitle": "Choose which staff positions can approve sensitive POS actions (comps, cancellations, gifts) by entering their PIN when a manager fingerprint is unavailable.",
+            "positions_label": "Manager approval positions",
+            "save_success": "Manager approval policy updated.",
+            "save_failed": "Could not save the manager approval policy."
+        },
         "reasons": {
             "void_title": "Void reasons",
             "void_subtitle": "Every order void at the POS must pick one of these. \"Food was made\" keeps the ingredients consumed and shows the loss in the Loss/Waste report.",

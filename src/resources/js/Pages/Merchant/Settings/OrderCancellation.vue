@@ -12,13 +12,17 @@
  *     form and the sidebar entry.
  */
 
-import { Ban, Pencil, Plus, ShieldX, Trash2 } from 'lucide-vue-next';
+import { Ban, Pencil, Plus, ShieldCheck, ShieldX, Trash2 } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import BaseModal from '@/Components/BaseModal.vue';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
+import {
+    getManagerApprovalSetting,
+    updateManagerApprovalPositions,
+} from '@/lib/api/managerApproval';
 import {
     getOrderCancellationSetting,
     updateOrderCancellationPositions,
@@ -53,7 +57,7 @@ const saveSuccess = ref(false);
 
 const canSave = computed(() => canManage.value && !saving.value && selected.value.length > 0);
 
-function apiErrorMessage(e: unknown): string {
+function apiErrorMessage(e: unknown, fallback?: string): string {
     if (e instanceof ApiError) {
         const v = e.firstValidationMessage();
         if (v) {
@@ -64,7 +68,7 @@ function apiErrorMessage(e: unknown): string {
             return payload.message;
         }
     }
-    return t('settings.order_cancellation.save_failed');
+    return fallback ?? t('settings.order_cancellation.save_failed');
 }
 
 function isChecked(position: string): boolean {
@@ -114,6 +118,74 @@ async function save(): Promise<void> {
         saveError.value = apiErrorMessage(e);
     } finally {
         saving.value = false;
+    }
+}
+
+// =================== P-F1 — manager approval positions ===================
+// The staff positions whose PIN authorizes sensitive POS actions (comps,
+// cancellations, gifts) — the manager-fingerprint fallback. Same control
+// pattern as the cancel policy above, persisted under its own setting key.
+
+const approvalAvailable = ref<string[]>([]);
+const approvalSelected = ref<string[]>([]);
+
+const approvalLoading = ref(true);
+const approvalLoadError = ref<string | null>(null);
+
+const approvalSaving = ref(false);
+const approvalSaveError = ref<string | null>(null);
+const approvalSaveSuccess = ref(false);
+
+const canSaveApproval = computed(
+    () => canManage.value && !approvalSaving.value && approvalSelected.value.length > 0,
+);
+
+function isApprovalChecked(position: string): boolean {
+    return approvalSelected.value.includes(position);
+}
+
+function toggleApproval(position: string): void {
+    approvalSaveSuccess.value = false;
+    approvalSaveError.value = null;
+    if (isApprovalChecked(position)) {
+        approvalSelected.value = approvalSelected.value.filter((p) => p !== position);
+    } else {
+        approvalSelected.value = [...approvalSelected.value, position];
+    }
+}
+
+async function fetchApprovalSetting(): Promise<void> {
+    approvalLoading.value = true;
+    approvalLoadError.value = null;
+    try {
+        const res = await getManagerApprovalSetting();
+        approvalAvailable.value = res.data.available_positions;
+        approvalSelected.value = res.data.positions;
+    } catch (e) {
+        approvalLoadError.value = apiErrorMessage(e, t('settings.manager_approval.save_failed'));
+    } finally {
+        approvalLoading.value = false;
+    }
+}
+
+onMounted(() => { void fetchApprovalSetting(); });
+
+async function saveApproval(): Promise<void> {
+    if (!canSaveApproval.value) {
+        return;
+    }
+    approvalSaving.value = true;
+    approvalSaveError.value = null;
+    approvalSaveSuccess.value = false;
+    try {
+        const res = await updateManagerApprovalPositions(approvalSelected.value);
+        approvalAvailable.value = res.data.available_positions;
+        approvalSelected.value = res.data.positions;
+        approvalSaveSuccess.value = true;
+    } catch (e) {
+        approvalSaveError.value = apiErrorMessage(e, t('settings.manager_approval.save_failed'));
+    } finally {
+        approvalSaving.value = false;
     }
 }
 
@@ -303,6 +375,64 @@ async function confirmDeleteReason(): Promise<void> {
                         >
                             <Ban class="size-4" />
                             {{ saving ? t('common.saving') : t('settings.order_cancellation.save') }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============ P-F1 — MANAGER APPROVAL POSITIONS ============ -->
+            <div class="mt-8">
+                <h2 class="text-base font-semibold text-slate-900">{{ t('settings.manager_approval.title') }}</h2>
+                <p class="mt-1 max-w-2xl text-sm text-slate-500">{{ t('settings.manager_approval.subtitle') }}</p>
+            </div>
+
+            <div v-if="approvalLoadError" class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {{ approvalLoadError }}
+            </div>
+
+            <div class="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                <div v-if="approvalLoading" class="px-4 py-12 text-center text-sm text-slate-400">{{ t('common.loading') }}</div>
+                <div v-else-if="approvalAvailable.length === 0" class="flex flex-col items-center gap-3 px-4 py-12 text-center">
+                    <ShieldX class="size-8 text-slate-300" />
+                    <p class="text-sm text-slate-500">{{ t('settings.order_cancellation.empty_state') }}</p>
+                </div>
+                <div v-else class="p-4 sm:p-6">
+                    <p class="text-sm font-medium text-slate-700">{{ t('settings.manager_approval.positions_label') }}</p>
+                    <div class="mt-4 space-y-2">
+                        <label
+                            v-for="position in approvalAvailable"
+                            :key="position"
+                            class="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-3 transition"
+                            :class="canManage ? 'cursor-pointer hover:bg-slate-50' : 'cursor-not-allowed opacity-60'"
+                        >
+                            <input
+                                type="checkbox"
+                                :checked="isApprovalChecked(position)"
+                                :disabled="!canManage"
+                                class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                                @change="toggleApproval(position)"
+                            >
+                            <span class="text-sm font-medium text-slate-700">{{ t(`pos_staff.positions.${position}`) }}</span>
+                        </label>
+                    </div>
+
+                    <p v-if="canManage && approvalSelected.length === 0" class="mt-4 text-sm text-rose-600">
+                        {{ t('settings.order_cancellation.at_least_one') }}
+                    </p>
+                    <p v-if="approvalSaveError" class="mt-4 text-sm text-rose-600">{{ approvalSaveError }}</p>
+                    <p v-if="approvalSaveSuccess" class="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                        {{ t('settings.manager_approval.save_success') }}
+                    </p>
+
+                    <div v-if="canManage" class="mt-6 flex justify-end">
+                        <button
+                            type="button"
+                            class="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:opacity-60"
+                            :disabled="!canSaveApproval"
+                            @click="saveApproval"
+                        >
+                            <ShieldCheck class="size-4" />
+                            {{ approvalSaving ? t('common.saving') : t('settings.order_cancellation.save') }}
                         </button>
                     </div>
                 </div>

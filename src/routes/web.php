@@ -29,6 +29,7 @@ use App\Http\Controllers\Pos\IngredientUnitsController;
 use App\Http\Controllers\Pos\LoyaltyController;
 use App\Http\Controllers\Pos\PosStaffController;
 use App\Http\Controllers\Pos\CompReasonsController;
+use App\Http\Controllers\Pos\ManagerApprovalSettingController;
 use App\Http\Controllers\Pos\OrderCancellationSettingController;
 use App\Http\Controllers\Pos\VoidReasonsController;
 use App\Http\Controllers\Pos\OrdersController;
@@ -706,6 +707,16 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('settings.order-cancellation.show');
         Route::put('settings/order-cancellation', [OrderCancellationSettingController::class, 'update'])
             ->name('settings.order-cancellation.update');
+
+        // P-F1 — manager approval policy: which staff positions may authorize
+        // sensitive POS actions (comps, cancellations, gifts) by PIN — the
+        // manager-fingerprint fallback. Emitted in /device/config + verified by
+        // pos_api on /device/auth/verify-manager-pin. Same orders.cancel gate
+        // as the cancellation policy it rides with.
+        Route::get('settings/manager-approval', [ManagerApprovalSettingController::class, 'show'])
+            ->name('settings.manager-approval.show');
+        Route::put('settings/manager-approval', [ManagerApprovalSettingController::class, 'update'])
+            ->name('settings.manager-approval.update');
 
         // Phase B (Additions §1.2) — void + comp reason code lists. Same
         // orders.cancel gate as the cancellation policy they ride with;
