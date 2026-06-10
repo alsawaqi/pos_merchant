@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Pos\Catalogue;
 
+use App\Models\Branch;
 use App\Models\ProductCategory;
 use App\Support\MerchantTenantContext;
 use Illuminate\Foundation\Http\FormRequest;
@@ -28,6 +29,11 @@ class CreateCategoryRequest extends FormRequest
             // Optional parent → makes this a subcategory. Company-scope +
             // 2-level cap checked in withValidator.
             'parent_id' => ['nullable', 'integer'],
+            // Phase D2 — §5.5.1 branch availability (all or selected).
+            // Empty / omitted = all branches. Ownership checked in
+            // withValidator.
+            'branch_ids' => ['nullable', 'array'],
+            'branch_ids.*' => ['integer', 'min:1'],
         ];
     }
 
@@ -51,7 +57,29 @@ class CreateCategoryRequest extends FormRequest
             }
 
             $this->validateParent($v, $companyId);
+            $this->validateBranchIds($v, $companyId);
         });
+    }
+
+    /**
+     * Phase D2 — every supplied branch id must belong to this company
+     * (mirrors SyncProductBranchesAction's cross-tenant guard).
+     */
+    private function validateBranchIds(Validator $v, int $companyId): void
+    {
+        $branchIds = $this->input('branch_ids');
+        if (! is_array($branchIds) || $branchIds === []) {
+            return;
+        }
+
+        $ids = array_values(array_unique(array_map('intval', $branchIds)));
+        $owned = Branch::query()
+            ->where('company_id', $companyId)
+            ->whereIn('id', $ids)
+            ->count();
+        if ($owned !== count($ids)) {
+            $v->errors()->add('branch_ids', 'One or more branches do not belong to your company.');
+        }
     }
 
     /**

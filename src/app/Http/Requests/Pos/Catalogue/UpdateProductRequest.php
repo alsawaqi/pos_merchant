@@ -32,8 +32,14 @@ class UpdateProductRequest extends FormRequest
             'delivery_price' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:999999.999'],
             // Phase 7 — stock mode: unit | ingredient | untracked.
             'stock_mode' => ['sometimes', 'string', 'in:unit,ingredient,untracked'],
+            // Phase D2 — unit-mode LOW STOCK badge threshold. NULL = no badge.
+            'low_stock_threshold' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:999999.999'],
             'cost_price' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:999999.999'],
             'tax_rate' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:100'],
+            // Phase D2 — §5.5.3 tax-inclusive flag (display-only for now).
+            'tax_inclusive' => ['sometimes', 'boolean'],
+            // Phase D2 — §5.5.3 "Show on Customer Tablet menu yes/no".
+            'show_on_customer_tablet' => ['sometimes', 'boolean'],
             'display_order' => ['sometimes', 'integer', 'between:0,999'],
             'status' => ['sometimes', 'string', Rule::in(ProductStatus::values())],
         ];

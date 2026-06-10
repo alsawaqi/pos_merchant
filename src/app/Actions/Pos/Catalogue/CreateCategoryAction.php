@@ -29,7 +29,7 @@ final readonly class CreateCategoryAction
     ) {}
 
     /**
-     * @param  array{name: string, parent_id?: int|null, name_ar?: string|null, description?: string|null, image_url?: string|null, display_order?: int}  $attributes
+     * @param  array{name: string, parent_id?: int|null, name_ar?: string|null, description?: string|null, image_url?: string|null, display_order?: int, branch_ids?: array<int|string>|null}  $attributes
      */
     public function handle(array $attributes, User $actor): ProductCategory
     {
@@ -47,6 +47,10 @@ final readonly class CreateCategoryAction
                 'description' => $attributes['description'] ?? null,
                 'image_url' => $attributes['image_url'] ?? null,
                 'display_order' => $attributes['display_order'] ?? 0,
+                // Phase D2 — §5.5.1 branch availability: NULL = all branches,
+                // else the selected pos_branches ids (ownership enforced by
+                // CreateCategoryRequest before we get here).
+                'branch_availability_json' => self::normalizeBranchIds($attributes['branch_ids'] ?? null),
                 'status' => CategoryStatus::Active->value,
             ]);
 
@@ -61,10 +65,30 @@ final readonly class CreateCategoryAction
                     'name_ar' => $category->name_ar,
                     'parent_id' => $category->parent_id,
                     'display_order' => $category->display_order,
+                    'branch_ids' => $category->branch_availability_json,
                 ],
             ));
 
             return $category;
         });
+    }
+
+    /**
+     * Phase D2 — empty / missing selection means "all branches", stored
+     * as NULL; anything else becomes a deduped list of int branch ids.
+     *
+     * @param  array<int|string>|null  $branchIds
+     * @return list<int>|null
+     */
+    public static function normalizeBranchIds(?array $branchIds): ?array
+    {
+        if ($branchIds === null || $branchIds === []) {
+            return null;
+        }
+
+        return array_values(array_unique(array_map(
+            static fn (int|string $id): int => (int) $id,
+            $branchIds,
+        )));
     }
 }

@@ -24,6 +24,11 @@ export interface Category {
     description: string | null;
     image_url: string | null;
     display_order: number;
+    /**
+     * Phase D2 — §5.5.1 branch availability. null = all branches,
+     * else the pos_branches ids that show this category.
+     */
+    branch_ids: number[] | null;
     status: CategoryStatus | null;
     products_count: number;
     created_at: string | null;
@@ -52,9 +57,21 @@ export interface Product {
     delivery_price: string | null;
     /** Phase 7 — stock mode: unit | ingredient | untracked. */
     stock_mode: string | null;
+    /**
+     * Phase D2 — unit-mode LOW STOCK badge threshold (decimal string).
+     * null = no badge.
+     */
+    low_stock_threshold: string | null;
     cost_price: string | null;
     /** Percentage (5.00 = 5%). null = inherit company default. */
     tax_rate: string | null;
+    /**
+     * Phase D2 — §5.5.3 tax-inclusive flag. Display-only for now:
+     * order totals still add company taxes on top (exclusive).
+     */
+    tax_inclusive: boolean;
+    /** Phase D2 — §5.5.3 customer tablet visibility (POS ignores it). */
+    show_on_customer_tablet: boolean;
     display_order: number;
     status: ProductStatus | null;
     /** Phase 4.9 — product-specific add-on groups when eager-loaded. */
@@ -171,6 +188,8 @@ export interface CreateCategoryPayload {
     description?: string | null;
     image_url?: string | null;
     display_order?: number;
+    /** Phase D2 — branch availability. [] / omitted = all branches. */
+    branch_ids?: number[];
 }
 
 export interface UpdateCategoryPayload {
@@ -180,6 +199,8 @@ export interface UpdateCategoryPayload {
     image_url?: string | null;
     display_order?: number;
     status?: CategoryStatus;
+    /** Phase D2 — branch availability. [] = back to all branches. */
+    branch_ids?: number[];
 }
 
 // ---- Product payloads -------------------------------------------
@@ -197,8 +218,14 @@ export interface CreateProductPayload {
     delivery_price?: string | number | null;
     /** Phase 7 — stock mode: unit (finished/piece-counted) | ingredient | untracked. */
     stock_mode?: 'unit' | 'ingredient' | 'untracked';
+    /** Phase D2 — unit-mode LOW STOCK badge threshold. null = no badge. */
+    low_stock_threshold?: string | number | null;
     cost_price?: string | number | null;
     tax_rate?: string | number | null;
+    /** Phase D2 — §5.5.3 tax-inclusive flag (display-only for now). */
+    tax_inclusive?: boolean;
+    /** Phase D2 — §5.5.3 customer tablet visibility. */
+    show_on_customer_tablet?: boolean;
     display_order?: number;
 }
 
@@ -214,8 +241,14 @@ export interface UpdateProductPayload {
     delivery_price?: string | number | null;
     /** Phase 7 — stock mode: unit (finished/piece-counted) | ingredient | untracked. */
     stock_mode?: 'unit' | 'ingredient' | 'untracked';
+    /** Phase D2 — unit-mode LOW STOCK badge threshold. null = no badge. */
+    low_stock_threshold?: string | number | null;
     cost_price?: string | number | null;
     tax_rate?: string | number | null;
+    /** Phase D2 — §5.5.3 tax-inclusive flag (display-only for now). */
+    tax_inclusive?: boolean;
+    /** Phase D2 — §5.5.3 customer tablet visibility. */
+    show_on_customer_tablet?: boolean;
     display_order?: number;
     status?: ProductStatus;
 }

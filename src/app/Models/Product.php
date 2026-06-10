@@ -50,10 +50,16 @@ use Illuminate\Support\Str;
     'delivery_price',
     // Phase 7 — stock mode: unit | ingredient | untracked.
     'stock_mode',
+    // Phase D2 — unit-mode LOW STOCK badge threshold (NULL = no badge).
+    'low_stock_threshold',
     'cost_price',
     'tax_rate',
+    // Phase D2 — §5.5.3 tax-inclusive flag (display-only for now).
+    'tax_inclusive',
     'display_order',
     'status',
+    // Phase D2 — §5.5.3 "Show on Customer Tablet menu yes/no".
+    'show_on_customer_tablet',
 ])]
 class Product extends Model
 {
@@ -73,10 +79,15 @@ class Product extends Model
             // precision stays consistent through the channel-aware
             // price resolver below.
             'delivery_price' => 'decimal:3',
+            // Phase D2 — same precision as the branch stock_qty it is
+            // compared against for the LOW STOCK badge.
+            'low_stock_threshold' => 'decimal:3',
             'cost_price' => 'decimal:3',
             'tax_rate' => 'decimal:2',
+            'tax_inclusive' => 'boolean',
             'display_order' => 'integer',
             'status' => ProductStatus::class,
+            'show_on_customer_tablet' => 'boolean',
         ];
     }
 

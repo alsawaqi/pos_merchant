@@ -28,6 +28,9 @@ final readonly class UpdateCategoryAction
         // by UpdateCategoryRequest before we get here.
         'parent_id',
         'display_order',
+        // Phase D2 — §5.5.1 branch availability (NULL = all branches).
+        // The request speaks `branch_ids`; handle() translates.
+        'branch_availability_json',
         'status',
     ];
 
@@ -44,6 +47,15 @@ final readonly class UpdateCategoryAction
         $companyId = $this->tenant->requiredId();
         if ((int) $category->company_id !== $companyId) {
             abort(404);
+        }
+
+        // Phase D2 — the request speaks `branch_ids`; the column is
+        // branch_availability_json ([] / null both mean "all branches",
+        // stored as NULL). Ownership is enforced by UpdateCategoryRequest.
+        if (array_key_exists('branch_ids', $attributes)) {
+            $attributes['branch_availability_json'] = CreateCategoryAction::normalizeBranchIds(
+                is_array($attributes['branch_ids']) ? $attributes['branch_ids'] : null,
+            );
         }
 
         return DB::transaction(function () use ($category, $attributes, $actor, $companyId): ProductCategory {

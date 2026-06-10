@@ -67,8 +67,18 @@ final readonly class CreateProductAction
                 'base_price' => $attributes['base_price'],
                 // Phase 4.9 — per-product delivery override.
                 'delivery_price' => $attributes['delivery_price'] ?? null,
+                // Phase 7 — stock mode (the form always submitted it; it was
+                // silently dropped here until Phase D2 fixed the omission).
+                'stock_mode' => $attributes['stock_mode'] ?? 'untracked',
+                // Phase D2 — unit-mode LOW STOCK badge threshold.
+                'low_stock_threshold' => $attributes['low_stock_threshold'] ?? null,
                 'cost_price' => $attributes['cost_price'] ?? null,
                 'tax_rate' => $attributes['tax_rate'] ?? null,
+                // Phase D2 — §5.5.3 flags. tax_inclusive is display-only for
+                // now (totals still add tax on top); the tablet flag gates
+                // the future customer tablet menu, not the staff POS.
+                'tax_inclusive' => (bool) ($attributes['tax_inclusive'] ?? false),
+                'show_on_customer_tablet' => (bool) ($attributes['show_on_customer_tablet'] ?? true),
                 'display_order' => $attributes['display_order'] ?? 0,
                 'status' => ProductStatus::Active->value,
             ]);

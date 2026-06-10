@@ -38,8 +38,16 @@ final readonly class UpdateProductAction
         'base_price',
         // Phase 4.9 — per-product delivery override.
         'delivery_price',
+        // Phase 7 — stock mode (the form always submitted it; it was
+        // silently dropped here until Phase D2 fixed the omission).
+        'stock_mode',
+        // Phase D2 — unit-mode LOW STOCK badge threshold.
+        'low_stock_threshold',
         'cost_price',
         'tax_rate',
+        // Phase D2 — §5.5.3 flags (tax_inclusive display-only for now).
+        'tax_inclusive',
+        'show_on_customer_tablet',
         'display_order',
         'status',
     ];
@@ -88,7 +96,7 @@ final readonly class UpdateProductAction
                 // Money columns come back as strings via the
                 // decimal cast — normalize both sides for the
                 // comparison.
-                if (in_array($field, ['base_price', 'delivery_price', 'cost_price', 'tax_rate'], true)) {
+                if (in_array($field, ['base_price', 'delivery_price', 'low_stock_threshold', 'cost_price', 'tax_rate'], true)) {
                     $sameValue = (string) $oldComparable === (string) $newValue;
                 } else {
                     $sameValue = $oldComparable == $newValue;

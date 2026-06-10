@@ -140,6 +140,10 @@ const catForm = reactive<{
     image_url: string;
     display_order: number;
     status: CategoryStatus;
+    // Phase D2 - branch availability. branch_all = show at every branch
+    // (stored as NULL); otherwise the ticked branch ids.
+    branch_all: boolean;
+    branch_ids: number[];
 }>({
     name: '',
     name_ar: '',
@@ -147,6 +151,8 @@ const catForm = reactive<{
     image_url: '',
     display_order: 0,
     status: 'active',
+    branch_all: true,
+    branch_ids: [],
 });
 
 // ---- Product modal ----------------------------------------------
@@ -173,10 +179,17 @@ const prodForm = reactive<{
     delivery_price: string;
     cost_price: string;
     tax_rate: string;
+    // Phase D2 - §5.5.3 tax-inclusive flag. Display-only for now -
+    // order totals still add company taxes on top (exclusive).
+    tax_inclusive: boolean;
+    // Phase D2 - §5.5.3 customer tablet visibility (POS unaffected).
+    show_on_customer_tablet: boolean;
     display_order: number;
     status: ProductStatus;
     // Phase 7 — stock mode: unit (finished/piece-counted) | ingredient | untracked.
     stock_mode: string;
+    // Phase D2 - unit-mode LOW STOCK badge threshold ('' = no badge).
+    low_stock_threshold: string;
     // Phase 4.9 — uuids of non-global add-on groups attached
     // to this product. Mirrored from product.addon_groups on
     // edit, posted to syncProductAddOnGroups on save.
@@ -202,9 +215,12 @@ const prodForm = reactive<{
     delivery_price: '',
     cost_price: '',
     tax_rate: '',
+    tax_inclusive: false,
+    show_on_customer_tablet: true,
     display_order: 0,
     status: 'active',
     stock_mode: 'untracked',
+    low_stock_threshold: '',
     addon_group_uuids: [],
     recipe_lines: [],
     branch_all: true,
@@ -400,6 +416,8 @@ function openCreateCategory(): void {
     catForm.image_url = '';
     catForm.display_order = categories.value.length;
     catForm.status = 'active';
+    catForm.branch_all = true;
+    catForm.branch_ids = [];
     catModalErrors.value = {};
     catModalError.value = null;
     catModalOpen.value = true;
@@ -414,6 +432,9 @@ function openEditCategory(category: Category): void {
     catForm.image_url = category.image_url ?? '';
     catForm.display_order = category.display_order;
     catForm.status = (category.status ?? 'active') as CategoryStatus;
+    // Phase D2 - null/empty = all branches.
+    catForm.branch_all = !category.branch_ids || category.branch_ids.length === 0;
+    catForm.branch_ids = [...(category.branch_ids ?? [])];
     catModalErrors.value = {};
     catModalError.value = null;
     catModalOpen.value = true;
@@ -430,6 +451,8 @@ async function submitCategory(): Promise<void> {
             description: catForm.description.trim() || null,
             image_url: catForm.image_url.trim() || null,
             display_order: catForm.display_order,
+            // Phase D2 - [] = all branches (server stores NULL).
+            branch_ids: catForm.branch_all ? [] : catForm.branch_ids,
         };
         if (catModalMode.value === 'create') {
             await createCategory(payload);
@@ -484,11 +507,14 @@ function openCreateProduct(): void {
     prodForm.delivery_price = '';
     prodForm.cost_price = '';
     prodForm.tax_rate = '';
+    prodForm.tax_inclusive = false;
+    prodForm.show_on_customer_tablet = true;
     // Default the new product's sort order to the end of the full
     // catalogue (total across pages, not just the current page).
     prodForm.display_order = productsMeta.value.total;
     prodForm.status = 'active';
     prodForm.stock_mode = 'untracked';
+    prodForm.low_stock_threshold = '';
     prodForm.addon_group_uuids = [];
     prodForm.recipe_lines = [];
     prodForm.branch_all = true;
@@ -517,9 +543,12 @@ function openEditProduct(product: Product): void {
     prodForm.delivery_price = product.delivery_price ?? '';
     prodForm.cost_price = product.cost_price ?? '';
     prodForm.tax_rate = product.tax_rate ?? '';
+    prodForm.tax_inclusive = product.tax_inclusive ?? false;
+    prodForm.show_on_customer_tablet = product.show_on_customer_tablet ?? true;
     prodForm.display_order = product.display_order;
     prodForm.status = (product.status ?? 'active') as ProductStatus;
     prodForm.stock_mode = product.stock_mode ?? 'untracked';
+    prodForm.low_stock_threshold = product.low_stock_threshold ?? '';
     // Phase 4.9 — pre-populate the picker from the eager-
     // loaded relation. The list endpoint doesn't return
     // addon_groups, so editing relies on the resource emitting
@@ -685,7 +714,13 @@ async function submitProduct(): Promise<void> {
             delivery_price: prodForm.delivery_price === '' ? null : prodForm.delivery_price,
             cost_price: prodForm.cost_price === '' ? null : prodForm.cost_price,
             tax_rate: prodForm.tax_rate === '' ? null : prodForm.tax_rate,
+            // Phase D2 - display-only flag (totals still add tax on top).
+            tax_inclusive: prodForm.tax_inclusive,
+            // Phase D2 - future customer tablet menu visibility.
+            show_on_customer_tablet: prodForm.show_on_customer_tablet,
             stock_mode: prodForm.stock_mode as 'unit' | 'ingredient' | 'untracked',
+            // Phase D2 - unit-mode LOW STOCK threshold ('' = none).
+            low_stock_threshold: prodForm.low_stock_threshold === '' ? null : prodForm.low_stock_threshold,
             display_order: prodForm.display_order,
         };
 
@@ -1776,6 +1811,49 @@ async function removeOwnedGroup(groupUuid: string): Promise<void> {
                         </select>
                     </label>
                 </div>
+
+                <!-- Phase D2 - category branch availability (all or selected).
+                     Same picker pattern as the product modal, minus the
+                     per-branch stock column. -->
+                <fieldset class="rounded-lg border border-slate-200 p-3">
+                    <legend class="px-2 text-sm font-semibold text-slate-700">
+                        <Building2 class="me-1 inline size-3.5 text-teal-600" />
+                        {{ t('catalogue.cat_branches.section_title') }}
+                    </legend>
+                    <p class="mb-2 text-xs text-slate-500">{{ t('catalogue.cat_branches.section_hint') }}</p>
+
+                    <label class="mb-2 flex items-center gap-2 text-xs font-medium text-slate-700">
+                        <input
+                            v-model="catForm.branch_all"
+                            type="checkbox"
+                            class="rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200"
+                        >
+                        {{ t('catalogue.branches.all_branches') }}
+                    </label>
+
+                    <div v-if="catForm.branch_all" class="rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
+                        {{ t('catalogue.cat_branches.all_branches_hint') }}
+                    </div>
+                    <div v-else-if="branches.length === 0" class="rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
+                        {{ t('catalogue.branches.no_branches') }}
+                    </div>
+                    <div v-else class="grid gap-1.5 sm:grid-cols-2">
+                        <label
+                            v-for="b in branches"
+                            :key="b.id"
+                            class="flex items-center gap-2 rounded border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+                        >
+                            <input
+                                v-model="catForm.branch_ids"
+                                type="checkbox"
+                                :value="b.id"
+                                class="rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200"
+                            >
+                            <span class="truncate">{{ b.name }}</span>
+                        </label>
+                    </div>
+                    <p v-if="catModalErrors.branch_ids" class="mt-1 text-xs text-rose-600">{{ catModalErrors.branch_ids[0] }}</p>
+                </fieldset>
             </form>
             <template #footer>
                 <div class="flex justify-end gap-2">
@@ -1877,6 +1955,21 @@ async function removeOwnedGroup(groupUuid: string): Promise<void> {
                             <p class="mt-1 text-xs text-slate-500">{{ t('catalogue.fields.tax_rate_hint') }}</p>
                         </label>
                     </div>
+
+                    <!-- Phase D2 - §5.5.3 tax-inclusive flag. STORED + LABELLED
+                         only for now; totals still add company taxes on top. -->
+                    <div>
+                        <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
+                            <input
+                                v-model="prodForm.tax_inclusive"
+                                type="checkbox"
+                                class="rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200"
+                            >
+                            {{ t('catalogue.fields.tax_inclusive') }}
+                        </label>
+                        <p class="mt-1 text-xs text-slate-500">{{ t('catalogue.fields.tax_inclusive_hint') }}</p>
+                    </div>
+
                     <label v-if="prodModalMode === 'edit'" class="block">
                         <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.status') }}</span>
                         <select v-model="prodForm.status" class="mt-1 w-full max-w-xs rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
@@ -1884,6 +1977,21 @@ async function removeOwnedGroup(groupUuid: string): Promise<void> {
                             <option value="inactive">{{ t('catalogue.statuses.inactive') }}</option>
                         </select>
                     </label>
+
+                    <!-- Phase D2 - §5.5.3 customer tablet visibility. Consumed by
+                         the future customer-facing tablet menu; the staff POS
+                         product grid is unaffected. -->
+                    <div>
+                        <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
+                            <input
+                                v-model="prodForm.show_on_customer_tablet"
+                                type="checkbox"
+                                class="rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200"
+                            >
+                            {{ t('catalogue.fields.show_on_tablet') }}
+                        </label>
+                        <p class="mt-1 text-xs text-slate-500">{{ t('catalogue.fields.show_on_tablet_hint') }}</p>
+                    </div>
 
                     <!-- Phase 7 — stock tracking mode. -->
                     <label class="block">
@@ -1898,6 +2006,22 @@ async function removeOwnedGroup(groupUuid: string): Promise<void> {
                             <template v-else-if="prodForm.stock_mode === 'ingredient'">Availability comes from its recipe + per-branch ingredient stock — no piece count.</template>
                             <template v-else>Sold freely — no stock is tracked.</template>
                         </p>
+                    </label>
+
+                    <!-- Phase D2 - unit-mode LOW STOCK badge threshold. Only
+                         unit products consume it (ingredient-mode badges derive
+                         from each ingredient's own minimum instead). -->
+                    <label v-if="prodForm.stock_mode === 'unit'" class="block">
+                        <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.low_stock_threshold') }}</span>
+                        <input
+                            v-model="prodForm.low_stock_threshold"
+                            type="number"
+                            min="0"
+                            step="1"
+                            :placeholder="t('catalogue.fields.low_stock_threshold_placeholder')"
+                            class="mt-1 w-full max-w-xs rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
+                        >
+                        <p class="mt-1 text-xs text-slate-500">{{ t('catalogue.fields.low_stock_threshold_hint') }}</p>
                     </label>
 
                     <!-- Phase 4.9 — add-on groups picker. Only

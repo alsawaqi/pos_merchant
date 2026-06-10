@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\Pos\Catalogue;
 
 use App\Enums\CategoryStatus;
+use App\Models\Branch;
 use App\Models\ProductCategory;
 use App\Support\MerchantTenantContext;
 use Illuminate\Foundation\Http\FormRequest;
@@ -28,6 +29,11 @@ class UpdateCategoryRequest extends FormRequest
             // Re-parent / un-nest. null promotes to top-level. Validity checked
             // in withValidator (company-scope, 2-level cap, no-self, no children).
             'parent_id' => ['sometimes', 'nullable', 'integer'],
+            // Phase D2 — §5.5.1 branch availability (all or selected).
+            // Empty array / null = back to all branches. Ownership checked
+            // in withValidator.
+            'branch_ids' => ['sometimes', 'nullable', 'array'],
+            'branch_ids.*' => ['integer', 'min:1'],
         ];
     }
 
@@ -105,5 +111,38 @@ class UpdateCategoryRequest extends FormRequest
                 $v->errors()->add('parent_id', 'This category has subcategories, so it cannot become a subcategory itself.');
             }
         });
+
+        $validator->after(function (Validator $v): void {
+            $this->validateBranchIds($v);
+        });
+    }
+
+    /**
+     * Phase D2 — every supplied branch id must belong to this company
+     * (mirrors SyncProductBranchesAction's cross-tenant guard).
+     */
+    private function validateBranchIds(Validator $v): void
+    {
+        if (! $this->has('branch_ids')) {
+            return;
+        }
+        $companyId = app(MerchantTenantContext::class)->id();
+        if ($companyId === null) {
+            return;
+        }
+
+        $branchIds = $this->input('branch_ids');
+        if (! is_array($branchIds) || $branchIds === []) {
+            return;
+        }
+
+        $ids = array_values(array_unique(array_map('intval', $branchIds)));
+        $owned = Branch::query()
+            ->where('company_id', $companyId)
+            ->whereIn('id', $ids)
+            ->count();
+        if ($owned !== count($ids)) {
+            $v->errors()->add('branch_ids', 'One or more branches do not belong to your company.');
+        }
     }
 }

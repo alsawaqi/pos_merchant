@@ -496,3 +496,95 @@ it('eager-loads addon_groups on product list so the picker can pre-populate', fu
     expect($found['addon_groups'])->toHaveCount(1);
     expect($found['addon_groups'][0]['uuid'])->toBe($group->uuid);
 });
+
+// =================== PHASE D2 — catalogue flags ===================
+
+it('persists stock_mode and the Phase D2 flags on create', function (): void {
+    $ctx = makeMerchantActor();
+
+    $response = $this->postJson('/api/products', [
+        'name' => 'Cheesecake Slice',
+        'base_price' => '2.500',
+        'stock_mode' => 'unit',
+        'low_stock_threshold' => '5',
+        'tax_inclusive' => true,
+        'show_on_customer_tablet' => false,
+    ])->assertCreated();
+
+    expect($response->json('data.stock_mode'))->toBe('unit');
+    expect($response->json('data.low_stock_threshold'))->toBe('5.000');
+    expect($response->json('data.tax_inclusive'))->toBeTrue();
+    expect($response->json('data.show_on_customer_tablet'))->toBeFalse();
+
+    $product = Product::query()
+        ->where('company_id', $ctx['company']->id)
+        ->where('name', 'Cheesecake Slice')
+        ->firstOrFail();
+    expect($product->stock_mode)->toBe('unit');
+    expect((string) $product->low_stock_threshold)->toBe('5.000');
+    expect($product->tax_inclusive)->toBeTrue();
+    expect($product->show_on_customer_tablet)->toBeFalse();
+});
+
+it('defaults the Phase D2 flags on a minimal create', function (): void {
+    makeMerchantActor();
+
+    $response = $this->postJson('/api/products', [
+        'name' => 'Plain Tea',
+        'base_price' => '0.500',
+    ])->assertCreated();
+
+    // Blueprint defaults: visible on the tablet, tax-exclusive,
+    // no low-stock badge, untracked stock.
+    expect($response->json('data.stock_mode'))->toBe('untracked');
+    expect($response->json('data.low_stock_threshold'))->toBeNull();
+    expect($response->json('data.tax_inclusive'))->toBeFalse();
+    expect($response->json('data.show_on_customer_tablet'))->toBeTrue();
+});
+
+it('updates stock_mode and the Phase D2 flags', function (): void {
+    $ctx = makeMerchantActor();
+    $product = Product::factory()->for($ctx['company'], 'company')->create([
+        'stock_mode' => 'untracked',
+    ]);
+
+    $this->patchJson("/api/products/{$product->uuid}", [
+        'stock_mode' => 'unit',
+        'low_stock_threshold' => '3',
+        'tax_inclusive' => true,
+        'show_on_customer_tablet' => false,
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.stock_mode', 'unit')
+        ->assertJsonPath('data.low_stock_threshold', '3.000')
+        ->assertJsonPath('data.tax_inclusive', true)
+        ->assertJsonPath('data.show_on_customer_tablet', false);
+
+    $this->assertDatabaseHas('pos_audit_logs', [
+        'event' => 'catalogue.product.updated',
+        'auditable_id' => $product->id,
+    ]);
+
+    // Clearing the threshold turns the badge off again.
+    $this->patchJson("/api/products/{$product->uuid}", [
+        'low_stock_threshold' => null,
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.low_stock_threshold', null);
+});
+
+it('rejects a negative threshold or a non-boolean Phase D2 flag', function (): void {
+    makeMerchantActor();
+
+    $this->postJson('/api/products', [
+        'name' => 'Bad threshold',
+        'base_price' => '1.000',
+        'low_stock_threshold' => '-1',
+    ])->assertStatus(422)->assertJsonValidationErrors(['low_stock_threshold']);
+
+    $this->postJson('/api/products', [
+        'name' => 'Bad flag',
+        'base_price' => '1.000',
+        'tax_inclusive' => 'maybe',
+    ])->assertStatus(422)->assertJsonValidationErrors(['tax_inclusive']);
+});

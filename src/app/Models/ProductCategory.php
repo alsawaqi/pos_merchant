@@ -36,6 +36,9 @@ use Illuminate\Support\Str;
     'description',
     'image_url',
     'display_order',
+    // Phase D2 — §5.5.1 branch availability: NULL = all branches, else
+    // a JSON array of pos_branches ids.
+    'branch_availability_json',
     'status',
 ])]
 class ProductCategory extends Model
@@ -54,6 +57,8 @@ class ProductCategory extends Model
             'status' => CategoryStatus::class,
             'display_order' => 'integer',
             'parent_id' => 'integer',
+            // Phase D2 — array of branch ids; NULL = all branches.
+            'branch_availability_json' => 'array',
         ];
     }
 

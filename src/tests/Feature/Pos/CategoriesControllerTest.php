@@ -22,6 +22,7 @@ declare(strict_types=1);
  */
 
 use App\Enums\MerchantRole;
+use App\Models\Branch;
 use App\Models\Company;
 use App\Models\Product;
 use App\Models\ProductCategory;
@@ -246,4 +247,87 @@ it('lets an InventoryManager create and edit categories', function (): void {
     $category = ProductCategory::query()->where('name', 'Pasta')->firstOrFail();
     $this->patchJson("/api/categories/{$category->uuid}", ['name' => 'Pasta & Risotto'])
         ->assertOk();
+});
+
+// =================== PHASE D2 — branch availability ===================
+
+it('creates a category limited to selected branches', function (): void {
+    $ctx = makeMerchantActor();
+    $b1 = Branch::factory()->for($ctx['company'], 'company')->create();
+    $b2 = Branch::factory()->for($ctx['company'], 'company')->create();
+
+    $response = $this->postJson('/api/categories', [
+        'name' => 'Airport Exclusives',
+        'branch_ids' => [$b1->id, $b2->id],
+    ])->assertCreated();
+
+    expect($response->json('data.branch_ids'))->toBe([$b1->id, $b2->id]);
+
+    $category = ProductCategory::query()
+        ->where('company_id', $ctx['company']->id)
+        ->where('name', 'Airport Exclusives')
+        ->firstOrFail();
+    expect($category->branch_availability_json)->toBe([$b1->id, $b2->id]);
+});
+
+it('defaults a category without branch_ids to all branches (null)', function (): void {
+    makeMerchantActor();
+
+    $this->postJson('/api/categories', ['name' => 'Everywhere'])
+        ->assertCreated()
+        ->assertJsonPath('data.branch_ids', null);
+});
+
+it('rejects category branch_ids that belong to another company', function (): void {
+    makeMerchantActor();
+    $foreignBranch = Branch::factory()->create(); // different company
+
+    $this->postJson('/api/categories', [
+        'name' => 'Sneaky',
+        'branch_ids' => [$foreignBranch->id],
+    ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['branch_ids']);
+});
+
+it('updates category branch availability and clears it back to all branches', function (): void {
+    $ctx = makeMerchantActor();
+    $b1 = Branch::factory()->for($ctx['company'], 'company')->create();
+    $b2 = Branch::factory()->for($ctx['company'], 'company')->create();
+    $category = ProductCategory::factory()->for($ctx['company'], 'company')->create([
+        'branch_availability_json' => [$b1->id],
+    ]);
+
+    // Move the category to branch 2 only.
+    $this->patchJson("/api/categories/{$category->uuid}", [
+        'branch_ids' => [$b2->id],
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.branch_ids', [$b2->id]);
+
+    $this->assertDatabaseHas('pos_audit_logs', [
+        'event' => 'catalogue.category.updated',
+        'auditable_id' => $category->id,
+    ]);
+
+    // Empty selection = back to "all branches" (stored as NULL).
+    $this->patchJson("/api/categories/{$category->uuid}", [
+        'branch_ids' => [],
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.branch_ids', null);
+
+    expect($category->fresh()->branch_availability_json)->toBeNull();
+});
+
+it('rejects updating category branch_ids to a foreign-tenant branch', function (): void {
+    $ctx = makeMerchantActor();
+    $category = ProductCategory::factory()->for($ctx['company'], 'company')->create();
+    $foreignBranch = Branch::factory()->create(); // different company
+
+    $this->patchJson("/api/categories/{$category->uuid}", [
+        'branch_ids' => [$foreignBranch->id],
+    ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['branch_ids']);
 });

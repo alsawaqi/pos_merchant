@@ -54,11 +54,20 @@ class ProductResource extends JsonResource
             // Phase 7 — stock mode: unit (finished, piece-counted) | ingredient
             // (recipe-driven) | untracked (sold freely).
             'stock_mode' => $this->stock_mode,
+            // Phase D2 — unit-mode LOW STOCK badge threshold (decimal
+            // string). NULL = no badge.
+            'low_stock_threshold' => $this->low_stock_threshold !== null ? (string) $this->low_stock_threshold : null,
             'cost_price' => $this->cost_price !== null ? (string) $this->cost_price : null,
             // Effective tax: column when set, NULL means
             // "inherit company default". Frontend resolves
             // the effective rate when needed.
             'tax_rate' => $this->tax_rate !== null ? (string) $this->tax_rate : null,
+            // Phase D2 — §5.5.3 tax-inclusive flag. Display-only for now:
+            // order totals still add company taxes on top (exclusive).
+            'tax_inclusive' => (bool) $this->tax_inclusive,
+            // Phase D2 — §5.5.3 customer tablet visibility. Consumed by the
+            // future tablet menu app; the staff POS ignores it.
+            'show_on_customer_tablet' => (bool) $this->show_on_customer_tablet,
             'display_order' => $this->display_order,
             'status' => $this->status?->value,
             // Phase 4.9 — attached add-on groups (product-specific,

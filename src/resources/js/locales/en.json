@@ -557,6 +557,13 @@
             "tax_rate": "Tax rate",
             "tax_rate_placeholder": "Inherit",
             "tax_rate_hint": "Leave blank to inherit the company default (5%).",
+            "tax_inclusive": "Price includes tax",
+            "tax_inclusive_hint": "Display label only for now — order totals still add company taxes on top.",
+            "show_on_tablet": "Show on customer tablet menu",
+            "show_on_tablet_hint": "Controls the future customer-facing tablet menu. The staff POS is unaffected.",
+            "low_stock_threshold": "Low-stock threshold",
+            "low_stock_threshold_placeholder": "e.g. 5",
+            "low_stock_threshold_hint": "Show a LOW STOCK badge on the POS card when branch units fall to or below this. Leave blank for no badge.",
             "selection_mode": "Selection mode",
             "is_global": "Apply to every product",
             "is_global_hint": "Global groups attach automatically to every product. Otherwise pick which products use this group from each product's edit screen.",
@@ -668,6 +675,11 @@
             "all_branches_hint": "This product shows on every branch POS. Untick to choose specific branches.",
             "no_branches": "No branches yet.",
             "stock_placeholder": "Units"
+        },
+        "cat_branches": {
+            "section_title": "Branch availability",
+            "section_hint": "Choose which branch menus show this category. Devices at other branches hide it from their category strip.",
+            "all_branches_hint": "This category shows on every branch POS. Untick to choose specific branches."
         }
     },
     "inventory": {

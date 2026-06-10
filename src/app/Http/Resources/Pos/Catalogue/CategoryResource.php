@@ -34,6 +34,9 @@ class CategoryResource extends JsonResource
             'description' => $this->description,
             'image_url' => $this->image_url,
             'display_order' => $this->display_order,
+            // Phase D2 — §5.5.1 branch availability. null = all branches,
+            // else the pos_branches ids that show this category.
+            'branch_ids' => $this->branch_availability_json,
             'status' => $this->status?->value,
             'products_count' => $this->products_count
                 ?? $this->products()->count(),

@@ -42,9 +42,17 @@ class CreateProductRequest extends FormRequest
             // Phase 7 — stock mode: unit (finished, piece-counted) | ingredient
             // (recipe-driven) | untracked (sold freely). Defaults to untracked.
             'stock_mode' => ['nullable', 'string', 'in:unit,ingredient,untracked'],
+            // Phase D2 — unit-mode LOW STOCK badge threshold. NULL = no badge.
+            'low_stock_threshold' => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
             'cost_price' => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
             // Per-product tax override. 0 = zero-rated.
             'tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            // Phase D2 — §5.5.3 tax-inclusive flag. STORED + DISPLAYED only
+            // for now: totals still add company taxes on top (exclusive).
+            'tax_inclusive' => ['nullable', 'boolean'],
+            // Phase D2 — §5.5.3 "Show on Customer Tablet menu yes/no". The
+            // future tablet menu consumes it; the staff POS ignores it.
+            'show_on_customer_tablet' => ['nullable', 'boolean'],
             'display_order' => ['nullable', 'integer', 'between:0,999'],
         ];
     }
