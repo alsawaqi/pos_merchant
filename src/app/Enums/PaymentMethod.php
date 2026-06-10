@@ -15,7 +15,11 @@ namespace App\Enums;
  *                  from "the cash half" by labelling both as
  *                  split_part
  *   loyalty      — points / wallet redemption (Phase 6b)
- *   gift         — gift card / voucher
+ *   gift         — a GIFT ORDER (blueprint §6.8): the whole order gifted,
+ *                  zero collected from the customer, manager-approved on
+ *                  the device. NOT a stored-value gift card (that is a
+ *                  separate deferred Phase 7+ feature) — never build
+ *                  card/voucher balance semantics on this value.
  */
 enum PaymentMethod: string
 {
