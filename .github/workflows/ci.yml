@@ -1,0 +1,58 @@
+# Phase D9 — CI for pos_merchant (Laravel app lives in src/).
+#
+# Tests run on sqlite :memory: (pinned by src/phpunit.xml) — CI never touches
+# the shared live charity_db, so the per-run key:generate is safe (the shared
+# APP_KEY with pos_admin only matters on the live stack).
+#
+# memory_limit MUST stay raised: the ~680-test suite fatally OOMs at PHP's
+# default 128M when whoops renders a failure.
+#
+# NOTE: setup-php enables intl by default; the production containers do NOT
+# ship it — avoid intl-dependent code paths (Number::format etc.).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: src
+
+jobs:
+  php-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: ctype, curl, dom, fileinfo, filter, iconv, mbstring, openssl, pcntl, pdo_sqlite, sqlite3, simplexml, tokenizer, xml, xmlreader, xmlwriter, zlib
+          ini-values: memory_limit=1G
+          coverage: none
+      - name: Composer cache dir
+        id: cc
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.cc.outputs.dir }}
+          key: ${{ runner.os }}-composer-merchant-${{ hashFiles('src/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-merchant-
+      - run: composer install --prefer-dist --no-interaction --no-progress
+      - run: cp .env.example .env && php artisan key:generate
+      - run: php artisan config:clear && vendor/bin/pest
+
+  frontend-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: src/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
