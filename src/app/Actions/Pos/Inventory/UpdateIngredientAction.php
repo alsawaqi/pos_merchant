@@ -32,6 +32,14 @@ final readonly class UpdateIngredientAction
         'name',
         'name_ar',
         'unit',
+        // Phase A — piece config IS mutable with history: stock
+        // stays in the primary unit, so changing the piece ratio
+        // only affects FUTURE entry conversions (each purchase
+        // batch freezes its own ratio anyway).
+        'piece_unit_label',
+        'piece_unit_label_ar',
+        'units_per_piece',
+        'allow_fractional_pieces',
         'default_unit_cost',
         'min_stock_threshold',
         'primary_supplier_id',

@@ -54,6 +54,11 @@ final readonly class CreateIngredientAction
                 'name' => $attributes['name'],
                 'name_ar' => $attributes['name_ar'] ?? null,
                 'unit' => $attributes['unit'],
+                // Phase A — the piece model (Additions §2.3).
+                'piece_unit_label' => $attributes['piece_unit_label'] ?? null,
+                'piece_unit_label_ar' => $attributes['piece_unit_label_ar'] ?? null,
+                'units_per_piece' => $attributes['units_per_piece'] ?? null,
+                'allow_fractional_pieces' => $attributes['allow_fractional_pieces'] ?? true,
                 'default_unit_cost' => $attributes['default_unit_cost'] ?? 0,
                 'min_stock_threshold' => $attributes['min_stock_threshold'] ?? null,
                 'primary_supplier_id' => $attributes['primary_supplier_id'] ?? null,

@@ -24,6 +24,11 @@ class IngredientResource extends JsonResource
             'name' => $this->name,
             'name_ar' => $this->name_ar,
             'unit' => $this->unit?->value,
+            // Phase A — piece model (Additions §2.3).
+            'piece_unit_label' => $this->piece_unit_label,
+            'piece_unit_label_ar' => $this->piece_unit_label_ar,
+            'units_per_piece' => $this->units_per_piece !== null ? (string) $this->units_per_piece : null,
+            'allow_fractional_pieces' => (bool) $this->allow_fractional_pieces,
             // Money + threshold as strings (decimal:3 cast).
             'default_unit_cost' => (string) $this->default_unit_cost,
             'min_stock_threshold' => $this->min_stock_threshold !== null

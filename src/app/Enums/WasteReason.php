@@ -27,6 +27,10 @@ enum WasteReason: string
     case Broken = 'broken';
     case Dropped = 'dropped';
     case Contamination = 'contamination';
+    // Phase A (Additions §2.8) — written by the day-end stock count when the
+    // physical count comes in BELOW the running balance. Never picked manually
+    // in the Waste form; only SubmitStockCountAction emits it.
+    case ReconciliationVariance = 'reconciliation_variance';
     case Other = 'other';
 
     /**

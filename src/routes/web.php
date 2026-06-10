@@ -34,6 +34,7 @@ use App\Http\Controllers\Pos\RestockRequestsController;
 use App\Http\Controllers\Pos\RolesController;
 use App\Http\Controllers\Pos\SavedViewsController;
 use App\Http\Controllers\Pos\StockController;
+use App\Http\Controllers\Pos\StockCountsController;
 use App\Http\Controllers\Pos\SuppliersController;
 use App\Http\Controllers\Pos\TablesController;
 use App\Http\Controllers\Pos\WasteController;
@@ -302,6 +303,9 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('ingredients.update');
         Route::delete('ingredients/{ingredient:uuid}', [IngredientsController::class, 'destroy'])
             ->name('ingredients.destroy');
+        // Phase A — purchase batch history (Additions §2.4).
+        Route::get('ingredients/{ingredient:uuid}/purchases', [IngredientsController::class, 'purchases'])
+            ->name('ingredients.purchases');
 
         // v2 #13 — per-ingredient alternate units (base unit + factor). Read on
         // inventory.view, writes on inventory.manage (gated in the controller).
@@ -336,8 +340,17 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('stock.adjust');
         Route::post('branches/{branch:uuid}/stock/restock', [StockController::class, 'restock'])
             ->name('stock.restock');
+        // Phase A — piece-aware purchase batch (Additions §2.4).
+        Route::post('branches/{branch:uuid}/stock/purchase', [StockController::class, 'purchase'])
+            ->name('stock.purchase');
         Route::get('branches/{branch:uuid}/stock-movements', [StockController::class, 'movements'])
             ->name('stock.movements');
+
+        // Phase A — day-end stock counts + reconciliation (Additions §2.8).
+        Route::get('branches/{branch:uuid}/stock-counts', [StockCountsController::class, 'index'])
+            ->name('stock-counts.index');
+        Route::post('branches/{branch:uuid}/stock-counts', [StockCountsController::class, 'store'])
+            ->name('stock-counts.store');
 
         // -------- Branch stock transfers (§5.6) -----------
         // Immediate atomic move between two branches. List/show

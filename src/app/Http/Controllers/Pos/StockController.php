@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Pos;
 
 use App\Actions\Pos\Inventory\AdjustStockAction;
+use App\Actions\Pos\Inventory\RecordPurchaseAction;
 use App\Actions\Pos\Inventory\RestockAction;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Pos\Inventory\AdjustStockRequest;
+use App\Http\Requests\Pos\Inventory\RecordPurchaseRequest;
 use App\Http\Requests\Pos\Inventory\RestockRequest;
 use App\Http\Resources\Pos\Inventory\BranchStockResource;
+use App\Http\Resources\Pos\Inventory\IngredientPurchaseResource;
 use App\Http\Resources\Pos\Inventory\StockMovementResource;
 use App\Models\Branch;
 use App\Models\BranchStock;
@@ -41,6 +44,7 @@ class StockController extends Controller
         private readonly MerchantTenantContext $tenant,
         private readonly AdjustStockAction $adjust,
         private readonly RestockAction $restock,
+        private readonly RecordPurchaseAction $purchase,
     ) {}
 
     /**
@@ -144,6 +148,55 @@ class StockController extends Controller
 
         return response()->json([
             'data' => (new StockMovementResource($movement))->resolve($request),
+        ], 201);
+    }
+
+    /**
+     * POST /api/branches/{branch:uuid}/stock/purchase
+     *
+     * Phase A (Additions §2.4) — piece-aware purchase batch.
+     * Pieces and/or total units + the money paid; writes the batch
+     * row, the restock movement, the exact-amount expense, and
+     * updates the ingredient's ratio/cost (last batch wins).
+     */
+    public function purchase(RecordPurchaseRequest $request, Branch $branch): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::InventoryManage);
+        $this->refuseIfBranchNotInTenant($branch);
+
+        $ingredient = $this->resolveIngredient($request->input('ingredient_uuid'));
+        if ($ingredient === null) {
+            return response()->json(['message' => 'Ingredient not found.'], 422);
+        }
+
+        $supplier = null;
+        if ($request->filled('supplier_uuid')) {
+            $supplier = Supplier::query()
+                ->where('company_id', $this->tenant->requiredId())
+                ->where('uuid', $request->input('supplier_uuid'))
+                ->first();
+            if ($supplier === null) {
+                return response()->json(['message' => 'Supplier not found.'], 422);
+            }
+        }
+
+        try {
+            $purchase = $this->purchase->handle(
+                branch: $branch,
+                ingredient: $ingredient,
+                pieces: $request->input('pieces'),
+                units: $request->input('units'),
+                totalPaid: $request->input('total_paid'),
+                supplier: $supplier,
+                note: $request->input('note'),
+                actor: $request->user(),
+            );
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'data' => (new IngredientPurchaseResource($purchase))->resolve($request),
         ], 201);
     }
 

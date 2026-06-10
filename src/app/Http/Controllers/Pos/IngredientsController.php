@@ -11,8 +11,10 @@ use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Pos\Inventory\CreateIngredientRequest;
 use App\Http\Requests\Pos\Inventory\UpdateIngredientRequest;
+use App\Http\Resources\Pos\Inventory\IngredientPurchaseResource;
 use App\Http\Resources\Pos\Inventory\IngredientResource;
 use App\Models\Ingredient;
+use App\Models\IngredientPurchase;
 use App\Support\MerchantTenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -83,6 +85,29 @@ class IngredientsController extends Controller
         $updated->load('primarySupplier');
 
         return IngredientResource::make($updated);
+    }
+
+    /**
+     * GET /api/ingredients/{uuid}/purchases
+     *
+     * Phase A — the batch history (Additions §2.4 "historical
+     * batches preserved"). Newest first, paginated.
+     */
+    public function purchases(Request $request, Ingredient $ingredient): AnonymousResourceCollection
+    {
+        $this->ensure($request, MerchantPermission::InventoryView);
+        $this->refuseIfNotInTenant($ingredient);
+
+        $perPage = min((int) $request->query('per_page', 25), 100);
+
+        return IngredientPurchaseResource::collection(
+            IngredientPurchase::query()
+                ->where('ingredient_id', $ingredient->id)
+                ->with(['branch', 'supplier'])
+                ->orderByDesc('occurred_at')
+                ->orderByDesc('id')
+                ->paginate($perPage),
+        );
     }
 
     public function destroy(Request $request, Ingredient $ingredient): JsonResponse

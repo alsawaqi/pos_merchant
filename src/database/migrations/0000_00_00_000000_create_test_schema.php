@@ -449,6 +449,11 @@ return new class extends Migration
             $table->string('name');
             $table->string('name_ar')->nullable();
             $table->string('unit', 16);
+            // Phase A (Additions §2.3) — the piece model.
+            $table->string('piece_unit_label', 32)->nullable();
+            $table->string('piece_unit_label_ar', 32)->nullable();
+            $table->decimal('units_per_piece', 14, 4)->nullable();
+            $table->boolean('allow_fractional_pieces')->default(true);
             $table->decimal('default_unit_cost', 12, 3)->default(0);
             $table->decimal('min_stock_threshold', 12, 3)->nullable();
             $table->foreignId('primary_supplier_id')->nullable()->constrained('pos_suppliers')->nullOnDelete();
@@ -499,6 +504,56 @@ return new class extends Migration
             $table->timestamp('created_at')->useCurrent();
             $table->index(['branch_id', 'occurred_at'], 'pos_stock_movements_branch_occurred_idx');
             $table->index(['ingredient_id', 'occurred_at'], 'pos_stock_movements_ingredient_occurred_idx');
+        });
+
+        // Phase A (Additions §2.4) — purchase batches: pieces + total paid +
+        // the batch ratio, linked to the restock movement they produced.
+        Schema::create('pos_ingredient_purchases', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->foreignId('ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
+            $table->foreignId('supplier_id')->nullable()->constrained('pos_suppliers')->nullOnDelete();
+            $table->decimal('pieces_received', 12, 3)->nullable();
+            $table->decimal('units_received', 12, 3);
+            $table->decimal('total_paid', 12, 3)->default(0);
+            $table->decimal('unit_cost', 12, 6)->default(0);
+            $table->decimal('units_per_piece_at_purchase', 14, 4)->nullable();
+            $table->boolean('is_loose')->default(false);
+            $table->foreignId('stock_movement_id')->nullable()->constrained('pos_stock_movements')->nullOnDelete();
+            $table->text('note')->nullable();
+            $table->foreignId('recorded_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->timestamp('occurred_at')->useCurrent();
+            $table->timestamps();
+            $table->index(['company_id', 'ingredient_id', 'occurred_at'], 'pos_ingredient_purchases_company_ingredient_idx');
+        });
+
+        // Phase A (Additions §2.8) — day-end stock counts (header + lines).
+        Schema::create('pos_stock_counts', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->text('note')->nullable();
+            $table->foreignId('recorded_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->foreignId('recorded_by_pos_staff_id')->nullable()->constrained('pos_staff')->nullOnDelete();
+            $table->timestamp('counted_at')->useCurrent();
+            $table->timestamps();
+            $table->index(['company_id', 'branch_id', 'counted_at'], 'pos_stock_counts_company_branch_counted_idx');
+        });
+
+        Schema::create('pos_stock_count_lines', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('stock_count_id')->constrained('pos_stock_counts')->cascadeOnDelete();
+            $table->foreignId('ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
+            $table->decimal('counted_pieces', 12, 3)->nullable();
+            $table->decimal('counted_units', 12, 3);
+            $table->decimal('expected_units', 12, 3);
+            $table->decimal('variance_units', 12, 3);
+            $table->decimal('unit_cost_at_time', 12, 3)->default(0);
+            $table->foreignId('stock_movement_id')->nullable()->constrained('pos_stock_movements')->nullOnDelete();
+            $table->unique(['stock_count_id', 'ingredient_id'], 'pos_stock_count_lines_count_ingredient_unique');
         });
 
         // ---- pos_product_recipes + pos_product_recipe_versions (Phase 5b) ---

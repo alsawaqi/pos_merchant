@@ -34,6 +34,10 @@ use Illuminate\Support\Str;
     'name',
     'name_ar',
     'unit',
+    'piece_unit_label',
+    'piece_unit_label_ar',
+    'units_per_piece',
+    'allow_fractional_pieces',
     'default_unit_cost',
     'min_stock_threshold',
     'primary_supplier_id',
@@ -53,6 +57,8 @@ class Ingredient extends Model
     {
         return [
             'unit' => IngredientUnit::class,
+            'units_per_piece' => 'decimal:4',
+            'allow_fractional_pieces' => 'boolean',
             'default_unit_cost' => 'decimal:3',
             'min_stock_threshold' => 'decimal:3',
         ];
@@ -109,6 +115,42 @@ class Ingredient extends Model
     public function movements(): HasMany
     {
         return $this->hasMany(StockMovement::class)->orderByDesc('occurred_at');
+    }
+
+    /**
+     * Phase A (Additions §2.4) — purchase batches, newest first. Each batch
+     * freezes the pieces/units/cost of one delivery; the ingredient's
+     * units_per_piece + default_unit_cost mirror the LATEST batch.
+     *
+     * @return HasMany<IngredientPurchase, $this>
+     */
+    public function purchases(): HasMany
+    {
+        return $this->hasMany(IngredientPurchase::class)->orderByDesc('occurred_at');
+    }
+
+    /**
+     * Whether quantities of this ingredient can be entered / counted in whole
+     * physical pieces: either a piece unit is configured (label + ratio), or
+     * the base unit itself is 'piece' (ratio 1).
+     */
+    public function isPieceTracked(): bool
+    {
+        return ($this->piece_unit_label !== null && $this->units_per_piece !== null)
+            || $this->unit === IngredientUnit::Piece;
+    }
+
+    /**
+     * Primary units in ONE piece for entry conversion. 1.0 when the base unit
+     * is itself the piece. NULL when the ingredient is not piece-tracked.
+     */
+    public function unitsPerPiece(): ?float
+    {
+        if ($this->piece_unit_label !== null && $this->units_per_piece !== null) {
+            return (float) $this->units_per_piece;
+        }
+
+        return $this->unit === IngredientUnit::Piece ? 1.0 : null;
     }
 
     /**

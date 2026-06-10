@@ -32,6 +32,13 @@ class CreateIngredientRequest extends FormRequest
             'name' => ['required', 'string', 'max:191'],
             'name_ar' => ['nullable', 'string', 'max:191'],
             'unit' => ['required', 'string', Rule::in(IngredientUnit::values())],
+            // Phase A — piece model (Additions §2.3). Label and ratio come as a
+            // pair: a label without a ratio can't convert, a ratio without a
+            // label can't be rendered. required_with enforces both-or-neither.
+            'piece_unit_label' => ['nullable', 'string', 'max:32', 'required_with:units_per_piece'],
+            'piece_unit_label_ar' => ['nullable', 'string', 'max:32'],
+            'units_per_piece' => ['nullable', 'numeric', 'gt:0', 'max:9999999999.9999', 'required_with:piece_unit_label'],
+            'allow_fractional_pieces' => ['nullable', 'boolean'],
             'default_unit_cost' => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
             'min_stock_threshold' => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
             'primary_supplier_id' => ['nullable', 'integer', 'min:1'],
