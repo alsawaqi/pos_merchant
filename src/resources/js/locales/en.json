@@ -675,6 +675,7 @@
             "stock": "Branch Stock",
             "movements": "Movements",
             "waste": "Waste",
+            "stock_counts": "Day-End Counts",
             "restock_requests": "Restock Requests",
             "transfers": "Transfers"
         },
@@ -685,6 +686,7 @@
             "delete": "Delete",
             "adjust": "Adjust",
             "restock": "Restock",
+            "purchase": "Purchase",
             "record_waste": "Record waste",
             "new_request": "New request",
             "submit": "Submit",
@@ -856,6 +858,7 @@
                 "broken": "Broken",
                 "dropped": "Dropped",
                 "contamination": "Contamination",
+                "reconciliation_variance": "Count variance",
                 "other": "Other"
             },
             "modal": {
@@ -875,6 +878,59 @@
                 "submit": "Record waste",
                 "submitting": "Recording…",
                 "cancel": "Cancel"
+            }
+        },
+        "piece": {
+            "title": "Piece unit (physical counting)",
+            "hint": "Set these when staff physically handle whole pieces — bottles, crates, bags. Purchases and day-end counts are then entered in pieces and converted automatically.",
+            "label": "Piece label",
+            "label_placeholder": "e.g. bottle, crate, bag",
+            "label_ar": "Piece label (Arabic)",
+            "units_per_piece": "{unit} per piece",
+            "allow_fractional": "Allow fractional pieces",
+            "allow_fractional_hint": "Untick for items like eggs where 4.7 pieces makes no sense — counts and purchases must then be whole numbers."
+        },
+        "purchase_modal": {
+            "title": "Record a purchase",
+            "subtitle": "Enter what was physically received and what was paid — the unit cost is computed, never typed. Entering pieces AND total quantity marks a loose batch and updates the piece ratio.",
+            "pieces": "Pieces received ({label})",
+            "pieces_generic": "Pieces received",
+            "units": "Total quantity received ({unit})",
+            "units_hint": "Required for loose produce (weigh the batch); optional when the piece ratio is fixed.",
+            "total_paid": "Total paid",
+            "preview": "= {units} {unit} into stock - unit cost {cost} OMR",
+            "submit": "Record purchase",
+            "submitting": "Recording…",
+            "success": "Purchase recorded - stock, cost and ratio updated."
+        },
+        "counts": {
+            "new_count": "New day-end count",
+            "empty": "No stock counts yet.",
+            "empty_hint": "Run a day-end count to reconcile what is physically on the shelf against the books.",
+            "counted_at": "Counted at",
+            "recorded_by": "By",
+            "lines": "Lines",
+            "shortfall_value": "Shortfall (OMR)",
+            "show_lines": "Details",
+            "hide_lines": "Hide",
+            "counted": "Counted",
+            "expected": "Expected",
+            "variance": "Variance",
+            "variance_value": "Value (OMR)",
+            "success_clean": "Count submitted - all {lines} lines matched the books exactly.",
+            "success_with_variance": "Count submitted - {variance} of {lines} lines had a variance; movements written.",
+            "modal": {
+                "title": "Day-end count at {branch}",
+                "subtitle": "Count what is physically on the shelf. Piece-tracked ingredients are counted in pieces; leave a row blank to skip it. Shortfalls are written as waste (count variance), overages as adjustments.",
+                "on_book": "On book",
+                "counted": "Counted",
+                "count_in": "Count in {label}",
+                "skip_placeholder": "skip",
+                "filled": "{filled} of {total} counted",
+                "no_stock": "No stock has ever been recorded at this branch.",
+                "empty_error": "Enter at least one counted amount.",
+                "submit": "Submit count",
+                "submitting": "Reconciling…"
             }
         },
         "restock": {

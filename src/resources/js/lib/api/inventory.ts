@@ -70,6 +70,18 @@ export interface Ingredient {
     name: string;
     name_ar: string | null;
     unit: IngredientUnit;
+    /**
+     * Phase A (Additions §2.3) — the PIECE model. label + ratio come as a
+     * pair (both set or both null): "bottle" / "1.0000" means 1 bottle =
+     * 1.0000 base units. Purchases of LOOSE batches rewrite units_per_piece
+     * (last batch wins). allow_fractional_pieces=false ⇒ whole pieces only
+     * in purchases and day-end counts.
+     */
+    piece_unit_label: string | null;
+    piece_unit_label_ar: string | null;
+    /** decimal(14,4) string — keep opaque. */
+    units_per_piece: string | null;
+    allow_fractional_pieces: boolean;
     /** OMR with 3-decimal precision — string for safety. */
     default_unit_cost: string;
     min_stock_threshold: string | null;
@@ -136,6 +148,10 @@ export interface CreateIngredientPayload {
     name: string;
     name_ar?: string | null;
     unit: IngredientUnit;
+    piece_unit_label?: string | null;
+    piece_unit_label_ar?: string | null;
+    units_per_piece?: string | number | null;
+    allow_fractional_pieces?: boolean;
     default_unit_cost?: string | number;
     min_stock_threshold?: string | number | null;
     primary_supplier_id?: number | null;
@@ -145,6 +161,10 @@ export interface UpdateIngredientPayload {
     name?: string;
     name_ar?: string | null;
     unit?: IngredientUnit;
+    piece_unit_label?: string | null;
+    piece_unit_label_ar?: string | null;
+    units_per_piece?: string | number | null;
+    allow_fractional_pieces?: boolean;
     default_unit_cost?: string | number;
     min_stock_threshold?: string | number | null;
     primary_supplier_id?: number | null;
@@ -359,6 +379,8 @@ export type WasteReason =
     | 'broken'
     | 'dropped'
     | 'contamination'
+    /** Phase A — written ONLY by the day-end stock count, never picked manually. */
+    | 'reconciliation_variance'
     | 'other';
 
 export type RestockRequestStatus =
@@ -692,6 +714,160 @@ export function allocateRestockRequest(
 ): Promise<{ data: RestockRequest }> {
     return apiPost<{ data: RestockRequest }>(
         `/api/restock-requests/${uuid}/allocate`,
+        payload as unknown as JsonValue,
+    );
+}
+
+// ============================================================
+// Phase A — purchase batches + day-end stock counts
+// (Additions doc §2.4 / §2.8)
+// ============================================================
+
+export interface IngredientPurchase {
+    id: number;
+    uuid: string;
+    branch_id: number;
+    branch?: { uuid: string; name: string };
+    ingredient_id: number;
+    ingredient?: {
+        uuid: string;
+        name: string;
+        unit: IngredientUnit;
+        piece_unit_label: string | null;
+    };
+    supplier?: { uuid: string; name: string } | null;
+    pieces_received: string | null;
+    units_received: string;
+    total_paid: string;
+    /** decimal(12,6) — finer than money so per-gram costs survive. */
+    unit_cost: string;
+    units_per_piece_at_purchase: string | null;
+    is_loose: boolean;
+    note: string | null;
+    occurred_at: string | null;
+}
+
+export interface PaginatedPurchases {
+    data: IngredientPurchase[];
+    meta: {
+        current_page: number;
+        last_page: number;
+        per_page: number;
+        total: number;
+    };
+}
+
+/**
+ * Three accepted shapes (server-enforced):
+ *   pieces only          fixed-ratio purchase (needs the ingredient's ratio)
+ *   pieces + units       LOOSE batch — units is the weighed total; the batch
+ *                        ratio becomes the ingredient's new units_per_piece
+ *   units only           plain base-unit purchase
+ */
+export interface RecordPurchasePayload {
+    ingredient_uuid: string;
+    pieces?: string | number | null;
+    units?: string | number | null;
+    /** Money for the WHOLE batch — unit cost is derived, never entered. */
+    total_paid: string | number;
+    supplier_uuid?: string | null;
+    note?: string | null;
+}
+
+export function recordPurchase(
+    branchUuid: string,
+    payload: RecordPurchasePayload,
+): Promise<{ data: IngredientPurchase }> {
+    return apiPost<{ data: IngredientPurchase }>(
+        `/api/branches/${branchUuid}/stock/purchase`,
+        payload as unknown as JsonValue,
+    );
+}
+
+export function listIngredientPurchases(
+    ingredientUuid: string,
+    opts?: { page?: number; per_page?: number },
+): Promise<PaginatedPurchases> {
+    const params = new URLSearchParams();
+    if (opts?.page) params.set('page', String(opts.page));
+    if (opts?.per_page) params.set('per_page', String(opts.per_page));
+    const qs = params.toString();
+    return apiGet<PaginatedPurchases>(
+        `/api/ingredients/${ingredientUuid}/purchases${qs ? `?${qs}` : ''}`,
+    );
+}
+
+export interface StockCountLine {
+    ingredient_id: number;
+    ingredient: {
+        uuid: string;
+        name: string;
+        name_ar: string | null;
+        unit: IngredientUnit;
+        piece_unit_label: string | null;
+    } | null;
+    counted_pieces: string | null;
+    counted_units: string;
+    expected_units: string;
+    variance_units: string;
+    unit_cost_at_time: string;
+    /** variance_units × unit_cost_at_time, server-computed. */
+    variance_value: string;
+}
+
+export interface StockCount {
+    id: number;
+    uuid: string;
+    branch_id: number;
+    note: string | null;
+    counted_at: string | null;
+    recorded_by: string | null;
+    lines: StockCountLine[];
+    created_at: string | null;
+}
+
+export interface PaginatedStockCounts {
+    data: StockCount[];
+    meta: {
+        current_page: number;
+        last_page: number;
+        per_page: number;
+        total: number;
+    };
+}
+
+export interface StockCountLinePayload {
+    ingredient_uuid: string;
+    /** Physical pieces counted — converts via units_per_piece. */
+    counted_pieces?: string | number | null;
+    /** Primary units counted directly (non-piece ingredients). */
+    counted_units?: string | number | null;
+}
+
+export interface SubmitStockCountPayload {
+    lines: StockCountLinePayload[];
+    note?: string | null;
+}
+
+export function listStockCounts(
+    branchUuid: string,
+    opts?: { page?: number; per_page?: number },
+): Promise<PaginatedStockCounts> {
+    const params = new URLSearchParams();
+    if (opts?.page) params.set('page', String(opts.page));
+    if (opts?.per_page) params.set('per_page', String(opts.per_page));
+    const qs = params.toString();
+    return apiGet<PaginatedStockCounts>(
+        `/api/branches/${branchUuid}/stock-counts${qs ? `?${qs}` : ''}`,
+    );
+}
+
+export function submitStockCount(
+    branchUuid: string,
+    payload: SubmitStockCountPayload,
+): Promise<{ data: StockCount }> {
+    return apiPost<{ data: StockCount }>(
+        `/api/branches/${branchUuid}/stock-counts`,
         payload as unknown as JsonValue,
     );
 }
