@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Models\User;
+use App\Support\Auth\PendingTwoFactorChallenge;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -71,6 +72,23 @@ class AuthenticatedSessionController extends Controller
                 RateLimiter::hit($request->throttleKey(), 60);
 
                 return $this->failedLogin($request);
+            }
+
+            // Phase D8 — a TOTP-enrolled account does NOT get a
+            // session from the password alone. Park a short-lived
+            // pending state (server-side session, anti-fixation
+            // regenerate inside begin()) and send the browser to
+            // the code page; TwoFactorChallengeController is the
+            // only place that converts it into a real login.
+            if ($candidate->hasConfirmedTwoFactor()) {
+                RateLimiter::clear($request->throttleKey());
+                PendingTwoFactorChallenge::begin($request->session(), $candidate, $request->remember());
+
+                if ($request->expectsJson()) {
+                    return response()->json(['two_factor' => true]);
+                }
+
+                return redirect()->to('/two-factor-challenge');
             }
 
             Auth::guard('web')->login($candidate, $request->remember());
@@ -187,6 +205,7 @@ class AuthenticatedSessionController extends Controller
             'company_id' => $user->company_id,
             'locale' => $user->locale,
             'must_change_password' => (bool) $user->must_change_password,
+            'two_factor_enabled' => $user->hasConfirmedTwoFactor(),
             'roles' => array_values($roles),
             'permissions' => array_values($permissions),
         ];

@@ -7,6 +7,8 @@ use App\Http\Controllers\Auth\ChangePasswordController;
 use App\Http\Controllers\Auth\CsrfTokenController;
 use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\Auth\ProfileController;
+use App\Http\Controllers\Auth\TwoFactorChallengeController;
+use App\Http\Controllers\Auth\TwoFactorController;
 use App\Http\Controllers\Portal\BranchesController;
 use App\Http\Controllers\Portal\PortalUsersController;
 use App\Http\Controllers\Pos\AddOnGroupsController;
@@ -89,6 +91,13 @@ Route::middleware(RedirectIfAuthenticated::class)->group(function (): void {
         ->name('password.request');
     Route::get('/reset-password', SpaController::class)
         ->name('password.reset');
+
+    // Phase D8 — the TOTP code page a 2FA-enrolled login bounces
+    // to. Guest-only by definition: the pending challenge lives in
+    // an UNauthenticated session; an authed visitor gets bounced
+    // home by RedirectIfAuthenticated.
+    Route::get('/two-factor-challenge', SpaController::class)
+        ->name('two-factor.challenge');
 });
 
 // Phase D7 — public forgot/reset endpoints. forgot ALWAYS answers
@@ -110,6 +119,18 @@ Route::post('/auth/reset-password', [PasswordResetController::class, 'reset'])
 Route::post('/auth/login', [AuthenticatedSessionController::class, 'store'])
     ->name('auth.login');
 
+// Phase D8 — 2FA login challenge. Deliberately PUBLIC (the caller
+// is by definition not yet authenticated); the endpoint is useless
+// without the server-side pending state the login POST parked in
+// the session, is throttled per (pending user, IP), and is the
+// ONLY code path that converts that state into a real session.
+Route::get('/auth/two-factor-challenge', [TwoFactorChallengeController::class, 'show'])
+    ->middleware(RequireJsonRequest::class)
+    ->name('auth.two-factor-challenge.show');
+Route::post('/auth/two-factor-challenge', [TwoFactorChallengeController::class, 'store'])
+    ->middleware(RequireJsonRequest::class)
+    ->name('auth.two-factor-challenge');
+
 // Authenticated SPA + JSON endpoints. EnsureMerchantSessionIsFresh
 // enforces the sliding idle timeout on every request, so a tab
 // left open for an hour bounces to /login on the next click
@@ -130,6 +151,19 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
     Route::patch('/auth/profile', [ProfileController::class, 'update'])
         ->middleware(RequireJsonRequest::class)
         ->name('auth.profile.update');
+
+    // Phase D8 — self-service TOTP 2FA enrolment (per-user opt-in).
+    // start → confirm-with-code → enabled (+ one-time recovery
+    // codes); disable is a step-up (password + code/recovery code).
+    Route::post('/auth/two-factor', [TwoFactorController::class, 'store'])
+        ->middleware(RequireJsonRequest::class)
+        ->name('auth.two-factor.store');
+    Route::post('/auth/two-factor/confirm', [TwoFactorController::class, 'confirm'])
+        ->middleware(RequireJsonRequest::class)
+        ->name('auth.two-factor.confirm');
+    Route::delete('/auth/two-factor', [TwoFactorController::class, 'destroy'])
+        ->middleware(RequireJsonRequest::class)
+        ->name('auth.two-factor.destroy');
 
     // -------- Phase 4.5 — Portal Users (merchant manages own team) -----
     // All endpoints auto-scoped to the actor's company via the

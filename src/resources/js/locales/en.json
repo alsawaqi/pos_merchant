@@ -62,6 +62,24 @@
             "invalid_body": "This reset link is no longer valid. Reset links expire after 60 minutes and can be used once — request a fresh one below.",
             "request_new": "Request a new link",
             "error_generic": "Could not reset your password. Please try again."
+        },
+        "two_factor": {
+            "title": "Two-step verification",
+            "subtitle": "Enter the 6-digit code from your authenticator app to finish signing in.",
+            "subtitle_recovery": "Enter one of your one-time recovery codes to finish signing in.",
+            "code": "Authentication code",
+            "code_placeholder": "123456",
+            "recovery_code": "Recovery code",
+            "recovery_code_placeholder": "ABCDE-FGHJK",
+            "verify": "Verify and sign in",
+            "verifying": "Verifying…",
+            "use_recovery_instead": "Use a recovery code instead",
+            "use_code_instead": "Use an authenticator code instead",
+            "invalid_code": "The provided two-factor code is invalid.",
+            "error_generic": "Something went wrong. Please try again.",
+            "expired_title": "Sign-in attempt expired",
+            "expired_body": "Your sign-in attempt timed out for security. Please sign in again with your email and password.",
+            "back_to_login": "Back to sign in"
         }
     },
     "profile": {
@@ -76,7 +94,37 @@
         "saved": "Profile updated.",
         "change_password_cta": "Change password",
         "change_password_note": "Update the password you use to sign in.",
-        "error_generic": "Could not update your profile. Please try again."
+        "error_generic": "Could not update your profile. Please try again.",
+        "two_factor": {
+            "title": "Two-factor authentication",
+            "subtitle": "Add a second step to your sign-in with an authenticator app.",
+            "status_on": "Enabled",
+            "status_off": "Off",
+            "disabled_body": "Protect your account with time-based one-time codes (TOTP). After your password, you will be asked for a 6-digit code from an app like Google Authenticator, Microsoft Authenticator, or 1Password.",
+            "enable_cta": "Enable two-factor",
+            "scan_hint": "Scan this QR code with your authenticator app, or enter the secret manually. Then type the 6-digit code the app shows to confirm.",
+            "manual_secret": "Manual entry secret",
+            "confirm_label": "Authenticator code",
+            "code_placeholder": "123456",
+            "confirm_cta": "Confirm and enable",
+            "enabled_notice": "Two-factor authentication is now enabled for your account.",
+            "recovery_title": "Your recovery codes",
+            "recovery_note": "Store these one-time codes somewhere safe (a password manager). Each works once if you lose access to your authenticator app. They will NOT be shown again.",
+            "copy": "Copy codes",
+            "copied": "Copied!",
+            "saved_codes": "I saved my recovery codes",
+            "enabled_body": "Your account asks for a 6-digit authenticator code at every sign-in. Disabling removes that protection.",
+            "disable_cta": "Disable two-factor",
+            "disable_note": "To disable, confirm your password plus a current authenticator code (or one unused recovery code).",
+            "current_password": "Current password",
+            "recovery_label": "Recovery code",
+            "recovery_placeholder": "ABCDE-FGHJK",
+            "use_recovery_instead": "Use a recovery code instead",
+            "use_code_instead": "Use an authenticator code instead",
+            "disable_confirm": "Disable two-factor",
+            "disabled_notice": "Two-factor authentication has been disabled.",
+            "error_generic": "Something went wrong. Please try again."
+        }
     },
     "nav": {
         "taxes": "Taxes",

@@ -33,6 +33,8 @@ export interface AuthUser {
      * before the app is usable; cleared after a successful change.
      */
     must_change_password?: boolean;
+    /** Phase D8 — true once TOTP 2FA enrolment was confirmed. */
+    two_factor_enabled?: boolean;
 }
 
 export interface AuthSession {
@@ -136,5 +138,16 @@ export function clearMustChangePassword(): void {
 export function setAuthUserName(name: string): void {
     if (authState.user) {
         authState.user.name = name;
+    }
+}
+
+/**
+ * Reflect a 2FA enable/disable (Phase D8) in-place so the Profile
+ * page's security card flips state without a full /auth/user
+ * refetch.
+ */
+export function setAuthTwoFactorEnabled(enabled: boolean): void {
+    if (authState.user) {
+        authState.user.two_factor_enabled = enabled;
     }
 }

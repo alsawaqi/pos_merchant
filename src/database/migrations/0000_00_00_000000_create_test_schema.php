@@ -88,6 +88,13 @@ return new class extends Migration
             // populates it on insert.
             $table->string('password')->nullable();
             $table->boolean('must_change_password')->default(false);
+            // Phase D8 — opt-in TOTP 2FA (mirrors pos_admin's
+            // 2026_07_06_010000 migration): encrypted secret,
+            // encrypted JSON of sha256-hashed recovery codes,
+            // confirmed_at NULL until the first valid code.
+            $table->text('two_factor_secret')->nullable();
+            $table->text('two_factor_recovery_codes')->nullable();
+            $table->timestamp('two_factor_confirmed_at')->nullable();
             $table->string('setup_token_hash', 64)->nullable()->unique();
             $table->timestamp('setup_token_expires_at')->nullable();
             $table->string('user_type')->default('merchant');

@@ -67,6 +67,7 @@ class SpaController extends Controller
             'company_id' => $user->company_id,
             'locale' => $user->locale,
             'must_change_password' => (bool) $user->must_change_password,
+            'two_factor_enabled' => $user->hasConfirmedTwoFactor(),
             'roles' => array_values($roles),
             'permissions' => array_values($permissions),
         ];

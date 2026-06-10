@@ -45,7 +45,7 @@ use Spatie\Permission\Traits\HasRoles;
     'invited_at',
     'invited_by_admin_id',
 ])]
-#[Hidden(['password', 'remember_token', 'setup_token_hash'])]
+#[Hidden(['password', 'remember_token', 'setup_token_hash', 'two_factor_secret', 'two_factor_recovery_codes'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
@@ -71,7 +71,25 @@ class User extends Authenticatable
             // (pos_admin Sprint 3). The cast here keeps reads
             // working transparently.
             'phone' => 'encrypted',
+            // Phase D8 — TOTP 2FA. Secret + recovery-code hashes are
+            // encrypted at rest (shared APP_KEY with pos_admin, so
+            // the ciphertext interoperates across both portals;
+            // NOTE a key rotation bricks every enrolled secret).
+            // The recovery codes value is a JSON array of SHA-256
+            // hashes — the plaintext codes are never stored.
+            'two_factor_secret' => 'encrypted',
+            'two_factor_recovery_codes' => 'encrypted:array',
+            'two_factor_confirmed_at' => 'datetime',
         ];
+    }
+
+    /**
+     * True once the user finished TOTP enrolment (confirmed a valid
+     * code). A stored-but-unconfirmed secret never gates login.
+     */
+    public function hasConfirmedTwoFactor(): bool
+    {
+        return $this->two_factor_confirmed_at !== null;
     }
 
     /**

@@ -3,6 +3,7 @@ import Login from '@/Pages/Auth/Login.vue';
 import ChangePassword from '@/Pages/Auth/ChangePassword.vue';
 import ForgotPassword from '@/Pages/Auth/ForgotPassword.vue';
 import ResetPassword from '@/Pages/Auth/ResetPassword.vue';
+import TwoFactorChallenge from '@/Pages/Auth/TwoFactorChallenge.vue';
 import Profile from '@/Pages/Auth/Profile.vue';
 import Dashboard from '@/Pages/Merchant/Dashboard.vue';
 import OrdersIndex from '@/Pages/Merchant/Orders/Index.vue';
@@ -66,6 +67,15 @@ const routes: RouteRecordRaw[] = [
         path: '/reset-password',
         name: 'reset-password',
         component: ResetPassword,
+        meta: { guestOnly: true },
+    },
+    {
+        // Phase D8 — TOTP code step. The login POST parks the
+        // pending state server-side and redirects here; the page
+        // bounces back to /login when nothing is pending.
+        path: '/two-factor-challenge',
+        name: 'two-factor-challenge',
+        component: TwoFactorChallenge,
         meta: { guestOnly: true },
     },
     {
