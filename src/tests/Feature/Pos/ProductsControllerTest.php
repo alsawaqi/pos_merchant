@@ -588,3 +588,83 @@ it('rejects a negative threshold or a non-boolean Phase D2 flag', function (): v
         'tax_inclusive' => 'maybe',
     ])->assertStatus(422)->assertJsonValidationErrors(['tax_inclusive']);
 });
+
+// =================== G1 — menu time-window ===================
+
+it('persists the availability window on create and echoes the raw strings', function (): void {
+    $ctx = makeMerchantActor();
+
+    $response = $this->postJson('/api/products', [
+        'name' => 'Breakfast Shakshuka',
+        'base_price' => '2.200',
+        'available_from' => '06:00:00',
+        'available_until' => '11:00:00',
+    ])->assertCreated();
+
+    expect($response->json('data.available_from'))->toBe('06:00:00');
+    expect($response->json('data.available_until'))->toBe('11:00:00');
+
+    $product = Product::query()
+        ->where('company_id', $ctx['company']->id)
+        ->where('name', 'Breakfast Shakshuka')
+        ->firstOrFail();
+    expect($product->available_from)->toBe('06:00:00');
+    expect($product->available_until)->toBe('11:00:00');
+});
+
+it('defaults the availability window to null (always available)', function (): void {
+    makeMerchantActor();
+
+    $response = $this->postJson('/api/products', [
+        'name' => 'All-day Americano',
+        'base_price' => '1.200',
+    ])->assertCreated();
+
+    expect($response->json('data.available_from'))->toBeNull();
+    expect($response->json('data.available_until'))->toBeNull();
+});
+
+it('updates the availability window and clears it back to always-available', function (): void {
+    $ctx = makeMerchantActor();
+    $product = Product::factory()->for($ctx['company'], 'company')->create();
+
+    // Set a midnight-wrapping window (overnight menu) — the
+    // pos_discounts convention: start > end wraps past 00:00.
+    $this->patchJson("/api/products/{$product->uuid}", [
+        'available_from' => '22:00:00',
+        'available_until' => '02:00:00',
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.available_from', '22:00:00')
+        ->assertJsonPath('data.available_until', '02:00:00');
+
+    $this->assertDatabaseHas('pos_audit_logs', [
+        'event' => 'catalogue.product.updated',
+        'auditable_id' => $product->id,
+    ]);
+
+    // Clearing both bounds = always available again.
+    $this->patchJson("/api/products/{$product->uuid}", [
+        'available_from' => null,
+        'available_until' => null,
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.available_from', null)
+        ->assertJsonPath('data.available_until', null);
+});
+
+it('rejects a malformed availability window', function (): void {
+    makeMerchantActor();
+
+    $this->postJson('/api/products', [
+        'name' => 'Bad window',
+        'base_price' => '1.000',
+        'available_from' => '25:99',
+    ])->assertStatus(422)->assertJsonValidationErrors(['available_from']);
+
+    $this->postJson('/api/products', [
+        'name' => 'Bad window too',
+        'base_price' => '1.000',
+        'available_until' => 'noonish',
+    ])->assertStatus(422)->assertJsonValidationErrors(['available_until']);
+});

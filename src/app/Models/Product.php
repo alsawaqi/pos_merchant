@@ -60,6 +60,10 @@ use Illuminate\Support\Str;
     'status',
     // Phase D2 — §5.5.3 "Show on Customer Tablet menu yes/no".
     'show_on_customer_tablet',
+    // G1 — menu time-window. 'HH:MM:SS' strings, both NULL = always
+    // available, start > end wraps midnight (pos_discounts convention).
+    'available_from',
+    'available_until',
 ])]
 class Product extends Model
 {

@@ -48,6 +48,9 @@ final readonly class UpdateProductAction
         // Phase D2 — §5.5.3 flags (tax_inclusive display-only for now).
         'tax_inclusive',
         'show_on_customer_tablet',
+        // G1 — menu time-window (both NULL = always available).
+        'available_from',
+        'available_until',
         'display_order',
         'status',
     ];

@@ -12,7 +12,7 @@
  *   - Create / edit / delete buttons only when CatalogueManage
  */
 
-import { Beaker, Building2, Boxes, Globe2, Image, Layers, Minus, Package, Pencil, Plus, Sparkles, Tag, Trash2, Truck } from 'lucide-vue-next';
+import { Beaker, Building2, Boxes, Clock3, Globe2, Image, Layers, Minus, Package, Pencil, Plus, Sparkles, Tag, Trash2, Truck } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
@@ -184,6 +184,11 @@ const prodForm = reactive<{
     tax_inclusive: boolean;
     // Phase D2 - §5.5.3 customer tablet visibility (POS unaffected).
     show_on_customer_tablet: boolean;
+    // G1 — menu time-window. 'HH:mm' input values ('' = no bound; both
+    // empty = always available). Converted to 'HH:MM:SS'/null on submit,
+    // exactly like the Discounts time_start/time_end dance.
+    available_from: string;
+    available_until: string;
     display_order: number;
     status: ProductStatus;
     // Phase 7 — stock mode: unit (finished/piece-counted) | ingredient | untracked.
@@ -217,6 +222,8 @@ const prodForm = reactive<{
     tax_rate: '',
     tax_inclusive: false,
     show_on_customer_tablet: true,
+    available_from: '',
+    available_until: '',
     display_order: 0,
     status: 'active',
     stock_mode: 'untracked',
@@ -509,6 +516,8 @@ function openCreateProduct(): void {
     prodForm.tax_rate = '';
     prodForm.tax_inclusive = false;
     prodForm.show_on_customer_tablet = true;
+    prodForm.available_from = '';
+    prodForm.available_until = '';
     // Default the new product's sort order to the end of the full
     // catalogue (total across pages, not just the current page).
     prodForm.display_order = productsMeta.value.total;
@@ -545,6 +554,9 @@ function openEditProduct(product: Product): void {
     prodForm.tax_rate = product.tax_rate ?? '';
     prodForm.tax_inclusive = product.tax_inclusive ?? false;
     prodForm.show_on_customer_tablet = product.show_on_customer_tablet ?? true;
+    // G1 — 'HH:MM:SS' on the wire → 'HH:mm' for <input type="time">.
+    prodForm.available_from = product.available_from?.slice(0, 5) ?? '';
+    prodForm.available_until = product.available_until?.slice(0, 5) ?? '';
     prodForm.display_order = product.display_order;
     prodForm.status = (product.status ?? 'active') as ProductStatus;
     prodForm.stock_mode = product.stock_mode ?? 'untracked';
@@ -647,6 +659,19 @@ function ingredientUnitLabel(uuid: string): string {
     return ingredient?.unit ?? '';
 }
 
+/**
+ * G1 — "06:00–11:00" row-badge label for a product with a menu
+ * time-window. Null (no badge) when neither bound is set. A
+ * single-sided window falls back to the day edge on the open
+ * side, matching the device evaluator's defaults.
+ */
+function availabilityWindowLabel(prod: Product): string | null {
+    if (!prod.available_from && !prod.available_until) return null;
+    const from = prod.available_from?.slice(0, 5) ?? '00:00';
+    const until = prod.available_until?.slice(0, 5) ?? '23:59';
+    return `${from}–${until}`;
+}
+
 /** Resolve an ingredient (for its alt_units) from a recipe line uuid. */
 function ingredientByUuid(uuid: string): Ingredient | null {
     if (!uuid) return null;
@@ -718,6 +743,10 @@ async function submitProduct(): Promise<void> {
             tax_inclusive: prodForm.tax_inclusive,
             // Phase D2 - future customer tablet menu visibility.
             show_on_customer_tablet: prodForm.show_on_customer_tablet,
+            // G1 — menu time-window: 'HH:mm' input → 'HH:MM:SS' on the
+            // wire; empty = null = no bound (both empty = always).
+            available_from: prodForm.available_from ? `${prodForm.available_from}:00` : null,
+            available_until: prodForm.available_until ? `${prodForm.available_until}:00` : null,
             stock_mode: prodForm.stock_mode as 'unit' | 'ingredient' | 'untracked',
             // Phase D2 - unit-mode LOW STOCK threshold ('' = none).
             low_stock_threshold: prodForm.low_stock_threshold === '' ? null : prodForm.low_stock_threshold,
@@ -1465,6 +1494,16 @@ async function removeOwnedGroup(groupUuid: string): Promise<void> {
                                 <td class="px-5 py-4">
                                     <span class="block text-sm font-semibold text-slate-950">{{ prod.name }}</span>
                                     <span v-if="prod.name_ar" class="block text-xs text-slate-500" dir="rtl">{{ prod.name_ar }}</span>
+                                    <!-- G1 — clock badge when a daily availability
+                                         window is set. -->
+                                    <span
+                                        v-if="availabilityWindowLabel(prod)"
+                                        class="mt-1 inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-sky-700"
+                                        :title="t('catalogue.fields.available_hours')"
+                                    >
+                                        <Clock3 class="size-3" />
+                                        {{ availabilityWindowLabel(prod) }}
+                                    </span>
                                 </td>
                                 <td class="px-5 py-4 text-sm text-slate-700">{{ categoryName(prod.category_id) }}</td>
                                 <td class="px-5 py-4 text-xs font-mono text-slate-500">{{ prod.sku ?? '—' }}</td>
@@ -1991,6 +2030,26 @@ async function removeOwnedGroup(groupUuid: string): Promise<void> {
                             {{ t('catalogue.fields.show_on_tablet') }}
                         </label>
                         <p class="mt-1 text-xs text-slate-500">{{ t('catalogue.fields.show_on_tablet_hint') }}</p>
+                    </div>
+
+                    <!-- G1 — menu time-window. Two nullable time inputs, the
+                         Discounts time_start/time_end dance: HH:mm in the
+                         input, HH:MM:SS on the wire, empty = no bound. Both
+                         empty = always available; end before start wraps
+                         midnight (overnight menus). -->
+                    <div>
+                        <p class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.available_hours') }}</p>
+                        <div class="mt-1 grid max-w-md grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-medium text-slate-600">{{ t('catalogue.fields.available_from') }}</label>
+                                <input v-model="prodForm.available_from" type="time" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-600">{{ t('catalogue.fields.available_until') }}</label>
+                                <input v-model="prodForm.available_until" type="time" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                            </div>
+                        </div>
+                        <p class="mt-1 text-xs text-slate-500">{{ t('catalogue.fields.available_hours_hint') }}</p>
                     </div>
 
                     <!-- Phase 7 — stock tracking mode. -->

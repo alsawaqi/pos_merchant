@@ -79,6 +79,10 @@ final readonly class CreateProductAction
                 // the future customer tablet menu, not the staff POS.
                 'tax_inclusive' => (bool) ($attributes['tax_inclusive'] ?? false),
                 'show_on_customer_tablet' => (bool) ($attributes['show_on_customer_tablet'] ?? true),
+                // G1 — menu time-window ('HH:MM:SS' strings, both NULL
+                // = always available, start > end wraps midnight).
+                'available_from' => $attributes['available_from'] ?? null,
+                'available_until' => $attributes['available_until'] ?? null,
                 'display_order' => $attributes['display_order'] ?? 0,
                 'status' => ProductStatus::Active->value,
             ]);

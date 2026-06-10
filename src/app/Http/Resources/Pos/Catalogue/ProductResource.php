@@ -68,6 +68,11 @@ class ProductResource extends JsonResource
             // Phase D2 — §5.5.3 customer tablet visibility. Consumed by the
             // future tablet menu app; the staff POS ignores it.
             'show_on_customer_tablet' => (bool) $this->show_on_customer_tablet,
+            // G1 — menu time-window. Raw 'HH:MM:SS' strings; both NULL =
+            // always available; start > end wraps midnight (the
+            // pos_discounts convention, evaluated on-device).
+            'available_from' => $this->available_from,
+            'available_until' => $this->available_until,
             'display_order' => $this->display_order,
             'status' => $this->status?->value,
             // Phase 4.9 — attached add-on groups (product-specific,

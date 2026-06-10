@@ -72,6 +72,12 @@ export interface Product {
     tax_inclusive: boolean;
     /** Phase D2 — §5.5.3 customer tablet visibility (POS ignores it). */
     show_on_customer_tablet: boolean;
+    /**
+     * G1 — menu time-window. 'HH:MM:SS' strings; both null = always
+     * available; start > end wraps midnight (pos_discounts convention).
+     */
+    available_from: string | null;
+    available_until: string | null;
     display_order: number;
     status: ProductStatus | null;
     /** Phase 4.9 — product-specific add-on groups when eager-loaded. */
@@ -226,6 +232,9 @@ export interface CreateProductPayload {
     tax_inclusive?: boolean;
     /** Phase D2 — §5.5.3 customer tablet visibility. */
     show_on_customer_tablet?: boolean;
+    /** G1 — menu time-window ('HH:MM:SS', null = no bound). */
+    available_from?: string | null;
+    available_until?: string | null;
     display_order?: number;
 }
 
@@ -249,6 +258,9 @@ export interface UpdateProductPayload {
     tax_inclusive?: boolean;
     /** Phase D2 — §5.5.3 customer tablet visibility. */
     show_on_customer_tablet?: boolean;
+    /** G1 — menu time-window ('HH:MM:SS', null = no bound). */
+    available_from?: string | null;
+    available_until?: string | null;
     display_order?: number;
     status?: ProductStatus;
 }

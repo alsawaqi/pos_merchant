@@ -53,6 +53,11 @@ class CreateProductRequest extends FormRequest
             // Phase D2 — §5.5.3 "Show on Customer Tablet menu yes/no". The
             // future tablet menu consumes it; the staff POS ignores it.
             'show_on_customer_tablet' => ['nullable', 'boolean'],
+            // G1 — menu time-window. 'HH:MM:SS' (seconds optional on the
+            // wire), NULL = no bound. Both NULL = always available.
+            // start > end wraps midnight (the pos_discounts convention).
+            'available_from' => ['nullable', 'string', 'regex:/^[0-2]\d:[0-5]\d(:[0-5]\d)?$/'],
+            'available_until' => ['nullable', 'string', 'regex:/^[0-2]\d:[0-5]\d(:[0-5]\d)?$/'],
             'display_order' => ['nullable', 'integer', 'between:0,999'],
         ];
     }

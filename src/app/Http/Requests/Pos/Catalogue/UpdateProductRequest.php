@@ -40,6 +40,10 @@ class UpdateProductRequest extends FormRequest
             'tax_inclusive' => ['sometimes', 'boolean'],
             // Phase D2 — §5.5.3 "Show on Customer Tablet menu yes/no".
             'show_on_customer_tablet' => ['sometimes', 'boolean'],
+            // G1 — menu time-window ('HH:MM:SS', NULL = no bound, both
+            // NULL = always available, start > end wraps midnight).
+            'available_from' => ['sometimes', 'nullable', 'string', 'regex:/^[0-2]\d:[0-5]\d(:[0-5]\d)?$/'],
+            'available_until' => ['sometimes', 'nullable', 'string', 'regex:/^[0-2]\d:[0-5]\d(:[0-5]\d)?$/'],
             'display_order' => ['sometimes', 'integer', 'between:0,999'],
             'status' => ['sometimes', 'string', Rule::in(ProductStatus::values())],
         ];
