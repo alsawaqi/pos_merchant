@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\ChangePasswordController;
 use App\Http\Controllers\Auth\CsrfTokenController;
+use App\Http\Controllers\Auth\PasswordResetController;
+use App\Http\Controllers\Auth\ProfileController;
 use App\Http\Controllers\Portal\BranchesController;
 use App\Http\Controllers\Portal\PortalUsersController;
 use App\Http\Controllers\Pos\AddOnGroupsController;
@@ -78,7 +80,26 @@ Route::get('/auth/csrf', CsrfTokenController::class)
 Route::middleware(RedirectIfAuthenticated::class)->group(function (): void {
     Route::get('/login', SpaController::class)
         ->name('login');
+
+    // Phase D7 — forgot/reset password SPA pages. Declared here
+    // (not via the authed SPA fallback) because the visitor is by
+    // definition signed out when they click the emailed link; the
+    // fallback route would bounce them to /login.
+    Route::get('/forgot-password', SpaController::class)
+        ->name('password.request');
+    Route::get('/reset-password', SpaController::class)
+        ->name('password.reset');
 });
+
+// Phase D7 — public forgot/reset endpoints. forgot ALWAYS answers
+// 200 (anti-enumeration); both are rate limited per (email, IP)
+// inside the controller, mirroring the login throttle.
+Route::post('/auth/forgot-password', [PasswordResetController::class, 'forgot'])
+    ->middleware(RequireJsonRequest::class)
+    ->name('auth.forgot-password');
+Route::post('/auth/reset-password', [PasswordResetController::class, 'reset'])
+    ->middleware(RequireJsonRequest::class)
+    ->name('auth.reset-password');
 
 // POST /auth/login intentionally stays OUT of the guest guard so the
 // controller can gracefully handle a request from a browser that
@@ -103,6 +124,12 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
     Route::post('/auth/change-password', [ChangePasswordController::class, 'update'])
         ->middleware(RequireJsonRequest::class)
         ->name('auth.change-password');
+
+    // Phase D7 — self-service profile update (display name only;
+    // email is the admin-managed login identifier).
+    Route::patch('/auth/profile', [ProfileController::class, 'update'])
+        ->middleware(RequireJsonRequest::class)
+        ->name('auth.profile.update');
 
     // -------- Phase 4.5 — Portal Users (merchant manages own team) -----
     // All endpoints auto-scoped to the actor's company via the

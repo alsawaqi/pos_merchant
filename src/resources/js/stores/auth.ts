@@ -128,3 +128,13 @@ export function clearMustChangePassword(): void {
         authState.user.must_change_password = false;
     }
 }
+
+/**
+ * Reflect a successful PATCH /auth/profile name change in-place so
+ * the layout's user chip updates without a full /auth/user refetch.
+ */
+export function setAuthUserName(name: string): void {
+    if (authState.user) {
+        authState.user.name = name;
+    }
+}

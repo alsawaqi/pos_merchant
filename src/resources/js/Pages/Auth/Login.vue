@@ -228,13 +228,13 @@ const features = [
                         >
                             <div class="flex items-center justify-between">
                                 <span class="text-sm font-semibold text-slate-800">{{ t('auth.password') }}</span>
-                                <button
-                                    type="button"
+                                <!-- Phase D7 — real self-service reset flow. -->
+                                <RouterLink
+                                    to="/forgot-password"
                                     class="text-xs font-semibold text-teal-700 transition hover:text-teal-900"
-                                    :title="t('auth.forgot_password_hint')"
                                 >
                                     {{ t('auth.forgot_password') }}
-                                </button>
+                                </RouterLink>
                             </div>
                             <div class="group relative mt-2">
                                 <span class="pointer-events-none absolute inset-y-0 start-0 grid w-11 place-items-center text-slate-400 transition group-focus-within:text-teal-600">

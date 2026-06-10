@@ -1,6 +1,9 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 import Login from '@/Pages/Auth/Login.vue';
 import ChangePassword from '@/Pages/Auth/ChangePassword.vue';
+import ForgotPassword from '@/Pages/Auth/ForgotPassword.vue';
+import ResetPassword from '@/Pages/Auth/ResetPassword.vue';
+import Profile from '@/Pages/Auth/Profile.vue';
 import Dashboard from '@/Pages/Merchant/Dashboard.vue';
 import OrdersIndex from '@/Pages/Merchant/Orders/Index.vue';
 import BranchesIndex from '@/Pages/Merchant/Branches/Index.vue';
@@ -48,6 +51,21 @@ const routes: RouteRecordRaw[] = [
         path: '/login',
         name: 'login',
         component: Login,
+        meta: { guestOnly: true },
+    },
+    {
+        // Phase D7 — self-service forgot password (email form).
+        path: '/forgot-password',
+        name: 'forgot-password',
+        component: ForgotPassword,
+        meta: { guestOnly: true },
+    },
+    {
+        // Phase D7 — landing page for the emailed reset link
+        // (?token=…&email=…).
+        path: '/reset-password',
+        name: 'reset-password',
+        component: ResetPassword,
         meta: { guestOnly: true },
     },
     {
@@ -233,6 +251,10 @@ const routes: RouteRecordRaw[] = [
     // signed-in user reaches it; the beforeEach guard force-redirects
     // here while must_change_password is set on a freshly-minted account.
     { path: '/change-password', name: 'merchant.change-password', component: ChangePassword, meta: { requiresAuth: true } },
+
+    // Phase D7 — My Profile (name edit + read-only email/roles +
+    // change-password link). Reached from the header user chip.
+    { path: '/profile', name: 'merchant.profile', component: Profile, meta: { requiresAuth: true } },
 
     {
         // Catch-all → bounce to the dashboard (server-side guard

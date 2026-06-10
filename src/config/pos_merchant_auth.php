@@ -21,5 +21,10 @@ return [
 
     'rate_limits' => [
         'login_per_minute' => (int) env('POS_MERCHANT_LOGIN_RATE_LIMIT_PER_MINUTE', 5),
+        // Phase D7 — forgot/reset password endpoints share this cap
+        // per (email, ip) per 15-minute window (blueprint throttle
+        // guidance: 5 attempts / 15 min). Forgot and reset burn
+        // separate buckets.
+        'password_reset_per_quarter_hour' => (int) env('POS_MERCHANT_PASSWORD_RESET_RATE_LIMIT', 5),
     ],
 ];

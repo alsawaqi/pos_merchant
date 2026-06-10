@@ -12,7 +12,7 @@
         "password_placeholder": "Enter your password",
         "remember_me": "Remember me on this device",
         "forgot_password": "Forgot your password?",
-        "forgot_password_hint": "Contact the MITHQAL admin who created your account to issue a new password.",
+        "forgot_password_hint": "We'll email you a secure link to reset your password.",
         "sign_in": "Sign in",
         "signing_in": "Signing in…",
         "signing_out": "Signing out…",
@@ -35,7 +35,48 @@
             "hint": "At least 8 characters.",
             "mismatch": "The new passwords do not match.",
             "error_generic": "Could not update your password. Please try again."
+        },
+        "forgot": {
+            "title": "Forgot your password?",
+            "subtitle": "Enter the email you sign in with and we'll send you a link to reset your password.",
+            "submit": "Email me a reset link",
+            "submitting": "Sending…",
+            "success_title": "Check your inbox",
+            "success_body": "If an account exists for {email}, a password reset link is on its way. The link expires in 60 minutes.",
+            "back_to_login": "Back to sign in",
+            "error_generic": "Could not send the reset link. Please try again."
+        },
+        "reset": {
+            "title": "Choose a new password",
+            "subtitle": "Set a new password for {email}.",
+            "new": "New password",
+            "confirm": "Confirm new password",
+            "submit": "Reset password",
+            "submitting": "Resetting…",
+            "hint": "At least 8 characters.",
+            "mismatch": "The passwords do not match.",
+            "success_title": "Password reset",
+            "success_body": "Your password has been updated. Sign in with your new password.",
+            "go_to_login": "Go to sign in",
+            "invalid_title": "Link invalid or expired",
+            "invalid_body": "This reset link is no longer valid. Reset links expire after 60 minutes and can be used once — request a fresh one below.",
+            "request_new": "Request a new link",
+            "error_generic": "Could not reset your password. Please try again."
         }
+    },
+    "profile": {
+        "title": "My Profile",
+        "subtitle": "Your account details for the merchant portal.",
+        "name": "Display name",
+        "email": "Email address",
+        "email_note": "Your email is your sign-in identifier and is managed by your MITHQAL admin — it cannot be changed here.",
+        "positions": "Roles",
+        "save": "Save changes",
+        "saving": "Saving…",
+        "saved": "Profile updated.",
+        "change_password_cta": "Change password",
+        "change_password_note": "Update the password you use to sign in.",
+        "error_generic": "Could not update your profile. Please try again."
     },
     "nav": {
         "taxes": "Taxes",
@@ -57,7 +98,8 @@
         "sign_out": "Sign out",
         "language": "Language",
         "orders": "Sales",
-        "order_cancellation": "Order Cancellation"
+        "order_cancellation": "Order Cancellation",
+        "profile": "My Profile"
     },
     "common": {
         "language_english": "English",

@@ -175,10 +175,12 @@ function toggleLocale(): void {
                             {{ isArabic ? t('common.language_english') : t('common.language_arabic') }}
                         </button>
 
-                        <!-- User chip -->
-                        <button
-                            type="button"
+                        <!-- User chip → My Profile (Phase D7) -->
+                        <RouterLink
+                            to="/profile"
                             class="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-2.5 py-2 shadow-sm transition hover:bg-slate-50"
+                            :aria-label="t('nav.profile')"
+                            :title="t('nav.profile')"
                         >
                             <span class="grid size-9 place-items-center rounded-lg bg-gradient-to-br from-slate-900 to-indigo-900 text-sm font-semibold text-white">
                                 {{ userInitials || 'M' }}
@@ -188,7 +190,7 @@ function toggleLocale(): void {
                                 <span class="block text-xs font-medium text-slate-500">{{ authState.user?.email ?? '' }}</span>
                             </span>
                             <ChevronDown class="hidden size-4 text-slate-400 sm:block" />
-                        </button>
+                        </RouterLink>
 
                         <!-- Change password (self-service). -->
                         <RouterLink

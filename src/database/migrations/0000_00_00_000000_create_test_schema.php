@@ -149,6 +149,21 @@ return new class extends Migration
             $table->timestamp('created_at')->useCurrent();
         });
 
+        // ---- pos_password_reset_tokens (Phase D7) -------------------
+        // Self-service forgot-password tokens. user_id-keyed (NOT the
+        // Laravel broker's email-keyed default — that table belongs to
+        // the charity app on the live shared DB). token_hash stores
+        // SHA-256 of the raw token; used_at makes tokens single-use.
+        // Owned by pos_admin's 2026_07_05_010000 migration in prod.
+        Schema::create('pos_password_reset_tokens', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('user_id')->constrained('pos_users')->cascadeOnDelete();
+            $table->string('token_hash', 64)->unique();
+            $table->timestamp('expires_at');
+            $table->timestamp('used_at')->nullable();
+            $table->timestamp('created_at')->useCurrent();
+        });
+
         // ---- pos_staff (Phase 4.6) --------------------------------
         Schema::create('pos_staff', function (Blueprint $table): void {
             $table->id();
@@ -1269,6 +1284,7 @@ return new class extends Migration
         Schema::dropIfExists('pos_roles');
         Schema::dropIfExists('pos_permissions');
         Schema::dropIfExists('pos_staff');
+        Schema::dropIfExists('pos_password_reset_tokens');
         Schema::dropIfExists('pos_audit_logs');
         Schema::dropIfExists('pos_branches');
         Schema::dropIfExists('pos_users');
