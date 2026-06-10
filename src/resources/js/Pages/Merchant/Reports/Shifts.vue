@@ -60,7 +60,7 @@ async function doReopen(row: ShiftReportRow): Promise<void> {
 </script>
 
 <template>
-    <ReportShell :title="t('reports.shifts.page_title')" v-model="filter" :loading="loading" :error="error" @run="run">
+    <ReportShell export-key="shifts" :title="t('reports.shifts.page_title')" v-model="filter" :loading="loading" :error="error" @run="run">
         <div v-if="payload" class="space-y-6">
             <HeadlineGrid
                 :items="[

@@ -191,6 +191,45 @@ export function apiGet<T>(url: string, options: Omit<ApiRequestOptions, 'body' |
     return apiRequest<T>('GET', url, options);
 }
 
+/**
+ * GET a file download as a Blob (Phase D6 report exports). Same
+ * headers/credentials as apiRequest — the api group's RequireJsonRequest
+ * middleware 406s anything without Accept: application/json, so plain
+ * <a href> downloads are impossible; the SPA fetches the bytes and
+ * object-URLs them instead. Error bodies are still JSON → ApiError.
+ */
+export async function apiDownload(url: string): Promise<{ blob: Blob; filename: string | null }> {
+    const response = await fetch(url, {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: {
+            Accept: 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+    });
+
+    if (!response.ok) {
+        let payload: unknown = null;
+        try {
+            payload = await response.json();
+        } catch {
+            payload = null;
+        }
+
+        if (response.status === 401) {
+            const redirect = encodeURIComponent(window.location.pathname + window.location.search);
+            window.location.href = `${LOGIN_PATH}?redirect=${redirect}`;
+        }
+
+        throw new ApiError(response.status, payload);
+    }
+
+    const disposition = response.headers.get('Content-Disposition') ?? '';
+    const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? null;
+
+    return { blob: await response.blob(), filename };
+}
+
 export function apiPost<T>(url: string, body?: JsonValue, options: Omit<ApiRequestOptions, 'body' | 'method'> = {}): Promise<T> {
     return apiRequest<T>('POST', url, { ...options, body });
 }

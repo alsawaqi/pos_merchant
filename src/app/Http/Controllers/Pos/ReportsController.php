@@ -22,8 +22,11 @@ use App\Data\Reports\ReportFilter;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Pos\Reports\AuditLogFilterRequest;
+use App\Http\Requests\Pos\Reports\ReportExportRequest;
 use App\Http\Requests\Pos\Reports\ReportFilterRequest;
 use App\Support\ReportCsvExporter;
+use App\Support\ReportPdfExporter;
+use App\Support\ReportXlsxExporter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -214,20 +217,27 @@ class ReportsController extends Controller
     }
 
     /**
-     * GET /api/reports/{report}/export
+     * GET /api/reports/{report}/export?format=csv|xlsx|pdf
      *
-     * CSV export of any analytics report. Runs the same Action as the JSON
-     * endpoint, then flattens the multi-section payload to CSV. Gated on
+     * Download any analytics report (Phase D6; blueprint §5.11 "export to
+     * Excel and PDF"). Runs the same Action as the JSON endpoint, then
+     * renders the multi-section payload in the requested format (csv when
+     * omitted — back-compat with the Phase 7b CSV-only route). Gated on
      * reports.export — distinct from reports.view, so a view-only role can read
      * a report on-screen but not download it. The audit log is intentionally
      * excluded (it's a separate, AuditLogView-gated viewer with pagination).
      *
      * Fetched with Accept: application/json like the rest of the API (the group's
      * RequireJsonRequest middleware 406s otherwise); the SPA reads the returned
-     * text/csv body as a blob to trigger the download.
+     * body as a blob to trigger the download.
      */
-    public function export(ReportFilterRequest $request, string $report, ReportCsvExporter $exporter): Response
-    {
+    public function export(
+        ReportExportRequest $request,
+        string $report,
+        ReportCsvExporter $csv,
+        ReportXlsxExporter $xlsx,
+        ReportPdfExporter $pdf,
+    ): Response {
         $this->ensure($request, MerchantPermission::ReportsExport);
 
         $reports = [
@@ -249,14 +259,27 @@ class ReportsController extends Controller
             abort(404);
         }
 
-        $filter = ReportFilter::fromArray($request->validated());
-        $csv = $exporter->toCsv($reports[$report]->handle($filter));
-
         $validated = $request->validated();
-        $filename = sprintf('%s-report_%s_to_%s.csv', $report, $validated['date_from'], $validated['date_to']);
+        $filter = ReportFilter::fromArray($validated);
+        $payload = $reports[$report]->handle($filter);
+        $format = $request->exportFormat();
 
-        return response($csv, 200, [
-            'Content-Type' => 'text/csv; charset=UTF-8',
+        [$body, $contentType] = match ($format) {
+            'xlsx' => [
+                $xlsx->toXlsx($payload),
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            ],
+            'pdf' => [
+                $pdf->toPdf($payload, ucwords(str_replace('-', ' ', $report)).' report', $validated['date_from'], $validated['date_to']),
+                'application/pdf',
+            ],
+            default => [$csv->toCsv($payload), 'text/csv; charset=UTF-8'],
+        };
+
+        $filename = sprintf('%s-report_%s_to_%s.%s', $report, $validated['date_from'], $validated['date_to'], $format);
+
+        return response($body, 200, [
+            'Content-Type' => $contentType,
             'Content-Disposition' => 'attachment; filename="'.$filename.'"',
         ]);
     }

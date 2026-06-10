@@ -32,7 +32,7 @@ type ApexSeries = { name: string; data: number[] }[];
 </script>
 
 <template>
-    <ReportShell :title="t('reports.inventory_consumption.page_title')" v-model="filter" :loading="loading" :error="error" @run="run">
+    <ReportShell export-key="inventory-consumption" :title="t('reports.inventory_consumption.page_title')" v-model="filter" :loading="loading" :error="error" @run="run">
         <div v-if="payload" class="space-y-4">
             <ReportChart
                 v-if="payload.rows.length"

@@ -39,7 +39,7 @@ type ApexSeries = { name: string; data: number[] }[];
 </script>
 
 <template>
-    <ReportShell :title="t('reports.product_performance.page_title')" v-model="filter" :loading="loading" :error="error" @run="run">
+    <ReportShell export-key="product-performance" :title="t('reports.product_performance.page_title')" v-model="filter" :loading="loading" :error="error" @run="run">
         <div v-if="payload" class="space-y-6">
             <!-- v2 charts: lead with the visuals, exact-figure tables follow below -->
             <div class="grid gap-6 lg:grid-cols-2">

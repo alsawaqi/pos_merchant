@@ -56,7 +56,7 @@ type ApexSeries = { name: string; data: number[] }[];
 </script>
 
 <template>
-    <ReportShell :title="t('reports.loss_waste.page_title')" v-model="filter" :loading="loading" :error="error" @run="run">
+    <ReportShell export-key="loss-waste" :title="t('reports.loss_waste.page_title')" v-model="filter" :loading="loading" :error="error" @run="run">
         <div v-if="payload" class="space-y-6">
             <HeadlineGrid
                 :items="[

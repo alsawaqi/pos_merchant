@@ -13,7 +13,7 @@
  * the Phase 7b-6 UI can render either way.
  */
 
-import { apiGet } from '@/lib/api';
+import { apiDownload, apiGet } from '@/lib/api';
 
 // ============================================================
 // Shared filter shape
@@ -63,6 +63,38 @@ function reportPath(key: string, filter: ReportFilter): string {
         q.set(k, typeof v === 'boolean' ? (v ? '1' : '0') : String(v));
     }
     return withBranchScope(`${base}?${q.toString()}`, filter.branch_ids);
+}
+
+// ============================================================
+// Report export download (Phase D6)
+// ============================================================
+
+export type ReportExportFormat = 'csv' | 'xlsx' | 'pdf';
+
+/**
+ * Download a report export (GET reports/{key}/export?format=…) and hand
+ * the bytes to the browser as a file. Reuses the report URL builder
+ * (booleans as 1/0, branch_ids[] repetition) + the apiDownload blob flow;
+ * the server's Content-Disposition filename wins, with a same-shape
+ * fallback built client-side.
+ */
+export async function downloadReportExport(
+    key: string,
+    filter: ReportFilter,
+    format: ReportExportFormat,
+): Promise<void> {
+    const path = reportPath(`${key}/export`, filter);
+    const sep = path.includes('?') ? '&' : '?';
+    const { blob, filename } = await apiDownload(`${path}${sep}format=${format}`);
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename ?? `${key}-report_${filter.date_from}_to_${filter.date_to}.${format}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
 }
 
 // ============================================================

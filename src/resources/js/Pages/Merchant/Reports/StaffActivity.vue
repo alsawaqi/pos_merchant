@@ -40,7 +40,7 @@ const ordersChart = computed(() => {
 </script>
 
 <template>
-    <ReportShell :title="t('reports.staff_activity.page_title')" v-model="filter" :loading="loading" :error="error" @run="run">
+    <ReportShell export-key="staff-activity" :title="t('reports.staff_activity.page_title')" v-model="filter" :loading="loading" :error="error" @run="run">
         <div v-if="payload && payload.rows.length" class="space-y-6">
             <!-- v2 charts: lead with the visuals, exact-figure table follows below -->
             <div class="grid gap-6 lg:grid-cols-2">

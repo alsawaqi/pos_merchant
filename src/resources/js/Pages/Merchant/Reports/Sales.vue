@@ -94,6 +94,7 @@ type ApexSeries = { name: string; data: number[] }[];
 
 <template>
     <ReportShell
+        export-key="sales"
         :title="t('reports.sales.page_title')"
         v-model="filter"
         :loading="loading"

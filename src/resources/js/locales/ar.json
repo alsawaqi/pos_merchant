@@ -1493,7 +1493,12 @@
             "cost": "التكلفة",
             "qty": "الكمية",
             "event_count": "الأحداث",
-            "no_data": "لا توجد بيانات في هذه النافذة."
+            "no_data": "لا توجد بيانات في هذه النافذة.",
+            "export": "تصدير",
+            "export_csv": "CSV",
+            "export_xlsx": "إكسل (.xlsx)",
+            "export_pdf": "PDF",
+            "export_failed": "فشل التصدير"
         },
         "landing": {
             "tile": {

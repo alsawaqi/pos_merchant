@@ -23,9 +23,17 @@ namespace App\Support;
  * Generic by design — every report (and any future one) exports with no
  * per-report code. Nested arrays in a cell are JSON-encoded; booleans render
  * as true/false.
+ *
+ * Phase D6 extracted the section classification into ReportSectionWalker
+ * (shared with the XLSX + PDF exporters); the CSV output is byte-identical
+ * to the pre-extraction renderer.
  */
 final class ReportCsvExporter
 {
+    public function __construct(
+        private readonly ReportSectionWalker $walker = new ReportSectionWalker(),
+    ) {}
+
     /**
      * @param  array<string, mixed>  $payload
      */
@@ -34,12 +42,20 @@ final class ReportCsvExporter
         $stream = fopen('php://temp', 'r+');
         $first = true;
 
-        foreach ($payload as $section => $value) {
+        foreach ($this->walker->sections($payload) as $section) {
             if (! $first) {
                 fwrite($stream, "\n");
             }
             $first = false;
-            $this->writeSection($stream, (string) $section, $value);
+
+            fputcsv($stream, ['# '.$section->name]);
+
+            if ($section->kind === ReportSection::KIND_TABLE) {
+                fputcsv($stream, $section->columns);
+            }
+            foreach ($section->rows as $row) {
+                fputcsv($stream, $row);
+            }
         }
 
         rewind($stream);
@@ -47,74 +63,5 @@ final class ReportCsvExporter
         fclose($stream);
 
         return $csv;
-    }
-
-    /**
-     * @param  resource  $stream
-     */
-    private function writeSection($stream, string $name, mixed $value): void
-    {
-        fputcsv($stream, ['# '.$name]);
-
-        if ($this->isTable($value)) {
-            /** @var list<array<string, mixed>> $value */
-            $columns = $this->columns($value);
-            fputcsv($stream, $columns);
-            foreach ($value as $row) {
-                fputcsv($stream, array_map(fn ($col): string => $this->scalar($row[$col] ?? null), $columns));
-            }
-
-            return;
-        }
-
-        if (is_array($value)) {
-            // Summary block: key,value rows.
-            foreach ($value as $key => $cell) {
-                fputcsv($stream, [(string) $key, $this->scalar($cell)]);
-            }
-
-            return;
-        }
-
-        // Bare scalar section.
-        fputcsv($stream, [$this->scalar($value)]);
-    }
-
-    /**
-     * A non-empty list whose first element is an array → a table of rows.
-     */
-    private function isTable(mixed $value): bool
-    {
-        return is_array($value) && array_is_list($value) && $value !== [] && is_array($value[0]);
-    }
-
-    /**
-     * Union of keys across all rows (rows may be ragged).
-     *
-     * @param  list<array<string, mixed>>  $rows
-     * @return list<string>
-     */
-    private function columns(array $rows): array
-    {
-        $columns = [];
-        foreach ($rows as $row) {
-            foreach (array_keys($row) as $key) {
-                $columns[(string) $key] = true;
-            }
-        }
-
-        return array_keys($columns);
-    }
-
-    private function scalar(mixed $value): string
-    {
-        if (is_bool($value)) {
-            return $value ? 'true' : 'false';
-        }
-        if (is_array($value)) {
-            return (string) json_encode($value);
-        }
-
-        return (string) ($value ?? '');
     }
 }

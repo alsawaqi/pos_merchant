@@ -70,7 +70,7 @@ const statusChart = computed(() => {
 </script>
 
 <template>
-    <ReportShell :title="t('reports.round_up_donation.page_title')" v-model="filter" :loading="loading" :error="error" @run="run">
+    <ReportShell export-key="round-up-donation" :title="t('reports.round_up_donation.page_title')" v-model="filter" :loading="loading" :error="error" @run="run">
         <div v-if="payload" class="space-y-6">
             <HeadlineGrid
                 :items="[

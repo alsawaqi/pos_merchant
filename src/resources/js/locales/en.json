@@ -1493,7 +1493,12 @@
             "cost": "Cost",
             "qty": "Qty",
             "event_count": "Events",
-            "no_data": "No data in this window."
+            "no_data": "No data in this window.",
+            "export": "Export",
+            "export_csv": "CSV",
+            "export_xlsx": "Excel (.xlsx)",
+            "export_pdf": "PDF",
+            "export_failed": "Export failed"
         },
         "landing": {
             "tile": {
