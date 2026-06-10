@@ -216,6 +216,11 @@ export interface InventoryConsumptionReportPayload {
         consumption_per_day: string;
         days_of_stock: number | null;
         below_min_threshold: boolean;
+        /** Phase A (Additions §2.11) — the LAST day-end count in the window. */
+        counted_units: string | null;
+        /** Net variance written by the window's counts (negative = shortfall). */
+        variance_units: string | null;
+        last_counted_at: string | null;
     }[];
     _phase?: { anomaly_stub?: string };
 }
@@ -234,6 +239,20 @@ export interface LossWasteReportPayload {
     by_branch: { branch_id: number; branch_name: string; value: string; event_count: number }[];
     by_reason: { reason: string; value: string; event_count: number }[];
     top_wasted: { ingredient_id: number; ingredient_name: string; unit: string; total_qty: string; value: string }[];
+    /**
+     * Portion-control variance (Additions §1.2): theoretical consumption
+     * from sales recipes vs total stock depletion, per ingredient.
+     * variance_pct = shortfall ÷ sales × 100 (null when no sales).
+     */
+    shortfall: {
+        ingredient_id: number;
+        ingredient_name: string;
+        unit: string;
+        sales_consumption: string;
+        total_depletion: string;
+        shortfall: string;
+        variance_pct: string | null;
+    }[];
     _phase?: { shortfall_stub?: string };
 }
 

@@ -12,13 +12,15 @@ use Illuminate\Support\Facades\DB;
 /**
  * Phase 7b — Loss / Waste Report (blueprint §5.11.5).
  *
- *   - Total waste value in window (by branch, by reason)
+ *   - Total waste value in window (by branch, by reason — the
+ *     Phase A day-end count's reconciliation_variance reason
+ *     shows up here with no extra wiring)
  *   - Top wasted ingredients
- *   - Comparison: theoretical consumption (from sales) vs
- *     actual stock movement -> shortfall
- *     (Phase 8 lands the theoretical-consumption derivation
- *     via order_items.recipe_snapshot_json; for now the
- *     shortfall section is stubbed)
+ *   - Comparison: theoretical consumption (from sales, i.e. the
+ *     sale/addon consumption the recipe snapshots drove) vs total
+ *     stock depletion -> shortfall + variance_pct. This IS the
+ *     Additions doc's portion-control variance: actual minus
+ *     theoretical, per ingredient, as quantity and percent.
  */
 final readonly class LossWasteReportAction
 {
@@ -144,6 +146,12 @@ final readonly class LossWasteReportAction
                     'sales_consumption' => number_format($sales, 3, '.', ''),
                     'total_depletion' => number_format($total, 3, '.', ''),
                     'shortfall' => number_format($total - $sales, 3, '.', ''),
+                    // Phase A — portion-control variance percent: how far
+                    // actual depletion ran over what sales theoretically
+                    // used. NULL when there were no sales to compare against.
+                    'variance_pct' => $sales > 0
+                        ? number_format(($total - $sales) / $sales * 100, 1, '.', '')
+                        : null,
                 ];
             })
             ->sortByDesc(static fn (array $r): float => (float) $r['shortfall'])

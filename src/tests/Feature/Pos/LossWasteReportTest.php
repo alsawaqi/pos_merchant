@@ -202,3 +202,32 @@ it('computes per-ingredient shortfall as non-sales stock depletion', function ()
     expect($row['total_depletion'])->toBe('3.000');
     expect($row['shortfall'])->toBe('1.000');
 });
+
+// =================== Phase A — portion-control variance percent ===========
+
+it('emits variance_pct on shortfall rows (null when no sales baseline)', function (): void {
+    $ctx = makeMerchantActor();
+    $milk = Ingredient::factory()->for($ctx['company'], 'company')->create(['name' => 'Milk']);
+    $beans = Ingredient::factory()->for($ctx['company'], 'company')->create(['name' => 'Beans']);
+
+    // Milk: 2.000 theoretical (sales) + 1.000 extra depletion → 50.0%.
+    StockMovement::factory()->for($ctx['branch'], 'branch')->for($milk, 'ingredient')->create([
+        'movement_type' => StockMovementType::SaleConsumption->value,
+        'quantity' => '-2.000', 'occurred_at' => '2026-06-05 12:00:00',
+    ]);
+    StockMovement::factory()->for($ctx['branch'], 'branch')->for($milk, 'ingredient')->create([
+        'movement_type' => StockMovementType::Waste->value,
+        'quantity' => '-1.000', 'occurred_at' => '2026-06-06 12:00:00',
+    ]);
+    // Beans: depletion with NO sales → variance_pct null.
+    StockMovement::factory()->for($ctx['branch'], 'branch')->for($beans, 'ingredient')->create([
+        'movement_type' => StockMovementType::Adjustment->value,
+        'quantity' => '-0.500', 'occurred_at' => '2026-06-06 12:00:00',
+    ]);
+
+    $shortfall = collect($this->getJson('/api/reports/loss-waste?date_from=2026-06-01&date_to=2026-06-30')
+        ->assertOk()->json('data.shortfall'));
+
+    expect($shortfall->firstWhere('ingredient_name', 'Milk')['variance_pct'])->toBe('50.0');
+    expect($shortfall->firstWhere('ingredient_name', 'Beans')['variance_pct'])->toBeNull();
+});

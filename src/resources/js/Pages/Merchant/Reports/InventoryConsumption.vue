@@ -57,6 +57,9 @@ type ApexSeries = { name: string; data: number[] }[];
                             <th class="px-5 py-2 text-end">{{ t('reports.inventory_consumption.columns.balance') }}</th>
                             <th class="px-5 py-2 text-end">{{ t('reports.inventory_consumption.columns.per_day') }}</th>
                             <th class="px-5 py-2 text-end">{{ t('reports.inventory_consumption.columns.days_of_stock') }}</th>
+                            <!-- Phase A (Additions §2.11) — day-end count columns. -->
+                            <th class="px-5 py-2 text-end">{{ t('reports.inventory_consumption.columns.counted') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.inventory_consumption.columns.count_variance') }}</th>
                             <th class="px-5 py-2 text-center">{{ t('reports.inventory_consumption.columns.below_min') }}</th>
                         </tr>
                     </thead>
@@ -68,6 +71,11 @@ type ApexSeries = { name: string; data: number[] }[];
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.current_balance }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.consumption_per_day }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.days_of_stock ?? '—' }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ r.counted_units ?? '—' }}</td>
+                            <td
+                                class="px-5 py-2 text-end tabular-nums"
+                                :class="num(r.variance_units) < 0 ? 'font-semibold text-rose-600' : num(r.variance_units) > 0 ? 'font-semibold text-amber-600' : ''"
+                            >{{ r.variance_units ?? '—' }}</td>
                             <td class="px-5 py-2 text-center">
                                 <span
                                     v-if="r.below_min_threshold"

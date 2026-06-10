@@ -1637,6 +1637,8 @@
                 "balance": "Current balance",
                 "per_day": "Per day",
                 "days_of_stock": "Days of stock",
+                "counted": "Counted",
+                "count_variance": "Count variance",
                 "below_min": "Low"
             }
         },
@@ -1648,7 +1650,16 @@
                 "event_count": "Events"
             },
             "by_reason": "By reason",
-            "top_wasted": "Top wasted ingredients"
+            "top_wasted": "Top wasted ingredients",
+            "shortfall": {
+                "title": "Portion-control variance",
+                "subtitle": "What sales recipes should have used vs what actually left stock. A persistent overage means over-portioning, waste, or theft.",
+                "ingredient": "Ingredient",
+                "theoretical": "Theoretical (sales)",
+                "actual": "Actual depletion",
+                "shortfall": "Overage",
+                "variance_pct": "Variance %"
+            }
         },
         "restock_purchasing": {
             "page_title": "Restock / Purchasing Report",

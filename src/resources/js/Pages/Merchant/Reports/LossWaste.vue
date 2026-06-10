@@ -43,6 +43,14 @@ const topWastedChart = computed(() => {
     };
 });
 
+// Phase A — portion-control variance rows: only ingredients with a real
+// shortfall matter; top 15 by shortfall keeps the table focused.
+const shortfallRows = computed(() =>
+    [...(payload.value?.shortfall ?? [])]
+        .filter((r) => num(r.shortfall) !== 0)
+        .slice(0, 15),
+);
+
 // Local alias so the template stays readable without importing the apex type here.
 type ApexSeries = { name: string; data: number[] }[];
 </script>
@@ -141,6 +149,35 @@ type ApexSeries = { name: string; data: number[] }[];
                             <td class="px-5 py-2 font-medium text-slate-900">{{ r.ingredient_name }} <span class="text-xs text-slate-500">({{ r.unit }})</span></td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.total_qty }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.value }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- Phase A — portion-control variance (Additions §1.2): what
+                 sales SHOULD have used vs what actually left the shelves. -->
+            <section v-if="shortfallRows.length" class="rounded-xl border border-slate-200 bg-white shadow-sm">
+                <h2 class="border-b border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700">{{ t('reports.loss_waste.shortfall.title') }}</h2>
+                <p class="px-5 pt-3 text-xs text-slate-500">{{ t('reports.loss_waste.shortfall.subtitle') }}</p>
+                <table class="w-full text-sm">
+                    <thead class="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                            <th class="px-5 py-2 text-start">{{ t('reports.loss_waste.shortfall.ingredient') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.loss_waste.shortfall.theoretical') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.loss_waste.shortfall.actual') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.loss_waste.shortfall.shortfall') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.loss_waste.shortfall.variance_pct') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="r in shortfallRows" :key="r.ingredient_id" class="border-b border-slate-100 last:border-0">
+                            <td class="px-5 py-2 font-medium text-slate-900">{{ r.ingredient_name }} <span class="text-xs text-slate-500">({{ r.unit }})</span></td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ r.sales_consumption }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ r.total_depletion }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums" :class="num(r.shortfall) > 0 ? 'font-semibold text-rose-600' : ''">{{ r.shortfall }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums" :class="num(r.variance_pct) > 20 ? 'font-semibold text-rose-600' : ''">
+                                {{ r.variance_pct !== null ? `${r.variance_pct}%` : '—' }}
+                            </td>
                         </tr>
                     </tbody>
                 </table>

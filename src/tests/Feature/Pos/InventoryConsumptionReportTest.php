@@ -190,3 +190,71 @@ it('does not flag consumption within the trailing baseline', function (): void {
         ->assertOk()->json('data.rows.0');
     expect($row['anomaly'])->toBeFalse();
 });
+
+// =================== Phase A — day-end count columns (Additions §2.11) ====
+
+it('joins the window day-end counts as counted_units + net variance_units', function (): void {
+    $ctx = makeMerchantActor();
+    $milk = App\Models\Ingredient::factory()->for($ctx['company'], 'company')->create(['name' => 'Milk']);
+    BranchStock::factory()->for($ctx['branch'], 'branch')->for($milk, 'ingredient')->create(['quantity' => '6.000']);
+
+    StockMovement::factory()->for($ctx['branch'], 'branch')->for($milk, 'ingredient')->create([
+        'movement_type' => StockMovementType::SaleConsumption->value,
+        'quantity' => '-2.000', 'occurred_at' => '2026-06-03 12:00:00',
+    ]);
+
+    // Two counts in window: first wrote -1.000 variance, the second -0.500;
+    // counted_units must be the LAST count's value, variance the SUM.
+    $count1 = App\Models\StockCount::query()->create([
+        'company_id' => $ctx['company']->id, 'branch_id' => $ctx['branch']->id,
+        'counted_at' => '2026-06-04 22:00:00',
+    ]);
+    App\Models\StockCountLine::query()->create([
+        'stock_count_id' => $count1->id, 'ingredient_id' => $milk->id,
+        'counted_pieces' => null, 'counted_units' => '7.000',
+        'expected_units' => '8.000', 'variance_units' => '-1.000',
+        'unit_cost_at_time' => '1.500',
+    ]);
+    $count2 = App\Models\StockCount::query()->create([
+        'company_id' => $ctx['company']->id, 'branch_id' => $ctx['branch']->id,
+        'counted_at' => '2026-06-08 22:00:00',
+    ]);
+    App\Models\StockCountLine::query()->create([
+        'stock_count_id' => $count2->id, 'ingredient_id' => $milk->id,
+        'counted_pieces' => '6.000', 'counted_units' => '6.000',
+        'expected_units' => '6.500', 'variance_units' => '-0.500',
+        'unit_cost_at_time' => '1.500',
+    ]);
+
+    $row = $this->getJson('/api/reports/inventory-consumption?date_from=2026-06-01&date_to=2026-06-10')
+        ->assertOk()->json('data.rows.0');
+
+    expect($row['counted_units'])->toBe('6.000');
+    expect($row['variance_units'])->toBe('-1.500');
+    expect($row['last_counted_at'])->not->toBeNull();
+});
+
+it('appends counted-but-unconsumed ingredients as zero-consumption rows', function (): void {
+    $ctx = makeMerchantActor();
+    $sugar = App\Models\Ingredient::factory()->for($ctx['company'], 'company')->create(['name' => 'Sugar']);
+    BranchStock::factory()->for($ctx['branch'], 'branch')->for($sugar, 'ingredient')->create(['quantity' => '4.000']);
+
+    $count = App\Models\StockCount::query()->create([
+        'company_id' => $ctx['company']->id, 'branch_id' => $ctx['branch']->id,
+        'counted_at' => '2026-06-05 22:00:00',
+    ]);
+    App\Models\StockCountLine::query()->create([
+        'stock_count_id' => $count->id, 'ingredient_id' => $sugar->id,
+        'counted_pieces' => null, 'counted_units' => '4.000',
+        'expected_units' => '5.000', 'variance_units' => '-1.000',
+        'unit_cost_at_time' => '0.300',
+    ]);
+
+    $rows = $this->getJson('/api/reports/inventory-consumption?date_from=2026-06-01&date_to=2026-06-10')
+        ->assertOk()->json('data.rows');
+
+    expect($rows)->toHaveCount(1);
+    expect($rows[0]['ingredient_name'])->toBe('Sugar');
+    expect($rows[0]['consumed'])->toBe('0.000');
+    expect($rows[0]['variance_units'])->toBe('-1.000');
+});

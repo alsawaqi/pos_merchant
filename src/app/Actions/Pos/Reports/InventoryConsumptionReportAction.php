@@ -24,6 +24,14 @@ use Illuminate\Support\Facades\DB;
  * Loss/Waste report instead. Phase 8 lands the sale-driven
  * consumption pipeline; until then this report exercises
  * Adjustment-down movements as a stand-in.
+ *
+ * Phase A (Additions §2.11) adds the day-end count columns:
+ * counted_units = the LAST physical count in the window (what was
+ * most recently verified on the shelf), variance_units = the NET
+ * variance all window counts wrote (negative = shortfall booked as
+ * waste). Ingredients that were counted but had no consumption in
+ * the window are appended as zero-consumption rows so a large
+ * variance can never hide.
  */
 final readonly class InventoryConsumptionReportAction
 {
@@ -103,7 +111,38 @@ final readonly class InventoryConsumptionReportAction
             ->get()
             ->keyBy('ingredient_id');
 
-        $rows = $perIngredient->map(static function ($r) use ($balanceQuery, $trailing, $windowDays, $trailingDays): array {
+        // Phase A — day-end count lines in the window, per ingredient.
+        // Ordered ASC so the LAST assignment of `counted`/`at` is the most
+        // recent count; variance accumulates across every count in window.
+        $countLines = DB::table('pos_stock_count_lines')
+            ->join('pos_stock_counts', 'pos_stock_counts.id', '=', 'pos_stock_count_lines.stock_count_id')
+            ->join('pos_ingredients', 'pos_ingredients.id', '=', 'pos_stock_count_lines.ingredient_id')
+            ->where('pos_stock_counts.company_id', $companyId)
+            ->whereBetween('pos_stock_counts.counted_at', [$filter->dateFrom, $filter->dateTo])
+            ->when($branchScope !== null, fn ($q) => $q->whereIn('pos_stock_counts.branch_id', $branchScope))
+            ->orderBy('pos_stock_counts.counted_at')
+            ->get([
+                'pos_stock_count_lines.ingredient_id',
+                'pos_stock_count_lines.counted_units',
+                'pos_stock_count_lines.variance_units',
+                'pos_stock_counts.counted_at',
+                'pos_ingredients.name AS ingredient_name',
+                'pos_ingredients.unit AS unit',
+            ]);
+        /** @var array<int, array{counted: float, variance: float, at: string, name: string, unit: string}> $counts */
+        $counts = [];
+        foreach ($countLines as $line) {
+            $id = (int) $line->ingredient_id;
+            $agg = $counts[$id] ?? ['counted' => 0.0, 'variance' => 0.0, 'at' => '', 'name' => '', 'unit' => ''];
+            $agg['counted'] = (float) $line->counted_units;
+            $agg['at'] = (string) $line->counted_at;
+            $agg['variance'] += (float) $line->variance_units;
+            $agg['name'] = (string) $line->ingredient_name;
+            $agg['unit'] = (string) $line->unit;
+            $counts[$id] = $agg;
+        }
+
+        $rows = $perIngredient->map(static function ($r) use ($balanceQuery, $trailing, $counts, $windowDays, $trailingDays): array {
             $consumed = (float) $r->consumed;
             $balance = (float) ($balanceQuery[$r->ingredient_id]->balance ?? 0);
             $consumptionPerDay = $consumed / $windowDays;
@@ -114,6 +153,8 @@ final readonly class InventoryConsumptionReportAction
             // more than 20%. No baseline (zero trailing) ⇒ not flagged.
             $trailingPerDay = (float) ($trailing[$r->ingredient_id]->consumed ?? 0) / $trailingDays;
             $anomaly = $trailingPerDay > 0 && $consumptionPerDay > ($trailingPerDay * 1.2);
+
+            $count = $counts[(int) $r->ingredient_id] ?? null;
 
             return [
                 'ingredient_id' => (int) $r->ingredient_id,
@@ -126,8 +167,37 @@ final readonly class InventoryConsumptionReportAction
                 'trailing_avg_per_day' => number_format($trailingPerDay, 3, '.', ''),
                 'anomaly' => $anomaly,
                 'below_min_threshold' => $r->min_threshold !== null && $balance < (float) $r->min_threshold,
+                // Phase A (Additions §2.11) — day-end count columns.
+                'counted_units' => $count !== null ? number_format($count['counted'], 3, '.', '') : null,
+                'variance_units' => $count !== null ? number_format($count['variance'], 3, '.', '') : null,
+                'last_counted_at' => $count !== null ? $count['at'] : null,
             ];
         })->all();
+
+        // Phase A — counted-but-unconsumed ingredients still surface (a big
+        // variance must never hide just because nothing sold in the window).
+        $consumedIds = array_flip(array_column($rows, 'ingredient_id'));
+        foreach ($counts as $ingredientId => $count) {
+            if (isset($consumedIds[$ingredientId])) {
+                continue;
+            }
+            $balance = (float) ($balanceQuery[$ingredientId]->balance ?? 0);
+            $rows[] = [
+                'ingredient_id' => $ingredientId,
+                'ingredient_name' => $count['name'],
+                'unit' => $count['unit'],
+                'consumed' => '0.000',
+                'current_balance' => number_format($balance, 3, '.', ''),
+                'consumption_per_day' => '0.000',
+                'days_of_stock' => null,
+                'trailing_avg_per_day' => '0.000',
+                'anomaly' => false,
+                'below_min_threshold' => false,
+                'counted_units' => number_format($count['counted'], 3, '.', ''),
+                'variance_units' => number_format($count['variance'], 3, '.', ''),
+                'last_counted_at' => $count['at'],
+            ];
+        }
 
         return [
             'window' => [
