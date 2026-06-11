@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Enums\StaffPosition;
 use App\Enums\StaffStatus;
+use App\Models\Concerns\DecryptsDefensively;
 use Database\Factories\PosStaffFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -48,7 +49,7 @@ use Illuminate\Support\Str;
 class PosStaff extends Model
 {
     /** @use HasFactory<PosStaffFactory> */
-    use HasFactory, SoftDeletes;
+    use DecryptsDefensively, HasFactory, SoftDeletes;
 
     protected $table = 'pos_staff';
 
