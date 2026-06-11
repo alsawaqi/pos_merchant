@@ -40,6 +40,10 @@ jobs:
           path: ${{ steps.cc.outputs.dir }}
           key: ${{ runner.os }}-composer-merchant-${{ hashFiles('src/composer.lock') }}
           restore-keys: ${{ runner.os }}-composer-merchant-
+      # A fresh checkout has no storage/ skeleton (untracked): without
+      # framework/views any Blade render (PDF export, error pages) 500s
+      # with "Please provide a valid cache path".
+      - run: mkdir -p storage/framework/cache storage/framework/sessions storage/framework/testing storage/framework/views storage/logs bootstrap/cache
       - run: composer install --prefer-dist --no-interaction --no-progress
       - run: cp .env.example .env && php artisan key:generate
       - run: php artisan config:clear && vendor/bin/pest
