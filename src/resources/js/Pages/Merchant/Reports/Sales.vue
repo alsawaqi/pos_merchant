@@ -273,6 +273,28 @@ type ApexSeries = { name: string; data: number[] }[];
                 </table>
             </div>
 
+            <!-- P-F9 — Offers: discount applications carrying an offer_id,
+                 grouped per offer (rename-safe sale-time names). -->
+            <div v-if="payload.by_offer && payload.by_offer.length" class="rounded-xl border border-slate-200 bg-white shadow-sm">
+                <h2 class="border-b border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700">{{ t('reports.sales.by_offer') }}</h2>
+                <table class="w-full text-sm">
+                    <thead class="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                            <th class="px-5 py-2 text-start">{{ t('reports.sales.offer') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.sales.offer_amount') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.sales.offer_count') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="row in payload.by_offer" :key="row.offer_id" class="border-b border-slate-100 last:border-0">
+                            <td class="px-5 py-2 font-medium text-slate-900">{{ row.name }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ row.amount }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ row.count }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
             <div v-if="payload.by_order_type && payload.by_order_type.length" class="rounded-xl border border-slate-200 bg-white shadow-sm">
                 <h2 class="border-b border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700">{{ t('reports.sales.by_order_type') }}</h2>
                 <table class="w-full text-sm">

@@ -1082,6 +1082,35 @@ return new class extends Migration
             $table->unique(['discount_id', 'target_type', 'target_id'], 'pos_discount_targets_unique');
         });
 
+        // ---- pos_offers (P-F9) ---
+        // Merchant offers / promotions: type + type-specific config JSON
+        // (the pos_loyalty_rules pattern). Shared applicability axes
+        // mirror pos_discounts; bundle is always cashier-picked
+        // (auto_apply forced false by the write actions). Money inside
+        // config is integer BAISAS.
+        Schema::create('pos_offers', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->string('name', 120);
+            $table->string('name_ar', 120)->nullable();
+            $table->string('type', 24);
+            $table->json('config');
+            $table->boolean('auto_apply')->default(true);
+            $table->timestamp('validity_start')->nullable();
+            $table->timestamp('validity_end')->nullable();
+            // Bitmask Sun=1..Sat=64; NULL = every day.
+            $table->smallInteger('dayofweek_mask')->nullable();
+            $table->string('time_start', 8)->nullable();
+            $table->string('time_end', 8)->nullable();
+            // sqlite mirror: text fallback for jsonb on pg.
+            $table->text('branch_scope_json')->nullable();
+            $table->smallInteger('max_per_order')->nullable();
+            $table->string('status', 16)->default('active');
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         // ---- pos_order_discounts (Phase 8.10) ---
         // Per-order discount-application records written by the pos_api sale
         // pipeline at order.create. Feeds the §5.11.7 Discount Report's
@@ -1094,6 +1123,9 @@ return new class extends Migration
             $table->foreignId('order_id')->constrained('pos_orders')->cascadeOnDelete();
             $table->foreignId('order_item_id')->nullable()->constrained('pos_order_items')->nullOnDelete();
             $table->foreignId('discount_id')->nullable()->constrained('pos_discounts')->nullOnDelete();
+            // P-F9: which pos_offers promotion granted this amount
+            // (null = a plain discount application).
+            $table->foreignId('offer_id')->nullable()->constrained('pos_offers')->nullOnDelete();
             $table->string('name_snapshot');
             $table->string('amount_type_snapshot', 32)->nullable();
             $table->decimal('amount', 12, 3)->default(0);

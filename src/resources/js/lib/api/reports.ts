@@ -122,6 +122,8 @@ export interface SalesReportPayload {
     by_hour_weekday?: { weekday: number; hour: number; gross: string; count: number }[];
     by_payment_method?: { method: string; amount: string; count: number }[];
     by_order_type?: { type: string; gross: string; count: number }[];
+    /** P-F9 — offer applications (offer_id-tagged discount rows) per offer. */
+    by_offer?: { offer_id: number; name: string; amount: string; count: number }[];
     by_branch?: { branch_id: number; branch_name: string; gross: string; count: number }[];
 }
 

@@ -136,6 +136,7 @@
         "customers": "Customers",
         "loyalty": "Loyalty",
         "discounts": "Discounts",
+        "offers": "Offers",
         "expenses": "Expenses",
         "expense_categories": "Expense Categories",
         "reports": "Reports",
@@ -1568,6 +1569,134 @@
             "save_failed": "Could not save the discount."
         }
     },
+    "offers": {
+        "section_label": "P-F9",
+        "title": "Offers",
+        "subtitle": "Build promotions the POS applies on its own — buy-one-get-one, fixed-price bundles, multi-buy deals, cheapest-item-free, and spend thresholds.",
+        "search_placeholder": "Search by name or type…",
+        "empty_state": "No offers yet. Add a meal deal or a buy-one-get-one to get started.",
+        "table": {
+            "name": "Name",
+            "type": "Type",
+            "max_per_order": "Max / order",
+            "status": "Status",
+            "actions": "Actions"
+        },
+        "types": {
+            "bogo": "Buy X get Y",
+            "bundle": "Bundle",
+            "multi_buy": "Multi-buy",
+            "cheapest_free": "Cheapest free",
+            "spend_get": "Spend & get"
+        },
+        "type_hints": {
+            "bogo": "Buy a qualifying quantity, get items free or at a percent off.",
+            "bundle": "A fixed-price set the cashier composes from pick groups (e.g. main + drink).",
+            "multi_buy": "A quantity of qualifying items for one fixed price (e.g. 3 for 1.000 OMR).",
+            "cheapest_free": "Buy a quantity of qualifying items; the cheapest one(s) are free.",
+            "spend_get": "When the order subtotal passes a threshold, grant a reward."
+        },
+        "statuses": {
+            "active_now": "Active now",
+            "scheduled": "Scheduled",
+            "paused": "Paused"
+        },
+        "flags": {
+            "auto": "Auto",
+            "cashier": "Cashier"
+        },
+        "dow": {
+            "sun": "Sun",
+            "mon": "Mon",
+            "tue": "Tue",
+            "wed": "Wed",
+            "thu": "Thu",
+            "fri": "Fri",
+            "sat": "Sat"
+        },
+        "fields": {
+            "name": "Name",
+            "name_ar": "Name (Arabic)",
+            "type": "Offer type",
+            "products": "Products",
+            "categories": "Categories",
+            "validity": "Validity & scope",
+            "validity_start": "Starts at",
+            "validity_end": "Ends at",
+            "dayofweek": "Days of week",
+            "time_start": "Time of day starts",
+            "time_end": "Time of day ends",
+            "time_hint": "Leave blank for all day. Crossing midnight is supported (e.g. 22:00 to 02:00).",
+            "all_branches": "All branches",
+            "max_per_order": "Max applications per order",
+            "max_per_order_placeholder": "Unlimited",
+            "auto_apply": "Apply automatically",
+            "auto_apply_hint": "When on, the POS applies this offer by itself to every qualifying order. When off, the cashier picks it.",
+            "bundle_cashier_hint": "Bundles are picked by the cashier — they are never applied automatically."
+        },
+        "bogo": {
+            "buy_section": "Customer buys",
+            "buy_qty": "Buy quantity",
+            "get_section": "Customer gets",
+            "same_as_buy": "Same items as the buy list",
+            "get_qty": "Get quantity",
+            "percent_off": "% off",
+            "percent_hint": "100% = free. Lower values discount the eligible items instead."
+        },
+        "bundle": {
+            "section": "Bundle contents & price",
+            "price": "Bundle price",
+            "group_n": "Group {n}",
+            "group_label": "Label",
+            "group_label_ar": "Label (Arabic)",
+            "group_qty": "Pick quantity",
+            "add_group": "Add group",
+            "remove_group": "Remove"
+        },
+        "multi_buy": {
+            "section": "Multi-buy deal",
+            "qty": "Quantity",
+            "price": "Deal price"
+        },
+        "cheapest_free": {
+            "section": "Cheapest item free",
+            "qty": "Buy quantity",
+            "free_count": "Free items",
+            "hint": "Free items must be fewer than the buy quantity."
+        },
+        "spend_get": {
+            "section": "Spend threshold & reward",
+            "min_subtotal": "Minimum subtotal",
+            "reward_type": "Reward",
+            "reward_types": {
+                "percent_off": "Percent off",
+                "fixed_off": "Fixed amount off",
+                "free_product": "Free product"
+            },
+            "percent": "% off",
+            "fixed": "Amount off",
+            "free_product": "Free product",
+            "pick_product": "Pick a product…"
+        },
+        "actions": {
+            "add": "Add offer",
+            "edit": "Edit",
+            "delete": "Delete",
+            "pause": "Pause",
+            "resume": "Resume"
+        },
+        "modal": {
+            "create_title": "Add an offer",
+            "edit_title": "Edit offer"
+        },
+        "delete": {
+            "title": "Delete offer?",
+            "confirm": "Soft-delete {name}? Historical orders that used this offer keep the snapshotted amounts; the offer disappears from the POS."
+        },
+        "errors": {
+            "save_failed": "Could not save the offer."
+        }
+    },
     "reports": {
         "section_label": "Phase 7b",
         "title": "Reports",
@@ -1675,6 +1804,10 @@
             "by_weekday": "By weekday",
             "by_payment_method": "By payment method",
             "by_order_type": "By order type",
+            "by_offer": "Offers",
+            "offer": "Offer",
+            "offer_amount": "Amount off",
+            "offer_count": "Applications",
             "charts": {
                 "profit_overview": "Profit & loss overview",
                 "payment_mix": "Payment method mix",

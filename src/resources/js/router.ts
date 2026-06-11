@@ -15,6 +15,7 @@ import ExpenseCategoriesIndex from '@/Pages/Merchant/ExpenseCategories/Index.vue
 import CustomersIndex from '@/Pages/Merchant/Customers/Index.vue';
 import CustomersShow from '@/Pages/Merchant/Customers/Show.vue';
 import DiscountsIndex from '@/Pages/Merchant/Discounts/Index.vue';
+import OffersIndex from '@/Pages/Merchant/Offers/Index.vue';
 import ExpensesIndex from '@/Pages/Merchant/Expenses/Index.vue';
 import LoyaltyIndex from '@/Pages/Merchant/Loyalty/Index.vue';
 import FloorPlanIndex from '@/Pages/Merchant/FloorPlan/Index.vue';
@@ -201,6 +202,15 @@ const routes: RouteRecordRaw[] = [
         path: '/discounts',
         name: 'merchant.discounts',
         component: DiscountsIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        // Offers — P-F9. type + config promotions the POS device
+        // evaluates. Server enforces discounts.view (offers share the
+        // discounts permission keys); SPA hides the nav without it.
+        path: '/offers',
+        name: 'merchant.offers',
+        component: OffersIndex,
         meta: { requiresAuth: true },
     },
     {

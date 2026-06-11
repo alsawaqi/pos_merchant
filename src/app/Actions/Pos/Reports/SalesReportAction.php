@@ -45,6 +45,10 @@ use Illuminate\Support\Facades\DB;
  *                       "Sales by Hour" heatmap.
  *   - by_payment_method[{method: cash/card/.., amount, count}]
  *   - by_order_type    [{type: quick/dine_in/.., gross, count}]
+ *   - by_offer         [{offer_id, name, amount, count}] — P-F9 offer
+ *                       applications (pos_order_discounts rows carrying
+ *                       offer_id) grouped by offer, name from the
+ *                       rename-safe sale-time snapshot
  *   - by_branch        [{branch_id, branch_name, gross, count}] (when
  *                       consolidated=false OR multi-branch in scope)
  *
@@ -141,6 +145,7 @@ final readonly class SalesReportAction
         $byHourWeekday = $this->byHourWeekday($paidQuery);
         $byPaymentMethod = $this->byPaymentMethod($paidQuery);
         $byOrderType = $this->byOrderType($paidQuery);
+        $byOffer = $this->byOffer($paidQuery);
         $byBranch = $this->byBranch($paidQuery, $branchScope);
 
         return [
@@ -174,6 +179,7 @@ final readonly class SalesReportAction
             'by_hour_weekday' => $byHourWeekday,
             'by_payment_method' => $byPaymentMethod,
             'by_order_type' => $byOrderType,
+            'by_offer' => $byOffer,
             'by_branch' => $byBranch,
         ];
     }
@@ -298,6 +304,34 @@ final readonly class SalesReportAction
         return $rows->map(static fn ($r): array => [
             'type' => (string) $r->type,
             'gross' => self::fmt((float) $r->gross),
+            'count' => (int) $r->cnt,
+        ])->all();
+    }
+
+    /**
+     * P-F9 — offer applications on the paid orders in scope: the
+     * pos_order_discounts rows carrying offer_id, grouped per offer.
+     * The displayed name is the rename-safe sale-time snapshot (MAX in
+     * SQL — one stable label per group even across a mid-window rename).
+     * Plain discount rows (offer_id NULL) are excluded; same joinSub
+     * pattern as byPaymentMethod.
+     *
+     * @return list<array{offer_id: int, name: string, amount: string, count: int}>
+     */
+    private function byOffer($paidQuery): array
+    {
+        $rows = DB::table('pos_order_discounts')
+            ->joinSub((clone $paidQuery)->select('id'), 'orders', 'orders.id', '=', 'pos_order_discounts.order_id')
+            ->whereNotNull('pos_order_discounts.offer_id')
+            ->selectRaw('pos_order_discounts.offer_id AS offer_id, MAX(pos_order_discounts.name_snapshot) AS name, COALESCE(SUM(pos_order_discounts.amount), 0) AS amount, COUNT(*) AS cnt')
+            ->groupBy('pos_order_discounts.offer_id')
+            ->orderByRaw('SUM(pos_order_discounts.amount) DESC')
+            ->get();
+
+        return $rows->map(static fn ($r): array => [
+            'offer_id' => (int) $r->offer_id,
+            'name' => (string) $r->name,
+            'amount' => self::fmt((float) $r->amount),
             'count' => (int) $r->cnt,
         ])->all();
     }

@@ -34,6 +34,7 @@ use App\Http\Controllers\Pos\OrderCancellationSettingController;
 use App\Http\Controllers\Pos\OrderNumberingSettingController;
 use App\Http\Controllers\Pos\ReportsPositionsSettingController;
 use App\Http\Controllers\Pos\VoidReasonsController;
+use App\Http\Controllers\Pos\OffersController;
 use App\Http\Controllers\Pos\OrdersController;
 use App\Http\Controllers\Pos\PayoutsController;
 use App\Http\Controllers\Pos\ProductsController;
@@ -572,6 +573,25 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('discounts.resume');
         Route::put('discounts/{discount:uuid}/targets', [DiscountsController::class, 'syncTargets'])
             ->name('discounts.targets.sync');
+
+        // -------- P-F9 — Offers / promotions --
+        // type + type-specific config rules the POS device evaluates
+        // (bogo / bundle / multi_buy / cheapest_free / spend_get).
+        // Same permission keys as discounts (same risk class).
+        Route::get('offers', [OffersController::class, 'index'])
+            ->name('offers.index');
+        Route::get('offers/{offer:uuid}', [OffersController::class, 'show'])
+            ->name('offers.show');
+        Route::post('offers', [OffersController::class, 'store'])
+            ->name('offers.store');
+        Route::patch('offers/{offer:uuid}', [OffersController::class, 'update'])
+            ->name('offers.update');
+        Route::delete('offers/{offer:uuid}', [OffersController::class, 'destroy'])
+            ->name('offers.destroy');
+        Route::post('offers/{offer:uuid}/pause', [OffersController::class, 'pause'])
+            ->name('offers.pause');
+        Route::post('offers/{offer:uuid}/resume', [OffersController::class, 'resume'])
+            ->name('offers.resume');
 
         // -------- Phase 6 backfill — Expenses (blueprint §5.10) --
         // POS-captured expenses the merchant reviews. index gated
