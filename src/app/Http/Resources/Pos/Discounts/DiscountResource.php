@@ -33,6 +33,11 @@ class DiscountResource extends JsonResource
             'branch_scope_json' => $this->branch_scope_json,
             'stackable' => (bool) $this->stackable,
             'requires_manager_approval' => (bool) $this->requires_manager_approval,
+            // P-F4 — order-scope rules only: true = the device applies the
+            // rule by itself to every qualifying order. Always true for
+            // product/category scopes (forced by the write actions; the
+            // device ignores it there — targeted rules stay automatic).
+            'auto_apply' => (bool) $this->auto_apply,
             'status' => $this->status?->value,
             // Computed convenience flag for the list page chip:
             // "active right now" composes status + the validity

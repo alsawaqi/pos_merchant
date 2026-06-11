@@ -84,6 +84,17 @@ final readonly class CreateDiscountAction
                 'branch_scope_json' => $attributes['branch_scope_json'] ?? null,
                 'stackable' => (bool) ($attributes['stackable'] ?? false),
                 'requires_manager_approval' => (bool) ($attributes['requires_manager_approval'] ?? false),
+                // P-F4 — auto_apply normalization (mirror of the pos_admin
+                // 2026_07_09_010000 backfill semantics): product/category
+                // scope rules ALWAYS auto-apply per matching cart line on
+                // the device, so their stored flag is forced TRUE whatever
+                // the client sent (the device ignores it for those scopes
+                // anyway). Only ORDER scope is merchant-choosable: true =
+                // the device applies the rule by itself to every qualifying
+                // order; false = the cashier picks it from the POS picker.
+                'auto_apply' => $scope === DiscountScope::Order
+                    ? (bool) ($attributes['auto_apply'] ?? false)
+                    : true,
                 'status' => $attributes['status'] ?? DiscountStatus::Active->value,
             ]);
 

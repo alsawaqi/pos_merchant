@@ -38,6 +38,9 @@ class UpdateDiscountRequest extends FormRequest
             'branch_scope_json.*' => ['integer'],
             'stackable' => ['sometimes', 'boolean'],
             'requires_manager_approval' => ['sometimes', 'boolean'],
+            // P-F4: order-scope auto-application. The Action forces TRUE
+            // when the (effective) scope is product/category.
+            'auto_apply' => ['sometimes', 'boolean'],
             'status' => ['sometimes', 'string', Rule::in(DiscountStatus::values())],
         ];
     }

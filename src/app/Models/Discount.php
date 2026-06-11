@@ -52,6 +52,7 @@ use Illuminate\Support\Str;
     'branch_scope_json',
     'stackable',
     'requires_manager_approval',
+    'auto_apply',
     'status',
 ])]
 class Discount extends Model
@@ -93,6 +94,12 @@ class Discount extends Model
             'branch_scope_json' => 'array',
             'stackable' => 'boolean',
             'requires_manager_approval' => 'boolean',
+            // P-F4: order-scope rules only — true = the device applies the
+            // rule by itself to every qualifying order. product/category
+            // scopes are ALWAYS automatic (per matching cart line); their
+            // stored value is forced TRUE by the write actions and the
+            // device ignores the flag for them.
+            'auto_apply' => 'boolean',
             'status' => DiscountStatus::class,
         ];
     }

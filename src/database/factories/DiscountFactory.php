@@ -38,6 +38,9 @@ class DiscountFactory extends Factory
             'branch_scope_json' => null,
             'stackable' => false,
             'requires_manager_approval' => false,
+            // P-F4: order-scope default = manual picker. The targeted-scope
+            // states below force true, mirroring the write-action invariant.
+            'auto_apply' => false,
             'status' => DiscountStatus::Active->value,
         ];
     }
@@ -54,12 +57,14 @@ class DiscountFactory extends Factory
 
     public function productScope(): static
     {
-        return $this->state(fn (): array => ['scope' => DiscountScope::Product->value]);
+        // auto_apply true mirrors the write-action invariant: targeted
+        // scopes are always automatic on the device.
+        return $this->state(fn (): array => ['scope' => DiscountScope::Product->value, 'auto_apply' => true]);
     }
 
     public function categoryScope(): static
     {
-        return $this->state(fn (): array => ['scope' => DiscountScope::Category->value]);
+        return $this->state(fn (): array => ['scope' => DiscountScope::Category->value, 'auto_apply' => true]);
     }
 
     public function fixed(string $amount): static

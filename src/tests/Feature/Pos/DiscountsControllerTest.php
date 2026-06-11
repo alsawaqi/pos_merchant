@@ -176,6 +176,84 @@ it('returns 404 when updating a foreign-tenant discount', function (): void {
         ->assertNotFound();
 });
 
+// =================== P-F4 AUTO-APPLY ===================
+// Only ORDER scope is merchant-choosable; product/category rules are
+// ALWAYS automatic per matching cart line, so the write path forces
+// their stored flag TRUE whatever the client sends (mirror of the
+// pos_admin 2026_07_09_010000 backfill semantics).
+
+it('creates an order-scope discount with auto_apply true and persists + serializes it', function (): void {
+    $ctx = makeMerchantActor();
+
+    $response = $this->postJson('/api/discounts', [
+        'name' => 'Self-applying',
+        'scope' => 'order',
+        'amount_type' => 'percent',
+        'amount' => '5',
+        'auto_apply' => true,
+    ])->assertCreated();
+
+    expect($response->json('data.auto_apply'))->toBeTrue();
+    $row = Discount::query()->where('uuid', $response->json('data.uuid'))->firstOrFail();
+    expect($row->auto_apply)->toBeTrue();
+
+    // Omitted on order scope → defaults to false (manual picker).
+    $manual = $this->postJson('/api/discounts', [
+        'name' => 'Picker only',
+        'scope' => 'order',
+        'amount_type' => 'percent',
+        'amount' => '5',
+    ])->assertCreated();
+    expect($manual->json('data.auto_apply'))->toBeFalse();
+});
+
+it('forces auto_apply true on product-scope create regardless of input', function (): void {
+    makeMerchantActor();
+
+    $response = $this->postJson('/api/discounts', [
+        'name' => 'Targeted',
+        'scope' => 'product',
+        'amount_type' => 'percent',
+        'amount' => '10',
+        'auto_apply' => false, // explicitly off — must be overridden
+    ])->assertCreated();
+
+    expect($response->json('data.auto_apply'))->toBeTrue();
+    $row = Discount::query()->where('uuid', $response->json('data.uuid'))->firstOrFail();
+    expect($row->auto_apply)->toBeTrue();
+});
+
+it('toggles auto_apply on an order-scope discount via update', function (): void {
+    $ctx = makeMerchantActor();
+    $d = Discount::factory()->for($ctx['company'], 'company')->create();
+    expect($d->auto_apply)->toBeFalse();
+
+    $this->patchJson("/api/discounts/{$d->uuid}", ['auto_apply' => true])->assertOk();
+    expect($d->refresh()->auto_apply)->toBeTrue();
+    $this->assertDatabaseHas('pos_audit_logs', [
+        'event' => 'catalogue.discount.updated',
+        'auditable_id' => $d->id,
+    ]);
+
+    $this->patchJson("/api/discounts/{$d->uuid}", ['auto_apply' => false])->assertOk();
+    expect($d->refresh()->auto_apply)->toBeFalse();
+});
+
+it('keeps auto_apply true on a targeted-scope update even when the client sends false', function (): void {
+    $ctx = makeMerchantActor();
+    $d = Discount::factory()->productScope()->for($ctx['company'], 'company')->create();
+    expect($d->auto_apply)->toBeTrue();
+
+    $this->patchJson("/api/discounts/{$d->uuid}", ['auto_apply' => false])->assertOk();
+    expect($d->refresh()->auto_apply)->toBeTrue();
+
+    // Re-scoping an order rule to product flips the flag on too.
+    $order = Discount::factory()->for($ctx['company'], 'company')->create();
+    expect($order->auto_apply)->toBeFalse();
+    $this->patchJson("/api/discounts/{$order->uuid}", ['scope' => 'product'])->assertOk();
+    expect($order->refresh()->auto_apply)->toBeTrue();
+});
+
 // =================== DELETE ===================
 
 it('soft-deletes a discount + writes audit; targets survive', function (): void {

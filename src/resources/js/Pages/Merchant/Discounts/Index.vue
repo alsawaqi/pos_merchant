@@ -105,6 +105,11 @@ interface FormShape {
     branch_scope_json: number[] | null;
     stackable: boolean;
     requires_manager_approval: boolean;
+    // P-F4 — only meaningful for scope=order ("applies by itself to every
+    // qualifying order"). product/category rules are ALWAYS automatic per
+    // matching item; the server forces their flag true and the form shows
+    // static helper text instead of the toggle.
+    auto_apply: boolean;
     target_product_ids: number[];
     target_category_ids: number[];
 }
@@ -123,6 +128,7 @@ const form = reactive<FormShape>({
     branch_scope_json: null,
     stackable: false,
     requires_manager_approval: false,
+    auto_apply: false,
     target_product_ids: [],
     target_category_ids: [],
 });
@@ -163,6 +169,7 @@ function resetForm(): void {
     form.branch_scope_json = null;
     form.stackable = false;
     form.requires_manager_approval = false;
+    form.auto_apply = false;
     form.target_product_ids = [];
     form.target_category_ids = [];
 }
@@ -191,6 +198,7 @@ function openEdit(d: Discount): void {
     form.branch_scope_json = d.branch_scope_json;
     form.stackable = d.stackable;
     form.requires_manager_approval = d.requires_manager_approval;
+    form.auto_apply = d.auto_apply;
     form.target_product_ids = (d.targets ?? [])
         .filter((tg) => tg.target_type === 'product')
         .map((tg) => tg.target_id);
@@ -218,6 +226,9 @@ async function submitModal(): Promise<void> {
             branch_scope_json: form.branch_scope_json,
             stackable: form.stackable,
             requires_manager_approval: form.requires_manager_approval,
+            // Only the merchant's choice for order scope rides the wire;
+            // the server forces true for product/category regardless.
+            auto_apply: form.scope === 'order' ? form.auto_apply : true,
         };
 
         let discount: Discount;
@@ -379,7 +390,13 @@ function amountLabel(d: Discount): string {
                         <tbody class="divide-y divide-slate-100 bg-white">
                             <tr v-for="d in filteredDiscounts" :key="d.id" class="transition hover:bg-slate-50">
                                 <td class="px-5 py-4">
-                                    <span class="block text-sm font-semibold text-slate-950">{{ d.name }}</span>
+                                    <span class="block text-sm font-semibold text-slate-950">
+                                        {{ d.name }}
+                                        <!-- P-F4: "Auto" chip only for ORDER-scope rules the merchant
+                                             set to self-apply; targeted scopes are always automatic
+                                             so a chip there would be noise. -->
+                                        <span v-if="d.scope === 'order' && d.auto_apply" class="ms-1 inline-flex items-center rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-teal-700">{{ t('discounts.flags.auto') }}</span>
+                                    </span>
                                     <span class="block text-xs text-slate-500">
                                         <span v-if="d.stackable" class="inline-block">{{ t('discounts.flags.stackable') }}</span>
                                         <span v-if="d.requires_manager_approval" class="inline-block ms-2">{{ t('discounts.flags.manager_approval') }}</span>
@@ -542,7 +559,18 @@ function amountLabel(d: Discount): string {
                             <input v-model="form.requires_manager_approval" type="checkbox" class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500">
                             <span class="text-sm font-medium text-slate-700">{{ t('discounts.fields.requires_manager_approval') }}</span>
                         </label>
+                        <!-- P-F4: auto-apply is a real choice only for ORDER scope
+                             ("applies by itself to every qualifying order"). -->
+                        <label v-if="form.scope === 'order'" class="inline-flex items-center gap-2">
+                            <input v-model="form.auto_apply" type="checkbox" class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500">
+                            <span class="text-sm font-medium text-slate-700">{{ t('discounts.fields.auto_apply') }}</span>
+                        </label>
                     </div>
+                    <p v-if="form.scope === 'order'" class="text-xs text-slate-500">{{ t('discounts.fields.auto_apply_hint') }}</p>
+                    <!-- Targeted scopes are ALWAYS automatic per matching item;
+                         the server forces the flag true, so communicate it as
+                         fixed behavior instead of an editable toggle. -->
+                    <p v-else class="text-xs text-slate-500">{{ t('discounts.fields.auto_apply_targeted_hint') }}</p>
 
                 </form>
             <template #footer>

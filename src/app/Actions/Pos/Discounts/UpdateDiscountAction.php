@@ -7,6 +7,7 @@ namespace App\Actions\Pos\Discounts;
 use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
 use App\Enums\DiscountAmountType;
+use App\Enums\DiscountScope;
 use App\Models\Discount;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
@@ -35,7 +36,7 @@ final readonly class UpdateDiscountAction
         'validity_start', 'validity_end',
         'dayofweek_mask', 'time_start', 'time_end',
         'branch_scope_json', 'stackable',
-        'requires_manager_approval', 'status',
+        'requires_manager_approval', 'auto_apply', 'status',
     ];
 
     public function __construct(
@@ -87,6 +88,21 @@ final readonly class UpdateDiscountAction
             throw new RuntimeException('validity_end must be after validity_start.');
         }
 
+        // P-F4 — auto_apply normalization (mirror of the pos_admin
+        // 2026_07_09_010000 backfill semantics). product/category scope
+        // rules ALWAYS auto-apply per matching cart line on the device, so
+        // whenever the EFFECTIVE scope (payload overlaid on the current
+        // row) is targeted, the stored flag is forced TRUE — covering both
+        // "toggle off on a product rule" (ignored) and "re-scope an order
+        // rule to product" (flag flips on). Only ORDER scope keeps the
+        // merchant's choice.
+        $effectiveScope = array_key_exists('scope', $attributes)
+            ? DiscountScope::from((string) $attributes['scope'])
+            : $discount->scope;
+        if ($effectiveScope !== DiscountScope::Order) {
+            $attributes['auto_apply'] = true;
+        }
+
         return DB::transaction(function () use ($discount, $attributes, $actor, $companyId): Discount {
             $changes = [];
             foreach (self::MUTABLE_FIELDS as $field) {
@@ -94,7 +110,7 @@ final readonly class UpdateDiscountAction
                     continue;
                 }
                 $newValue = match ($field) {
-                    'stackable', 'requires_manager_approval' => (bool) $attributes[$field],
+                    'stackable', 'requires_manager_approval', 'auto_apply' => (bool) $attributes[$field],
                     'dayofweek_mask' => $attributes[$field] === null ? null : (int) $attributes[$field],
                     default => $attributes[$field],
                 };

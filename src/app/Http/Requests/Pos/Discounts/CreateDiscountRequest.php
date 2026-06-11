@@ -41,6 +41,10 @@ class CreateDiscountRequest extends FormRequest
             'branch_scope_json.*' => ['integer'],
             'stackable' => ['sometimes', 'boolean'],
             'requires_manager_approval' => ['sometimes', 'boolean'],
+            // P-F4: order-scope auto-application. The Action forces TRUE
+            // for product/category scopes (always automatic), whatever the
+            // client sends.
+            'auto_apply' => ['sometimes', 'boolean'],
         ];
     }
 }

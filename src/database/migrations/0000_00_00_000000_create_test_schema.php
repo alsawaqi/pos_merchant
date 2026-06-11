@@ -1038,6 +1038,10 @@ return new class extends Migration
             $table->text('branch_scope_json')->nullable();
             $table->boolean('stackable')->default(false);
             $table->boolean('requires_manager_approval')->default(false);
+            // P-F4: order-scope rules only — true = device auto-applies the
+            // rule to every qualifying order. Forced TRUE by the write
+            // actions for product/category scopes (always automatic).
+            $table->boolean('auto_apply')->default(false);
             $table->string('status', 32)->default('active');
             $table->timestamps();
             $table->softDeletes();
@@ -1067,6 +1071,9 @@ return new class extends Migration
             $table->string('name_snapshot');
             $table->string('amount_type_snapshot', 32)->nullable();
             $table->decimal('amount', 12, 3)->default(0);
+            // P-F4: cashier's free-text reason for a manual / custom
+            // discount (trimmed + capped to 160 by the pos_api writer).
+            $table->string('reason', 160)->nullable();
             $table->timestamp('applied_at')->nullable();
             $table->timestamps();
         });

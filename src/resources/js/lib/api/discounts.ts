@@ -41,6 +41,12 @@ export interface Discount {
     branch_scope_json: number[] | null;
     stackable: boolean;
     requires_manager_approval: boolean;
+    /**
+     * P-F4 — order-scope rules only: true = the device applies the rule
+     * by itself to every qualifying order. Always true for product/
+     * category scopes (server-forced; targeted rules stay automatic).
+     */
+    auto_apply: boolean;
     status: DiscountStatus;
     /** Computed by server: composes status + validity window. */
     currently_active: boolean;
@@ -65,6 +71,8 @@ export interface CreateDiscountPayload {
     branch_scope_json?: number[] | null;
     stackable?: boolean;
     requires_manager_approval?: boolean;
+    /** Order scope only; the server forces true for product/category. */
+    auto_apply?: boolean;
 }
 
 export type UpdateDiscountPayload = Partial<CreateDiscountPayload> & {
