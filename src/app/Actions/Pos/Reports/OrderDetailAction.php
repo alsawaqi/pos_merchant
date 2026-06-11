@@ -101,6 +101,9 @@ final readonly class OrderDetailAction
             'order' => [
                 'id' => (int) $order->id,
                 'uuid' => $order->uuid,
+                // P-F8 — the printed receipt number; null for unnumbered
+                // orders (the UI falls back to the short uuid).
+                'receipt_number' => $order->receipt_number,
                 'order_type' => $order->order_type?->value,
                 'status' => $order->status?->value,
                 'source' => $order->source?->value,

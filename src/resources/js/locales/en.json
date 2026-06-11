@@ -147,6 +147,7 @@
         "language": "Language",
         "orders": "Sales",
         "order_cancellation": "Order Cancellation",
+        "order_numbering": "Order Numbering",
         "profile": "My Profile"
     },
     "common": {
@@ -2106,6 +2107,28 @@
             "positions_label": "Positions allowed to view device reports",
             "save_success": "Device reports access updated.",
             "save_failed": "Could not save the device reports access policy."
+        },
+        "order_numbering": {
+            "title": "Order Numbering",
+            "subtitle": "Define how POS order numbers look on receipts: a prefix plus a zero-padded counter (e.g. KLD-0042). The server hands out the numbers, so every device at the same branch or company shares one sequence.",
+            "enable_label": "Enable custom order numbers",
+            "enable_hint": "When off, receipts show no custom number. Offline devices fall back to a local counter until they reconnect.",
+            "prefix_label": "Prefix",
+            "prefix_hint": "Up to 8 characters, printed before the counter. Leave empty for digits only.",
+            "pad_label": "Counter digits",
+            "pad_option": "{digits} digits (e.g. {example})",
+            "scope_label": "Numbering sequence",
+            "scope_branch": "Per branch",
+            "scope_branch_hint": "Each branch counts its own orders independently (Branch A and Branch B can both have a No. 0042).",
+            "scope_company": "All branches",
+            "scope_company_hint": "One shared sequence across the whole company — every order number is unique company-wide.",
+            "daily_reset_label": "Restart every day",
+            "daily_reset_hint": "The counter goes back to 1 each morning — common for call-out numbers shouted to customers.",
+            "preview_label": "Example",
+            "forbidden": "You don't have permission to manage this setting.",
+            "save": "Save",
+            "save_success": "Order numbering updated.",
+            "save_failed": "Could not save the order numbering setting."
         },
         "reasons": {
             "void_title": "Void reasons",

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -940,6 +941,27 @@ return new class extends Migration
             $table->unique(['company_id', 'key'], 'pos_company_settings_company_key_unique');
         });
 
+        // P-F8 — server-owned order-number counters (mirrors pos_admin's
+        // 2026_07_12_010000 migration; allocated by pos_api, not this app).
+        // branch_id NULL = company scope; seq_date NULL = continuous counter.
+        Schema::create('pos_order_sequences', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('company_id');
+            $table->unsignedBigInteger('branch_id')->nullable();
+            $table->date('seq_date')->nullable();
+            $table->unsignedInteger('next_number')->default(1);
+            $table->timestamps();
+            $table->index(['company_id', 'branch_id', 'seq_date'], 'pos_order_sequences_lookup_idx');
+        });
+        // The same COALESCE functional unique index as live Postgres — NULL
+        // branch/date coalesce to impossible sentinels so "one row per
+        // scope" holds despite sqlite/Postgres treating NULLs as distinct
+        // in plain unique constraints.
+        DB::statement(
+            'CREATE UNIQUE INDEX pos_order_sequences_scope_unique ON pos_order_sequences '.
+            "(company_id, COALESCE(branch_id, 0), COALESCE(seq_date, '1970-01-01'))"
+        );
+
         Schema::create('pos_product_delivery_prices', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('product_id')->constrained('pos_products')->cascadeOnDelete();
@@ -986,7 +1008,11 @@ return new class extends Migration
             $table->timestamp('closed_at')->nullable();
             $table->string('client_event_id', 64)->nullable()->unique('pos_orders_client_event_id_unique');
             $table->text('note')->nullable();
+            // P-F8 — the printed receipt number (prefix + zero-padded
+            // counter, e.g. "KLD-0042"); NULL for unnumbered orders.
+            $table->string('receipt_number', 24)->nullable();
             $table->timestamps();
+            $table->index(['company_id', 'receipt_number'], 'pos_orders_company_receipt_idx');
         });
 
         Schema::create('pos_order_items', function (Blueprint $table): void {
@@ -1301,6 +1327,7 @@ return new class extends Migration
 
         // Drop in reverse dependency order. Tests use :memory: so
         // this is essentially never called, but symmetry is cheap.
+        Schema::dropIfExists('pos_order_sequences');
         Schema::dropIfExists('pos_saved_views');
         Schema::dropIfExists('sessions');
         Schema::dropIfExists('pos_role_has_permissions');

@@ -55,6 +55,7 @@ use Illuminate\Support\Str;
     'closed_at',
     'client_event_id',
     'note',
+    'receipt_number',
 ])]
 class Order extends Model
 {

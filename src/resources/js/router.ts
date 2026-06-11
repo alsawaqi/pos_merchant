@@ -23,6 +23,7 @@ import PortalUsersIndex from '@/Pages/Merchant/PortalUsers/Index.vue';
 import PosStaffIndex from '@/Pages/Merchant/PosStaff/Index.vue';
 import RolesIndex from '@/Pages/Merchant/Roles/Index.vue';
 import SettingsOrderCancellation from '@/Pages/Merchant/Settings/OrderCancellation.vue';
+import SettingsOrderNumbering from '@/Pages/Merchant/Settings/OrderNumbering.vue';
 import ReportsIndex from '@/Pages/Merchant/Reports/Index.vue';
 import ReportsSales from '@/Pages/Merchant/Reports/Sales.vue';
 import ReportsCustomers from '@/Pages/Merchant/Reports/Customers.vue';
@@ -249,6 +250,17 @@ const routes: RouteRecordRaw[] = [
         path: '/settings/order-cancellation',
         name: 'merchant.settings.order-cancellation',
         component: SettingsOrderCancellation,
+        meta: { requiresAuth: true },
+    },
+
+    {
+        // Order Numbering policy (P-F8) — how POS order numbers look
+        // (prefix + zero-padded counter), per-branch vs company-wide
+        // sequence, optional daily reset. Server enforces orders.cancel
+        // on both GET + PUT; SPA hides the nav entry for users without it.
+        path: '/settings/order-numbering',
+        name: 'merchant.settings.order-numbering',
+        component: SettingsOrderNumbering,
         meta: { requiresAuth: true },
     },
 

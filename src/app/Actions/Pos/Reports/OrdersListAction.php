@@ -62,6 +62,9 @@ final readonly class OrdersListAction
         $rows = collect($paginator->items())->map(static fn (Order $o): array => [
             'id' => (int) $o->id,
             'uuid' => $o->uuid,
+            // P-F8 — the printed receipt number; null for unnumbered
+            // orders (the UI falls back to the short uuid).
+            'receipt_number' => $o->receipt_number,
             'branch_id' => (int) $o->branch_id,
             'branch_name' => $o->branch?->name,
             'order_type' => $o->order_type?->value,

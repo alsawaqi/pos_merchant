@@ -98,7 +98,8 @@ function statusLabel(status: string | null): string {
             <header class="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4">
                 <div>
                     <h2 class="text-base font-bold text-slate-950">{{ t('orders.detail.title') }}</h2>
-                    <p v-if="detail" class="font-mono text-xs font-semibold text-slate-500">{{ shortId(detail.order.uuid) }}</p>
+                    <!-- P-F8: the printed receipt number when present, else the short uuid. -->
+                    <p v-if="detail" class="font-mono text-xs font-semibold text-slate-500">{{ detail.order.receipt_number ?? shortId(detail.order.uuid) }}</p>
                 </div>
                 <button type="button" class="rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900" @click="close">
                     <X class="size-5" />

@@ -536,6 +536,8 @@ export interface OrderListFilter extends ReportFilter {
 export interface OrderListRow {
     id: number;
     uuid: string;
+    /** P-F8 — printed receipt number; null falls back to the short uuid. */
+    receipt_number: string | null;
     branch_id: number;
     branch_name: string | null;
     order_type: string | null;
@@ -605,6 +607,8 @@ export interface OrderDetailPayload {
     order: {
         id: number;
         uuid: string;
+        /** P-F8 — printed receipt number; null falls back to the short uuid. */
+        receipt_number: string | null;
         order_type: string | null;
         status: string | null;
         source: string | null;

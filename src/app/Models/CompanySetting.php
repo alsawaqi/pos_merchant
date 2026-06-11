@@ -40,6 +40,15 @@ class CompanySetting extends Model
     public const KEY_REPORTS_POSITIONS = 'reports_positions';
 
     /**
+     * P-F8 — merchant-defined order numbering. JSON object
+     * {enabled: bool, prefix: string(<=8, may be ''), pad: int 3..6,
+     *  scope: 'branch'|'company', daily_reset: bool}. pos_api emits it in
+     * /device/config (settings.order_numbering) and allocates numbers on
+     * POST /device/orders/next-number from pos_order_sequences.
+     */
+    public const KEY_ORDER_NUMBERING = 'order_numbering';
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

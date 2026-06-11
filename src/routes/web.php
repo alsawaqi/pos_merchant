@@ -31,6 +31,7 @@ use App\Http\Controllers\Pos\PosStaffController;
 use App\Http\Controllers\Pos\CompReasonsController;
 use App\Http\Controllers\Pos\ManagerApprovalSettingController;
 use App\Http\Controllers\Pos\OrderCancellationSettingController;
+use App\Http\Controllers\Pos\OrderNumberingSettingController;
 use App\Http\Controllers\Pos\ReportsPositionsSettingController;
 use App\Http\Controllers\Pos\VoidReasonsController;
 use App\Http\Controllers\Pos\OrdersController;
@@ -727,6 +728,17 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('settings.reports-positions.show');
         Route::put('settings/reports-positions', [ReportsPositionsSettingController::class, 'update'])
             ->name('settings.reports-positions.update');
+
+        // P-F8 — order numbering policy: how POS order numbers look
+        // (prefix + zero-padded counter, e.g. KLD-0042), per-branch vs
+        // company-wide sequence, optional daily reset. pos_api emits it
+        // in /device/config and allocates the numbers server-side on
+        // POST /device/orders/next-number. Same orders.cancel gate as
+        // the sibling POS policy settings.
+        Route::get('settings/order-numbering', [OrderNumberingSettingController::class, 'show'])
+            ->name('settings.order-numbering.show');
+        Route::put('settings/order-numbering', [OrderNumberingSettingController::class, 'update'])
+            ->name('settings.order-numbering.update');
 
         // Phase B (Additions §1.2) — void + comp reason code lists. Same
         // orders.cancel gate as the cancellation policy they ride with;

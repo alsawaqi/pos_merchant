@@ -175,7 +175,8 @@ function statusClass(status: string | null): string {
                             @click="detailUuid = row.uuid"
                         >
                             <td class="px-5 py-2 text-xs tabular-nums text-slate-600">{{ formatDateTime(row.opened_at) }}</td>
-                            <td class="px-5 py-2 font-mono text-xs font-semibold text-teal-700">{{ shortId(row.uuid) }}</td>
+                            <!-- P-F8: the printed receipt number when present, else the short uuid. -->
+                            <td class="px-5 py-2 font-mono text-xs font-semibold text-teal-700">{{ row.receipt_number ?? shortId(row.uuid) }}</td>
                             <td class="px-5 py-2 text-slate-700">{{ row.branch_name ?? '—' }}</td>
                             <td class="px-5 py-2 text-slate-700">{{ row.order_type ? t(`orders.types.${row.order_type}`) : '—' }}</td>
                             <td class="px-5 py-2">
