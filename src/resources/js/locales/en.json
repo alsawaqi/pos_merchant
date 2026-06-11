@@ -1709,7 +1709,10 @@
             "headline_labels": {
                 "total_value": "Total comp value",
                 "comp_count": "Comps",
-                "comped_orders": "Comped orders"
+                "comped_orders": "Comped orders",
+                "gift_value": "Gift value",
+                "gift_count": "Gifts",
+                "gifted_orders": "Gifted orders"
             },
             "by_reason": "By reason",
             "by_staff": "By approving manager",
@@ -2030,6 +2033,14 @@
             "to_go": "To-go",
             "delivery": "Delivery",
             "car": "Car"
+        },
+        "payment_methods": {
+            "cash": "Cash",
+            "card": "Card",
+            "split_part": "Split",
+            "loyalty": "Loyalty",
+            "gift": "Gift",
+            "bank_pos": "Bank POS"
         },
         "statuses": {
             "open": "Open",

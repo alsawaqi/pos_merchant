@@ -40,11 +40,16 @@ type ApexSeries = { name: string; data: number[] }[];
 <template>
     <ReportShell export-key="comps" :title="t('reports.comps.page_title')" v-model="filter" :loading="loading" :error="error" @run="run">
         <div v-if="payload" class="space-y-6">
+            <!-- P-F5: gifts are their own bucket so the reason-coded comp
+                 analysis below stays manager-comps-only. -->
             <HeadlineGrid
                 :items="[
                     { label: t('reports.comps.headline_labels.total_value'), value: payload.headline.total_value },
                     { label: t('reports.comps.headline_labels.comp_count'), value: payload.headline.comp_count },
                     { label: t('reports.comps.headline_labels.comped_orders'), value: payload.headline.comped_order_count },
+                    { label: t('reports.comps.headline_labels.gift_value'), value: payload.gifts?.total_value ?? '0.000' },
+                    { label: t('reports.comps.headline_labels.gift_count'), value: payload.gifts?.gift_count ?? 0 },
+                    { label: t('reports.comps.headline_labels.gifted_orders'), value: payload.gifts?.gifted_order_count ?? 0 },
                 ]"
             />
 

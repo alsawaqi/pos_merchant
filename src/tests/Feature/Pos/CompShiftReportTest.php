@@ -88,6 +88,37 @@ it('aggregates comps by reason, branch, staff with a recent drill-down', functio
     expect($data['by_branch'][0]['value'])->toBe('4.000');
 });
 
+// P-F5 — gift rows (is_gift = true, no reason) get their own bucket and
+// never pollute the reason-coded comp analysis.
+it('separates gift rows from reasoned comps into a gifts bucket', function (): void {
+    $ctx = makeMerchantActor();
+
+    seedCompedOrder($ctx); // a reasoned Staff Meal comp, 3.000
+    seedCompedOrder($ctx, [
+        'is_gift' => true,
+        'reason_code_snapshot' => 'gift',
+        'reason_name_snapshot' => 'Gift',
+        'amount' => '2.000',
+    ]);
+
+    $data = $this->getJson('/api/reports/comps?date_from=2026-06-01&date_to=2026-06-30')
+        ->assertOk()->json('data');
+
+    // Headline totals ALL write-offs (mirrors pos_orders.comp_total)…
+    expect($data['headline']['total_value'])->toBe('5.000');
+    expect($data['headline']['comp_count'])->toBe(2);
+
+    // …but the gifts bucket carries only the gifted rows…
+    expect($data['gifts']['total_value'])->toBe('2.000');
+    expect($data['gifts']['gift_count'])->toBe(1);
+    expect($data['gifts']['gifted_order_count'])->toBe(1);
+
+    // …and by_reason stays manager-comps-only (no 'gift' code).
+    $byReason = collect($data['by_reason']);
+    expect($byReason->firstWhere('code', 'staff_meal')['value'])->toBe('3.000');
+    expect($byReason->firstWhere('code', 'gift'))->toBeNull();
+});
+
 it('scopes the comp report to the tenant', function (): void {
     $ctx = makeMerchantActor();
     $other = makeMerchantActor();

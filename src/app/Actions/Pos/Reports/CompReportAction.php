@@ -24,6 +24,14 @@ use Illuminate\Support\Facades\DB;
  * the PAID + window + branch scope. A comp is money given away on a
  * sale that still settled, so unlike voids the parent order remains
  * paid; inventory deducted as sold (the food went to the customer).
+ *
+ * P-F5 — GIFT rows (is_gift = true: a line given away whole, no
+ * reason, no cap) are split OUT of the reason-coded analysis into
+ * their own `gifts` bucket (count + total + gifted-order count) so
+ * they never pollute the manager-comp reason breakdown. The headline
+ * still totals ALL write-offs (it mirrors pos_orders.comp_total);
+ * by-branch/by-staff/recent keep all rows too (gift rows read as
+ * the fixed 'Gift' snapshot there).
  */
 final readonly class CompReportAction
 {
@@ -57,8 +65,19 @@ final readonly class CompReportAction
             ')
             ->first();
 
-        // ---- By reason (snapshot) ----
+        // ---- Gifts (P-F5) — their own bucket, never mixed into reasons ----
+        $gifts = (clone $base)
+            ->where('oc.is_gift', true)
+            ->selectRaw('
+                COALESCE(SUM(oc.amount), 0) AS total_value,
+                COUNT(*) AS gift_count,
+                COUNT(DISTINCT oc.order_id) AS gifted_order_count
+            ')
+            ->first();
+
+        // ---- By reason (snapshot) — manager comps only ----
         $byReason = (clone $base)
+            ->where('oc.is_gift', false)
             ->selectRaw('
                 oc.reason_code_snapshot AS code,
                 oc.reason_name_snapshot AS name,
@@ -149,6 +168,11 @@ final readonly class CompReportAction
                 'total_value' => number_format((float) ($headline?->total_value ?? 0), 3, '.', ''),
                 'comp_count' => (int) ($headline?->comp_count ?? 0),
                 'comped_order_count' => (int) ($headline?->comped_order_count ?? 0),
+            ],
+            'gifts' => [
+                'total_value' => number_format((float) ($gifts?->total_value ?? 0), 3, '.', ''),
+                'gift_count' => (int) ($gifts?->gift_count ?? 0),
+                'gifted_order_count' => (int) ($gifts?->gifted_order_count ?? 0),
             ],
             'by_reason' => $byReason,
             'by_branch' => $byBranch,

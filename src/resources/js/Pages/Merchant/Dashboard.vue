@@ -145,12 +145,19 @@ const topIngredientsChart = computed(() => {
     };
 });
 
-// Payment mix today donut (§5.2). Method labels are capitalised the
-// same way the Sales report's donut does it.
+// Payment mix today donut (§5.2). Method labels resolve through the
+// orders.payment_methods i18n map (P-F5: 'bank_pos' → "Bank POS"),
+// falling back to plain capitalisation for an unknown method.
+function methodLabel(method: string): string {
+    const key = `orders.payment_methods.${method}`;
+    const label = t(key);
+    return label !== key ? label : method.charAt(0).toUpperCase() + method.slice(1).replace(/_/g, ' ');
+}
+
 const paymentMixChart = computed(() => {
     const rows = summary.value?.payment_mix_today ?? [];
     return {
-        labels: rows.map((r) => r.method.charAt(0).toUpperCase() + r.method.slice(1)),
+        labels: rows.map((r) => methodLabel(r.method)),
         series: rows.map((r) => num(r.amount)),
     };
 });

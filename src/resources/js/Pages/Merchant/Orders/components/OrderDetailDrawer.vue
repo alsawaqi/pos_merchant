@@ -22,6 +22,17 @@ const emit = defineEmits<{ (e: 'update:uuid', value: string | null): void }>();
 
 const { t } = useI18n();
 
+/**
+ * P-F5 — raw payment.method → translated label ('bank_pos' → "Bank
+ * POS"); unknown methods fall back to plain capitalisation.
+ */
+function methodLabel(method: string | null | undefined): string {
+    if (!method) return '—';
+    const key = `orders.payment_methods.${method}`;
+    const label = t(key);
+    return label !== key ? label : method.charAt(0).toUpperCase() + method.slice(1).replace(/_/g, ' ');
+}
+
 const detail = ref<OrderDetailPayload | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
@@ -186,7 +197,7 @@ function statusLabel(status: string | null): string {
                     <ul class="space-y-2 text-sm">
                         <li v-for="(p, i) in detail.payments" :key="i" class="flex items-center justify-between">
                             <div>
-                                <span class="font-medium capitalize text-slate-900">{{ p.method ?? '—' }}</span>
+                                <span class="font-medium text-slate-900">{{ methodLabel(p.method) }}</span>
                                 <span v-if="p.softpos_auth_code" class="block text-xs text-slate-400">{{ t('orders.detail.auth_code') }}: {{ p.softpos_auth_code }}</span>
                             </div>
                             <span class="font-semibold tabular-nums text-slate-900">{{ p.amount }}</span>

@@ -298,6 +298,8 @@ export interface LossWasteReportPayload {
 export interface CompReportPayload {
     window: { from: string; to: string; consolidated: boolean; branch_ids: number[] | null };
     headline: { total_value: string; comp_count: number; comped_order_count: number };
+    /** P-F5 — gifted lines (is_gift rows), split out of the reason analysis. */
+    gifts: { total_value: string; gift_count: number; gifted_order_count: number };
     by_reason: { code: string; name: string; value: string; comp_count: number }[];
     by_branch: { branch_id: number; branch_name: string; value: string; comp_count: number }[];
     by_staff: { staff_id: number; staff_name: string; value: string; comp_count: number }[];

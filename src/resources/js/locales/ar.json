@@ -1709,7 +1709,10 @@
             "headline_labels": {
                 "total_value": "إجمالي قيمة الضيافة",
                 "comp_count": "الضيافات",
-                "comped_orders": "الطلبات المُعفاة"
+                "comped_orders": "الطلبات المُعفاة",
+                "gift_value": "قيمة الهدايا",
+                "gift_count": "الهدايا",
+                "gifted_orders": "الطلبات المُهداة"
             },
             "by_reason": "حسب السبب",
             "by_staff": "حسب المدير المعتمد",
@@ -2030,6 +2033,14 @@
             "to_go": "سفري",
             "delivery": "توصيل",
             "car": "سيارة"
+        },
+        "payment_methods": {
+            "cash": "نقدًا",
+            "card": "بطاقة",
+            "split_part": "مقسّم",
+            "loyalty": "ولاء",
+            "gift": "هدية",
+            "bank_pos": "جهاز نقاط البيع البنكي"
         },
         "statuses": {
             "open": "مفتوح",

@@ -32,6 +32,7 @@ use App\Actions\Pos\Reports\SalesReportAction;
 use App\Data\Reports\ReportFilter;
 use App\Enums\MerchantRole;
 use App\Enums\OrderStatus;
+use App\Enums\PaymentMethod;
 use App\Models\Branch;
 use App\Models\Company;
 use App\Models\Order;
@@ -317,15 +318,26 @@ it('breaks down sales by_payment_method using only successful payments', functio
     // A failed card payment should NOT count.
     Payment::factory()->for($cardOrder, 'order')->failed()->create(['amount' => '99.000']);
 
+    // P-F5 — bank_pos (the bank's own standalone terminal) groups as its
+    // own method bucket.
+    $bankPosOrder = Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->paid()->create([
+        'subtotal' => '7.000', 'grand_total' => '7.000',
+        'opened_at' => '2026-06-15 14:00:00',
+    ]);
+    Payment::factory()->for($bankPosOrder, 'order')->create(['method' => PaymentMethod::BankPos->value, 'amount' => '7.000']);
+
     $response = $this->getJson('/api/reports/sales?date_from=2026-06-01&date_to=2026-06-30')->assertOk();
 
     $byMethod = collect($response->json('data.by_payment_method'));
     $cash = $byMethod->firstWhere('method', 'cash');
     $card = $byMethod->firstWhere('method', 'card');
+    $bankPos = $byMethod->firstWhere('method', 'bank_pos');
     expect($cash['amount'])->toBe('10.000');
     expect($cash['count'])->toBe(1);
     expect($card['amount'])->toBe('25.000');
     expect($card['count'])->toBe(1);
+    expect($bankPos['amount'])->toBe('7.000');
+    expect($bankPos['count'])->toBe(1);
 });
 
 // =================== SEEDER RECONCILIATION ===================

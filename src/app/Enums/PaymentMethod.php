@@ -20,6 +20,11 @@ namespace App\Enums;
  *                  the device. NOT a stored-value gift card (that is a
  *                  separate deferred Phase 7+ feature) — never build
  *                  card/voucher balance semantics on this value.
+ *   bank_pos     — P-F5: paid on the bank's own standalone card
+ *                  terminal next to the device (recorded, no
+ *                  integration). NOT card money: the platform's
+ *                  bank-party commission slice never applies to it
+ *                  (the bank already took its fee on its own rails).
  */
 enum PaymentMethod: string
 {
@@ -28,6 +33,7 @@ enum PaymentMethod: string
     case SplitPart = 'split_part';
     case Loyalty = 'loyalty';
     case Gift = 'gift';
+    case BankPos = 'bank_pos';
 
     /**
      * @return list<string>

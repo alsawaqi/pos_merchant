@@ -29,6 +29,18 @@ function orderTypeLabel(type: string | undefined): string {
     return label !== key ? label : type.replace(/_/g, ' ');
 }
 
+/**
+ * P-F5 — raw pos_payments.method strings get a translated label
+ * (e.g. 'bank_pos' → "Bank POS"); unknown methods fall back to the
+ * old capitalisation so a future tender never renders blank.
+ */
+function methodLabel(method: string | undefined): string {
+    if (!method) return '—';
+    const key = `orders.payment_methods.${method}`;
+    const label = t(key);
+    return label !== key ? label : method.charAt(0).toUpperCase() + method.slice(1).replace(/_/g, ' ');
+}
+
 /** Report money values arrive as decimal-3 strings — parse to a number. */
 function num(v: string | number | undefined | null): number {
     const n = typeof v === 'number' ? v : Number.parseFloat(String(v ?? '0'));
@@ -67,7 +79,7 @@ const weekdayChart = computed(() => {
 const paymentChart = computed(() => {
     const rows = payload.value?.by_payment_method ?? [];
     return {
-        labels: rows.map((r) => r.method.charAt(0).toUpperCase() + r.method.slice(1)),
+        labels: rows.map((r) => methodLabel(r.method)),
         series: rows.map((r) => num(r.amount)),
     };
 });
@@ -253,7 +265,7 @@ type ApexSeries = { name: string; data: number[] }[];
                     </thead>
                     <tbody>
                         <tr v-for="row in payload.by_payment_method" :key="row.method" class="border-b border-slate-100 last:border-0">
-                            <td class="px-5 py-2 capitalize">{{ row.method }}</td>
+                            <td class="px-5 py-2">{{ methodLabel(row.method) }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ row.amount }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ row.count }}</td>
                         </tr>
