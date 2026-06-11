@@ -31,6 +31,7 @@ use App\Http\Controllers\Pos\PosStaffController;
 use App\Http\Controllers\Pos\CompReasonsController;
 use App\Http\Controllers\Pos\ManagerApprovalSettingController;
 use App\Http\Controllers\Pos\OrderCancellationSettingController;
+use App\Http\Controllers\Pos\ReportsPositionsSettingController;
 use App\Http\Controllers\Pos\VoidReasonsController;
 use App\Http\Controllers\Pos\OrdersController;
 use App\Http\Controllers\Pos\PayoutsController;
@@ -717,6 +718,15 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('settings.manager-approval.show');
         Route::put('settings/manager-approval', [ManagerApprovalSettingController::class, 'update'])
             ->name('settings.manager-approval.update');
+
+        // P-F6 — device reports access policy: which staff positions may
+        // open the Reports dashboard on the POS device. Emitted in
+        // /device/config + enforced on the device. Same orders.cancel gate
+        // as the two sibling position policies it rides with.
+        Route::get('settings/reports-positions', [ReportsPositionsSettingController::class, 'show'])
+            ->name('settings.reports-positions.show');
+        Route::put('settings/reports-positions', [ReportsPositionsSettingController::class, 'update'])
+            ->name('settings.reports-positions.update');
 
         // Phase B (Additions §1.2) — void + comp reason code lists. Same
         // orders.cancel gate as the cancellation policy they ride with;

@@ -33,6 +33,13 @@ class CompanySetting extends Model
     public const KEY_MANAGER_APPROVAL_POSITIONS = 'manager_approval_positions';
 
     /**
+     * P-F6 — the staff positions allowed to open the Reports dashboard on
+     * the POS device. pos_api emits it in /device/config; the DEVICE gates
+     * its Reports screen on the list.
+     */
+    public const KEY_REPORTS_POSITIONS = 'reports_positions';
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

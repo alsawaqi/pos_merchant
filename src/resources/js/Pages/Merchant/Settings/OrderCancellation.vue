@@ -12,7 +12,7 @@
  *     form and the sidebar entry.
  */
 
-import { Ban, Pencil, Plus, ShieldCheck, ShieldX, Trash2 } from 'lucide-vue-next';
+import { Ban, BarChart3, Pencil, Plus, ShieldCheck, ShieldX, Trash2 } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import BaseModal from '@/Components/BaseModal.vue';
@@ -27,6 +27,10 @@ import {
     getOrderCancellationSetting,
     updateOrderCancellationPositions,
 } from '@/lib/api/orderCancellation';
+import {
+    getReportsPositionsSetting,
+    updateReportsPositions,
+} from '@/lib/api/reportsPositions';
 import {
     createCompReason,
     createVoidReason,
@@ -186,6 +190,74 @@ async function saveApproval(): Promise<void> {
         approvalSaveError.value = apiErrorMessage(e, t('settings.manager_approval.save_failed'));
     } finally {
         approvalSaving.value = false;
+    }
+}
+
+// =================== P-F6 — device reports access positions ===================
+// The staff positions allowed to open the Reports dashboard on the POS
+// device. Same control pattern as the two policies above, persisted under
+// its own setting key (reports_positions).
+
+const reportsAvailable = ref<string[]>([]);
+const reportsSelected = ref<string[]>([]);
+
+const reportsLoading = ref(true);
+const reportsLoadError = ref<string | null>(null);
+
+const reportsSaving = ref(false);
+const reportsSaveError = ref<string | null>(null);
+const reportsSaveSuccess = ref(false);
+
+const canSaveReports = computed(
+    () => canManage.value && !reportsSaving.value && reportsSelected.value.length > 0,
+);
+
+function isReportsChecked(position: string): boolean {
+    return reportsSelected.value.includes(position);
+}
+
+function toggleReports(position: string): void {
+    reportsSaveSuccess.value = false;
+    reportsSaveError.value = null;
+    if (isReportsChecked(position)) {
+        reportsSelected.value = reportsSelected.value.filter((p) => p !== position);
+    } else {
+        reportsSelected.value = [...reportsSelected.value, position];
+    }
+}
+
+async function fetchReportsSetting(): Promise<void> {
+    reportsLoading.value = true;
+    reportsLoadError.value = null;
+    try {
+        const res = await getReportsPositionsSetting();
+        reportsAvailable.value = res.data.available_positions;
+        reportsSelected.value = res.data.positions;
+    } catch (e) {
+        reportsLoadError.value = apiErrorMessage(e, t('settings.reports_positions.save_failed'));
+    } finally {
+        reportsLoading.value = false;
+    }
+}
+
+onMounted(() => { void fetchReportsSetting(); });
+
+async function saveReports(): Promise<void> {
+    if (!canSaveReports.value) {
+        return;
+    }
+    reportsSaving.value = true;
+    reportsSaveError.value = null;
+    reportsSaveSuccess.value = false;
+    try {
+        const res = await updateReportsPositions(reportsSelected.value);
+        reportsAvailable.value = res.data.available_positions;
+        reportsSelected.value = res.data.positions;
+        reportsSaveSuccess.value = true;
+    } catch (e) {
+        reportsSaveError.value = apiErrorMessage(e, t('settings.reports_positions.save_failed'));
+    } finally {
+        reportsSaving.value = false;
     }
 }
 
@@ -433,6 +505,64 @@ async function confirmDeleteReason(): Promise<void> {
                         >
                             <ShieldCheck class="size-4" />
                             {{ approvalSaving ? t('common.saving') : t('settings.order_cancellation.save') }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============ P-F6 — DEVICE REPORTS ACCESS POSITIONS ============ -->
+            <div class="mt-8">
+                <h2 class="text-base font-semibold text-slate-900">{{ t('settings.reports_positions.title') }}</h2>
+                <p class="mt-1 max-w-2xl text-sm text-slate-500">{{ t('settings.reports_positions.subtitle') }}</p>
+            </div>
+
+            <div v-if="reportsLoadError" class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {{ reportsLoadError }}
+            </div>
+
+            <div class="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                <div v-if="reportsLoading" class="px-4 py-12 text-center text-sm text-slate-400">{{ t('common.loading') }}</div>
+                <div v-else-if="reportsAvailable.length === 0" class="flex flex-col items-center gap-3 px-4 py-12 text-center">
+                    <ShieldX class="size-8 text-slate-300" />
+                    <p class="text-sm text-slate-500">{{ t('settings.order_cancellation.empty_state') }}</p>
+                </div>
+                <div v-else class="p-4 sm:p-6">
+                    <p class="text-sm font-medium text-slate-700">{{ t('settings.reports_positions.positions_label') }}</p>
+                    <div class="mt-4 space-y-2">
+                        <label
+                            v-for="position in reportsAvailable"
+                            :key="position"
+                            class="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-3 transition"
+                            :class="canManage ? 'cursor-pointer hover:bg-slate-50' : 'cursor-not-allowed opacity-60'"
+                        >
+                            <input
+                                type="checkbox"
+                                :checked="isReportsChecked(position)"
+                                :disabled="!canManage"
+                                class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                                @change="toggleReports(position)"
+                            >
+                            <span class="text-sm font-medium text-slate-700">{{ t(`pos_staff.positions.${position}`) }}</span>
+                        </label>
+                    </div>
+
+                    <p v-if="canManage && reportsSelected.length === 0" class="mt-4 text-sm text-rose-600">
+                        {{ t('settings.order_cancellation.at_least_one') }}
+                    </p>
+                    <p v-if="reportsSaveError" class="mt-4 text-sm text-rose-600">{{ reportsSaveError }}</p>
+                    <p v-if="reportsSaveSuccess" class="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                        {{ t('settings.reports_positions.save_success') }}
+                    </p>
+
+                    <div v-if="canManage" class="mt-6 flex justify-end">
+                        <button
+                            type="button"
+                            class="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:opacity-60"
+                            :disabled="!canSaveReports"
+                            @click="saveReports"
+                        >
+                            <BarChart3 class="size-4" />
+                            {{ reportsSaving ? t('common.saving') : t('settings.order_cancellation.save') }}
                         </button>
                     </div>
                 </div>

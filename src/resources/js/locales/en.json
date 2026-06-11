@@ -2100,6 +2100,13 @@
             "save_success": "Manager approval policy updated.",
             "save_failed": "Could not save the manager approval policy."
         },
+        "reports_positions": {
+            "title": "Device reports access",
+            "subtitle": "Choose which staff positions can open the Reports dashboard on the POS device. Staff in other positions won't see branch sales figures on the terminal.",
+            "positions_label": "Positions allowed to view device reports",
+            "save_success": "Device reports access updated.",
+            "save_failed": "Could not save the device reports access policy."
+        },
         "reasons": {
             "void_title": "Void reasons",
             "void_subtitle": "Every order void at the POS must pick one of these. \"Food was made\" keeps the ingredients consumed and shows the loss in the Loss/Waste report.",
