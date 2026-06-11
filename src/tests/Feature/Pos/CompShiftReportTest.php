@@ -12,6 +12,7 @@ use App\Enums\ShiftStatus;
 use App\Models\Order;
 use App\Models\Shift;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -227,6 +228,9 @@ it('lists shifts with cash variance and a short-exposure summary', function (): 
 // =================== SHIFT RE-OPEN ===================
 
 it('re-opens a same-day closed shift (audited) and refuses older ones', function (): void {
+    // Freeze mid-day: closed_at = now() - 10min must stay on today's date
+    // (unfrozen, this lands on yesterday when run just after midnight UTC).
+    Carbon::setTestNow(Carbon::parse('2026-06-15 12:00:00'));
     $ctx = makeMerchantActor();
 
     $today = Shift::query()->create([
