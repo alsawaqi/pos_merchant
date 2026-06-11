@@ -37,25 +37,36 @@ const actionOk = ref<string | null>(null);
 const summary = ref<ProductStockSummary | null>(null);
 const action = ref<Action>('distribute');
 
-const distributeForm = reactive({ quantity: '', note: '' });
-const distributeRows = ref<{ branch_uuid: string; branch_name: string; quantity: string }[]>([]);
-const receiveForm = reactive({ quantity: '', note: '' });
-const allocateRows = ref<{ branch_uuid: string; branch_name: string; quantity: string }[]>([]);
+// Quantity fields are bound to type="number" inputs: Vue's v-model stores a
+// NUMBER once a value is typed ('' only while blank) — hence string | number,
+// and qty() below normalizes before every trim/parseFloat/wire payload.
+const distributeForm = reactive<{ quantity: string | number; note: string }>({ quantity: '', note: '' });
+const distributeRows = ref<{ branch_uuid: string; branch_name: string; quantity: string | number }[]>([]);
+const receiveForm = reactive<{ quantity: string | number; note: string }>({ quantity: '', note: '' });
+const allocateRows = ref<{ branch_uuid: string; branch_name: string; quantity: string | number }[]>([]);
 const allocateNote = ref('');
-const transferForm = reactive({ from_branch_uuid: '', to_branch_uuid: '', quantity: '', note: '' });
-const adjustForm = reactive({ branch_uuid: '', signed_quantity: '', note: '' });
+const transferForm = reactive<{ from_branch_uuid: string; to_branch_uuid: string; quantity: string | number; note: string }>(
+    { from_branch_uuid: '', to_branch_uuid: '', quantity: '', note: '' },
+);
+const adjustForm = reactive<{ branch_uuid: string; signed_quantity: string | number; note: string }>(
+    { branch_uuid: '', signed_quantity: '', note: '' },
+);
+
+function qty(v: string | number): string {
+    return String(v ?? '').trim();
+}
 
 const branches = computed(() => summary.value?.branches ?? []);
 
 const allocateTotal = computed(() =>
-    allocateRows.value.reduce((s, r) => s + (parseFloat(r.quantity) || 0), 0),
+    allocateRows.value.reduce((s, r) => s + (parseFloat(qty(r.quantity)) || 0), 0),
 );
 
 const distributeTotal = computed(() =>
-    distributeRows.value.reduce((s, r) => s + (parseFloat(r.quantity) || 0), 0),
+    distributeRows.value.reduce((s, r) => s + (parseFloat(qty(r.quantity)) || 0), 0),
 );
 const distributeRemainder = computed(() =>
-    (parseFloat(distributeForm.quantity) || 0) - distributeTotal.value,
+    (parseFloat(qty(distributeForm.quantity)) || 0) - distributeTotal.value,
 );
 // Over-distributed only when it exceeds the total by more than float noise — use
 // the same 1e-9 epsilon as doDistribute() and the server guard, so an exact split
@@ -143,11 +154,11 @@ async function run(fn: () => Promise<{ data: ProductStockSummary }>, okMsg: stri
 }
 
 function doDistribute(): void {
-    if (!props.productUuid || distributeForm.quantity.trim() === '') return;
-    const total = parseFloat(distributeForm.quantity) || 0;
+    if (!props.productUuid || qty(distributeForm.quantity) === '') return;
+    const total = parseFloat(qty(distributeForm.quantity)) || 0;
     const lines = distributeRows.value
-        .filter((r) => r.quantity.trim() !== '' && (parseFloat(r.quantity) || 0) > 0)
-        .map((r) => ({ branch_uuid: r.branch_uuid, quantity: r.quantity }));
+        .filter((r) => qty(r.quantity) !== '' && (parseFloat(qty(r.quantity)) || 0) > 0)
+        .map((r) => ({ branch_uuid: r.branch_uuid, quantity: qty(r.quantity) }));
     const distributed = lines.reduce((s, l) => s + (parseFloat(String(l.quantity)) || 0), 0);
     if (distributed > total + 1e-9) {
         actionError.value = 'You are distributing more than the received total.';
@@ -155,7 +166,7 @@ function doDistribute(): void {
     }
     void run(
         () => receiveAndDistributeProductStock(props.productUuid as string, {
-            quantity: distributeForm.quantity,
+            quantity: qty(distributeForm.quantity),
             allocations: lines,
             note: distributeForm.note || null,
         }),
@@ -164,9 +175,9 @@ function doDistribute(): void {
 }
 
 function doReceive(): void {
-    if (!props.productUuid || receiveForm.quantity.trim() === '') return;
+    if (!props.productUuid || qty(receiveForm.quantity) === '') return;
     void run(
-        () => receiveProductStock(props.productUuid as string, { quantity: receiveForm.quantity, note: receiveForm.note || null }),
+        () => receiveProductStock(props.productUuid as string, { quantity: qty(receiveForm.quantity), note: receiveForm.note || null }),
         'Received into the central pool.',
     );
 }
@@ -174,8 +185,8 @@ function doReceive(): void {
 function doAllocate(): void {
     if (!props.productUuid) return;
     const lines = allocateRows.value
-        .filter((r) => r.quantity.trim() !== '' && (parseFloat(r.quantity) || 0) > 0)
-        .map((r) => ({ branch_uuid: r.branch_uuid, quantity: r.quantity }));
+        .filter((r) => qty(r.quantity) !== '' && (parseFloat(qty(r.quantity)) || 0) > 0)
+        .map((r) => ({ branch_uuid: r.branch_uuid, quantity: qty(r.quantity) }));
     if (lines.length === 0) {
         actionError.value = 'Enter a quantity for at least one branch.';
         return;
@@ -187,7 +198,7 @@ function doAllocate(): void {
 }
 
 function doTransfer(): void {
-    if (!props.productUuid || transferForm.quantity.trim() === '') return;
+    if (!props.productUuid || qty(transferForm.quantity) === '') return;
     if (transferForm.from_branch_uuid === transferForm.to_branch_uuid) {
         actionError.value = 'Choose two different branches.';
         return;
@@ -196,7 +207,7 @@ function doTransfer(): void {
         () => transferProductStock(props.productUuid as string, {
             from_branch_uuid: transferForm.from_branch_uuid,
             to_branch_uuid: transferForm.to_branch_uuid,
-            quantity: transferForm.quantity,
+            quantity: qty(transferForm.quantity),
             note: transferForm.note || null,
         }),
         'Transferred between branches.',
@@ -204,11 +215,11 @@ function doTransfer(): void {
 }
 
 function doAdjust(): void {
-    if (!props.productUuid || adjustForm.signed_quantity.trim() === '' || adjustForm.note.trim() === '') return;
+    if (!props.productUuid || qty(adjustForm.signed_quantity) === '' || adjustForm.note.trim() === '') return;
     void run(
         () => adjustProductStock(props.productUuid as string, {
             branch_uuid: adjustForm.branch_uuid || null,
-            signed_quantity: adjustForm.signed_quantity,
+            signed_quantity: qty(adjustForm.signed_quantity),
             note: adjustForm.note,
         }),
         'Adjusted.',
@@ -294,7 +305,7 @@ function fmtType(t: string): string {
                                 <p v-if="branches.length === 0" class="text-xs text-slate-400">No branches yet — the whole amount goes to the central pool.</p>
                             </div>
                             <p class="text-xs text-slate-500">
-                                Distributing <span class="font-semibold tabular-nums">{{ round3(distributeTotal) }}</span> of {{ round3(parseFloat(distributeForm.quantity) || 0) }} —
+                                Distributing <span class="font-semibold tabular-nums">{{ round3(distributeTotal) }}</span> of {{ round3(parseFloat(qty(distributeForm.quantity)) || 0) }} —
                                 <span class="font-semibold tabular-nums" :class="distributeOver ? 'text-rose-600' : 'text-slate-700'">{{ round3(distributeRemainder) }}</span> stays in central
                             </p>
                             <input v-model="distributeForm.note" type="text" placeholder="Note (optional)" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">

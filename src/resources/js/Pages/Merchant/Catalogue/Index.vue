@@ -1191,7 +1191,8 @@ const ownedAddonGroups = ref<AddOnGroup[]>([]);
 const ownedAddonsBusy = ref(false);
 const ownedAddonsError = ref<string | null>(null);
 // Per-group inline "add option" form state, keyed by group uuid.
-const ownedOptionForms = ref<Record<string, { name: string; price_delta: string }>>({});
+// price_delta: '' / '0.000' while blank, a NUMBER once typed (number-input v-model).
+const ownedOptionForms = ref<Record<string, { name: string; price_delta: string | number }>>({});
 // Inline "add a group" form.
 const ownedGroupForm = reactive<{ name: string; selection_mode: AddOnSelectionMode }>({
     name: '',
@@ -1206,7 +1207,7 @@ function resetOwnedAddons(): void {
     ownedGroupForm.selection_mode = 'single';
 }
 
-function optionFormFor(groupUuid: string): { name: string; price_delta: string } {
+function optionFormFor(groupUuid: string): { name: string; price_delta: string | number } {
     return ownedOptionForms.value[groupUuid] ?? { name: '', price_delta: '0.000' };
 }
 
@@ -1219,7 +1220,7 @@ async function loadOwnedAddonGroups(productUuid: string): Promise<void> {
         // Seed one inline "add option" form per group so the
         // template binds to a stable reactive object (no mutation
         // during render).
-        const forms: Record<string, { name: string; price_delta: string }> = {};
+        const forms: Record<string, { name: string; price_delta: string | number }> = {};
         for (const group of response.data) {
             forms[group.uuid] = ownedOptionForms.value[group.uuid] ?? { name: '', price_delta: '0.000' };
         }
@@ -1265,9 +1266,12 @@ async function addOwnedOption(groupUuid: string): Promise<void> {
     ownedAddonsBusy.value = true;
     ownedAddonsError.value = null;
     try {
+        // price_delta rides a type="number" input — a typed value is a NUMBER
+        // (Vue v-model auto-cast), so coerce before trimming.
+        const priceDelta = String(form.price_delta ?? '').trim();
         await createAddOn(groupUuid, {
             name: form.name.trim(),
-            price_delta: form.price_delta.trim() === '' ? '0.000' : form.price_delta.trim(),
+            price_delta: priceDelta === '' ? '0.000' : priceDelta,
         });
         form.name = '';
         form.price_delta = '0.000';
