@@ -82,10 +82,14 @@ services:
   # `migrate` helper (pos_merchant owns no schema). See DEPLOY.md.
   # ===========================================================================
 
-  # `--profile build`: PHP deps into ./src/vendor
+  # `--profile build`: PHP deps into ./src/vendor — runs in the APP image
+  # (composer is baked into it) so the platform check validates against the
+  # REAL runtime extensions (the official composer:2 image lacks several and
+  # fails hard ext-* requires, e.g. ext-gd in the pos_admin sibling). Build
+  # the image first (`docker compose -f docker-compose.prod.yml build`).
   composer:
     profiles: ["build"]
-    image: composer:2
+    image: pos-merchant-app
     working_dir: /var/www/html
     volumes:
       - ./src:/var/www/html
