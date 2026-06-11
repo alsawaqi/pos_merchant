@@ -67,6 +67,15 @@ class CreateAddOnGroupRequest extends FormRequest
                 $v->errors()->add('max_selections', 'Maximum selections cannot be below the minimum.');
             }
 
+            // A SINGLE-choice group holds at most one selection on the POS,
+            // so a minimum above 1 can never be satisfied — the customize
+            // sheet's Apply button would be permanently disabled (observed
+            // in production with min 2 on a single-choice "size" group).
+            $mode = (string) ($this->input('selection_mode') ?? AddOnSelectionMode::Single->value);
+            if ($mode === AddOnSelectionMode::Single->value && $min !== null && (int) $min > 1) {
+                $v->errors()->add('min_selections', 'A single-choice group can require at most one selection.');
+            }
+
             // Phase B — every bound category must belong to this company.
             $categoryIds = $this->input('category_ids');
             if (is_array($categoryIds) && $categoryIds !== []) {

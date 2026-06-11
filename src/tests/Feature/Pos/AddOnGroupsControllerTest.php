@@ -270,3 +270,42 @@ it('persists min/max selections, default option, and category bindings', functio
     $this->patchJson("/api/addon-groups/{$group['uuid']}", ['category_ids' => []])->assertOk();
     $this->assertDatabaseCount('pos_addon_group_categories', 0);
 });
+
+it('refuses an unsatisfiable minimum on a single-choice group', function (): void {
+    $ctx = makeMerchantActor();
+
+    // CREATE: a single-choice group can hold at most one selection on the
+    // POS, so min 2 would permanently disable the customize sheet's Apply.
+    $this->postJson('/api/addon-groups', [
+        'name' => 'Size',
+        'selection_mode' => 'single',
+        'min_selections' => 2,
+    ])->assertUnprocessable()->assertJsonValidationErrors('min_selections');
+
+    // Mode omitted defaults to single — same rejection.
+    $this->postJson('/api/addon-groups', [
+        'name' => 'Size',
+        'min_selections' => 2,
+    ])->assertUnprocessable()->assertJsonValidationErrors('min_selections');
+
+    // A MULTI group may legitimately require several picks.
+    $group = $this->postJson('/api/addon-groups', [
+        'name' => 'Sauces',
+        'selection_mode' => 'multi',
+        'min_selections' => 2,
+        'max_selections' => 3,
+    ])->assertCreated()->json('data');
+
+    // UPDATE: raising min above 1 on a single group is refused...
+    $single = $this->postJson('/api/addon-groups', [
+        'name' => 'Cup',
+        'selection_mode' => 'single',
+        'min_selections' => 1,
+    ])->assertCreated()->json('data');
+    $this->patchJson("/api/addon-groups/{$single['uuid']}", ['min_selections' => 2])
+        ->assertUnprocessable()->assertJsonValidationErrors('min_selections');
+
+    // ...and so is flipping a min>1 multi group to single (merged state).
+    $this->patchJson("/api/addon-groups/{$group['uuid']}", ['selection_mode' => 'single'])
+        ->assertUnprocessable()->assertJsonValidationErrors('min_selections');
+});
