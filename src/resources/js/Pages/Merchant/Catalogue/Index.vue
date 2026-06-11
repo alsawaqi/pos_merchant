@@ -207,7 +207,8 @@ const prodForm = reactive<{
     // Phase B - per-branch availability + stock. branch_all = available
     // everywhere (no rows). Otherwise one row per company branch.
     branch_all: boolean;
-    branch_rows: { branch_id: number; selected: boolean; stock_qty: string }[];
+    // stock_qty: '' when blank, a NUMBER once typed (number-input v-model).
+    branch_rows: { branch_id: number; selected: boolean; stock_qty: string | number }[];
 }>({
     name: '',
     name_ar: '',
@@ -706,7 +707,7 @@ function branchName(branchId: number): string {
 
 function buildBranchRows(
     assignments?: ProductBranchAssignment[],
-): { branch_id: number; selected: boolean; stock_qty: string }[] {
+): { branch_id: number; selected: boolean; stock_qty: string | number }[] {
     const byBranch = new Map<number, ProductBranchAssignment>();
     for (const a of assignments ?? []) byBranch.set(a.branch_id, a);
     return branches.value.map((b) => {
@@ -796,7 +797,10 @@ async function submitProduct(): Promise<void> {
                 .map((r) => ({
                     branch_id: r.branch_id,
                     is_available: true,
-                    stock_qty: r.stock_qty.trim() === '' ? null : Number(r.stock_qty),
+                    // v-model on a type="number" input stores a NUMBER once a
+                    // value is typed (Vue auto-casts) and '' when cleared —
+                    // coerce before trimming or submit crashes.
+                    stock_qty: String(r.stock_qty ?? '').trim() === '' ? null : Number(r.stock_qty),
                 }));
         await syncProductBranches(productUuid, branchPayload);
 
