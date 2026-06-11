@@ -17,7 +17,13 @@ class AppServiceProvider extends ServiceProvider
         // Single instance per request so the middleware writes the
         // tenant id once and every downstream resolution (actions,
         // resources, jobs) sees the same value.
-        $this->app->singleton(MerchantTenantContext::class);
+        //
+        // scoped(), NOT singleton(): under php-fpm the two are equivalent
+        // (fresh app per request), but under a long-lived worker runtime
+        // (Octane/queue daemons) a singleton would leak one company's
+        // tenant id into the next request — a cross-tenant data leak.
+        // scoped instances are flushed between requests/jobs automatically.
+        $this->app->scoped(MerchantTenantContext::class);
     }
 
     public function boot(): void
