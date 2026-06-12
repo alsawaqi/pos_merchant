@@ -244,3 +244,128 @@ it('404s on a product owned by another company', function (): void {
 
     $this->getJson("/api/products/{$foreign->uuid}/stock")->assertNotFound();
 });
+
+// ---- PD2 — bought-in goods are purchases: cost on receive books an expense ----
+
+it('books a stock-purchase expense when a receive carries a cost', function (): void {
+    $ctx = makeMerchantActor();
+    $product = unitProduct($ctx);
+
+    $this->postJson("/api/products/{$product->uuid}/stock/receive", [
+        'quantity' => '80',
+        'total_cost' => '12.500',
+        'note' => 'Friday delivery',
+    ])->assertOk();
+
+    $this->assertDatabaseHas('pos_expenses', [
+        'company_id' => $ctx['company']->id,
+        'branch_id' => null,
+        'category' => 'stock_purchases',
+        'status' => 'recorded',
+    ]);
+    $expense = \App\Models\Expense::query()->where('company_id', $ctx['company']->id)->firstOrFail();
+    expect((string) $expense->amount)->toBe('12.500')
+        ->and($expense->note)->toContain($product->name)
+        ->and($expense->note)->toContain('Friday delivery')
+        ->and($expense->logged_by_portal_user_id)->toBe($ctx['user']->id);
+
+    // The receive movement points back at the expense row.
+    $movement = ProductStockMovement::query()->where('product_id', $product->id)->firstOrFail();
+    expect($movement->reference_type)->toBe(\App\Models\Expense::class)
+        ->and((int) $movement->reference_id)->toBe($expense->id);
+
+    // The display category is created lazily exactly once, then reused.
+    $this->postJson("/api/products/{$product->uuid}/stock/receive", [
+        'quantity' => '10',
+        'total_cost' => '2.000',
+    ])->assertOk();
+    expect(\App\Models\ExpenseCategory::query()->where('company_id', $ctx['company']->id)->where('key', 'stock_purchases')->count())->toBe(1)
+        ->and(\App\Models\Expense::query()->where('company_id', $ctx['company']->id)->count())->toBe(2);
+});
+
+it('books no expense when a receive has no cost (corrections / free goods)', function (): void {
+    $ctx = makeMerchantActor();
+    $product = unitProduct($ctx);
+
+    $this->postJson("/api/products/{$product->uuid}/stock/receive", ['quantity' => '50'])->assertOk();
+    $this->postJson("/api/products/{$product->uuid}/stock/receive", ['quantity' => '5', 'total_cost' => '0'])->assertOk();
+
+    expect(\App\Models\Expense::query()->count())->toBe(0)
+        ->and(ProductStockMovement::query()->where('product_id', $product->id)->whereNotNull('reference_id')->count())->toBe(0);
+});
+
+it('books exactly ONE expense for a costed receive-and-distribute', function (): void {
+    $ctx = makeMerchantActor();
+    $product = unitProduct($ctx);
+    $b2 = Branch::factory()->for($ctx['company'], 'company')->create();
+
+    $this->postJson("/api/products/{$product->uuid}/stock/receive-distribute", [
+        'quantity' => '80',
+        'total_cost' => '40.000',
+        'allocations' => [
+            ['branch_uuid' => $ctx['branch']->uuid, 'quantity' => '50'],
+            ['branch_uuid' => $b2->uuid, 'quantity' => '30'],
+        ],
+    ])->assertOk();
+
+    // The split changes nothing about the money: one purchase, one expense.
+    expect(\App\Models\Expense::query()->where('category', 'stock_purchases')->count())->toBe(1)
+        ->and((string) \App\Models\Expense::query()->firstOrFail()->amount)->toBe('40.000');
+});
+
+it('respects a deliberately deleted stock-purchases category (no duplicate key crash)', function (): void {
+    $ctx = makeMerchantActor();
+    $product = unitProduct($ctx);
+    $cat = \App\Models\ExpenseCategory::query()->create([
+        'company_id' => $ctx['company']->id,
+        'name' => 'Stock purchases',
+        'name_ar' => 'x',
+        'key' => 'stock_purchases',
+        'is_active' => true,
+        'sort_order' => 6,
+    ]);
+    $cat->delete();
+
+    // The expense still books under the key; the trashed category row is
+    // neither resurrected nor duplicated into the (company, key) unique.
+    $this->postJson("/api/products/{$product->uuid}/stock/receive", [
+        'quantity' => '10',
+        'total_cost' => '5.000',
+    ])->assertOk();
+
+    expect(\App\Models\Expense::query()->where('category', 'stock_purchases')->count())->toBe(1)
+        ->and(\App\Models\ExpenseCategory::withTrashed()->where('company_id', $ctx['company']->id)->where('key', 'stock_purchases')->count())->toBe(1);
+});
+
+it('seeds the FULL default category set when a fresh company books its first costed receive', function (): void {
+    $ctx = makeMerchantActor();
+    $product = unitProduct($ctx);
+
+    // A brand-new company has zero categories until something seeds them —
+    // the lazy create must not insert a lone row that would suppress the
+    // default seeder's any-row guard forever.
+    expect(\App\Models\ExpenseCategory::query()->where('company_id', $ctx['company']->id)->count())->toBe(0);
+
+    $this->postJson("/api/products/{$product->uuid}/stock/receive", [
+        'quantity' => '10',
+        'total_cost' => '5.000',
+    ])->assertOk();
+
+    $keys = \App\Models\ExpenseCategory::query()->where('company_id', $ctx['company']->id)->pluck('key')->all();
+    expect($keys)->toHaveCount(7)
+        ->and($keys)->toContain('utilities', 'supplies', 'ingredients', 'maintenance', 'salaries', 'other', 'stock_purchases');
+});
+
+it('refuses a recipe on a ready / bought-in product but lets it be cleared', function (): void {
+    $ctx = makeMerchantActor();
+    $product = unitProduct($ctx);
+    $ingredient = \App\Models\Ingredient::factory()->for($ctx['company'], 'company')->create();
+
+    // Its cost is booked at receive — a recipe would double-count it.
+    $this->putJson("/api/products/{$product->uuid}/recipe", [
+        'lines' => [['ingredient_uuid' => $ingredient->uuid, 'quantity' => 1]],
+    ])->assertUnprocessable();
+
+    // Clearing stays allowed (how a converted product sheds a stale recipe).
+    $this->putJson("/api/products/{$product->uuid}/recipe", ['lines' => []])->assertOk();
+});

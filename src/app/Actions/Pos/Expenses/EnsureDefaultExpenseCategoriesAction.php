@@ -27,6 +27,10 @@ final readonly class EnsureDefaultExpenseCategoriesAction
         ['key' => 'maintenance', 'name' => 'Maintenance', 'name_ar' => 'الصيانة', 'sort_order' => 3],
         ['key' => 'salaries', 'name' => 'Salaries', 'name_ar' => 'الرواتب', 'sort_order' => 4],
         ['key' => 'other', 'name' => 'Other', 'name_ar' => 'أخرى', 'sort_order' => 5],
+        // PD2 — bought-in goods purchases (auto-logged by a stock receive
+        // with a cost). Existing companies get it lazily from
+        // ReceiveProductStockAction the first time they need it.
+        ['key' => 'stock_purchases', 'name' => 'Stock purchases', 'name_ar' => 'مشتريات البضائع الجاهزة', 'sort_order' => 6],
     ];
 
     public function handle(int $companyId): void

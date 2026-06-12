@@ -1620,6 +1620,7 @@ async function performProviderDelete(): Promise<void> {
             :product-uuid="stockDialogProduct?.uuid ?? null"
             :product-name="stockDialogProduct?.name ?? ''"
             :can-manage="canManage"
+            :cost-price="stockDialogProduct?.cost_price ?? null"
             @close="stockDialogProduct = null"
         />
     </MerchantLayout>

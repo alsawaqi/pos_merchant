@@ -52,7 +52,8 @@ export function getProductStock(uuid: string): Promise<{ data: ProductStockSumma
 
 export function receiveProductStock(
     uuid: string,
-    payload: { quantity: string | number; note?: string | null },
+    // PD2 — total_cost (what was PAID) books a 'stock_purchases' expense.
+    payload: { quantity: string | number; total_cost?: string | number | null; note?: string | null },
 ): Promise<{ data: ProductStockSummary }> {
     return apiPost<{ data: ProductStockSummary }>(`/api/products/${uuid}/stock/receive`, payload as unknown as JsonValue);
 }
@@ -70,7 +71,7 @@ export function allocateProductStock(
  */
 export function receiveAndDistributeProductStock(
     uuid: string,
-    payload: { quantity: string | number; allocations: AllocationLine[]; note?: string | null },
+    payload: { quantity: string | number; total_cost?: string | number | null; allocations: AllocationLine[]; note?: string | null },
 ): Promise<{ data: ProductStockSummary }> {
     return apiPost<{ data: ProductStockSummary }>(`/api/products/${uuid}/stock/receive-distribute`, payload as unknown as JsonValue);
 }

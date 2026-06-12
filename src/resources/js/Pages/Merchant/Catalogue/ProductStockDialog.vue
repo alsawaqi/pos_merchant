@@ -24,6 +24,8 @@ const props = defineProps<{
     productUuid: string | null;
     productName: string;
     canManage: boolean;
+    /** PD2 — the product's cost price, for the qty x cost suggestion. */
+    costPrice?: string | null;
 }>();
 
 const emit = defineEmits<{ (e: 'close'): void }>();
@@ -51,9 +53,9 @@ const availableActions = computed<Action[]>(() =>
 // Quantity fields are bound to type="number" inputs: Vue's v-model stores a
 // NUMBER once a value is typed ('' only while blank) — hence string | number,
 // and qty() below normalizes before every trim/parseFloat/wire payload.
-const distributeForm = reactive<{ quantity: string | number; note: string }>({ quantity: '', note: '' });
+const distributeForm = reactive<{ quantity: string | number; total_cost: string | number; note: string }>({ quantity: '', total_cost: '', note: '' });
 const distributeRows = ref<{ branch_uuid: string; branch_name: string; quantity: string | number }[]>([]);
-const receiveForm = reactive<{ quantity: string | number; note: string }>({ quantity: '', note: '' });
+const receiveForm = reactive<{ quantity: string | number; total_cost: string | number; note: string }>({ quantity: '', total_cost: '', note: '' });
 const allocateRows = ref<{ branch_uuid: string; branch_name: string; quantity: string | number }[]>([]);
 const allocateNote = ref('');
 const transferForm = reactive<{ from_branch_uuid: string; to_branch_uuid: string; quantity: string | number; note: string }>(
@@ -65,6 +67,16 @@ const adjustForm = reactive<{ branch_uuid: string; signed_quantity: string | num
 
 function qty(v: string | number): string {
     return String(v ?? '').trim();
+}
+
+// PD2 — placeholder suggestion for the purchase cost: quantity x the
+// product's cost price. A suggestion only — the merchant types what was
+// actually paid.
+function costSuggestion(quantity: string | number): string {
+    const q = parseFloat(qty(quantity));
+    const c = parseFloat(props.costPrice ?? '');
+    if (!isFinite(q) || q <= 0 || !isFinite(c) || c <= 0) return 'e.g. 12.500';
+    return (Math.round(q * c * 1000) / 1000).toFixed(3);
 }
 
 const branches = computed(() => summary.value?.branches ?? []);
@@ -92,6 +104,7 @@ function round3(n: number): number {
 
 function resetForms(): void {
     distributeForm.quantity = '';
+    distributeForm.total_cost = '';
     distributeForm.note = '';
     distributeRows.value = branches.value.map((b) => ({
         branch_uuid: b.branch_uuid,
@@ -99,6 +112,7 @@ function resetForms(): void {
         quantity: '',
     }));
     receiveForm.quantity = '';
+    receiveForm.total_cost = '';
     receiveForm.note = '';
     allocateRows.value = branches.value.map((b) => ({
         branch_uuid: b.branch_uuid,
@@ -189,6 +203,7 @@ function doDistribute(): void {
     void run(
         () => receiveAndDistributeProductStock(props.productUuid as string, {
             quantity: qty(distributeForm.quantity),
+            total_cost: qty(distributeForm.total_cost) || null,
             allocations: lines,
             note: distributeForm.note || null,
         }),
@@ -199,7 +214,11 @@ function doDistribute(): void {
 function doReceive(): void {
     if (!props.productUuid || qty(receiveForm.quantity) === '') return;
     void run(
-        () => receiveProductStock(props.productUuid as string, { quantity: qty(receiveForm.quantity), note: receiveForm.note || null }),
+        () => receiveProductStock(props.productUuid as string, {
+            quantity: qty(receiveForm.quantity),
+            total_cost: qty(receiveForm.total_cost) || null,
+            note: receiveForm.note || null,
+        }),
         'Received into the central pool.',
     );
 }
@@ -318,7 +337,10 @@ function fmtType(t: string): string {
                             <div class="flex flex-wrap items-center gap-3">
                                 <label class="text-xs font-semibold text-slate-600">Total received</label>
                                 <input v-model="distributeForm.quantity" type="number" step="0.001" min="0" placeholder="e.g. 80" class="w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
+                                <label class="text-xs font-semibold text-slate-600">Total cost (OMR)</label>
+                                <input v-model="distributeForm.total_cost" type="number" step="0.001" min="0" :placeholder="costSuggestion(distributeForm.quantity)" class="w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
                             </div>
+                            <p class="text-xs text-slate-500">What you paid for this delivery — booked automatically as a <span class="font-semibold">Stock purchases</span> expense. Leave empty for corrections or free goods.</p>
                             <div class="space-y-2">
                                 <div v-for="row in distributeRows" :key="row.branch_uuid" class="flex items-center gap-3">
                                     <span class="flex-1 text-sm text-slate-700">{{ row.branch_name }}</span>
@@ -337,10 +359,21 @@ function fmtType(t: string): string {
                         <!-- Receive -->
                         <form v-else-if="action === 'receive'" class="space-y-3" @submit.prevent="doReceive">
                             <p class="text-xs text-slate-500">Add finished goods to the central pool.</p>
-                            <div class="flex flex-wrap gap-3">
-                                <input v-model="receiveForm.quantity" type="number" step="0.001" min="0" placeholder="Quantity" class="w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
-                                <input v-model="receiveForm.note" type="text" placeholder="Note (optional)" class="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                            <div class="flex flex-wrap items-end gap-3">
+                                <label class="block">
+                                    <span class="text-xs font-semibold text-slate-600">Quantity</span>
+                                    <input v-model="receiveForm.quantity" type="number" step="0.001" min="0" placeholder="e.g. 80" class="mt-1 w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
+                                </label>
+                                <label class="block">
+                                    <span class="text-xs font-semibold text-slate-600">Total cost (OMR)</span>
+                                    <input v-model="receiveForm.total_cost" type="number" step="0.001" min="0" :placeholder="costSuggestion(receiveForm.quantity)" class="mt-1 w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
+                                </label>
+                                <label class="block min-w-[10rem] flex-1">
+                                    <span class="text-xs font-semibold text-slate-600">Note (optional)</span>
+                                    <input v-model="receiveForm.note" type="text" placeholder="" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                                </label>
                             </div>
+                            <p class="text-xs text-slate-500">The cost is what you paid for this delivery — booked automatically as a <span class="font-semibold">Stock purchases</span> expense. Leave it empty for corrections or free goods.</p>
                             <button type="submit" :disabled="busy" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Add to central</button>
                         </form>
 

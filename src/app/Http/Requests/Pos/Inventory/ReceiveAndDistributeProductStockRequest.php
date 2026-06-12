@@ -22,6 +22,9 @@ class ReceiveAndDistributeProductStockRequest extends FormRequest
     {
         return [
             'quantity' => ['required', 'numeric', 'gt:0', 'max:999999.999'],
+            // PD2 — purchase cost of the whole received quantity (the
+            // distribution split changes nothing about the money).
+            'total_cost' => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
             'allocations' => ['nullable', 'array'],
             'allocations.*.branch_uuid' => ['required', 'string', 'uuid'],
             'allocations.*.quantity' => ['required', 'numeric', 'gt:0', 'max:999999.999'],

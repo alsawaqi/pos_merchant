@@ -358,6 +358,16 @@ class ProductsController extends Controller
         $this->ensure($request, MerchantPermission::CatalogueManage);
         $this->refuseIfNotInTenant($product);
 
+        // PD2 — a ready / bought-in product is PURCHASED, never made: its
+        // cost reaches net profit through the stock-purchase expense, so a
+        // recipe here would double-count it (and consume ingredients that
+        // were never used). Clearing (empty lines) stays allowed — that's
+        // how a converted product sheds its stale recipe.
+        $lines = $request->validated()['lines'] ?? [];
+        if ($lines !== [] && $product->stock_mode === 'unit') {
+            return response()->json(['message' => 'A ready / bought-in product cannot carry a recipe — its cost is booked when stock is received.'], 422);
+        }
+
         try {
             $updated = $this->updateRecipe->handle(
                 $product,

@@ -41,6 +41,7 @@ final readonly class ReceiveAndDistributeProductStockAction
         array $lines,
         ?string $note,
         User $actor,
+        string|float|int|null $totalCost = null,
     ): array {
         $totalQty = (float) $total;
         if ($totalQty <= 0) {
@@ -59,8 +60,11 @@ final readonly class ReceiveAndDistributeProductStockAction
             ));
         }
 
-        return DB::transaction(function () use ($product, $total, $lines, $note, $actor): array {
-            $received = $this->receive->handle($product, $total, $note, $actor);
+        return DB::transaction(function () use ($product, $total, $lines, $note, $actor, $totalCost): array {
+            // PD2 — the purchase cost belongs to the RECEIVE leg (one
+            // expense for the whole delivery; the split changes nothing
+            // about the money).
+            $received = $this->receive->handle($product, $total, $note, $actor, $totalCost);
             $allocations = $lines === []
                 ? []
                 : $this->allocate->handle($product, $lines, $note, $actor);

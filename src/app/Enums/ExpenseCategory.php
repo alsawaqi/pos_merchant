@@ -17,6 +17,12 @@ enum ExpenseCategory: string
     // Ingredient / inventory purchases. Auto-logged by RestockAction
     // (a restock with a cost) + selectable for a manual ingredient buy.
     case Ingredients = 'ingredients';
+    // PD2 — bought-in (ready / unit) goods purchases, auto-logged when a
+    // stock receive carries a cost. Unlike 'ingredients' this COUNTS in
+    // operating expenses: unit products have no recipe snapshot, so
+    // their sales contribute zero COGS — the purchase expense is the
+    // only place their cost can reach net profit.
+    case StockPurchases = 'stock_purchases';
     case Maintenance = 'maintenance';
     case Salaries = 'salaries';
     case Other = 'other';

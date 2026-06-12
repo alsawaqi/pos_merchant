@@ -125,7 +125,13 @@ class ProductStockController extends Controller
         \App\Support\BranchScope::ensureUnrestricted($request->user(), 'The central pool is managed by accounts with access to all branches.');
 
         try {
-            $this->receive->handle($product, $request->input('quantity'), $request->input('note'), $request->user());
+            $this->receive->handle(
+                $product,
+                $request->input('quantity'),
+                $request->input('note'),
+                $request->user(),
+                $request->input('total_cost'),
+            );
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
@@ -162,6 +168,7 @@ class ProductStockController extends Controller
                 $lines,
                 $request->input('note'),
                 $request->user(),
+                $request->input('total_cost'),
             );
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
