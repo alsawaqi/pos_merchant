@@ -35,7 +35,7 @@ class OrdersController extends Controller
     {
         $this->ensure($request, MerchantPermission::ReportsView);
 
-        $filter = ReportFilter::fromArray($request->validated());
+        $filter = ReportFilter::fromArray($request->validated(), $request->user()?->allowedBranchIds());
         $payload = $this->ordersList->handle($filter, [
             'status' => $request->query('status'),
             'page' => (int) $request->query('page', '1'),
@@ -57,6 +57,10 @@ class OrdersController extends Controller
         if ($payload === null) {
             abort(404);
         }
+
+        // P-G5 — the order is in-tenant (404 above otherwise); an order
+        // at a branch outside the user's scope is an explicit 403.
+        \App\Support\BranchScope::ensureBranch($request->user(), $payload['order']['branch']['id'] ?? null);
 
         return response()->json(['data' => $payload]);
     }

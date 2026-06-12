@@ -170,7 +170,11 @@ class CustomersController extends Controller
         $this->ensure($request, MerchantPermission::ReportsView);
         $this->refuseIfNotInTenant($customer);
 
-        return response()->json(['data' => $this->customerAnalytics->handle((int) $customer->id)]);
+        // P-G5 — the 360 view shrinks to the actor's branch scope.
+        return response()->json(['data' => $this->customerAnalytics->handle(
+            (int) $customer->id,
+            $request->user()?->allowedBranchIds(),
+        )]);
     }
 
     /**
@@ -185,7 +189,7 @@ class CustomersController extends Controller
         return response()->json(['data' => $this->customerOrders->handle((int) $customer->id, [
             'page' => (int) $request->query('page', '1'),
             'per_page' => (int) $request->query('per_page', '20'),
-        ])]);
+        ], $request->user()?->allowedBranchIds())]);
     }
 
     public function store(CreateCustomerRequest $request): JsonResponse

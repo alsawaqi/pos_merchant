@@ -42,9 +42,27 @@ final readonly class ReportFilter
      * date_to. Optional: branch_ids (null or array), consolidated
      * (defaults to true).
      *
+     * P-G5 — $allowedBranchIds is the actor's branch scope
+     * ({@see \App\Models\User::allowedBranchIds()}); NULL =
+     * unrestricted (today's behavior). For a restricted user the
+     * filter is CLAMPED at construction, so every report, the orders
+     * list and every export inherit enforcement in one place:
+     *
+     *   - no branch filter requested → branchIds = the user's scope
+     *     (their personal "all branches");
+     *   - requested ⊆ scope          → the requested subset;
+     *   - any id outside the scope   → 403 (explicit requests are
+     *     rejected, never silently shrunk);
+     *   - empty scope ([])           → 403 (no branch data at all).
+     *
+     * FOOTGUN guarded here: the legacy "[] → null" normalization means
+     * 'all branches' — a restricted user's clamp must never collapse
+     * back to null.
+     *
      * @param  array<string, mixed>  $input
+     * @param  list<int>|null  $allowedBranchIds
      */
-    public static function fromArray(array $input): self
+    public static function fromArray(array $input, ?array $allowedBranchIds = null): self
     {
         $dateFrom = Carbon::parse((string) $input['date_from'])->startOfDay();
         $dateTo = Carbon::parse((string) $input['date_to'])->endOfDay();
@@ -57,6 +75,22 @@ final readonly class ReportFilter
         } else {
             $branchIds = null;
         }
+
+        if ($allowedBranchIds !== null) {
+            if ($allowedBranchIds === []) {
+                abort(403, 'Your account has no branch access.');
+            }
+            if ($branchIds === null) {
+                $branchIds = $allowedBranchIds;
+            } else {
+                foreach ($branchIds as $id) {
+                    if (! in_array($id, $allowedBranchIds, true)) {
+                        abort(403, 'Your account is restricted to specific branches.');
+                    }
+                }
+            }
+        }
+
         $consolidated = (bool) ($input['consolidated'] ?? true);
 
         return new self($dateFrom, $dateTo, $branchIds, $consolidated);

@@ -51,8 +51,13 @@ class ExpensesController extends Controller
     {
         $this->ensure($request, MerchantPermission::ExpensesView);
 
+        // P-G5 — scoped users see only their branches' expenses;
+        // company-wide rows (branch_id NULL) stay HQ-only.
+        $allowed = $request->user()?->allowedBranchIds();
+
         $query = Expense::query()
             ->where('company_id', $this->tenant->requiredId())
+            ->when($allowed !== null, fn ($q) => $q->whereIn('branch_id', $allowed))
             ->with(['branch', 'loggedByStaff', 'loggedByUser', 'reviewedBy'])
             ->orderByDesc('logged_at')
             ->orderByDesc('id');
@@ -76,6 +81,10 @@ class ExpensesController extends Controller
 
         $branchId = $request->query('branch_id');
         if (is_numeric($branchId)) {
+            // P-G5 — an explicit out-of-scope branch filter is a 403.
+            if ($allowed !== null && ! in_array((int) $branchId, $allowed, true)) {
+                abort(403, 'Your account is restricted to specific branches.');
+            }
             $query->where('branch_id', (int) $branchId);
         }
 
@@ -96,6 +105,14 @@ class ExpensesController extends Controller
     public function store(LogExpenseRequest $request): JsonResponse
     {
         $this->ensure($request, MerchantPermission::ExpensesManage);
+
+        // P-G5 — a scoped user may only log expenses for THEIR branches;
+        // a company-wide expense (no branch) is an HQ act.
+        $bodyBranchId = $request->validated()['branch_id'] ?? null;
+        \App\Support\BranchScope::ensureBranch(
+            $request->user(),
+            is_numeric($bodyBranchId) && (int) $bodyBranchId > 0 ? (int) $bodyBranchId : null,
+        );
 
         try {
             $expense = $this->log->handle($request->validated(), $request->user());

@@ -62,6 +62,11 @@ class IngredientStockController extends Controller
 
         $companyId = $this->tenant->requiredId();
 
+        // P-G5 — a scoped user sees only their branches' rows; the
+        // central balance stays visible (read-only context) but central
+        // ledger rows and other branches' balances do not.
+        $allowed = $request->user()?->allowedBranchIds();
+
         // Read through the model so the decimal:3 cast formats consistently
         // (a query-builder value() would return SQLite's raw, un-padded number).
         $central = IngredientStock::query()
@@ -76,6 +81,7 @@ class IngredientStockController extends Controller
 
         $branches = Branch::query()
             ->where('company_id', $companyId)
+            ->when($allowed !== null, fn ($q) => $q->whereIn('id', $allowed))
             ->orderBy('name')
             ->get()
             ->map(function (Branch $b) use ($stockByBranch): array {
@@ -93,6 +99,9 @@ class IngredientStockController extends Controller
 
         $movements = StockMovement::query()
             ->where('ingredient_id', $ingredient->id)
+            // P-G5 — central (branch NULL) rows are HQ-only; whereIn
+            // drops them for scoped users along with foreign branches.
+            ->when($allowed !== null, fn ($q) => $q->whereIn('branch_id', $allowed))
             ->with(['branch', 'recordedByUser'])
             ->orderByDesc('occurred_at')
             ->orderByDesc('id')
@@ -114,6 +123,8 @@ class IngredientStockController extends Controller
     {
         $this->ensure($request, MerchantPermission::InventoryManage);
         $this->refuseIfNotInTenant($ingredient);
+        // P-G5 — the central warehouse is an HQ resource.
+        \App\Support\BranchScope::ensureUnrestricted($request->user(), 'The central warehouse is managed by accounts with access to all branches.');
 
         try {
             $this->receive->handle($ingredient, $request->input('quantity'), $request->input('note'), $request->user());
@@ -134,6 +145,8 @@ class IngredientStockController extends Controller
     {
         $this->ensure($request, MerchantPermission::InventoryManage);
         $this->refuseIfNotInTenant($ingredient);
+        // P-G5 — receiving + distributing drains the HQ pool.
+        \App\Support\BranchScope::ensureUnrestricted($request->user(), 'The central warehouse is managed by accounts with access to all branches.');
 
         $lines = [];
         foreach ((array) $request->input('allocations', []) as $row) {
@@ -163,6 +176,8 @@ class IngredientStockController extends Controller
     {
         $this->ensure($request, MerchantPermission::InventoryManage);
         $this->refuseIfNotInTenant($ingredient);
+        // P-G5 — allocation debits the HQ pool.
+        \App\Support\BranchScope::ensureUnrestricted($request->user(), 'The central warehouse is managed by accounts with access to all branches.');
 
         $lines = [];
         foreach ((array) $request->input('allocations') as $row) {
@@ -200,6 +215,10 @@ class IngredientStockController extends Controller
             return response()->json(['message' => 'Branch not found.'], 422);
         }
 
+        // P-G5 — both sides of a transfer must be within the scope.
+        \App\Support\BranchScope::ensureBranch($request->user(), $from);
+        \App\Support\BranchScope::ensureBranch($request->user(), $to);
+
         try {
             $this->transfer->handle(
                 $from,
@@ -228,6 +247,14 @@ class IngredientStockController extends Controller
             }
         }
 
+        // P-G5 — a branch adjustment needs that branch in scope; a
+        // CENTRAL adjustment (no branch) is an HQ act.
+        if ($branch !== null) {
+            \App\Support\BranchScope::ensureBranch($request->user(), $branch);
+        } else {
+            \App\Support\BranchScope::ensureUnrestricted($request->user(), 'The central warehouse is managed by accounts with access to all branches.');
+        }
+
         try {
             $this->adjust->handle($ingredient, $branch, $request->input('signed_quantity'), $request->input('note'), $request->user());
         } catch (RuntimeException $e) {
@@ -242,8 +269,13 @@ class IngredientStockController extends Controller
         $this->ensure($request, MerchantPermission::InventoryView);
         $this->refuseIfNotInTenant($ingredient);
 
+        // P-G5 — scoped users read their branches' rows only (central
+        // NULL-branch rows are HQ-only).
+        $allowed = $request->user()?->allowedBranchIds();
+
         $query = StockMovement::query()
             ->where('ingredient_id', $ingredient->id)
+            ->when($allowed !== null, fn ($q) => $q->whereIn('branch_id', $allowed))
             ->with(['branch', 'recordedByUser']);
 
         if ($request->filled('type')) {

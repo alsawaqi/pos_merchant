@@ -66,9 +66,16 @@ final readonly class DashboardSummaryAction
     ) {}
 
     /**
+     * P-G5 — $branchIds is the actor's branch scope (NULL =
+     * unrestricted): every widget below filters to it, so a
+     * branch-restricted user's dashboard only aggregates THEIR
+     * branches (incl. low-stock rollup, device fleet, audit feed —
+     * company-level audit rows with no branch are hidden for them).
+     *
+     * @param  list<int>|null  $branchIds
      * @return array<string, mixed>
      */
-    public function handle(): array
+    public function handle(?array $branchIds = null): array
     {
         $companyId = $this->tenant->requiredId();
 
@@ -80,26 +87,26 @@ final readonly class DashboardSummaryAction
         $monthStart = $now->copy()->startOfMonth();
 
         return [
-            'today' => $this->salesSnapshot($companyId, $todayStart, $todayEnd),
-            'yesterday' => $this->salesSnapshot($companyId, $yesterdayStart, $yesterdayEnd),
-            'mtd' => $this->salesSnapshot($companyId, $monthStart, $todayEnd),
-            'top_product_today' => $this->topProductInWindow($companyId, $todayStart, $todayEnd),
-            'low_stock_count' => $this->lowStockCount($companyId),
-            'recent_audit_events' => $this->recentAuditEvents($companyId),
+            'today' => $this->salesSnapshot($companyId, $branchIds, $todayStart, $todayEnd),
+            'yesterday' => $this->salesSnapshot($companyId, $branchIds, $yesterdayStart, $yesterdayEnd),
+            'mtd' => $this->salesSnapshot($companyId, $branchIds, $monthStart, $todayEnd),
+            'top_product_today' => $this->topProductInWindow($companyId, $branchIds, $todayStart, $todayEnd),
+            'low_stock_count' => $this->lowStockCount($companyId, $branchIds),
+            'recent_audit_events' => $this->recentAuditEvents($companyId, $branchIds),
             // §5.2 tiles: tender split + charity round-up for today,
             // plus the live device fleet snapshot.
-            'payment_mix_today' => $this->paymentMixToday($companyId, $todayStart, $todayEnd),
-            'roundup_today' => $this->roundupToday($companyId, $todayStart, $todayEnd),
-            'active_devices' => $this->activeDevices($companyId),
+            'payment_mix_today' => $this->paymentMixToday($companyId, $branchIds, $todayStart, $todayEnd),
+            'roundup_today' => $this->roundupToday($companyId, $branchIds, $todayStart, $todayEnd),
+            'active_devices' => $this->activeDevices($companyId, $branchIds),
             // v2 dashboard graphs (blueprint §5.2): a daily trend plus
             // MTD top-N breakdowns. Windows: trend = trailing TREND_DAYS,
             // every top-N = month-to-date.
-            'sales_trend' => $this->salesTrend($companyId, self::TREND_DAYS),
-            'top_products' => $this->topProducts($companyId, $monthStart, $todayEnd),
-            'top_branches' => $this->topBranches($companyId, $monthStart, $todayEnd),
-            'top_customers' => $this->topCustomers($companyId, $monthStart, $todayEnd),
-            'top_staff' => $this->topStaff($companyId, $monthStart, $todayEnd),
-            'top_ingredients' => $this->topIngredients($companyId, $monthStart, $todayEnd),
+            'sales_trend' => $this->salesTrend($companyId, $branchIds, self::TREND_DAYS),
+            'top_products' => $this->topProducts($companyId, $branchIds, $monthStart, $todayEnd),
+            'top_branches' => $this->topBranches($companyId, $branchIds, $monthStart, $todayEnd),
+            'top_customers' => $this->topCustomers($companyId, $branchIds, $monthStart, $todayEnd),
+            'top_staff' => $this->topStaff($companyId, $branchIds, $monthStart, $todayEnd),
+            'top_ingredients' => $this->topIngredients($companyId, $branchIds, $monthStart, $todayEnd),
         ];
     }
 
@@ -110,7 +117,7 @@ final readonly class DashboardSummaryAction
      *
      * @return list<array{date: string, gross: string, count: int}>
      */
-    private function salesTrend(int $companyId, int $days): array
+    private function salesTrend(int $companyId, ?array $branchIds, int $days): array
     {
         $driver = DB::connection()->getDriverName();
         $dayExpr = $driver === 'sqlite'
@@ -122,6 +129,7 @@ final readonly class DashboardSummaryAction
 
         $rows = DB::table('pos_orders')
             ->where('company_id', $companyId)
+            ->when($branchIds !== null, fn ($q) => $q->whereIn('branch_id', $branchIds))
             ->where('status', OrderStatus::Paid->value)
             ->whereBetween('opened_at', [$start, $now->copy()->endOfDay()])
             ->selectRaw("$dayExpr AS day, COALESCE(SUM(grand_total), 0) AS gross, COUNT(*) AS cnt")
@@ -148,11 +156,12 @@ final readonly class DashboardSummaryAction
      *
      * @return list<array{product_name: string, revenue: string}>
      */
-    private function topProducts(int $companyId, Carbon $from, Carbon $to): array
+    private function topProducts(int $companyId, ?array $branchIds, Carbon $from, Carbon $to): array
     {
         return DB::table('pos_order_items')
             ->join('pos_orders', 'pos_orders.id', '=', 'pos_order_items.order_id')
             ->where('pos_orders.company_id', $companyId)
+            ->when($branchIds !== null, fn ($q) => $q->whereIn('pos_orders.branch_id', $branchIds))
             ->where('pos_orders.status', OrderStatus::Paid->value)
             ->whereBetween('pos_orders.opened_at', [$from, $to])
             ->selectRaw('
@@ -175,11 +184,12 @@ final readonly class DashboardSummaryAction
      *
      * @return list<array{branch_name: string, gross: string}>
      */
-    private function topBranches(int $companyId, Carbon $from, Carbon $to): array
+    private function topBranches(int $companyId, ?array $branchIds, Carbon $from, Carbon $to): array
     {
         return DB::table('pos_orders')
             ->join('pos_branches', 'pos_branches.id', '=', 'pos_orders.branch_id')
             ->where('pos_orders.company_id', $companyId)
+            ->when($branchIds !== null, fn ($q) => $q->whereIn('pos_orders.branch_id', $branchIds))
             ->where('pos_orders.status', OrderStatus::Paid->value)
             ->whereBetween('pos_orders.opened_at', [$from, $to])
             ->selectRaw('pos_branches.name AS branch_name, COALESCE(SUM(pos_orders.grand_total), 0) AS gross')
@@ -198,11 +208,12 @@ final readonly class DashboardSummaryAction
      *
      * @return list<array{customer_name: string, total_spend: string}>
      */
-    private function topCustomers(int $companyId, Carbon $from, Carbon $to): array
+    private function topCustomers(int $companyId, ?array $branchIds, Carbon $from, Carbon $to): array
     {
         return DB::table('pos_orders')
             ->join('pos_customers', 'pos_customers.id', '=', 'pos_orders.customer_id')
             ->where('pos_orders.company_id', $companyId)
+            ->when($branchIds !== null, fn ($q) => $q->whereIn('pos_orders.branch_id', $branchIds))
             ->where('pos_orders.status', OrderStatus::Paid->value)
             ->whereNotNull('pos_orders.customer_id')
             ->whereBetween('pos_orders.opened_at', [$from, $to])
@@ -225,11 +236,12 @@ final readonly class DashboardSummaryAction
      *
      * @return list<array{staff_name: string, revenue: string}>
      */
-    private function topStaff(int $companyId, Carbon $from, Carbon $to): array
+    private function topStaff(int $companyId, ?array $branchIds, Carbon $from, Carbon $to): array
     {
         return DB::table('pos_orders')
             ->join('pos_staff', 'pos_staff.id', '=', 'pos_orders.staff_id')
             ->where('pos_orders.company_id', $companyId)
+            ->when($branchIds !== null, fn ($q) => $q->whereIn('pos_orders.branch_id', $branchIds))
             ->where('pos_orders.status', OrderStatus::Paid->value)
             ->whereNotNull('pos_orders.staff_id')
             ->whereBetween('pos_orders.opened_at', [$from, $to])
@@ -252,7 +264,7 @@ final readonly class DashboardSummaryAction
      *
      * @return list<array{ingredient_name: string, unit: string, consumed: string}>
      */
-    private function topIngredients(int $companyId, Carbon $from, Carbon $to): array
+    private function topIngredients(int $companyId, ?array $branchIds, Carbon $from, Carbon $to): array
     {
         return DB::table('pos_stock_movements')
             ->join('pos_ingredients', 'pos_ingredients.id', '=', 'pos_stock_movements.ingredient_id')
@@ -261,6 +273,7 @@ final readonly class DashboardSummaryAction
             ->where('pos_stock_movements.quantity', '<', 0)
             // P-G4 — exclude central-warehouse rows (branch_id NULL).
             ->whereNotNull('pos_stock_movements.branch_id')
+            ->when($branchIds !== null, fn ($q) => $q->whereIn('pos_stock_movements.branch_id', $branchIds))
             ->whereBetween('pos_stock_movements.occurred_at', [$from, $to])
             ->selectRaw('
                 pos_ingredients.name AS ingredient_name,
@@ -285,10 +298,11 @@ final readonly class DashboardSummaryAction
      *
      * @return list<array{method: string, amount: string, count: int}>
      */
-    private function paymentMixToday(int $companyId, Carbon $from, Carbon $to): array
+    private function paymentMixToday(int $companyId, ?array $branchIds, Carbon $from, Carbon $to): array
     {
         $paidToday = DB::table('pos_orders')
             ->where('company_id', $companyId)
+            ->when($branchIds !== null, fn ($q) => $q->whereIn('branch_id', $branchIds))
             ->where('status', OrderStatus::Paid->value)
             ->whereBetween('opened_at', [$from, $to])
             ->select('id');
@@ -315,10 +329,11 @@ final readonly class DashboardSummaryAction
      *
      * @return array{total: string, count: int}
      */
-    private function roundupToday(int $companyId, Carbon $from, Carbon $to): array
+    private function roundupToday(int $companyId, ?array $branchIds, Carbon $from, Carbon $to): array
     {
         $row = DB::table('pos_roundup_donations')
             ->where('company_id', $companyId)
+            ->when($branchIds !== null, fn ($q) => $q->whereIn('branch_id', $branchIds))
             ->where('status', 'success')
             ->whereBetween('occurred_at', [$from, $to])
             ->selectRaw('COALESCE(SUM(amount), 0) AS total, COUNT(*) AS cnt')
@@ -338,10 +353,13 @@ final readonly class DashboardSummaryAction
      *
      * @return array{online: int, total: int}
      */
-    private function activeDevices(int $companyId): array
+    private function activeDevices(int $companyId, ?array $branchIds): array
     {
         $row = DB::table('pos_devices')
             ->where('company_id', $companyId)
+            // P-G5 — scoped users count only THEIR branches' devices
+            // (unassigned devices have branch_id NULL and drop out).
+            ->when($branchIds !== null, fn ($q) => $q->whereIn('branch_id', $branchIds))
             ->whereNull('deleted_at')
             ->selectRaw(
                 'COUNT(*) AS total, COALESCE(SUM(CASE WHEN last_seen_at >= ? THEN 1 ELSE 0 END), 0) AS online',
@@ -358,10 +376,11 @@ final readonly class DashboardSummaryAction
     /**
      * @return array{gross: string, order_count: int}
      */
-    private function salesSnapshot(int $companyId, Carbon $from, Carbon $to): array
+    private function salesSnapshot(int $companyId, ?array $branchIds, Carbon $from, Carbon $to): array
     {
         $row = DB::table('pos_orders')
             ->where('company_id', $companyId)
+            ->when($branchIds !== null, fn ($q) => $q->whereIn('branch_id', $branchIds))
             ->where('status', OrderStatus::Paid->value)
             ->whereBetween('opened_at', [$from, $to])
             ->selectRaw('
@@ -382,11 +401,12 @@ final readonly class DashboardSummaryAction
      *
      * @return array{product_id: int|null, product_name: string, revenue: string}|null
      */
-    private function topProductInWindow(int $companyId, Carbon $from, Carbon $to): ?array
+    private function topProductInWindow(int $companyId, ?array $branchIds, Carbon $from, Carbon $to): ?array
     {
         $row = DB::table('pos_order_items')
             ->join('pos_orders', 'pos_orders.id', '=', 'pos_order_items.order_id')
             ->where('pos_orders.company_id', $companyId)
+            ->when($branchIds !== null, fn ($q) => $q->whereIn('pos_orders.branch_id', $branchIds))
             ->where('pos_orders.status', OrderStatus::Paid->value)
             ->whereBetween('pos_orders.opened_at', [$from, $to])
             ->selectRaw('
@@ -415,13 +435,15 @@ final readonly class DashboardSummaryAction
      * below it. The Inventory Consumption report shows the SAME
      * notion per-branch; this widget is the rollup.
      */
-    private function lowStockCount(int $companyId): int
+    private function lowStockCount(int $companyId, ?array $branchIds): int
     {
         // Sum balances per ingredient first (subquery), then
         // join the ingredient master to compare against threshold.
+        // P-G5 — a scoped user's "low" sums across THEIR branches only.
         $balances = DB::table('pos_branch_stock')
             ->join('pos_ingredients', 'pos_ingredients.id', '=', 'pos_branch_stock.ingredient_id')
             ->where('pos_ingredients.company_id', $companyId)
+            ->when($branchIds !== null, fn ($q) => $q->whereIn('pos_branch_stock.branch_id', $branchIds))
             ->whereNotNull('pos_ingredients.min_stock_threshold')
             ->selectRaw('
                 pos_ingredients.id AS ingredient_id,
@@ -439,11 +461,14 @@ final readonly class DashboardSummaryAction
     /**
      * @return list<array{id: int, event: string, actor_name: string|null, created_at: string|null}>
      */
-    private function recentAuditEvents(int $companyId): array
+    private function recentAuditEvents(int $companyId, ?array $branchIds): array
     {
         return DB::table('pos_audit_logs')
             ->leftJoin('pos_users', 'pos_users.id', '=', 'pos_audit_logs.actor_user_id')
             ->where('pos_audit_logs.company_id', $companyId)
+            // P-G5 — scoped users see only their branches' events;
+            // company-level rows (branch_id NULL) stay HQ-only.
+            ->when($branchIds !== null, fn ($q) => $q->whereIn('pos_audit_logs.branch_id', $branchIds))
             ->orderByDesc('pos_audit_logs.created_at')
             ->orderByDesc('pos_audit_logs.id')
             ->limit(5)

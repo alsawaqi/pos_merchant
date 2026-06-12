@@ -172,6 +172,8 @@ class TwoFactorChallengeController extends Controller
         try {
             $roles = $user->getRoleNames()->all();
             $permissions = $user->getAllPermissions()->pluck('name')->all();
+            // P-G5 — needs the team pin too (SuperAdmin outranks scope).
+            $branchScope = $user->allowedBranchIds();
         } finally {
             $registrar->setPermissionsTeamId($previousTeam);
         }
@@ -188,6 +190,8 @@ class TwoFactorChallengeController extends Controller
             'two_factor_enabled' => $user->hasConfirmedTwoFactor(),
             'roles' => array_values($roles),
             'permissions' => array_values($permissions),
+            // P-G5 — null = all branches; list = restricted scope.
+            'branch_scope' => $branchScope,
         ];
     }
 }

@@ -35,6 +35,13 @@ export interface AuthUser {
     must_change_password?: boolean;
     /** Phase D8 — true once TOTP 2FA enrolment was confirmed. */
     two_factor_enabled?: boolean;
+    /**
+     * P-G5 — the user's branch scope: null = all branches (incl. every
+     * SuperAdmin), a list = the only branch ids this user may see.
+     * Server-enforced everywhere; pickers self-restrict because
+     * /api/branches is already filtered to it.
+     */
+    branch_scope?: number[] | null;
 }
 
 export interface AuthSession {

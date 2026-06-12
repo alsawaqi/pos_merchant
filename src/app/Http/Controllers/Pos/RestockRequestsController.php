@@ -74,8 +74,13 @@ class RestockRequestsController extends Controller
         $this->ensure($request, MerchantPermission::InventoryView);
 
         $companyId = $this->tenant->requiredId();
+
+        // P-G5 — a scoped user's HQ inbox shrinks to their branches.
+        $allowed = $request->user()?->allowedBranchIds();
+
         $query = RestockRequest::query()
             ->where('company_id', $companyId)
+            ->when($allowed !== null, fn ($q) => $q->whereIn('branch_id', $allowed))
             ->with(['lines.ingredient', 'branch', 'requestedBy', 'reviewedBy']);
 
         if ($request->filled('status')) {
@@ -93,6 +98,10 @@ class RestockRequestsController extends Controller
                 ->where('uuid', $request->query('branch'))
                 ->where('company_id', $companyId)
                 ->value('id');
+            // P-G5 — an explicit in-tenant filter outside the scope is a 403.
+            if ($branchId !== null && $allowed !== null && ! in_array((int) $branchId, $allowed, true)) {
+                abort(403, 'Your account is restricted to specific branches.');
+            }
             $query->where('branch_id', $branchId ?? -1);
         }
 

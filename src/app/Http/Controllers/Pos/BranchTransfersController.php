@@ -41,8 +41,16 @@ class BranchTransfersController extends Controller
         $this->ensure($request, MerchantPermission::InventoryView);
 
         $companyId = $this->tenant->requiredId();
+
+        // P-G5 — a scoped user's default list = transfers touching THEIR
+        // branches on either side.
+        $allowed = $request->user()?->allowedBranchIds();
+
         $query = BranchTransfer::query()
             ->where('company_id', $companyId)
+            ->when($allowed !== null, fn ($q) => $q->where(function ($w) use ($allowed): void {
+                $w->whereIn('from_branch_id', $allowed)->orWhereIn('to_branch_id', $allowed);
+            }))
             ->with(['fromBranch', 'toBranch', 'lines.ingredient']);
 
         if ($request->filled('branch')) {
@@ -50,6 +58,10 @@ class BranchTransfersController extends Controller
                 ->where('uuid', $request->query('branch'))
                 ->where('company_id', $companyId)
                 ->value('id');
+            // P-G5 — an explicit in-tenant filter outside the scope is a 403.
+            if ($branchId !== null && $allowed !== null && ! in_array((int) $branchId, $allowed, true)) {
+                abort(403, 'Your account is restricted to specific branches.');
+            }
             // Either side of the move matches the filter branch.
             $query->where(function ($q) use ($branchId): void {
                 $q->where('from_branch_id', $branchId ?? -1)
@@ -87,6 +99,11 @@ class BranchTransfersController extends Controller
         if ($to === null) {
             return response()->json(['message' => 'The destination branch does not belong to your company.'], 422);
         }
+
+        // P-G5 — both sides of a transfer must be in the user's scope
+        // (the source is covered by the route middleware; the
+        // destination's stock moves too, so it needs the same right).
+        \App\Support\BranchScope::ensureBranch($request->user(), $to);
 
         try {
             $transfer = $this->transfer->handle(

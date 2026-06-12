@@ -69,8 +69,12 @@ class BranchesController extends Controller
     {
         $this->ensure($request, MerchantPermission::BranchesView);
 
+        // P-G5 — a branch-restricted user only lists their own branches.
+        $allowed = $request->user()?->allowedBranchIds();
+
         $branches = Branch::query()
             ->where('company_id', $this->tenant->requiredId())
+            ->when($allowed !== null, fn ($q) => $q->whereIn('id', $allowed))
             ->orderBy('name')
             ->get();
 

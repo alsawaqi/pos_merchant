@@ -127,4 +127,50 @@ class User extends Authenticatable
     {
         return $this->user_type === 'merchant';
     }
+
+    /**
+     * P-G5 — the branch ids this user may see and act on, or NULL for
+     * unrestricted. Role = WHAT you can do; branch scope = WHERE.
+     *
+     *   - branch_scope_json NULL → null (all branches)
+     *   - merchant SuperAdmin    → null ALWAYS — the role outranks any
+     *     stored scope (e.g. a legacy row promoted by
+     *     merchant:backfill-super-admin while still carrying a scope)
+     *   - []                     → [] (no branch data at all)
+     *   - [3, 7]                 → [3, 7]
+     *
+     * Reads roles under the request's pinned spatie team id, so call
+     * it only where SetMerchantTenantContext (or a test helper) has
+     * pinned the company.
+     *
+     * @return list<int>|null
+     */
+    public function allowedBranchIds(): ?array
+    {
+        $scope = $this->branch_scope_json;
+        if ($scope === null) {
+            return null;
+        }
+        if ($this->hasRole(\App\Enums\MerchantRole::SuperAdmin->value)) {
+            return null;
+        }
+
+        return array_values(array_map(static fn ($v): int => (int) $v, $scope));
+    }
+
+    /**
+     * P-G5 — whether this user may touch the given branch. A NULL
+     * branch id means a company-central record (the warehouse pool, a
+     * company-wide expense) — HQ-level, never accessible to a
+     * branch-restricted user.
+     */
+    public function canAccessBranchId(?int $branchId): bool
+    {
+        $allowed = $this->allowedBranchIds();
+        if ($allowed === null) {
+            return true;
+        }
+
+        return $branchId !== null && in_array($branchId, $allowed, true);
+    }
 }

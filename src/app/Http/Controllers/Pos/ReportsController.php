@@ -70,7 +70,7 @@ class ReportsController extends Controller
     {
         $this->ensure($request, MerchantPermission::ReportsView);
 
-        $filter = ReportFilter::fromArray($request->validated());
+        $filter = ReportFilter::fromArray($request->validated(), $request->user()?->allowedBranchIds());
 
         return response()->json(['data' => $this->compReport->handle($filter)]);
     }
@@ -80,7 +80,7 @@ class ReportsController extends Controller
     {
         $this->ensure($request, MerchantPermission::ReportsView);
 
-        $filter = ReportFilter::fromArray($request->validated());
+        $filter = ReportFilter::fromArray($request->validated(), $request->user()?->allowedBranchIds());
 
         return response()->json(['data' => $this->shiftReport->handle($filter)]);
     }
@@ -89,7 +89,7 @@ class ReportsController extends Controller
     {
         $this->ensure($request, MerchantPermission::ReportsView);
 
-        $filter = ReportFilter::fromArray($request->validated());
+        $filter = ReportFilter::fromArray($request->validated(), $request->user()?->allowedBranchIds());
         $payload = $this->payoutBreakdownReport->handle($filter);
 
         return response()->json(['data' => $payload]);
@@ -99,7 +99,7 @@ class ReportsController extends Controller
     {
         $this->ensure($request, MerchantPermission::ReportsView);
 
-        $filter = ReportFilter::fromArray($request->validated());
+        $filter = ReportFilter::fromArray($request->validated(), $request->user()?->allowedBranchIds());
         $payload = $this->salesReport->handle($filter);
 
         return response()->json(['data' => $payload]);
@@ -109,7 +109,7 @@ class ReportsController extends Controller
     {
         $this->ensure($request, MerchantPermission::ReportsView);
 
-        $filter = ReportFilter::fromArray($request->validated());
+        $filter = ReportFilter::fromArray($request->validated(), $request->user()?->allowedBranchIds());
         $payload = $this->customerReport->handle($filter);
 
         return response()->json(['data' => $payload]);
@@ -119,7 +119,7 @@ class ReportsController extends Controller
     {
         $this->ensure($request, MerchantPermission::ReportsView);
 
-        $filter = ReportFilter::fromArray($request->validated());
+        $filter = ReportFilter::fromArray($request->validated(), $request->user()?->allowedBranchIds());
         $payload = $this->discountReport->handle($filter);
 
         return response()->json(['data' => $payload]);
@@ -129,7 +129,7 @@ class ReportsController extends Controller
     {
         $this->ensure($request, MerchantPermission::ReportsView);
 
-        $filter = ReportFilter::fromArray($request->validated());
+        $filter = ReportFilter::fromArray($request->validated(), $request->user()?->allowedBranchIds());
         $payload = $this->productPerformanceReport->handle($filter);
 
         return response()->json(['data' => $payload]);
@@ -139,7 +139,7 @@ class ReportsController extends Controller
     {
         $this->ensure($request, MerchantPermission::ReportsView);
 
-        $filter = ReportFilter::fromArray($request->validated());
+        $filter = ReportFilter::fromArray($request->validated(), $request->user()?->allowedBranchIds());
         $payload = $this->recipeCostReport->handle($filter);
 
         return response()->json(['data' => $payload]);
@@ -149,7 +149,7 @@ class ReportsController extends Controller
     {
         $this->ensure($request, MerchantPermission::ReportsView);
 
-        $filter = ReportFilter::fromArray($request->validated());
+        $filter = ReportFilter::fromArray($request->validated(), $request->user()?->allowedBranchIds());
         $payload = $this->staffActivityReport->handle($filter);
 
         return response()->json(['data' => $payload]);
@@ -159,7 +159,7 @@ class ReportsController extends Controller
     {
         $this->ensure($request, MerchantPermission::ReportsView);
 
-        $filter = ReportFilter::fromArray($request->validated());
+        $filter = ReportFilter::fromArray($request->validated(), $request->user()?->allowedBranchIds());
         $payload = $this->inventoryConsumptionReport->handle($filter);
 
         return response()->json(['data' => $payload]);
@@ -169,7 +169,7 @@ class ReportsController extends Controller
     {
         $this->ensure($request, MerchantPermission::ReportsView);
 
-        $filter = ReportFilter::fromArray($request->validated());
+        $filter = ReportFilter::fromArray($request->validated(), $request->user()?->allowedBranchIds());
         $payload = $this->lossWasteReport->handle($filter);
 
         return response()->json(['data' => $payload]);
@@ -179,7 +179,7 @@ class ReportsController extends Controller
     {
         $this->ensure($request, MerchantPermission::ReportsView);
 
-        $filter = ReportFilter::fromArray($request->validated());
+        $filter = ReportFilter::fromArray($request->validated(), $request->user()?->allowedBranchIds());
         $payload = $this->restockPurchasingReport->handle($filter);
 
         return response()->json(['data' => $payload]);
@@ -189,7 +189,7 @@ class ReportsController extends Controller
     {
         $this->ensure($request, MerchantPermission::ReportsView);
 
-        $filter = ReportFilter::fromArray($request->validated());
+        $filter = ReportFilter::fromArray($request->validated(), $request->user()?->allowedBranchIds());
         $payload = $this->roundUpDonationReport->handle($filter);
 
         return response()->json(['data' => $payload]);
@@ -205,7 +205,7 @@ class ReportsController extends Controller
     {
         $this->ensure($request, MerchantPermission::AuditLogView);
 
-        $filter = ReportFilter::fromArray($request->validated());
+        $filter = ReportFilter::fromArray($request->validated(), $request->user()?->allowedBranchIds());
         $payload = $this->auditLogReport->handle($filter, [
             'event' => $request->input('event'),
             'actor_id' => $request->input('actor_id'),
@@ -260,7 +260,7 @@ class ReportsController extends Controller
         }
 
         $validated = $request->validated();
-        $filter = ReportFilter::fromArray($validated);
+        $filter = ReportFilter::fromArray($validated, $request->user()?->allowedBranchIds());
         $payload = $reports[$report]->handle($filter);
         $format = $request->exportFormat();
 

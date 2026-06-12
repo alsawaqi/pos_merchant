@@ -80,7 +80,7 @@ class ProductsController extends Controller
             // round-trips.
             // P-G2 — components + their product so the Physical items
             // section pre-populates without an extra round-trip.
-            ->with(['category', 'addOnGroups', 'recipeLines.ingredient', 'branchProducts', 'components.component']);
+            ->with(['category', 'addOnGroups', 'recipeLines.ingredient', ...$this->branchProductsEager($request), 'components.component']);
 
         // Optional ?category=<uuid> filter. Unknown / cross-
         // tenant uuid silently yields zero results (no leak).
@@ -163,7 +163,7 @@ class ProductsController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $updated->load(['category', 'addOnGroups', 'recipeLines.ingredient', 'branchProducts']);
+        $updated->load(['category', 'addOnGroups', 'recipeLines.ingredient', ...$this->branchProductsEager($request)]);
 
         return ProductResource::make($updated);
     }
@@ -191,7 +191,7 @@ class ProductsController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $updated->load(['category', 'addOnGroups', 'recipeLines.ingredient', 'branchProducts', 'components.component']);
+        $updated->load(['category', 'addOnGroups', 'recipeLines.ingredient', ...$this->branchProductsEager($request), 'components.component']);
 
         return ProductResource::make($updated);
     }
@@ -288,7 +288,7 @@ class ProductsController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $updated->load(['category', 'addOnGroups', 'recipeLines.ingredient', 'branchProducts']);
+        $updated->load(['category', 'addOnGroups', 'recipeLines.ingredient', ...$this->branchProductsEager($request)]);
 
         return ProductResource::make($updated);
     }
@@ -331,6 +331,10 @@ class ProductsController extends Controller
     {
         $this->ensure($request, MerchantPermission::CatalogueManage);
         $this->refuseIfNotInTenant($product);
+        // P-G5 — this is a FULL-REPLACE of the per-branch set: a scoped
+        // user submitting it would silently delete other branches' rows,
+        // so branch assignment stays an all-branches (HQ) operation.
+        \App\Support\BranchScope::ensureUnrestricted($request->user(), 'Branch availability is managed by accounts with access to all branches.');
 
         try {
             $this->syncBranches->handle(
@@ -342,7 +346,7 @@ class ProductsController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $product->load(['category', 'addOnGroups', 'recipeLines.ingredient', 'branchProducts']);
+        $product->load(['category', 'addOnGroups', 'recipeLines.ingredient', ...$this->branchProductsEager($request)]);
 
         return ProductResource::make($product);
     }
@@ -411,5 +415,31 @@ class ProductsController extends Controller
         if ((int) $product->company_id !== $this->tenant->requiredId()) {
             abort(404);
         }
+    }
+
+    /**
+     * P-G5 — the ProductResource inlines a per-branch {is_available,
+     * stock_qty} row for every loaded pos_branch_product. A
+     * branch-restricted user must only see their own branches'
+     * inventory state, so constrain the eager-load to their scope (the
+     * same protection ProductStockController + BranchesController@products
+     * already apply). Unrestricted users load every branch as before.
+     *
+     * Returns an eager-load fragment to SPREAD into a with()/load()
+     * array (`...$this->branchProductsEager($request)`): the plain
+     * relation for unrestricted users, a scoped closure otherwise.
+     *
+     * @return array<int|string, \Closure|string>
+     */
+    private function branchProductsEager(Request $request): array
+    {
+        $allowed = $request->user()?->allowedBranchIds();
+        if ($allowed === null) {
+            return ['branchProducts'];
+        }
+
+        return ['branchProducts' => static function ($q) use ($allowed): void {
+            $q->whereIn('branch_id', $allowed);
+        }];
     }
 }

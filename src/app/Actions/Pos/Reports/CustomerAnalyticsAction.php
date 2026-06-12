@@ -32,14 +32,19 @@ final readonly class CustomerAnalyticsAction
     ) {}
 
     /**
+     * P-G5 — $branchIds limits the 360 view to the actor's branch scope
+     * (NULL = unrestricted).
+     *
+     * @param  list<int>|null  $branchIds
      * @return array<string, mixed>
      */
-    public function handle(int $customerId): array
+    public function handle(int $customerId, ?array $branchIds = null): array
     {
         $companyId = $this->tenant->requiredId();
 
         $roll = DB::table('pos_orders')
             ->where('company_id', $companyId)
+            ->when($branchIds !== null, fn ($q) => $q->whereIn('branch_id', $branchIds))
             ->where('customer_id', $customerId)
             ->where('status', OrderStatus::Paid->value)
             ->selectRaw('
@@ -61,8 +66,8 @@ final readonly class CustomerAnalyticsAction
                 'first_order_at' => self::iso($roll?->first_order_at),
                 'last_order_at' => self::iso($roll?->last_order_at),
             ],
-            'favorite_item' => $this->favoriteItem($companyId, $customerId),
-            'spend_trend' => $this->spendTrend($companyId, $customerId, self::TREND_MONTHS),
+            'favorite_item' => $this->favoriteItem($companyId, $customerId, $branchIds),
+            'spend_trend' => $this->spendTrend($companyId, $customerId, self::TREND_MONTHS, $branchIds),
         ];
     }
 
@@ -72,11 +77,12 @@ final readonly class CustomerAnalyticsAction
      *
      * @return array{product_id: int|null, product_name: string, total_qty: string, total_revenue: string, line_count: int}|null
      */
-    private function favoriteItem(int $companyId, int $customerId): ?array
+    private function favoriteItem(int $companyId, int $customerId, ?array $branchIds = null): ?array
     {
         $row = DB::table('pos_order_items')
             ->join('pos_orders', 'pos_orders.id', '=', 'pos_order_items.order_id')
             ->where('pos_orders.company_id', $companyId)
+            ->when($branchIds !== null, fn ($q) => $q->whereIn('pos_orders.branch_id', $branchIds))
             ->where('pos_orders.customer_id', $customerId)
             ->where('pos_orders.status', OrderStatus::Paid->value)
             ->selectRaw('
@@ -110,7 +116,7 @@ final readonly class CustomerAnalyticsAction
      *
      * @return list<array{month: string, gross: string, count: int}>
      */
-    private function spendTrend(int $companyId, int $customerId, int $months): array
+    private function spendTrend(int $companyId, int $customerId, int $months, ?array $branchIds = null): array
     {
         $driver = DB::connection()->getDriverName();
         $monthExpr = $driver === 'sqlite'
@@ -121,6 +127,7 @@ final readonly class CustomerAnalyticsAction
 
         $rows = DB::table('pos_orders')
             ->where('company_id', $companyId)
+            ->when($branchIds !== null, fn ($q) => $q->whereIn('branch_id', $branchIds))
             ->where('customer_id', $customerId)
             ->where('status', OrderStatus::Paid->value)
             ->where('opened_at', '>=', $start)

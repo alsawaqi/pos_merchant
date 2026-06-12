@@ -57,6 +57,11 @@ class CategoriesController extends Controller
     public function store(CreateCategoryRequest $request): JsonResponse
     {
         $this->ensure($request, MerchantPermission::CatalogueManage);
+        // P-G5 — the category↔branch assignment is a FULL-REPLACE set
+        // spanning every branch; scoped users must leave it untouched.
+        if (array_key_exists('branch_ids', $request->validated())) {
+            \App\Support\BranchScope::ensureUnrestricted($request->user(), 'Branch availability is managed by accounts with access to all branches.');
+        }
 
         $category = $this->create->handle($request->validated(), $request->user());
 
@@ -69,6 +74,10 @@ class CategoriesController extends Controller
     {
         $this->ensure($request, MerchantPermission::CatalogueManage);
         $this->refuseIfNotInTenant($category);
+        // P-G5 — same full-replace rule as store().
+        if (array_key_exists('branch_ids', $request->validated())) {
+            \App\Support\BranchScope::ensureUnrestricted($request->user(), 'Branch availability is managed by accounts with access to all branches.');
+        }
 
         $updated = $this->update->handle($category, $request->validated(), $request->user());
 

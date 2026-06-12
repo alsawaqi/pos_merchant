@@ -11,6 +11,7 @@
 import { computed, reactive, ref, watch } from 'vue';
 import BaseModal from '@/Components/BaseModal.vue';
 import { ApiError } from '@/lib/api';
+import { authState } from '@/stores/auth';
 import {
     adjustIngredientStock,
     allocateIngredientStock,
@@ -39,6 +40,18 @@ const actionError = ref<string | null>(null);
 const actionOk = ref<string | null>(null);
 const summary = ref<IngredientStockSummary | null>(null);
 const action = ref<Action>('distribute');
+
+// P-G5 — a branch-restricted user (branch_scope is a list) can't touch
+// the central warehouse: the server 403s receive/distribute/allocate +
+// central adjust. Hide those tabs so the dialog only offers what works
+// (transfer between their branches + a branch adjust). null = all
+// branches = unrestricted = every tab.
+const isBranchRestricted = computed(() => Array.isArray(authState.user?.branch_scope));
+const availableActions = computed<Action[]>(() =>
+    isBranchRestricted.value
+        ? ['transfer', 'adjust']
+        : ['distribute', 'receive', 'allocate', 'transfer', 'adjust'],
+);
 
 // Quantity fields are bound to type="number" inputs: Vue's v-model stores a
 // NUMBER once a value is typed ('' only while blank) — hence string | number,
@@ -138,7 +151,9 @@ watch(
     () => [props.open, props.ingredientUuid],
     () => {
         if (props.open && props.ingredientUuid) {
-            action.value = 'distribute';
+            // Restricted users have no central tabs — open on the first
+            // one they CAN use (transfer).
+            action.value = availableActions.value[0];
             void load();
         }
     },
@@ -296,7 +311,7 @@ function fmtType(t: string): string {
                     <div v-if="canManage" class="rounded-xl border border-slate-200 p-4">
                         <div class="mb-3 flex flex-wrap gap-2">
                             <button
-                                v-for="a in (['distribute','receive','allocate','transfer','adjust'] as const)"
+                                v-for="a in availableActions"
                                 :key="a"
                                 type="button"
                                 class="rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition"
@@ -375,7 +390,7 @@ function fmtType(t: string): string {
                             <p class="text-xs text-slate-500">Correct a balance (signed: e.g. -3 for spillage). A note is required.</p>
                             <div class="flex flex-wrap items-center gap-3">
                                 <select v-model="adjustForm.branch_uuid" class="rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                                    <option value="">Warehouse</option>
+                                    <option v-if="!isBranchRestricted" value="">Warehouse</option>
                                     <option v-for="b in branches" :key="b.branch_uuid" :value="b.branch_uuid">{{ b.branch_name }}</option>
                                 </select>
                                 <input v-model="adjustForm.signed_quantity" type="number" step="0.001" placeholder="±Qty" class="w-28 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">

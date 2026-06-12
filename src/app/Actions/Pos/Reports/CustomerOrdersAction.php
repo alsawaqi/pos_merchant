@@ -25,10 +25,15 @@ final readonly class CustomerOrdersAction
     ) {}
 
     /**
+     * P-G5 — $branchIds limits the history to the actor's branch scope
+     * (NULL = unrestricted): a customer's orders at other branches stay
+     * invisible to a branch-restricted user.
+     *
      * @param  array{page?: int, per_page?: int}  $extras
+     * @param  list<int>|null  $branchIds
      * @return array<string, mixed>
      */
-    public function handle(int $customerId, array $extras = []): array
+    public function handle(int $customerId, array $extras = [], ?array $branchIds = null): array
     {
         $companyId = $this->tenant->requiredId();
         $perPage = max(1, min(100, (int) ($extras['per_page'] ?? self::DEFAULT_PER_PAGE)));
@@ -38,6 +43,7 @@ final readonly class CustomerOrdersAction
             ->with(['branch:id,name'])
             ->withCount('items')
             ->where('company_id', $companyId)
+            ->when($branchIds !== null, fn ($q) => $q->whereIn('branch_id', $branchIds))
             ->where('customer_id', $customerId)
             ->orderByDesc('opened_at')
             ->orderByDesc('id');

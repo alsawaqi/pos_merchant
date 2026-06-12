@@ -45,8 +45,13 @@ class ProductionsController extends Controller
             'per_page' => ['sometimes', 'integer', 'between:1,200'],
         ]);
 
+        // P-G5 — a branch-restricted user's default list shrinks to
+        // their scope.
+        $allowed = $request->user()?->allowedBranchIds();
+
         $query = Production::query()
             ->where('company_id', $this->tenant->requiredId())
+            ->when($allowed !== null, fn ($q) => $q->whereIn('branch_id', $allowed))
             ->with([
                 'product:id,uuid,name,name_ar',
                 'branch:id,uuid,name',
@@ -63,6 +68,11 @@ class ProductionsController extends Controller
                 ->where('company_id', $this->tenant->requiredId())
                 ->where('uuid', $branchUuid)
                 ->first();
+            // P-G5 — an EXPLICIT request for an in-tenant branch outside
+            // the scope is a 403 (spec: rejected, not silently hidden).
+            if ($branch !== null) {
+                \App\Support\BranchScope::ensureBranch($request->user(), $branch);
+            }
             // Unknown / foreign branch matches nothing rather than leaking.
             $query->where('branch_id', $branch?->id ?? -1);
         }

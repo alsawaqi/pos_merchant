@@ -98,11 +98,15 @@ class IngredientsController extends Controller
         $this->ensure($request, MerchantPermission::InventoryView);
         $this->refuseIfNotInTenant($ingredient);
 
+        // P-G5 — purchase batches are branch-scoped rows.
+        $allowed = $request->user()?->allowedBranchIds();
+
         $perPage = min((int) $request->query('per_page', 25), 100);
 
         return IngredientPurchaseResource::collection(
             IngredientPurchase::query()
                 ->where('ingredient_id', $ingredient->id)
+                ->when($allowed !== null, fn ($q) => $q->whereIn('branch_id', $allowed))
                 ->with(['branch', 'supplier'])
                 ->orderByDesc('occurred_at')
                 ->orderByDesc('id')

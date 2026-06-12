@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Middleware\EnsureBranchScope;
 use App\Http\Middleware\PreventBackHistoryCache;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\SetMerchantTenantContext;
@@ -33,8 +34,13 @@ return Application::configure(basePath: dirname(__DIR__))
         // Pin the merchant tenant scope + spatie team_id to the
         // signed-in user's company_id on every web request. Guest
         // requests short-circuit (no user → no scope change).
+        // P-G5 — EnsureBranchScope runs AFTER the tenant pin (and after
+        // SubstituteBindings, since appends land at the group's tail):
+        // any route-bound model carrying a branch outside the user's
+        // branch_scope_json aborts 403.
         $middleware->web(append: [
             SetMerchantTenantContext::class,
+            EnsureBranchScope::class,
         ]);
 
         // The merchant `web` guard redirects guests to /login —

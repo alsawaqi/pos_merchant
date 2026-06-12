@@ -30,6 +30,8 @@ class DashboardController extends Controller
             abort(403);
         }
 
-        return response()->json(['data' => $this->summary->handle()]);
+        // P-G5 — a branch-restricted user's dashboard aggregates only
+        // their branches.
+        return response()->json(['data' => $this->summary->handle($user->allowedBranchIds())]);
     }
 }

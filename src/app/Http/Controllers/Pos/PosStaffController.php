@@ -67,8 +67,13 @@ class PosStaffController extends Controller
     {
         $this->ensure($request, MerchantPermission::PosStaffView);
 
+        // P-G5 — staff are branch-assigned; a scoped user sees only
+        // the roster of their branches.
+        $allowed = $request->user()?->allowedBranchIds();
+
         $staff = PosStaff::query()
             ->where('company_id', $this->tenant->requiredId())
+            ->when($allowed !== null, fn ($q) => $q->whereIn('branch_id', $allowed))
             ->with(['branch', 'creator'])
             ->orderByDesc('created_at')
             ->get();
@@ -82,6 +87,9 @@ class PosStaffController extends Controller
     public function store(CreatePosStaffRequest $request): JsonResponse
     {
         $this->ensure($request, MerchantPermission::PosStaffCreate);
+
+        // P-G5 — hire only into branches within the user's scope.
+        \App\Support\BranchScope::ensureBranch($request->user(), (int) $request->validated()['branch_id']);
 
         try {
             $result = $this->create->handle($request->validated(), $request->user());
@@ -104,6 +112,13 @@ class PosStaffController extends Controller
     {
         $this->ensure($request, MerchantPermission::PosStaffUpdate);
         $this->refuseIfNotInTenant($posStaff);
+
+        // P-G5 — the row's CURRENT branch is covered by the route
+        // middleware; a re-assignment target must be in scope too.
+        $newBranchId = $request->validated()['branch_id'] ?? null;
+        if ($newBranchId !== null) {
+            \App\Support\BranchScope::ensureBranch($request->user(), (int) $newBranchId);
+        }
 
         try {
             $updated = $this->update->handle($posStaff, $request->validated(), $request->user());

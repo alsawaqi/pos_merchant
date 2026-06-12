@@ -60,6 +60,11 @@ class ProductStockController extends Controller
 
         $companyId = $this->tenant->requiredId();
 
+        // P-G5 — a scoped user sees only their branches' rows; the
+        // central balance stays visible (read-only context) but central
+        // ledger rows and other branches' balances do not.
+        $allowed = $request->user()?->allowedBranchIds();
+
         // Read through the model so the decimal:3 cast formats consistently
         // (a query-builder value() would return SQLite's raw, un-padded number).
         $central = ProductStock::query()
@@ -74,6 +79,7 @@ class ProductStockController extends Controller
 
         $branches = Branch::query()
             ->where('company_id', $companyId)
+            ->when($allowed !== null, fn ($q) => $q->whereIn('id', $allowed))
             ->orderBy('name')
             ->get()
             ->map(function (Branch $b) use ($bpByBranch): array {
@@ -90,6 +96,9 @@ class ProductStockController extends Controller
 
         $movements = ProductStockMovement::query()
             ->where('product_id', $product->id)
+            // P-G5 — central (branch NULL) rows are HQ-only; whereIn
+            // drops them for scoped users along with foreign branches.
+            ->when($allowed !== null, fn ($q) => $q->whereIn('branch_id', $allowed))
             ->with(['branch', 'recordedByUser'])
             ->orderByDesc('occurred_at')
             ->orderByDesc('id')
@@ -112,6 +121,8 @@ class ProductStockController extends Controller
         $this->ensure($request, MerchantPermission::InventoryManage);
         $this->refuseIfNotInTenant($product);
         $this->requireUnitProduct($product);
+        // P-G5 — the central pool is an HQ resource.
+        \App\Support\BranchScope::ensureUnrestricted($request->user(), 'The central pool is managed by accounts with access to all branches.');
 
         try {
             $this->receive->handle($product, $request->input('quantity'), $request->input('note'), $request->user());
@@ -132,6 +143,8 @@ class ProductStockController extends Controller
         $this->ensure($request, MerchantPermission::InventoryManage);
         $this->refuseIfNotInTenant($product);
         $this->requireUnitProduct($product);
+        // P-G5 — receiving + distributing drains the HQ pool.
+        \App\Support\BranchScope::ensureUnrestricted($request->user(), 'The central pool is managed by accounts with access to all branches.');
 
         $lines = [];
         foreach ((array) $request->input('allocations', []) as $row) {
@@ -162,6 +175,8 @@ class ProductStockController extends Controller
         $this->ensure($request, MerchantPermission::InventoryManage);
         $this->refuseIfNotInTenant($product);
         $this->requireUnitProduct($product);
+        // P-G5 — allocation debits the HQ pool.
+        \App\Support\BranchScope::ensureUnrestricted($request->user(), 'The central pool is managed by accounts with access to all branches.');
 
         $lines = [];
         foreach ((array) $request->input('allocations') as $row) {
@@ -193,6 +208,10 @@ class ProductStockController extends Controller
             return response()->json(['message' => 'Branch not found.'], 422);
         }
 
+        // P-G5 — both sides of a transfer must be within the scope.
+        \App\Support\BranchScope::ensureBranch($request->user(), $from);
+        \App\Support\BranchScope::ensureBranch($request->user(), $to);
+
         try {
             $this->transfer->handle($product, $from, $to, $request->input('quantity'), $request->input('note'), $request->user());
         } catch (RuntimeException $e) {
@@ -216,6 +235,14 @@ class ProductStockController extends Controller
             }
         }
 
+        // P-G5 — a branch adjustment needs that branch in scope; a
+        // CENTRAL adjustment (no branch) is an HQ act.
+        if ($branch !== null) {
+            \App\Support\BranchScope::ensureBranch($request->user(), $branch);
+        } else {
+            \App\Support\BranchScope::ensureUnrestricted($request->user(), 'The central pool is managed by accounts with access to all branches.');
+        }
+
         try {
             $this->adjust->handle($product, $branch, $request->input('signed_quantity'), $request->input('note'), $request->user());
         } catch (RuntimeException $e) {
@@ -230,8 +257,13 @@ class ProductStockController extends Controller
         $this->ensure($request, MerchantPermission::InventoryView);
         $this->refuseIfNotInTenant($product);
 
+        // P-G5 — scoped users read their branches' rows only (central
+        // NULL-branch rows are HQ-only).
+        $allowed = $request->user()?->allowedBranchIds();
+
         $query = ProductStockMovement::query()
             ->where('product_id', $product->id)
+            ->when($allowed !== null, fn ($q) => $q->whereIn('branch_id', $allowed))
             ->with(['branch', 'recordedByUser']);
 
         if ($request->filled('type')) {

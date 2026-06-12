@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Support\MerchantTenantContext;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 /**
  * Read-only listing of the actor's company's branches. Powers
@@ -26,10 +27,16 @@ class BranchesController extends Controller
         private readonly MerchantTenantContext $tenant,
     ) {}
 
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
+        // P-G5 — a branch-restricted user only ever sees their own
+        // branches; since THIS list feeds every branch dropdown in the
+        // SPA, filtering here makes all pickers self-restrict.
+        $allowed = $request->user()?->allowedBranchIds();
+
         $branches = Branch::query()
             ->where('company_id', $this->tenant->requiredId())
+            ->when($allowed !== null, fn ($q) => $q->whereIn('id', $allowed))
             ->orderBy('name')
             ->get(['id', 'uuid', 'name', 'name_ar', 'code', 'status']);
 

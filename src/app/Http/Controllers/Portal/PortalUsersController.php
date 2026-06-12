@@ -88,6 +88,9 @@ class PortalUsersController extends Controller
     public function store(CreatePortalUserRequest $request): JsonResponse
     {
         $this->ensure($request, MerchantPermission::PortalUsersInvite);
+        // On CREATE an omitted branch_scope defaults to NULL (all
+        // branches), so a restricted actor is ALWAYS checked.
+        $this->ensureGrantWithinScope($request, true);
 
         try {
             $result = $this->create->handle($request->validated(), $request->user());
@@ -108,10 +111,45 @@ class PortalUsersController extends Controller
     {
         $this->ensure($request, MerchantPermission::PortalUsersUpdate);
         $this->refuseIfNotInTenant($portalUser);
+        $this->ensureGrantWithinScope($request, array_key_exists('branch_scope', $request->validated()));
 
         return PortalUserResource::make(
             $this->update->handle($portalUser, $request->validated(), $request->user()),
         );
+    }
+
+    /**
+     * P-G5 meta-rule — a branch-restricted admin may only grant a
+     * teammate branch_scope that is a NON-NULL SUBSET of their own
+     * scope: they can neither hand out "all branches" (null) nor any
+     * branch they themselves cannot see.
+     *
+     * $scopeInPayload guards the UPDATE case (a 'sometimes' field — an
+     * absent key means "leave the teammate's scope unchanged", which is
+     * legitimately a no-op). On CREATE pass true: an absent key defaults
+     * the new user to NULL (all branches), so a restricted actor must
+     * always be checked — guarding on key-presence there was the hole.
+     */
+    private function ensureGrantWithinScope(Request $request, bool $scopeInPayload): void
+    {
+        if (! $scopeInPayload) {
+            return;
+        }
+        $actorScope = $request->user()?->allowedBranchIds();
+        if ($actorScope === null) {
+            return;
+        }
+
+        // Absent on CREATE = NULL = all branches → refused below.
+        $granted = $request->validated()['branch_scope'] ?? null;
+        if ($granted === null) {
+            abort(403, 'Your account is restricted to specific branches — you cannot grant access to all branches.');
+        }
+        foreach ((array) $granted as $id) {
+            if (! in_array((int) $id, $actorScope, true)) {
+                abort(403, 'You can only grant access to branches within your own scope.');
+            }
+        }
     }
 
     /**
