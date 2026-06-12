@@ -20,6 +20,7 @@ import ExpensesIndex from '@/Pages/Merchant/Expenses/Index.vue';
 import LoyaltyIndex from '@/Pages/Merchant/Loyalty/Index.vue';
 import FloorPlanIndex from '@/Pages/Merchant/FloorPlan/Index.vue';
 import InventoryIndex from '@/Pages/Merchant/Inventory/Index.vue';
+import ProductionIndex from '@/Pages/Merchant/Production/Index.vue';
 import PortalUsersIndex from '@/Pages/Merchant/PortalUsers/Index.vue';
 import PosStaffIndex from '@/Pages/Merchant/PosStaff/Index.vue';
 import RolesIndex from '@/Pages/Merchant/Roles/Index.vue';
@@ -167,6 +168,15 @@ const routes: RouteRecordRaw[] = [
         path: '/expense-categories',
         name: 'merchant.expense-categories',
         component: ExpenseCategoriesIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        // Kitchen production history — P-G1. Read-only audit of the
+        // cooked-product batches the device produced. Server gates by
+        // production.view.
+        path: '/production',
+        name: 'merchant.production',
+        component: ProductionIndex,
         meta: { requiresAuth: true },
     },
     {

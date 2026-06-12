@@ -526,6 +526,39 @@ it('persists stock_mode and the Phase D2 flags on create', function (): void {
     expect($product->show_on_customer_tablet)->toBeFalse();
 });
 
+it('accepts the P-G1 cooked stock mode on create and update', function (): void {
+    $ctx = makeMerchantActor();
+
+    $response = $this->postJson('/api/products', [
+        'name' => 'Fresh Cake',
+        'base_price' => '5.000',
+        'stock_mode' => 'cooked',
+    ])->assertCreated();
+
+    expect($response->json('data.stock_mode'))->toBe('cooked');
+
+    $product = Product::query()
+        ->where('company_id', $ctx['company']->id)
+        ->where('name', 'Fresh Cake')
+        ->firstOrFail();
+    expect($product->stock_mode)->toBe('cooked');
+
+    // And an existing product can be switched to cooked.
+    $other = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'ingredient']);
+    $this->patchJson("/api/products/{$other->uuid}", ['stock_mode' => 'cooked'])->assertOk();
+    expect($other->fresh()->stock_mode)->toBe('cooked');
+});
+
+it('still rejects an unknown stock mode', function (): void {
+    makeMerchantActor();
+
+    $this->postJson('/api/products', [
+        'name' => 'Mystery Item',
+        'base_price' => '1.000',
+        'stock_mode' => 'quantum',
+    ])->assertStatus(422);
+});
+
 it('defaults the Phase D2 flags on a minimal create', function (): void {
     makeMerchantActor();
 

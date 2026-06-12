@@ -29,6 +29,7 @@ use App\Http\Controllers\Pos\IngredientUnitsController;
 use App\Http\Controllers\Pos\LoyaltyController;
 use App\Http\Controllers\Pos\PosStaffController;
 use App\Http\Controllers\Pos\CompReasonsController;
+use App\Http\Controllers\Pos\KitchenPositionsSettingController;
 use App\Http\Controllers\Pos\ManagerApprovalSettingController;
 use App\Http\Controllers\Pos\OrderCancellationSettingController;
 use App\Http\Controllers\Pos\OrderNumberingSettingController;
@@ -37,6 +38,7 @@ use App\Http\Controllers\Pos\VoidReasonsController;
 use App\Http\Controllers\Pos\OffersController;
 use App\Http\Controllers\Pos\OrdersController;
 use App\Http\Controllers\Pos\PayoutsController;
+use App\Http\Controllers\Pos\ProductionsController;
 use App\Http\Controllers\Pos\ProductsController;
 use App\Http\Controllers\Pos\ProductStockController;
 use App\Http\Controllers\Pos\ReportsController;
@@ -358,6 +360,13 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('product-stock.adjust');
         Route::get('products/{product:uuid}/stock/movements', [ProductStockController::class, 'movements'])
             ->name('product-stock.movements');
+
+        // P-G1 — kitchen production history (read-only). Batches are
+        // written exclusively by pos_api from the device Kitchen screen;
+        // the portal audits who cooked what, std vs extra, and duration.
+        // Gated on production.view inside the controller.
+        Route::get('productions', [ProductionsController::class, 'index'])
+            ->name('productions.index');
 
         // -------- Phase 5a — Inventory (Ingredients + Suppliers + Stock) --
         // All gated by inventory.{view,manage}. Branch-nested
@@ -748,6 +757,15 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('settings.reports-positions.show');
         Route::put('settings/reports-positions', [ReportsPositionsSettingController::class, 'update'])
             ->name('settings.reports-positions.update');
+
+        // P-G1 — device Kitchen-section access policy: which staff positions
+        // may open the Kitchen production screen and run cooked-product
+        // batches. Emitted in /device/config + enforced on the device. Same
+        // orders.cancel gate as the sibling position policies.
+        Route::get('settings/kitchen-positions', [KitchenPositionsSettingController::class, 'show'])
+            ->name('settings.kitchen-positions.show');
+        Route::put('settings/kitchen-positions', [KitchenPositionsSettingController::class, 'update'])
+            ->name('settings.kitchen-positions.update');
 
         // P-F8 — order numbering policy: how POS order numbers look
         // (prefix + zero-padded counter, e.g. KLD-0042), per-branch vs

@@ -25,6 +25,9 @@ enum ProductStockMovementType: string
     case SaleConsumption = 'sale_consumption';
     case Adjustment = 'adjustment';
     case Waste = 'waste';
+    // P-G1 kitchen production: a finished batch lands its pieces in the
+    // branch shelf stock (+branch). Written by pos_api only.
+    case Produced = 'produced';
 
     /**
      * @return list<string>

@@ -31,7 +31,8 @@ class UpdateProductRequest extends FormRequest
             // Phase 4.9 — per-product delivery override.
             'delivery_price' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:999999.999'],
             // Phase 7 — stock mode: unit | ingredient | untracked.
-            'stock_mode' => ['sometimes', 'string', 'in:unit,ingredient,untracked'],
+            // P-G1 adds cooked (recipe consumed at production).
+            'stock_mode' => ['sometimes', 'string', 'in:unit,ingredient,untracked,cooked'],
             // Phase D2 — unit-mode LOW STOCK badge threshold. NULL = no badge.
             'low_stock_threshold' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:999999.999'],
             'cost_price' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:999999.999'],

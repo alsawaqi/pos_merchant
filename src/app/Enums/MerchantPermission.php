@@ -154,6 +154,13 @@ enum MerchantPermission: string
     // (a void reverses loyalty / round-up / commission), so Manager + SuperAdmin.
     case OrdersCancel = 'orders.cancel';
 
+    // P-G1 — kitchen production history. Read-only: batches are created /
+    // finished / cancelled exclusively from the POS device (pos_api
+    // validates fresh ingredient balances online); the portal only audits
+    // them (who, what, quantities, std vs extra, duration). One view key —
+    // there is nothing to manage.
+    case ProductionView = 'production.view';
+
     /**
      * @return list<string>
      */

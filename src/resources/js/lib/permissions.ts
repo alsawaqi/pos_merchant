@@ -77,6 +77,9 @@ export const MerchantPermission = {
     // v2 #14 — order cancellation policy. Gates the Order Cancellation
     // settings page (which staff positions may cancel at the POS).
     OrdersCancel: 'orders.cancel',
+    // P-G1 — kitchen production history (read-only; batches are written
+    // exclusively by the POS device through pos_api).
+    ProductionView: 'production.view',
 } as const;
 
 export type MerchantPermissionValue =

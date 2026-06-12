@@ -186,6 +186,9 @@ final class SeedMerchantRolesAction
                     // v2 #14: managers set which staff positions may
                     // cancel a completed order at the POS.
                     MerchantPermission::OrdersCancel->value,
+                    // P-G1: managers audit the kitchen production
+                    // history (batches, extras, durations).
+                    MerchantPermission::ProductionView->value,
                 ],
             ],
 
@@ -288,6 +291,9 @@ final class SeedMerchantRolesAction
                     MerchantPermission::ReportsView->value,
                     MerchantPermission::ReportsExport->value,
                     MerchantPermission::AuditLogView->value,
+                    // P-G1: production consumes ingredient stock, so
+                    // the inventory specialist audits the batches.
+                    MerchantPermission::ProductionView->value,
                 ],
             ],
         ];

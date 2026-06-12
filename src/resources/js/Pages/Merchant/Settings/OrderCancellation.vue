@@ -12,7 +12,7 @@
  *     form and the sidebar entry.
  */
 
-import { Ban, BarChart3, Pencil, Plus, ShieldCheck, ShieldX, Trash2 } from 'lucide-vue-next';
+import { Ban, BarChart3, ChefHat, Pencil, Plus, ShieldCheck, ShieldX, Trash2 } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import BaseModal from '@/Components/BaseModal.vue';
@@ -31,6 +31,10 @@ import {
     getReportsPositionsSetting,
     updateReportsPositions,
 } from '@/lib/api/reportsPositions';
+import {
+    getKitchenPositionsSetting,
+    updateKitchenPositions,
+} from '@/lib/api/kitchenPositions';
 import {
     createCompReason,
     createVoidReason,
@@ -258,6 +262,75 @@ async function saveReports(): Promise<void> {
         reportsSaveError.value = apiErrorMessage(e, t('settings.reports_positions.save_failed'));
     } finally {
         reportsSaving.value = false;
+    }
+}
+
+// =================== P-G1 — device Kitchen access positions ===================
+// The staff positions allowed to open the Kitchen production screen on the
+// POS device (start / finish / cancel cooked-product batches). Same control
+// pattern as the policies above, persisted under its own setting key
+// (kitchen_positions).
+
+const kitchenAvailable = ref<string[]>([]);
+const kitchenSelected = ref<string[]>([]);
+
+const kitchenLoading = ref(true);
+const kitchenLoadError = ref<string | null>(null);
+
+const kitchenSaving = ref(false);
+const kitchenSaveError = ref<string | null>(null);
+const kitchenSaveSuccess = ref(false);
+
+const canSaveKitchen = computed(
+    () => canManage.value && !kitchenSaving.value && kitchenSelected.value.length > 0,
+);
+
+function isKitchenChecked(position: string): boolean {
+    return kitchenSelected.value.includes(position);
+}
+
+function toggleKitchen(position: string): void {
+    kitchenSaveSuccess.value = false;
+    kitchenSaveError.value = null;
+    if (isKitchenChecked(position)) {
+        kitchenSelected.value = kitchenSelected.value.filter((p) => p !== position);
+    } else {
+        kitchenSelected.value = [...kitchenSelected.value, position];
+    }
+}
+
+async function fetchKitchenSetting(): Promise<void> {
+    kitchenLoading.value = true;
+    kitchenLoadError.value = null;
+    try {
+        const res = await getKitchenPositionsSetting();
+        kitchenAvailable.value = res.data.available_positions;
+        kitchenSelected.value = res.data.positions;
+    } catch (e) {
+        kitchenLoadError.value = apiErrorMessage(e, t('settings.kitchen_positions.save_failed'));
+    } finally {
+        kitchenLoading.value = false;
+    }
+}
+
+onMounted(() => { void fetchKitchenSetting(); });
+
+async function saveKitchen(): Promise<void> {
+    if (!canSaveKitchen.value) {
+        return;
+    }
+    kitchenSaving.value = true;
+    kitchenSaveError.value = null;
+    kitchenSaveSuccess.value = false;
+    try {
+        const res = await updateKitchenPositions(kitchenSelected.value);
+        kitchenAvailable.value = res.data.available_positions;
+        kitchenSelected.value = res.data.positions;
+        kitchenSaveSuccess.value = true;
+    } catch (e) {
+        kitchenSaveError.value = apiErrorMessage(e, t('settings.kitchen_positions.save_failed'));
+    } finally {
+        kitchenSaving.value = false;
     }
 }
 
@@ -563,6 +636,64 @@ async function confirmDeleteReason(): Promise<void> {
                         >
                             <BarChart3 class="size-4" />
                             {{ reportsSaving ? t('common.saving') : t('settings.order_cancellation.save') }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============ P-G1 — DEVICE KITCHEN ACCESS POSITIONS ============ -->
+            <div class="mt-8">
+                <h2 class="text-base font-semibold text-slate-900">{{ t('settings.kitchen_positions.title') }}</h2>
+                <p class="mt-1 max-w-2xl text-sm text-slate-500">{{ t('settings.kitchen_positions.subtitle') }}</p>
+            </div>
+
+            <div v-if="kitchenLoadError" class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {{ kitchenLoadError }}
+            </div>
+
+            <div class="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                <div v-if="kitchenLoading" class="px-4 py-12 text-center text-sm text-slate-400">{{ t('common.loading') }}</div>
+                <div v-else-if="kitchenAvailable.length === 0" class="flex flex-col items-center gap-3 px-4 py-12 text-center">
+                    <ShieldX class="size-8 text-slate-300" />
+                    <p class="text-sm text-slate-500">{{ t('settings.order_cancellation.empty_state') }}</p>
+                </div>
+                <div v-else class="p-4 sm:p-6">
+                    <p class="text-sm font-medium text-slate-700">{{ t('settings.kitchen_positions.positions_label') }}</p>
+                    <div class="mt-4 space-y-2">
+                        <label
+                            v-for="position in kitchenAvailable"
+                            :key="position"
+                            class="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-3 transition"
+                            :class="canManage ? 'cursor-pointer hover:bg-slate-50' : 'cursor-not-allowed opacity-60'"
+                        >
+                            <input
+                                type="checkbox"
+                                :checked="isKitchenChecked(position)"
+                                :disabled="!canManage"
+                                class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                                @change="toggleKitchen(position)"
+                            >
+                            <span class="text-sm font-medium text-slate-700">{{ t(`pos_staff.positions.${position}`) }}</span>
+                        </label>
+                    </div>
+
+                    <p v-if="canManage && kitchenSelected.length === 0" class="mt-4 text-sm text-rose-600">
+                        {{ t('settings.order_cancellation.at_least_one') }}
+                    </p>
+                    <p v-if="kitchenSaveError" class="mt-4 text-sm text-rose-600">{{ kitchenSaveError }}</p>
+                    <p v-if="kitchenSaveSuccess" class="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                        {{ t('settings.kitchen_positions.save_success') }}
+                    </p>
+
+                    <div v-if="canManage" class="mt-6 flex justify-end">
+                        <button
+                            type="button"
+                            class="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:opacity-60"
+                            :disabled="!canSaveKitchen"
+                            @click="saveKitchen"
+                        >
+                            <ChefHat class="size-4" />
+                            {{ kitchenSaving ? t('common.saving') : t('settings.order_cancellation.save') }}
                         </button>
                     </div>
                 </div>

@@ -314,6 +314,21 @@ final class PermissionCatalog
                 ],
             ],
             [
+                // P-G1 — kitchen production. Read-only history of the
+                // cooked-product batches the device produced (the device
+                // is the writer; the portal audits).
+                'key' => 'production',
+                'label_en' => 'Kitchen Production',
+                'label_ar' => 'إنتاج المطبخ',
+                'permissions' => [
+                    [
+                        'key' => MerchantPermission::ProductionView->value,
+                        'label_en' => 'See the kitchen production history (batches, extras, durations)',
+                        'label_ar' => 'عرض سجل إنتاج المطبخ (الدفعات والإضافات والمدد)',
+                    ],
+                ],
+            ],
+            [
                 'key' => 'roles',
                 'label_en' => 'Roles & Permissions',
                 'label_ar' => 'الأدوار والصلاحيات',

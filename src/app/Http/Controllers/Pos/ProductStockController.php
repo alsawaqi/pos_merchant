@@ -263,9 +263,12 @@ class ProductStockController extends Controller
 
     private function requireUnitProduct(Product $product): void
     {
-        if ($product->stock_mode !== 'unit') {
+        // P-G1: cooked products sell from the same branch shelf stock as
+        // unit products (production fills it, sales drain it), so the
+        // stock dialog — balances, adjustments, history — applies to both.
+        if (! in_array($product->stock_mode, ['unit', 'cooked'], true)) {
             abort(response()->json([
-                'message' => 'Unit stock is only tracked for finished-good (unit) products. Set the product to "Unit / finished good" first.',
+                'message' => 'Unit stock is only tracked for finished-good (unit) or cooked products. Set the product to "Unit / finished good" or "Cooked" first.',
             ], 422));
         }
     }

@@ -41,7 +41,9 @@ class CreateProductRequest extends FormRequest
             'delivery_price' => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
             // Phase 7 — stock mode: unit (finished, piece-counted) | ingredient
             // (recipe-driven) | untracked (sold freely). Defaults to untracked.
-            'stock_mode' => ['nullable', 'string', 'in:unit,ingredient,untracked'],
+            // P-G1 adds cooked (recipe consumed at PRODUCTION by the kitchen;
+            // sells from branch shelf stock like unit).
+            'stock_mode' => ['nullable', 'string', 'in:unit,ingredient,untracked,cooked'],
             // Phase D2 — unit-mode LOW STOCK badge threshold. NULL = no badge.
             'low_stock_threshold' => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
             'cost_price' => ['nullable', 'numeric', 'min:0', 'max:999999.999'],

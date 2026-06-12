@@ -226,6 +226,17 @@ it('refuses stock operations on a non-unit product', function (): void {
     $this->postJson("/api/products/{$product->uuid}/stock/receive", ['quantity' => '5'])->assertStatus(422);
 });
 
+it('allows stock operations on a P-G1 cooked product', function (): void {
+    // Cooked products sell from the same branch shelf stock as unit ones
+    // (production fills it), so the stock dialog applies to them too.
+    $ctx = makeMerchantActor();
+    $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'cooked']);
+
+    $this->postJson("/api/products/{$product->uuid}/stock/receive", ['quantity' => '5'])->assertOk();
+    expect($this->getJson("/api/products/{$product->uuid}/stock")->assertOk()->json('data.central_quantity'))
+        ->toBe('5.000');
+});
+
 it('404s on a product owned by another company', function (): void {
     makeMerchantActor();
     $other = Company::factory()->create();

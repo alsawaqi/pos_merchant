@@ -222,8 +222,8 @@ export interface CreateProductPayload {
     base_price: string | number;
     /** Phase 4.9 — delivery-channel price override. */
     delivery_price?: string | number | null;
-    /** Phase 7 — stock mode: unit (finished/piece-counted) | ingredient | untracked. */
-    stock_mode?: 'unit' | 'ingredient' | 'untracked';
+    /** Phase 7 — stock mode: unit | ingredient | untracked | cooked (P-G1). */
+    stock_mode?: 'unit' | 'ingredient' | 'untracked' | 'cooked';
     /** Phase D2 — unit-mode LOW STOCK badge threshold. null = no badge. */
     low_stock_threshold?: string | number | null;
     cost_price?: string | number | null;
@@ -248,8 +248,8 @@ export interface UpdateProductPayload {
     barcode?: string | null;
     base_price?: string | number;
     delivery_price?: string | number | null;
-    /** Phase 7 — stock mode: unit (finished/piece-counted) | ingredient | untracked. */
-    stock_mode?: 'unit' | 'ingredient' | 'untracked';
+    /** Phase 7 — stock mode: unit | ingredient | untracked | cooked (P-G1). */
+    stock_mode?: 'unit' | 'ingredient' | 'untracked' | 'cooked';
     /** Phase D2 — unit-mode LOW STOCK badge threshold. null = no badge. */
     low_stock_threshold?: string | number | null;
     cost_price?: string | number | null;

@@ -133,6 +133,7 @@
         "floor_plan": "Floor Plan",
         "catalogue": "Catalogue",
         "inventory": "Inventory",
+        "production": "Kitchen Production",
         "customers": "Customers",
         "loyalty": "Loyalty",
         "discounts": "Discounts",
@@ -155,6 +156,8 @@
         "language_english": "English",
         "language_arabic": "العربية",
         "loading": "Loading…",
+        "previous": "Previous",
+        "next": "Next",
         "cancel": "Cancel",
         "save": "Save",
         "saving": "Saving…",
@@ -778,6 +781,44 @@
             "all_branches_hint": "This category shows on every branch POS. Untick to choose specific branches."
         }
     },
+    "production": {
+        "title": "Kitchen Production",
+        "subtitle": "Every cooked-product batch the kitchen ran: who made it, what it consumed, and how long it took. Batches are recorded by the POS device — this page is read-only.",
+        "load_failed": "Couldn't load the production history.",
+        "empty_state": "No production batches yet. They appear here once the kitchen starts producing on the POS device.",
+        "total_count": "{count} batches",
+        "filters": {
+            "branch": "Branch",
+            "all_branches": "All branches",
+            "status": "Status",
+            "all_statuses": "All statuses",
+            "from": "From",
+            "to": "To"
+        },
+        "columns": {
+            "started": "Started",
+            "product": "Product",
+            "branch": "Branch",
+            "quantity": "Qty",
+            "status": "Status",
+            "by": "Started by",
+            "duration": "Duration"
+        },
+        "status": {
+            "in_progress": "In progress",
+            "finished": "Finished",
+            "cancelled": "Cancelled"
+        },
+        "detail": {
+            "ingredients": "Ingredients consumed",
+            "extra": "Extra",
+            "no_lines": "No ingredient lines (product has no recipe).",
+            "started": "Started",
+            "finished": "Finished",
+            "cancelled": "Cancelled",
+            "approved_by": "Cancel approved by"
+        }
+    },
     "inventory": {
         "section_label": "Stock",
         "title": "Inventory",
@@ -882,7 +923,9 @@
             "loss": "Loss",
             "adjustment": "Adjustment",
             "transfer_in": "Transfer in",
-            "transfer_out": "Transfer out"
+            "transfer_out": "Transfer out",
+            "production_consumption": "Kitchen production",
+            "production_return": "Production cancelled"
         },
         "empty_ingredients": "No ingredients yet. Add one to start tracking stock.",
         "empty_suppliers": "No suppliers yet. Add one so ingredients can reference them.",
@@ -2240,6 +2283,13 @@
             "positions_label": "Positions allowed to view device reports",
             "save_success": "Device reports access updated.",
             "save_failed": "Could not save the device reports access policy."
+        },
+        "kitchen_positions": {
+            "title": "Device kitchen access",
+            "subtitle": "Choose which staff positions can open the Kitchen production screen on the POS device to start, finish, or cancel cooked-product batches.",
+            "positions_label": "Positions allowed to use the device kitchen",
+            "save_success": "Device kitchen access updated.",
+            "save_failed": "Could not save the device kitchen access policy."
         },
         "order_numbering": {
             "title": "Order Numbering",

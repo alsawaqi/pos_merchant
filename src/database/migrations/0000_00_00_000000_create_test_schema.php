@@ -669,6 +669,45 @@ return new class extends Migration
             $table->timestamp('edited_at')->useCurrent();
         });
 
+        // ---- pos_productions + pos_production_lines (P-G1) ---
+        // Kitchen production batches for cooked products. Written
+        // exclusively by pos_api; this app reads them for the
+        // Production history page. Mirrors pos_admin's
+        // 2026_07_14_010000_create_pos_productions_tables migration.
+        Schema::create('pos_productions', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->foreignId('product_id')->constrained('pos_products')->cascadeOnDelete();
+            $table->unsignedBigInteger('device_id')->nullable();
+            $table->decimal('quantity', 12, 3);
+            $table->string('status', 16)->default('in_progress');
+            $table->foreignId('started_by_staff_id')->nullable()->constrained('pos_staff')->nullOnDelete();
+            $table->foreignId('finished_by_staff_id')->nullable()->constrained('pos_staff')->nullOnDelete();
+            $table->foreignId('cancelled_by_staff_id')->nullable()->constrained('pos_staff')->nullOnDelete();
+            $table->foreignId('cancel_approved_by_staff_id')->nullable()->constrained('pos_staff')->nullOnDelete();
+            $table->timestamp('started_at');
+            $table->timestamp('finished_at')->nullable();
+            $table->timestamp('cancelled_at')->nullable();
+            $table->unsignedInteger('duration_seconds')->nullable();
+            $table->timestamps();
+            $table->index(['company_id', 'branch_id', 'started_at'], 'pos_productions_company_branch_idx');
+            $table->index(['branch_id', 'status'], 'pos_productions_branch_status_idx');
+        });
+
+        Schema::create('pos_production_lines', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('production_id')->constrained('pos_productions')->cascadeOnDelete();
+            $table->foreignId('ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
+            $table->decimal('quantity', 12, 3);
+            $table->string('unit_at_time', 16);
+            $table->boolean('is_extra')->default(false);
+            $table->timestamps();
+            $table->index(['production_id'], 'pos_production_lines_production_idx');
+            $table->index(['ingredient_id'], 'pos_production_lines_ingredient_idx');
+        });
+
         // ---- pos_waste_records + pos_restock_requests +
         //      pos_restock_request_lines (Phase 5c) ---
         // Waste rows mirror to stock_movements via polymorphic

@@ -17,7 +17,7 @@
 import { computed, onMounted, ref, type Component } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { RouterLink } from 'vue-router';
-import { BadgeCheck, BadgePercent, Ban, Book, Boxes, Building2, ChevronDown, Contact, FolderTree, Gauge, Gift, Globe, Hash, KeyRound, LayoutGrid, LineChart, LogOut, Menu, Percent, Receipt, ShieldAlert, ShoppingBag, Tags, Users, X } from 'lucide-vue-next';
+import { BadgeCheck, BadgePercent, Ban, Book, Boxes, Building2, ChefHat, ChevronDown, Contact, FolderTree, Gauge, Gift, Globe, Hash, KeyRound, LayoutGrid, LineChart, LogOut, Menu, Percent, Receipt, ShieldAlert, ShoppingBag, Tags, Users, X } from 'lucide-vue-next';
 import { authState } from '@/stores/auth';
 import { setLocale, type SupportedLocale } from '@/lib/i18n';
 import { usePermissions } from '@/composables/usePermissions';
@@ -53,6 +53,7 @@ const navigationCatalog: readonly NavItem[] = [
     { key: 'catalogue', to: '/catalogue', icon: Book, permission: MerchantPermission.CatalogueView },
     { key: 'taxes', to: '/taxes', icon: Percent, permission: MerchantPermission.CatalogueView },
     { key: 'inventory', to: '/inventory', icon: Boxes, permission: MerchantPermission.InventoryView },
+    { key: 'production', to: '/production', icon: ChefHat, permission: MerchantPermission.ProductionView },
     { key: 'customers', to: '/customers', icon: Contact, permission: MerchantPermission.CustomersView },
     { key: 'loyalty', to: '/loyalty', icon: Gift, permission: MerchantPermission.LoyaltyView },
     { key: 'discounts', to: '/discounts', icon: Tags, permission: MerchantPermission.DiscountsView },

@@ -49,6 +49,14 @@ class CompanySetting extends Model
     public const KEY_ORDER_NUMBERING = 'order_numbering';
 
     /**
+     * P-G1 — the staff positions allowed to open the Kitchen production
+     * section on the POS device (start/finish cooked-product batches).
+     * pos_api emits it in /device/config; the DEVICE gates its Kitchen
+     * screen on the list.
+     */
+    public const KEY_KITCHEN_POSITIONS = 'kitchen_positions';
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

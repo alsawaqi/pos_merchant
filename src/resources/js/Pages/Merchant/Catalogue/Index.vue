@@ -191,7 +191,8 @@ const prodForm = reactive<{
     available_until: string;
     display_order: number;
     status: ProductStatus;
-    // Phase 7 — stock mode: unit (finished/piece-counted) | ingredient | untracked.
+    // Phase 7 — stock mode: unit (finished/piece-counted) | ingredient |
+    // untracked | cooked (P-G1: recipe consumed at kitchen production).
     stock_mode: string;
     // Phase D2 - unit-mode LOW STOCK badge threshold ('' = no badge).
     low_stock_threshold: string;
@@ -748,7 +749,7 @@ async function submitProduct(): Promise<void> {
             // wire; empty = null = no bound (both empty = always).
             available_from: prodForm.available_from ? `${prodForm.available_from}:00` : null,
             available_until: prodForm.available_until ? `${prodForm.available_until}:00` : null,
-            stock_mode: prodForm.stock_mode as 'unit' | 'ingredient' | 'untracked',
+            stock_mode: prodForm.stock_mode as 'unit' | 'ingredient' | 'untracked' | 'cooked',
             // Phase D2 - unit-mode LOW STOCK threshold ('' = none).
             low_stock_threshold: prodForm.low_stock_threshold === '' ? null : prodForm.low_stock_threshold,
             display_order: prodForm.display_order,
@@ -1551,7 +1552,7 @@ async function removeOwnedGroup(groupUuid: string): Promise<void> {
                                         <button v-if="canManage" type="button" class="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50" @click="openEditProduct(prod)">
                                             <Pencil class="size-3" /> {{ t('catalogue.actions.edit') }}
                                         </button>
-                                        <button v-if="prod.stock_mode === 'unit'" type="button" class="inline-flex items-center gap-1 rounded border border-teal-200 px-2 py-1 text-[11px] font-semibold text-teal-700 transition hover:bg-teal-50" @click="openStockDialog(prod)">
+                                        <button v-if="prod.stock_mode === 'unit' || prod.stock_mode === 'cooked'" type="button" class="inline-flex items-center gap-1 rounded border border-teal-200 px-2 py-1 text-[11px] font-semibold text-teal-700 transition hover:bg-teal-50" @click="openStockDialog(prod)">
                                             <Boxes class="size-3" /> Stock
                                         </button>
                                         <button v-if="canManage" type="button" class="inline-flex items-center gap-1 rounded border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-50" @click="prodDeleteTarget = prod">
@@ -2060,25 +2061,29 @@ async function removeOwnedGroup(groupUuid: string): Promise<void> {
                         <p class="mt-1 text-xs text-slate-500">{{ t('catalogue.fields.available_hours_hint') }}</p>
                     </div>
 
-                    <!-- Phase 7 — stock tracking mode. -->
+                    <!-- Phase 7 — stock tracking mode. P-G1 adds Cooked:
+                         recipe consumed at PRODUCTION by the kitchen, sells
+                         from branch shelf stock like unit. -->
                     <label class="block">
                         <span class="text-sm font-medium text-slate-700">Stock tracking</span>
                         <select v-model="prodForm.stock_mode" class="mt-1 w-full max-w-xs rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                             <option value="untracked">No stock tracking</option>
-                            <option value="unit">Unit / finished good (count pieces)</option>
-                            <option value="ingredient">Made from ingredients (recipe)</option>
+                            <option value="ingredient">Made to order (recipe consumed at sale)</option>
+                            <option value="cooked">Cooked (kitchen produces batches ahead of sale)</option>
+                            <option value="unit">Ready / bought-in (count pieces)</option>
                         </select>
                         <p class="mt-1 text-xs text-slate-500">
                             <template v-if="prodForm.stock_mode === 'unit'">Tracked by piece count. Manage the central pool + branch counts from the <strong>Stock</strong> button on the product row{{ prodModalMode === 'create' ? ' after saving' : '' }}.</template>
                             <template v-else-if="prodForm.stock_mode === 'ingredient'">Availability comes from its recipe + per-branch ingredient stock — no piece count.</template>
+                            <template v-else-if="prodForm.stock_mode === 'cooked'">The kitchen produces batches from the recipe (ingredients are consumed at production); the finished pieces sell down from branch shelf stock. Starts SOLD OUT until the kitchen produces.</template>
                             <template v-else>Sold freely — no stock is tracked.</template>
                         </p>
                     </label>
 
-                    <!-- Phase D2 - unit-mode LOW STOCK badge threshold. Only
-                         unit products consume it (ingredient-mode badges derive
-                         from each ingredient's own minimum instead). -->
-                    <label v-if="prodForm.stock_mode === 'unit'" class="block">
+                    <!-- Phase D2 - LOW STOCK badge threshold for piece-counted
+                         products (unit + P-G1 cooked). Ingredient-mode badges
+                         derive from each ingredient's own minimum instead. -->
+                    <label v-if="prodForm.stock_mode === 'unit' || prodForm.stock_mode === 'cooked'" class="block">
                         <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.low_stock_threshold') }}</span>
                         <input
                             v-model="prodForm.low_stock_threshold"

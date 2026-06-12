@@ -37,6 +37,12 @@ enum StockMovementType: string
     case Adjustment = 'adjustment';
     case TransferIn = 'transfer_in';
     case TransferOut = 'transfer_out';
+    // P-G1 kitchen production: recipe ingredients leave the branch shelf
+    // when the chef STARTS a batch (negative), and come back if a manager
+    // cancels the in-progress batch (positive). Written by pos_api only;
+    // listed here so movement history renders + filters them.
+    case ProductionConsumption = 'production_consumption';
+    case ProductionReturn = 'production_return';
 
     /**
      * @return list<string>
