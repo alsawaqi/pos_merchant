@@ -349,6 +349,9 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // component-options is the slim unit-product picker source.
         Route::get('products/component-options', [ProductsController::class, 'componentOptions'])
             ->name('products.component-options');
+        // P-G3 — the product-as-add-on picker source (sellable products).
+        Route::get('products/addon-link-options', [ProductsController::class, 'addonLinkOptions'])
+            ->name('products.addon-link-options');
         Route::put('products/{product:uuid}/components', [ProductsController::class, 'updateComponents'])
             ->name('products.update-components');
 

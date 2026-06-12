@@ -178,12 +178,26 @@ export function fetchDiscountReport(filter: ReportFilter): Promise<{ data: Disco
 // Product Performance Report (§5.11.2)
 // ============================================================
 
+/** One product row — the REAL server shape (qty_sold, not qty). */
+export interface ProductPerformanceRow {
+    product_id: number;
+    product_name: string;
+    qty_sold: string;
+    revenue: string;
+    recipe_cost: string;
+    profit: string;
+    margin_pct: number;
+    /** P-G3 — sold as an add-on inside other products. */
+    addon_units?: string;
+    addon_revenue?: string;
+}
+
 export interface ProductPerformanceReportPayload {
     window: { from: string; to: string; branch_ids: number[] | null };
-    top_by_revenue: { product_id: number; product_name: string; revenue: string; qty: string }[];
-    top_by_qty: { product_id: number; product_name: string; revenue: string; qty: string }[];
-    slow_movers: { product_id: number; product_name: string; qty: string }[];
-    top_addons: { add_on_name_snapshot: string; attach_count: number; revenue: string }[];
+    top_by_revenue: ProductPerformanceRow[];
+    top_by_qty: ProductPerformanceRow[];
+    slow_movers: ProductPerformanceRow[];
+    top_addons: { add_on_name: string; attach_count: number; attach_revenue: string }[];
     _phase?: { cost_stub?: string };
 }
 

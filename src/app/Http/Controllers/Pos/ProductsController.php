@@ -225,6 +225,33 @@ class ProductsController extends Controller
         return response()->json(['data' => $options]);
     }
 
+    /**
+     * GET /api/products/addon-link-options
+     *
+     * P-G3 — the slim picker source for product-as-add-on: every
+     * sellable (non-internal) product of the company. The add-on editor
+     * links one of these so the option consumes its real stock.
+     */
+    public function addonLinkOptions(Request $request): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::CatalogueView);
+
+        $options = Product::query()
+            ->where('company_id', $this->tenant->requiredId())
+            ->where('is_internal', false)
+            ->orderBy('name')
+            ->limit(500)
+            ->get(['uuid', 'name', 'name_ar', 'stock_mode'])
+            ->map(static fn (Product $p): array => [
+                'uuid' => $p->uuid,
+                'name' => $p->name,
+                'name_ar' => $p->name_ar,
+                'stock_mode' => $p->stock_mode,
+            ]);
+
+        return response()->json(['data' => $options]);
+    }
+
     public function destroy(Request $request, Product $product): JsonResponse
     {
         $this->ensure($request, MerchantPermission::CatalogueManage);
@@ -338,6 +365,8 @@ class ProductsController extends Controller
             ->with(['addOns' => function ($q): void {
                 $q->orderBy('display_order')->orderBy('name');
             }])
+            // P-G3 — show what each option sells.
+            ->with('addOns.linkedProduct')
             ->withCount('addOns')
             ->orderBy('display_order')
             ->orderBy('name')

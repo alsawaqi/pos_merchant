@@ -8,6 +8,7 @@ use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
 use App\Models\AddOn;
 use App\Models\AddOnGroup;
+use App\Models\Product;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
@@ -40,7 +41,13 @@ final readonly class CreateAddOnAction
             throw new RuntimeException('The add-on group does not belong to your company.');
         }
 
-        return DB::transaction(function () use ($group, $attributes, $actor, $companyId): AddOn {
+        // P-G3 — resolve the linked product (the add-on IS that product).
+        $linkedProductId = $this->resolveLinkedProduct(
+            $attributes['linked_product_uuid'] ?? null,
+            $companyId,
+        );
+
+        return DB::transaction(function () use ($group, $attributes, $actor, $companyId, $linkedProductId): AddOn {
             /** @var AddOn $addon */
             $addon = AddOn::query()->create([
                 'company_id' => $companyId,
@@ -50,6 +57,8 @@ final readonly class CreateAddOnAction
                 'price_delta' => $attributes['price_delta'] ?? 0,
                 // Phase B — pre-selected default in the customize sheet.
                 'is_default' => (bool) ($attributes['is_default'] ?? false),
+                // P-G3 — product-as-add-on (consumes the product's stock).
+                'linked_product_id' => $linkedProductId,
                 'display_order' => $attributes['display_order'] ?? 0,
                 'status' => 'active',
             ]);
@@ -79,5 +88,30 @@ final readonly class CreateAddOnAction
 
             return $addon;
         });
+    }
+
+    /**
+     * P-G3 — resolve a linked-product uuid to its id: must belong to the
+     * company and not be an internal item (cups are never sold, not even
+     * as an add-on). Null stays null (a classic label-only option).
+     */
+    private function resolveLinkedProduct(?string $uuid, int $companyId): ?int
+    {
+        if ($uuid === null || $uuid === '') {
+            return null;
+        }
+
+        $product = Product::query()
+            ->where('company_id', $companyId)
+            ->where('uuid', $uuid)
+            ->first();
+        if ($product === null) {
+            throw new RuntimeException('The linked product does not belong to your company.');
+        }
+        if ($product->is_internal) {
+            throw new RuntimeException('An internal item cannot be sold as an add-on.');
+        }
+
+        return (int) $product->id;
     }
 }

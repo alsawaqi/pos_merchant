@@ -37,6 +37,8 @@ use Illuminate\Support\Str;
     'ingredient_id',
     'ingredient_qty',
     'ingredient_unit',
+    // P-G3 — the add-on IS this product (consumes its real stock).
+    'linked_product_id',
     'display_order',
     'status',
 ])]
@@ -89,5 +91,16 @@ class AddOn extends Model
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
+    }
+
+    /**
+     * P-G3 — the real product behind this option (cake inside a coffee).
+     * Null = a classic label-only add-on.
+     *
+     * @return BelongsTo<Product, $this>
+     */
+    public function linkedProduct(): BelongsTo
+    {
+        return $this->belongsTo(Product::class, 'linked_product_id');
     }
 }

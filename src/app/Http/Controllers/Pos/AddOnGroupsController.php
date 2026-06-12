@@ -56,6 +56,9 @@ class AddOnGroupsController extends Controller
             ->with(['addOns' => function ($q): void {
                 $q->orderBy('display_order')->orderBy('name');
             }])
+            // P-G3 — linked products inline so the editor shows what each
+            // option sells without an extra round-trip.
+            ->with('addOns.linkedProduct')
             // Phase B — bound categories ship as category_ids on the resource.
             ->with('categories')
             ->withCount(['products', 'addOns'])

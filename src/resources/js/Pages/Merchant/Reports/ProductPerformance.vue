@@ -30,7 +30,7 @@ const qtyChart = computed(() => {
     const rows = payload.value?.top_by_qty ?? [];
     return {
         categories: rows.map((r) => r.product_name),
-        series: [{ name: t('reports.product_performance.top_by_qty'), data: rows.map((r) => num(r.qty)) }] as ApexSeries,
+        series: [{ name: t('reports.product_performance.top_by_qty'), data: rows.map((r) => num(r.qty_sold)) }] as ApexSeries,
     };
 });
 
@@ -75,13 +75,15 @@ type ApexSeries = { name: string; data: number[] }[];
                 <h2 class="border-b border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700">{{ t('reports.product_performance.top_by_revenue') }}</h2>
                 <table class="w-full text-sm">
                     <thead class="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                        <tr><th class="px-5 py-2 text-start">Product</th><th class="px-5 py-2 text-end">Revenue</th><th class="px-5 py-2 text-end">Qty</th></tr>
+                        <tr><th class="px-5 py-2 text-start">Product</th><th class="px-5 py-2 text-end">Revenue</th><th class="px-5 py-2 text-end">Qty</th><th class="px-5 py-2 text-end">As add-on</th></tr>
                     </thead>
                     <tbody>
                         <tr v-for="r in payload.top_by_revenue" :key="r.product_id" class="border-b border-slate-100 last:border-0">
                             <td class="px-5 py-2 font-medium text-slate-900">{{ r.product_name }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.revenue }}</td>
-                            <td class="px-5 py-2 text-end tabular-nums">{{ r.qty }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ r.qty_sold }}</td>
+                            <!-- P-G3 — units sold as an add-on inside other products. -->
+                            <td class="px-5 py-2 text-end tabular-nums text-slate-500">{{ num(r.addon_units) > 0 ? r.addon_units : '—' }}</td>
                         </tr>
                     </tbody>
                 </table>
@@ -96,7 +98,7 @@ type ApexSeries = { name: string; data: number[] }[];
                     <tbody>
                         <tr v-for="r in payload.top_by_qty" :key="r.product_id" class="border-b border-slate-100 last:border-0">
                             <td class="px-5 py-2 font-medium text-slate-900">{{ r.product_name }}</td>
-                            <td class="px-5 py-2 text-end tabular-nums">{{ r.qty }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ r.qty_sold }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.revenue }}</td>
                         </tr>
                     </tbody>
@@ -112,7 +114,7 @@ type ApexSeries = { name: string; data: number[] }[];
                     <tbody>
                         <tr v-for="r in payload.slow_movers" :key="r.product_id" class="border-b border-slate-100 last:border-0">
                             <td class="px-5 py-2 font-medium text-slate-900">{{ r.product_name }}</td>
-                            <td class="px-5 py-2 text-end tabular-nums">{{ r.qty }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ r.qty_sold }}</td>
                         </tr>
                     </tbody>
                 </table>
@@ -125,10 +127,10 @@ type ApexSeries = { name: string; data: number[] }[];
                         <tr><th class="px-5 py-2 text-start">Add-on</th><th class="px-5 py-2 text-end">Attach</th><th class="px-5 py-2 text-end">Revenue</th></tr>
                     </thead>
                     <tbody>
-                        <tr v-for="r in payload.top_addons" :key="r.add_on_name_snapshot" class="border-b border-slate-100 last:border-0">
-                            <td class="px-5 py-2 font-medium text-slate-900">{{ r.add_on_name_snapshot }}</td>
+                        <tr v-for="r in payload.top_addons" :key="r.add_on_name" class="border-b border-slate-100 last:border-0">
+                            <td class="px-5 py-2 font-medium text-slate-900">{{ r.add_on_name }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.attach_count }}</td>
-                            <td class="px-5 py-2 text-end tabular-nums">{{ r.revenue }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ r.attach_revenue }}</td>
                         </tr>
                     </tbody>
                 </table>

@@ -29,6 +29,14 @@ class AddOnResource extends JsonResource
             'price_delta' => (string) $this->price_delta,
             // Phase B — pre-selected in the POS customize sheet.
             'is_default' => (bool) $this->is_default,
+            // P-G3 — the real product behind this option (null = classic
+            // label-only add-on). Inlined when linkedProduct is loaded.
+            'linked_product_id' => $this->linked_product_id !== null ? (int) $this->linked_product_id : null,
+            'linked_product' => $this->whenLoaded('linkedProduct', fn (): ?array => $this->linkedProduct === null ? null : [
+                'uuid' => $this->linkedProduct->uuid,
+                'name' => $this->linkedProduct->name,
+                'stock_mode' => $this->linkedProduct->stock_mode,
+            ]),
             'display_order' => $this->display_order,
             'status' => $this->status,
             'created_at' => $this->created_at?->toIso8601String(),

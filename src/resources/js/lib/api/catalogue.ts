@@ -178,6 +178,9 @@ export interface AddOn {
     price_delta: string;
     /** Phase B — pre-selected in the POS customize sheet. */
     is_default: boolean;
+    /** P-G3 — the real product behind this option (null = label-only). */
+    linked_product_id: number | null;
+    linked_product?: { uuid: string; name: string; stock_mode: string | null } | null;
     display_order: number;
     status: AddOnStatus;
     created_at: string | null;
@@ -329,6 +332,8 @@ export interface CreateAddOnPayload {
     name_ar?: string | null;
     price_delta?: string | number;
     is_default?: boolean;
+    /** P-G3 — the real product behind this option (null = label-only). */
+    linked_product_uuid?: string | null;
     display_order?: number;
 }
 
@@ -337,6 +342,8 @@ export interface UpdateAddOnPayload {
     name_ar?: string | null;
     price_delta?: string | number;
     is_default?: boolean;
+    /** P-G3 — link/unlink the real product behind this option. */
+    linked_product_uuid?: string | null;
     display_order?: number;
     status?: AddOnStatus;
 }
@@ -535,6 +542,20 @@ export function updateProductComponents(
 /** P-G2 — the slim picker source: unit-mode products, internal first. */
 export function listComponentOptions(): Promise<{ data: ComponentOption[] }> {
     return apiGet<{ data: ComponentOption[] }>('/api/products/component-options');
+}
+
+// ---- P-G3 — product-as-add-on -----------------------------------
+
+export interface AddonLinkOption {
+    uuid: string;
+    name: string;
+    name_ar: string | null;
+    stock_mode: string | null;
+}
+
+/** P-G3 — the slim picker source: every sellable (non-internal) product. */
+export function listAddonLinkOptions(): Promise<{ data: AddonLinkOption[] }> {
+    return apiGet<{ data: AddonLinkOption[] }>('/api/products/addon-link-options');
 }
 
 // ---- Phase B - product per-branch availability + stock ---------

@@ -33,6 +33,7 @@ import {
     deleteProduct,
     getProductAddOnGroups,
     listAddOnGroups,
+    listAddonLinkOptions,
     listCategories,
     listComponentOptions,
     listProducts,
@@ -48,6 +49,7 @@ import {
     type AddOnGroup,
     type AddOnSelectionMode,
     type AddOnStatus,
+    type AddonLinkOption,
     type Category,
     type CategoryStatus,
     type ComponentLinePayload,
@@ -100,6 +102,8 @@ const ingredients = ref<Ingredient[]>([]);
 // P-G2 — the Physical items picker source (unit-mode products of the
 // company, internal items first). Slim payload, fetched once.
 const componentOptions = ref<ComponentOption[]>([]);
+// P-G3 — the product-as-add-on picker source (sellable products).
+const addonLinkOptions = ref<AddonLinkOption[]>([]);
 // Phase 6c — delivery providers used by the Providers tab AND
 // the per-product price grid in the product modal. We always
 // fetch them so the product modal can render its price grid
@@ -300,12 +304,15 @@ const aoForm = reactive<{
     name_ar: string;
     price_delta: string;
     is_default: boolean;
+    // P-G3 — the real product behind this option ('' = label-only).
+    linked_product_uuid: string;
     display_order: number;
     status: AddOnStatus;
 }>({
     name: '',
     name_ar: '',
     is_default: false,
+    linked_product_uuid: '',
     price_delta: '0',
     display_order: 0,
     status: 'active',
@@ -397,6 +404,17 @@ async function fetchComponentOptions(): Promise<void> {
     }
 }
 
+async function fetchAddonLinkOptions(): Promise<void> {
+    // P-G3 - the product-as-add-on picker source. Soft-fail: the
+    // picker degrades to "no products".
+    try {
+        const response = await listAddonLinkOptions();
+        addonLinkOptions.value = response.data;
+    } catch {
+        addonLinkOptions.value = [];
+    }
+}
+
 async function fetchAddOnGroups(): Promise<void> {
     try {
         const response = await listAddOnGroups();
@@ -434,6 +452,7 @@ async function fetchAll(): Promise<void> {
         fetchAddOnGroups(),
         fetchIngredients(),
         fetchComponentOptions(),
+        fetchAddonLinkOptions(),
         fetchDeliveryProviders(),
         fetchBranches(),
     ]);
@@ -1001,6 +1020,7 @@ function openCreateAddOn(group: AddOnGroup): void {
     aoForm.name_ar = '';
     aoForm.price_delta = '0';
     aoForm.is_default = false;
+    aoForm.linked_product_uuid = '';
     aoForm.display_order = (group.addons ?? []).length;
     aoForm.status = 'active';
     aoModalErrors.value = {};
@@ -1016,11 +1036,21 @@ function openEditAddOn(group: AddOnGroup, addon: AddOn): void {
     aoForm.name_ar = addon.name_ar ?? '';
     aoForm.price_delta = addon.price_delta;
     aoForm.is_default = addon.is_default;
+    aoForm.linked_product_uuid = addon.linked_product?.uuid ?? '';
     aoForm.display_order = addon.display_order;
     aoForm.status = (addon.status ?? 'active') as AddOnStatus;
     aoModalErrors.value = {};
     aoModalError.value = null;
     aoModalOpen.value = true;
+}
+
+// P-G3 — picking a product prefills the option name (still editable).
+function onLinkedProductPicked(): void {
+    const pick = addonLinkOptions.value.find((p) => p.uuid === aoForm.linked_product_uuid);
+    if (pick && aoForm.name.trim() === '') {
+        aoForm.name = pick.name;
+        aoForm.name_ar = pick.name_ar ?? '';
+    }
 }
 
 async function submitAddOn(): Promise<void> {
@@ -1033,6 +1063,8 @@ async function submitAddOn(): Promise<void> {
             name_ar: aoForm.name_ar.trim() || null,
             price_delta: aoForm.price_delta,
             is_default: aoForm.is_default,
+            // P-G3 — the real product behind this option ('' = none).
+            linked_product_uuid: aoForm.linked_product_uuid || null,
             display_order: aoForm.display_order,
         };
         if (aoModalMode.value === 'create' && aoModalParentGroup.value) {
@@ -2786,6 +2818,25 @@ async function removeOwnedGroup(groupUuid: string): Promise<void> {
                         <input v-model="aoForm.name_ar" type="text" dir="rtl" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                     </label>
                 </div>
+                <!-- P-G3 — the add-on can BE a real product (cake inside a
+                     coffee): pick it here and the option consumes the
+                     product's real stock at sale; the price below stays the
+                     add-on price for THIS group (same or different from the
+                     standalone price). -->
+                <label class="block">
+                    <span class="text-sm font-medium text-slate-700">Linked product (optional)</span>
+                    <select
+                        v-model="aoForm.linked_product_uuid"
+                        class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
+                        @change="onLinkedProductPicked"
+                    >
+                        <option value="">None — label-only option</option>
+                        <option v-for="opt in addonLinkOptions" :key="opt.uuid" :value="opt.uuid">
+                            {{ opt.name }}
+                        </option>
+                    </select>
+                    <p class="mt-1 text-xs text-slate-500">When set, selling this add-on consumes the product's real stock (cooked/ready: shelf −1 each, made-to-order: its recipe). The add-on greys out on the POS when the product is sold out.</p>
+                </label>
                 <label class="block">
                     <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.price_delta') }} (OMR)</span>
                     <input v-model="aoForm.price_delta" type="number" step="0.001" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">

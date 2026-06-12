@@ -7,9 +7,11 @@ namespace App\Actions\Pos\Catalogue;
 use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
 use App\Models\AddOn;
+use App\Models\Product;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 /**
  * Phase 4.9 — partial-update an add-on. Mutable: name,
@@ -30,6 +32,8 @@ final readonly class UpdateAddOnAction
         'price_delta',
         // Phase B — pre-selected default in the customize sheet.
         'is_default',
+        // P-G3 — product-as-add-on (resolved from linked_product_uuid).
+        'linked_product_id',
         'display_order',
         'status',
     ];
@@ -47,6 +51,27 @@ final readonly class UpdateAddOnAction
         $companyId = $this->tenant->requiredId();
         if ((int) $addon->company_id !== $companyId) {
             abort(404);
+        }
+
+        // P-G3 — translate the wire uuid into the stored id (null clears
+        // the link, back to a classic label-only option).
+        if (array_key_exists('linked_product_uuid', $attributes)) {
+            $uuid = $attributes['linked_product_uuid'];
+            if ($uuid === null || $uuid === '') {
+                $attributes['linked_product_id'] = null;
+            } else {
+                $product = Product::query()
+                    ->where('company_id', $companyId)
+                    ->where('uuid', (string) $uuid)
+                    ->first();
+                if ($product === null) {
+                    throw new RuntimeException('The linked product does not belong to your company.');
+                }
+                if ($product->is_internal) {
+                    throw new RuntimeException('An internal item cannot be sold as an add-on.');
+                }
+                $attributes['linked_product_id'] = (int) $product->id;
+            }
         }
 
         return DB::transaction(function () use ($addon, $attributes, $actor, $companyId): AddOn {

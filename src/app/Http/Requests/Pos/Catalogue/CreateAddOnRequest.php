@@ -28,6 +28,10 @@ class CreateAddOnRequest extends FormRequest
             // an add-on — separate concept in §5.9).
             'price_delta' => ['nullable', 'numeric', 'min:0', 'max:999.999'],
             'is_default' => ['nullable', 'boolean'],
+            // P-G3 — the add-on IS this product (cake inside a coffee):
+            // selling it consumes the product's real stock by its type.
+            // null = a classic label-only option.
+            'linked_product_uuid' => ['nullable', 'string', 'uuid'],
             'display_order' => ['nullable', 'integer', 'between:0,999'],
         ];
     }

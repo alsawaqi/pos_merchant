@@ -54,18 +54,23 @@ class AddOnsController extends Controller
         }
 
         return response()->json([
-            'data' => (new AddOnResource($addon))->resolve($request),
+            'data' => (new AddOnResource($addon->load('linkedProduct')))->resolve($request),
         ], 201);
     }
 
-    public function update(UpdateAddOnRequest $request, AddOn $addon): AddOnResource
+    public function update(UpdateAddOnRequest $request, AddOn $addon): AddOnResource|JsonResponse
     {
         $this->ensure($request, MerchantPermission::CatalogueManage);
         $this->refuseIfNotInTenant($addon);
 
-        $updated = $this->update->handle($addon, $request->validated(), $request->user());
+        try {
+            $updated = $this->update->handle($addon, $request->validated(), $request->user());
+        } catch (RuntimeException $e) {
+            // P-G3 — bad / cross-tenant / internal linked product.
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
-        return AddOnResource::make($updated);
+        return AddOnResource::make($updated->load('linkedProduct'));
     }
 
     public function destroy(Request $request, AddOn $addon): JsonResponse

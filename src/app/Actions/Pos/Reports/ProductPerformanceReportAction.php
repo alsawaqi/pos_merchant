@@ -51,6 +51,27 @@ final readonly class ProductPerformanceReportAction
         // Per-product COGS from the snapshotted recipes (see RecipeSnapshotCost).
         $costByProduct = $this->costByProduct($itemsBase);
 
+        // P-G3 — product-as-add-on sales count into the product's numbers
+        // (agreed default): units = parent line qty per attach, revenue =
+        // the add-on price x parent qty. Keyed by the frozen
+        // linked_product_id, so later add-on edits can't rewrite history.
+        $addonSales = DB::table('pos_order_item_addons')
+            ->join('pos_order_items', 'pos_order_items.id', '=', 'pos_order_item_addons.order_item_id')
+            ->join('pos_orders', 'pos_orders.id', '=', 'pos_order_items.order_id')
+            ->where('pos_orders.company_id', $companyId)
+            ->where('pos_orders.status', OrderStatus::Paid->value)
+            ->whereBetween('pos_orders.opened_at', [$filter->dateFrom, $filter->dateTo])
+            ->when($branchScope !== null, fn ($q) => $q->whereIn('pos_orders.branch_id', $branchScope))
+            ->whereNotNull('pos_order_item_addons.linked_product_id')
+            ->selectRaw('
+                pos_order_item_addons.linked_product_id AS product_id,
+                COALESCE(SUM(pos_order_items.qty), 0) AS addon_units,
+                COALESCE(SUM(pos_order_item_addons.price_delta_snapshot * pos_order_items.qty), 0) AS addon_revenue
+            ')
+            ->groupBy('pos_order_item_addons.linked_product_id')
+            ->get()
+            ->keyBy('product_id');
+
         // Per-product aggregate.
         $perProduct = (clone $itemsBase)
             ->join('pos_products', 'pos_products.id', '=', 'pos_order_items.product_id')
@@ -63,13 +84,14 @@ final readonly class ProductPerformanceReportAction
             ->groupBy('pos_products.id', 'pos_products.name')
             ->orderByDesc('revenue')
             ->get()
-            ->map(static function ($r) use ($costByProduct): array {
+            ->map(static function ($r) use ($costByProduct, $addonSales): array {
                 $qty = (float) $r->qty_sold;
                 $revenue = (float) $r->revenue;
                 // recipe_cost from the line recipe snapshots (Phase 8 data).
                 $cost = ($costByProduct[(int) $r->product_id] ?? 0) / 1000;
                 $profit = $revenue - $cost;
                 $marginPct = $revenue > 0 ? round(($profit / $revenue) * 100, 2) : 0.0;
+                $addon = $addonSales->get((int) $r->product_id);
 
                 return [
                     'product_id' => (int) $r->product_id,
@@ -79,8 +101,33 @@ final readonly class ProductPerformanceReportAction
                     'recipe_cost' => number_format($cost, 3, '.', ''),
                     'profit' => number_format($profit, 3, '.', ''),
                     'margin_pct' => $marginPct,
+                    // P-G3 — sold as an add-on inside other products.
+                    'addon_units' => number_format((float) ($addon->addon_units ?? 0), 3, '.', ''),
+                    'addon_revenue' => number_format((float) ($addon->addon_revenue ?? 0), 3, '.', ''),
                 ];
             });
+
+        // P-G3 — products sold ONLY as add-ons in the window still earn a
+        // row (qty_sold 0, the add-on columns carry the story).
+        $standaloneIds = $perProduct->pluck('product_id')->all();
+        $addonOnlyIds = $addonSales->keys()->reject(fn ($id) => in_array((int) $id, $standaloneIds, true))->all();
+        if ($addonOnlyIds !== []) {
+            $names = DB::table('pos_products')->whereIn('id', $addonOnlyIds)->pluck('name', 'id');
+            foreach ($addonOnlyIds as $productId) {
+                $addon = $addonSales->get($productId);
+                $perProduct->push([
+                    'product_id' => (int) $productId,
+                    'product_name' => (string) ($names[$productId] ?? ('#'.$productId)),
+                    'qty_sold' => '0.000',
+                    'revenue' => '0.000',
+                    'recipe_cost' => '0.000',
+                    'profit' => '0.000',
+                    'margin_pct' => 0.0,
+                    'addon_units' => number_format((float) $addon->addon_units, 3, '.', ''),
+                    'addon_revenue' => number_format((float) $addon->addon_revenue, 3, '.', ''),
+                ]);
+            }
+        }
 
         // Top 10 by qty + top 10 by revenue (just re-order the
         // same payload).
