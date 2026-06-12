@@ -20,6 +20,7 @@ import ExpensesIndex from '@/Pages/Merchant/Expenses/Index.vue';
 import LoyaltyIndex from '@/Pages/Merchant/Loyalty/Index.vue';
 import FloorPlanIndex from '@/Pages/Merchant/FloorPlan/Index.vue';
 import InventoryIndex from '@/Pages/Merchant/Inventory/Index.vue';
+import MessagesIndex from '@/Pages/Merchant/Messages/Index.vue';
 import ProductionIndex from '@/Pages/Merchant/Production/Index.vue';
 import PortalUsersIndex from '@/Pages/Merchant/PortalUsers/Index.vue';
 import PosStaffIndex from '@/Pages/Merchant/PosStaff/Index.vue';
@@ -177,6 +178,15 @@ const routes: RouteRecordRaw[] = [
         path: '/production',
         name: 'merchant.production',
         component: ProductionIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        // Messaging — P-G6. Portal inbox (every user) + staff
+        // announcements to POS devices (server gates the announcement
+        // channel by messages.send; the inbox is auth-only).
+        path: '/messages',
+        name: 'merchant.messages',
+        component: MessagesIndex,
         meta: { requiresAuth: true },
     },
     {

@@ -161,6 +161,12 @@ enum MerchantPermission: string
     // there is nothing to manage.
     case ProductionView = 'production.view';
 
+    // P-G6 — staff announcements (portal → POS devices). One key gates
+    // composing, retracting AND reading the receipts page — it is a
+    // management surface. The portal-to-portal INBOX is deliberately
+    // ungated: every authed user can send/receive internal mail.
+    case MessagesSend = 'messages.send';
+
     /**
      * @return list<string>
      */

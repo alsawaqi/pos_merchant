@@ -39,6 +39,7 @@ use App\Http\Controllers\Pos\VoidReasonsController;
 use App\Http\Controllers\Pos\OffersController;
 use App\Http\Controllers\Pos\OrdersController;
 use App\Http\Controllers\Pos\PayoutsController;
+use App\Http\Controllers\Pos\PortalMessagesController;
 use App\Http\Controllers\Pos\ProductionsController;
 use App\Http\Controllers\Pos\ProductsController;
 use App\Http\Controllers\Pos\ProductStockController;
@@ -47,6 +48,7 @@ use App\Http\Controllers\Pos\RestockRequestsController;
 use App\Http\Controllers\Pos\RolesController;
 use App\Http\Controllers\Pos\SavedViewsController;
 use App\Http\Controllers\Pos\ShiftsController;
+use App\Http\Controllers\Pos\StaffMessagesController;
 use App\Http\Controllers\Pos\StockController;
 use App\Http\Controllers\Pos\StockCountsController;
 use App\Http\Controllers\Pos\SuppliersController;
@@ -379,6 +381,29 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // Gated on production.view inside the controller.
         Route::get('productions', [ProductionsController::class, 'index'])
             ->name('productions.index');
+
+        // -------- P-G6 — Messaging --------
+        // Channel 1: staff announcements to POS devices (messages.send-
+        // gated; read receipts come back from pos_api). Channel 2: the
+        // portal inbox — open to every signed-in user.
+        Route::get('staff-messages', [StaffMessagesController::class, 'index'])
+            ->name('staff-messages.index');
+        Route::post('staff-messages', [StaffMessagesController::class, 'store'])
+            ->name('staff-messages.store');
+        Route::delete('staff-messages/{staffMessage:uuid}', [StaffMessagesController::class, 'destroy'])
+            ->name('staff-messages.destroy');
+        Route::get('messages/inbox', [PortalMessagesController::class, 'inbox'])
+            ->name('messages.inbox');
+        Route::get('messages/sent', [PortalMessagesController::class, 'sent'])
+            ->name('messages.sent');
+        Route::get('messages/unread-count', [PortalMessagesController::class, 'unreadCount'])
+            ->name('messages.unread-count');
+        Route::get('messages/recipients', [PortalMessagesController::class, 'recipients'])
+            ->name('messages.recipients');
+        Route::post('messages', [PortalMessagesController::class, 'store'])
+            ->name('messages.store');
+        Route::post('messages/{message:uuid}/read', [PortalMessagesController::class, 'read'])
+            ->name('messages.read');
 
         // -------- Phase 5a — Inventory (Ingredients + Suppliers + Stock) --
         // All gated by inventory.{view,manage}. Branch-nested

@@ -32,5 +32,10 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <!-- P-G6: never let the test suite publish live device nudges -->
+        <env name="REVERB_APP_ID" value=""/>
+        <env name="REVERB_APP_KEY" value=""/>
+        <env name="REVERB_APP_SECRET" value=""/>
+        <env name="REVERB_HOST" value=""/>
     </php>
 </phpunit>

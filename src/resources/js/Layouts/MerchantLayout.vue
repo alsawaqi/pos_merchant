@@ -17,8 +17,9 @@
 import { computed, onMounted, ref, type Component } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { RouterLink } from 'vue-router';
-import { BadgeCheck, BadgePercent, Ban, Book, Boxes, Building2, ChefHat, ChevronDown, Contact, FolderTree, Gauge, Gift, Globe, Hash, KeyRound, LayoutGrid, LineChart, LogOut, Menu, Percent, Receipt, ShieldAlert, ShoppingBag, Tags, Users, X } from 'lucide-vue-next';
+import { BadgeCheck, BadgePercent, Ban, Book, Boxes, Building2, ChefHat, ChevronDown, Contact, FolderTree, Gauge, Gift, Globe, Hash, KeyRound, LayoutGrid, LineChart, LogOut, Mail, Menu, Percent, Receipt, ShieldAlert, ShoppingBag, Tags, Users, X } from 'lucide-vue-next';
 import { authState } from '@/stores/auth';
+import { messagesState, refreshUnreadCount } from '@/stores/messages';
 import { setLocale, type SupportedLocale } from '@/lib/i18n';
 import { usePermissions } from '@/composables/usePermissions';
 import { MerchantPermission, type MerchantPermissionValue } from '@/lib/permissions';
@@ -43,6 +44,9 @@ const csrfToken = ref('');
 
 onMounted(() => {
     csrfToken.value = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? '';
+    // P-G6 — the inbox unread badge (refreshed again by the Messages
+    // page whenever reads change).
+    void refreshUnreadCount();
 });
 
 const navigationCatalog: readonly NavItem[] = [
@@ -54,6 +58,9 @@ const navigationCatalog: readonly NavItem[] = [
     { key: 'taxes', to: '/taxes', icon: Percent, permission: MerchantPermission.CatalogueView },
     { key: 'inventory', to: '/inventory', icon: Boxes, permission: MerchantPermission.InventoryView },
     { key: 'production', to: '/production', icon: ChefHat, permission: MerchantPermission.ProductionView },
+    // P-G6 — the inbox is for everyone; the page itself hides the
+    // announcements tab without messages.send.
+    { key: 'messages', to: '/messages', icon: Mail, permission: null },
     { key: 'customers', to: '/customers', icon: Contact, permission: MerchantPermission.CustomersView },
     { key: 'loyalty', to: '/loyalty', icon: Gift, permission: MerchantPermission.LoyaltyView },
     { key: 'discounts', to: '/discounts', icon: Tags, permission: MerchantPermission.DiscountsView },
@@ -143,6 +150,11 @@ function toggleLocale(): void {
                         stroke-width="2"
                     />
                     {{ t(`nav.${item.key}`) }}
+                    <!-- P-G6 — the inbox unread badge -->
+                    <span
+                        v-if="item.key === 'messages' && messagesState.unread > 0"
+                        class="ms-auto inline-flex min-w-5 items-center justify-center rounded-full bg-teal-500 px-1.5 py-0.5 text-[10px] font-bold text-white"
+                    >{{ messagesState.unread > 99 ? '99+' : messagesState.unread }}</span>
                 </RouterLink>
             </nav>
 

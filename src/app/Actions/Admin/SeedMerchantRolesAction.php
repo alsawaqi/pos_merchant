@@ -189,6 +189,9 @@ final class SeedMerchantRolesAction
                     // P-G1: managers audit the kitchen production
                     // history (batches, extras, durations).
                     MerchantPermission::ProductionView->value,
+                    // P-G6: managers announce to staff devices + read
+                    // the receipts.
+                    MerchantPermission::MessagesSend->value,
                 ],
             ],
 

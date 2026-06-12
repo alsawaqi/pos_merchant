@@ -1423,6 +1423,62 @@ return new class extends Migration
             $table->unique(['user_id', 'view_key', 'name'], 'pos_saved_views_user_key_name_unique');
             $table->index(['user_id', 'view_key'], 'pos_saved_views_user_key_idx');
         });
+
+        // ---- messaging (P-G6) ---
+        // Channel 1: portal -> POS devices (staff announcements + read
+        // receipts; written here, served to devices by pos_api). Channel 2:
+        // portal -> portal inbox. Mirrors pos_admin's
+        // 2026_07_19_000000_create_pos_messaging_tables migration.
+        Schema::create('pos_staff_messages', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->string('target_type', 16);
+            $table->foreignId('target_branch_id')->nullable()->constrained('pos_branches')->cascadeOnDelete();
+            $table->foreignId('target_staff_id')->nullable()->constrained('pos_staff')->cascadeOnDelete();
+            $table->string('title')->nullable();
+            $table->text('body');
+            $table->foreignId('created_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->string('created_by_name')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+            $table->index(['company_id', 'created_at'], 'pos_staff_messages_company_created_idx');
+            $table->index(['target_branch_id'], 'pos_staff_messages_branch_idx');
+        });
+
+        Schema::create('pos_staff_message_reads', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('staff_message_id')->constrained('pos_staff_messages')->cascadeOnDelete();
+            $table->foreignId('staff_id')->constrained('pos_staff')->cascadeOnDelete();
+            $table->unsignedBigInteger('device_id')->nullable();
+            $table->timestamp('read_at');
+            $table->timestamps();
+            $table->unique(['staff_message_id', 'staff_id'], 'pos_staff_message_reads_unique');
+        });
+
+        Schema::create('pos_portal_messages', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('sender_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->string('target_type', 16);
+            $table->foreignId('target_user_id')->nullable()->constrained('pos_users')->cascadeOnDelete();
+            $table->string('target_role', 64)->nullable();
+            $table->foreignId('target_branch_id')->nullable()->constrained('pos_branches')->cascadeOnDelete();
+            $table->string('subject')->nullable();
+            $table->text('body');
+            $table->timestamps();
+            $table->index(['company_id', 'created_at'], 'pos_portal_messages_company_created_idx');
+        });
+
+        Schema::create('pos_portal_message_reads', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('portal_message_id')->constrained('pos_portal_messages')->cascadeOnDelete();
+            $table->foreignId('user_id')->constrained('pos_users')->cascadeOnDelete();
+            $table->timestamp('read_at');
+            $table->timestamps();
+            $table->unique(['portal_message_id', 'user_id'], 'pos_portal_message_reads_unique');
+        });
     }
 
     public function down(): void

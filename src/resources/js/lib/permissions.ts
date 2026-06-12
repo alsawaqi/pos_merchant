@@ -80,6 +80,9 @@ export const MerchantPermission = {
     // P-G1 — kitchen production history (read-only; batches are written
     // exclusively by the POS device through pos_api).
     ProductionView: 'production.view',
+    // P-G6 — staff announcements to POS devices (compose / retract /
+    // read receipts). The portal inbox needs no permission.
+    MessagesSend: 'messages.send',
 } as const;
 
 export type MerchantPermissionValue =

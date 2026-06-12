@@ -329,6 +329,21 @@ final class PermissionCatalog
                 ],
             ],
             [
+                // P-G6 — messaging. The key gates the staff-announcement
+                // channel (compose / retract / read receipts); the
+                // portal-to-portal inbox is open to every signed-in user.
+                'key' => 'messages',
+                'label_en' => 'Messaging',
+                'label_ar' => 'المراسلات',
+                'permissions' => [
+                    [
+                        'key' => MerchantPermission::MessagesSend->value,
+                        'label_en' => 'Send announcements to POS devices + see read receipts',
+                        'label_ar' => 'إرسال إعلانات إلى أجهزة نقاط البيع وعرض إيصالات القراءة',
+                    ],
+                ],
+            ],
+            [
                 'key' => 'roles',
                 'label_en' => 'Roles & Permissions',
                 'label_ar' => 'الأدوار والصلاحيات',
