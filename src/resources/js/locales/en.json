@@ -815,6 +815,7 @@
             "no_lines": "No ingredient lines (product has no recipe).",
             "started": "Started",
             "finished": "Finished",
+            "good_range": "Good",
             "cancelled": "Cancelled",
             "approved_by": "Cancel approved by"
         }
@@ -2032,6 +2033,14 @@
                 "staff": "Staff",
                 "count": "Count",
                 "order_value": "Order value"
+            },
+            "product_dispositions": {
+                "title": "Day-end product dispositions",
+                "subtitle": "Cooked / piece-counted products wasted or given away at day end. Value is cost-based (product cost price), not retail.",
+                "product": "Product",
+                "kind": "Disposition",
+                "waste": "Waste",
+                "give_away": "Give-away"
             }
         },
         "restock_purchasing": {

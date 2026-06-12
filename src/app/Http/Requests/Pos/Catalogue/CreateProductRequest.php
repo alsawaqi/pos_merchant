@@ -46,6 +46,9 @@ class CreateProductRequest extends FormRequest
             'stock_mode' => ['nullable', 'string', 'in:unit,ingredient,untracked,cooked'],
             // Phase D2 — unit-mode LOW STOCK badge threshold. NULL = no badge.
             'low_stock_threshold' => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
+            // P-G1.5 — default shelf life in days. NULL = keeps indefinitely
+            // (no day-end disposition); 1 = same-day.
+            'shelf_life_days' => ['nullable', 'integer', 'between:1,365'],
             'cost_price' => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
             // Per-product tax override. 0 = zero-rated.
             'tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],

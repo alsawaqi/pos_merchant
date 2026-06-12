@@ -72,6 +72,9 @@ final readonly class CreateProductAction
                 'stock_mode' => $attributes['stock_mode'] ?? 'untracked',
                 // Phase D2 — unit-mode LOW STOCK badge threshold.
                 'low_stock_threshold' => $attributes['low_stock_threshold'] ?? null,
+                // P-G1.5 — default shelf life in days (NULL = keeps
+                // indefinitely; the day-end disposition flow skips it).
+                'shelf_life_days' => $attributes['shelf_life_days'] ?? null,
                 'cost_price' => $attributes['cost_price'] ?? null,
                 'tax_rate' => $attributes['tax_rate'] ?? null,
                 // Phase D2 — §5.5.3 flags. tax_inclusive is display-only for

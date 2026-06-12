@@ -28,6 +28,15 @@ enum ProductStockMovementType: string
     // P-G1 kitchen production: a finished batch lands its pieces in the
     // branch shelf stock (+branch). Written by pos_api only.
     case Produced = 'produced';
+    // P-G1.5 day-end disposition: expired pieces gifted to staff or a
+    // customer (-branch, manager-approved w/ required comment). Distinct
+    // from Waste because "fed the staff" and "threw it away" mean
+    // different things on the P&L. Written by pos_api only.
+    case GiveAway = 'give_away';
+    // P-G1.5 day-end disposition: an AUDIT row (quantity 0, the carried
+    // amount + approver in the note) for a manager-approved decision to
+    // keep expired pieces on sale. Balance unaffected.
+    case CarryOver = 'carry_over';
 
     /**
      * @return list<string>

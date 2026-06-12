@@ -242,6 +242,10 @@ const statusClasses: Record<Production['status'], string> = {
                                                 {{ formatDate(row.finished_at) }}
                                                 <template v-if="row.finished_by"> — {{ row.finished_by }}</template>
                                             </p>
+                                            <p v-if="row.expires_at">
+                                                <span class="font-medium text-slate-700">{{ t('production.detail.good_range') }}:</span>
+                                                {{ formatDate(row.finished_at) }} → {{ formatDate(row.expires_at) }}
+                                            </p>
                                             <p v-if="row.cancelled_at">
                                                 <span class="font-medium text-slate-700">{{ t('production.detail.cancelled') }}:</span>
                                                 {{ formatDate(row.cancelled_at) }}

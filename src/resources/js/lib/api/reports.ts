@@ -287,6 +287,15 @@ export interface LossWasteReportPayload {
         shortfall: string;
         variance_pct: string | null;
     }[];
+    /** P-G1.5 — day-end product waste + give-aways (pieces, cost-based value). */
+    product_dispositions?: {
+        product_id: number;
+        product_name: string;
+        movement_type: 'waste' | 'give_away' | string;
+        total_qty: string;
+        value: string;
+        event_count: number;
+    }[];
     /** Phase B — voided orders by reason code / by staff (Additions §1.2). */
     voids_by_reason: { reason: string; void_count: number; order_value: string }[];
     voids_by_staff: { staff_id: number; staff_name: string; void_count: number; order_value: string }[];

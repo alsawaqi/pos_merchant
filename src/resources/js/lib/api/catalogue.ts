@@ -62,6 +62,8 @@ export interface Product {
      * null = no badge.
      */
     low_stock_threshold: string | null;
+    /** P-G1.5 — default shelf life in days. null = keeps indefinitely. */
+    shelf_life_days: number | null;
     cost_price: string | null;
     /** Percentage (5.00 = 5%). null = inherit company default. */
     tax_rate: string | null;
@@ -226,6 +228,8 @@ export interface CreateProductPayload {
     stock_mode?: 'unit' | 'ingredient' | 'untracked' | 'cooked';
     /** Phase D2 — unit-mode LOW STOCK badge threshold. null = no badge. */
     low_stock_threshold?: string | number | null;
+    /** P-G1.5 — default shelf life in days. null = keeps indefinitely. */
+    shelf_life_days?: number | null;
     cost_price?: string | number | null;
     tax_rate?: string | number | null;
     /** Phase D2 — §5.5.3 tax-inclusive flag (display-only for now). */
@@ -252,6 +256,8 @@ export interface UpdateProductPayload {
     stock_mode?: 'unit' | 'ingredient' | 'untracked' | 'cooked';
     /** Phase D2 — unit-mode LOW STOCK badge threshold. null = no badge. */
     low_stock_threshold?: string | number | null;
+    /** P-G1.5 — default shelf life in days. null = keeps indefinitely. */
+    shelf_life_days?: number | null;
     cost_price?: string | number | null;
     tax_rate?: string | number | null;
     /** Phase D2 — §5.5.3 tax-inclusive flag (display-only for now). */

@@ -43,6 +43,8 @@ class ProductionResource extends JsonResource
             'cancel_approved_by' => $this->cancelApprovedByStaff?->name,
             'started_at' => $this->started_at?->toIso8601String(),
             'finished_at' => $this->finished_at?->toIso8601String(),
+            // P-G1.5 — the chef's per-batch expiry (NULL = never expires).
+            'expires_at' => $this->expires_at?->toIso8601String(),
             'cancelled_at' => $this->cancelled_at?->toIso8601String(),
             'duration_seconds' => $this->duration_seconds,
             'lines' => $this->lines->map(static fn (ProductionLine $line): array => [

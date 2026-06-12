@@ -57,6 +57,8 @@ class ProductResource extends JsonResource
             // Phase D2 — unit-mode LOW STOCK badge threshold (decimal
             // string). NULL = no badge.
             'low_stock_threshold' => $this->low_stock_threshold !== null ? (string) $this->low_stock_threshold : null,
+            // P-G1.5 — default shelf life in days (NULL = keeps indefinitely).
+            'shelf_life_days' => $this->shelf_life_days !== null ? (int) $this->shelf_life_days : null,
             'cost_price' => $this->cost_price !== null ? (string) $this->cost_price : null,
             // Effective tax: column when set, NULL means
             // "inherit company default". Frontend resolves

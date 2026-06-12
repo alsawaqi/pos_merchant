@@ -52,6 +52,8 @@ use Illuminate\Support\Str;
     'stock_mode',
     // Phase D2 — unit-mode LOW STOCK badge threshold (NULL = no badge).
     'low_stock_threshold',
+    // P-G1.5 — default shelf life in days (NULL = keeps indefinitely).
+    'shelf_life_days',
     'cost_price',
     'tax_rate',
     // Phase D2 — §5.5.3 tax-inclusive flag (display-only for now).

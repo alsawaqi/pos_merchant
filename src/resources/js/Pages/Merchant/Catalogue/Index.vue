@@ -196,6 +196,8 @@ const prodForm = reactive<{
     stock_mode: string;
     // Phase D2 - unit-mode LOW STOCK badge threshold ('' = no badge).
     low_stock_threshold: string;
+    // P-G1.5 - default shelf life in days ('' = keeps indefinitely).
+    shelf_life_days: string;
     // Phase 4.9 — uuids of non-global add-on groups attached
     // to this product. Mirrored from product.addon_groups on
     // edit, posted to syncProductAddOnGroups on save.
@@ -230,6 +232,7 @@ const prodForm = reactive<{
     status: 'active',
     stock_mode: 'untracked',
     low_stock_threshold: '',
+    shelf_life_days: '',
     addon_group_uuids: [],
     recipe_lines: [],
     branch_all: true,
@@ -526,6 +529,7 @@ function openCreateProduct(): void {
     prodForm.status = 'active';
     prodForm.stock_mode = 'untracked';
     prodForm.low_stock_threshold = '';
+    prodForm.shelf_life_days = '';
     prodForm.addon_group_uuids = [];
     prodForm.recipe_lines = [];
     prodForm.branch_all = true;
@@ -563,6 +567,9 @@ function openEditProduct(product: Product): void {
     prodForm.status = (product.status ?? 'active') as ProductStatus;
     prodForm.stock_mode = product.stock_mode ?? 'untracked';
     prodForm.low_stock_threshold = product.low_stock_threshold ?? '';
+    prodForm.shelf_life_days = product.shelf_life_days !== null && product.shelf_life_days !== undefined
+        ? String(product.shelf_life_days)
+        : '';
     // Phase 4.9 — pre-populate the picker from the eager-
     // loaded relation. The list endpoint doesn't return
     // addon_groups, so editing relies on the resource emitting
@@ -752,6 +759,8 @@ async function submitProduct(): Promise<void> {
             stock_mode: prodForm.stock_mode as 'unit' | 'ingredient' | 'untracked' | 'cooked',
             // Phase D2 - unit-mode LOW STOCK threshold ('' = none).
             low_stock_threshold: prodForm.low_stock_threshold === '' ? null : prodForm.low_stock_threshold,
+            // P-G1.5 - default shelf life in days ('' = keeps indefinitely).
+            shelf_life_days: prodForm.shelf_life_days === '' ? null : Number(prodForm.shelf_life_days),
             display_order: prodForm.display_order,
         };
 
@@ -2094,6 +2103,23 @@ async function removeOwnedGroup(groupUuid: string): Promise<void> {
                             class="mt-1 w-full max-w-xs rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
                         >
                         <p class="mt-1 text-xs text-slate-500">{{ t('catalogue.fields.low_stock_threshold_hint') }}</p>
+                    </label>
+
+                    <!-- P-G1.5 - default shelf life for cooked products. The
+                         chef can override per batch on the Finish dialog;
+                         empty = keeps indefinitely (no day-end disposition). -->
+                    <label v-if="prodForm.stock_mode === 'cooked'" class="block">
+                        <span class="text-sm font-medium text-slate-700">Shelf life (days)</span>
+                        <input
+                            v-model="prodForm.shelf_life_days"
+                            type="number"
+                            min="1"
+                            max="365"
+                            step="1"
+                            placeholder="e.g. 1 = same day"
+                            class="mt-1 w-full max-w-xs rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
+                        >
+                        <p class="mt-1 text-xs text-slate-500">Default expiry for each kitchen batch (the chef can adjust per batch at Finish). Leave empty if it keeps — no day-end disposition will be asked.</p>
                     </label>
 
                     <!-- Phase 4.9 — add-on groups picker. Only

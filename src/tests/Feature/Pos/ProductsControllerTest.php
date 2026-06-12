@@ -533,15 +533,26 @@ it('accepts the P-G1 cooked stock mode on create and update', function (): void 
         'name' => 'Fresh Cake',
         'base_price' => '5.000',
         'stock_mode' => 'cooked',
+        // P-G1.5 — default shelf life (same-day).
+        'shelf_life_days' => 1,
     ])->assertCreated();
 
     expect($response->json('data.stock_mode'))->toBe('cooked');
+    expect($response->json('data.shelf_life_days'))->toBe(1);
 
     $product = Product::query()
         ->where('company_id', $ctx['company']->id)
         ->where('name', 'Fresh Cake')
         ->firstOrFail();
     expect($product->stock_mode)->toBe('cooked');
+    expect((int) $product->shelf_life_days)->toBe(1);
+
+    // Shelf life can be cleared again (back to "keeps indefinitely").
+    $this->patchJson("/api/products/{$product->uuid}", ['shelf_life_days' => null])->assertOk();
+    expect($product->fresh()->shelf_life_days)->toBeNull();
+
+    // And bounds are enforced.
+    $this->patchJson("/api/products/{$product->uuid}", ['shelf_life_days' => 0])->assertStatus(422);
 
     // And an existing product can be switched to cooked.
     $other = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'ingredient']);

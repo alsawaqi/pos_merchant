@@ -34,6 +34,8 @@ export interface Production {
     cancel_approved_by: string | null;
     started_at: string | null;
     finished_at: string | null;
+    /** P-G1.5 — the chef's per-batch expiry (null = never expires). */
+    expires_at: string | null;
     cancelled_at: string | null;
     duration_seconds: number | null;
     lines: ProductionLine[];

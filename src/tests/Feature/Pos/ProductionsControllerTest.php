@@ -73,6 +73,8 @@ it('lists production batches with lines and staff names', function (): void {
         'product_id' => $product->id,
         'started_by_staff_id' => $chef->id,
         'finished_by_staff_id' => $chef->id,
+        // P-G1.5 — the chef's batch expiry.
+        'expires_at' => now()->addDay(),
     ], [
         ['ingredient_id' => $ingredient->id, 'quantity' => '5.000'],
         ['ingredient_id' => $ingredient->id, 'quantity' => '0.250', 'is_extra' => true],
@@ -89,6 +91,7 @@ it('lists production batches with lines and staff names', function (): void {
     expect($row['started_by'])->toBe('Chef Sami');
     expect($row['finished_by'])->toBe('Chef Sami');
     expect($row['duration_seconds'])->toBe(2700);
+    expect($row['expires_at'])->not->toBeNull();
     expect($row['lines'])->toHaveCount(2);
     expect($row['lines'][0]['ingredient_name'])->toBe('Flour');
     expect($row['lines'][0]['is_extra'])->toBeFalse();

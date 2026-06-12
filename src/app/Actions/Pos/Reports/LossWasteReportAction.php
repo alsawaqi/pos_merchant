@@ -158,6 +158,37 @@ final readonly class LossWasteReportAction
             ->values()
             ->all();
 
+        // ---- P-G1.5 — cooked/unit PRODUCT dispositions: day-end waste and
+        // manager-approved give-aways from the product-unit ledger. Kept as
+        // its own section (pieces, not ingredient quantities); value is
+        // cost-based (product cost_price when set — the honest loss figure;
+        // retail price would overstate it).
+        $productDispositions = DB::table('pos_product_stock_movements')
+            ->join('pos_products', 'pos_products.id', '=', 'pos_product_stock_movements.product_id')
+            ->where('pos_products.company_id', $companyId)
+            ->whereIn('pos_product_stock_movements.movement_type', ['waste', 'give_away'])
+            ->whereBetween('pos_product_stock_movements.occurred_at', [$filter->dateFrom, $filter->dateTo])
+            ->when($branchScope !== null, fn ($q) => $q->whereIn('pos_product_stock_movements.branch_id', $branchScope))
+            ->selectRaw("
+                pos_products.id AS product_id,
+                pos_products.name AS product_name,
+                pos_product_stock_movements.movement_type AS movement_type,
+                ABS(COALESCE(SUM(pos_product_stock_movements.quantity), 0)) AS total_qty,
+                ABS(COALESCE(SUM(pos_product_stock_movements.quantity * COALESCE(pos_products.cost_price, 0)), 0)) AS value,
+                COUNT(*) AS event_count
+            ")
+            ->groupBy('pos_products.id', 'pos_products.name', 'pos_product_stock_movements.movement_type')
+            ->orderByDesc('total_qty')
+            ->get()
+            ->map(static fn ($r): array => [
+                'product_id' => (int) $r->product_id,
+                'product_name' => (string) $r->product_name,
+                'movement_type' => (string) $r->movement_type,
+                'total_qty' => number_format((float) $r->total_qty, 3, '.', ''),
+                'value' => number_format((float) $r->value, 3, '.', ''),
+                'event_count' => (int) $r->event_count,
+            ])->all();
+
         // ---- Phase B — VOIDS by reason + staff (Additions §1.2: "Voids
         // surface in the Loss/Waste report broken down by reason code and by
         // staff"). Driven by voided pos_orders + the reason label snapshotted
@@ -221,6 +252,8 @@ final readonly class LossWasteReportAction
             'by_reason' => $byReason,
             'top_wasted' => $topWasted,
             'shortfall' => $shortfall,
+            // P-G1.5 — day-end product waste + give-aways (pieces).
+            'product_dispositions' => $productDispositions,
             'voids_by_reason' => $voidsByReason,
             'voids_by_staff' => $voidsByStaff,
         ];

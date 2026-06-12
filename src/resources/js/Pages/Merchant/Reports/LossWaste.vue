@@ -183,6 +183,36 @@ type ApexSeries = { name: string; data: number[] }[];
                 </table>
             </section>
 
+            <!-- P-G1.5 — day-end product dispositions: cooked/unit pieces
+                 wasted or gifted (give_away) from the product-unit ledger.
+                 Value is cost-based (cost_price), not retail. -->
+            <section v-if="(payload.product_dispositions ?? []).length" class="rounded-xl border border-slate-200 bg-white shadow-sm">
+                <h2 class="border-b border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700">{{ t('reports.loss_waste.product_dispositions.title') }}</h2>
+                <p class="px-5 pt-3 text-xs text-slate-500">{{ t('reports.loss_waste.product_dispositions.subtitle') }}</p>
+                <table class="w-full text-sm">
+                    <thead class="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                            <th class="px-5 py-2 text-start">{{ t('reports.loss_waste.product_dispositions.product') }}</th>
+                            <th class="px-5 py-2 text-start">{{ t('reports.loss_waste.product_dispositions.kind') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.shared.qty') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.shared.value') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="r in payload.product_dispositions" :key="`${r.product_id}-${r.movement_type}`" class="border-b border-slate-100 last:border-0">
+                            <td class="px-5 py-2 font-medium text-slate-900">{{ r.product_name }}</td>
+                            <td class="px-5 py-2">
+                                <span :class="r.movement_type === 'waste' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-700'" class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase">
+                                    {{ r.movement_type === 'waste' ? t('reports.loss_waste.product_dispositions.waste') : t('reports.loss_waste.product_dispositions.give_away') }}
+                                </span>
+                            </td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ r.total_qty }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ r.value }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
             <!-- Phase B — voided orders by reason / staff (Additions §1.2). -->
             <div v-if="payload.voids_by_reason.length || payload.voids_by_staff.length" class="grid gap-6 lg:grid-cols-2">
                 <section v-if="payload.voids_by_reason.length" class="rounded-xl border border-slate-200 bg-white shadow-sm">

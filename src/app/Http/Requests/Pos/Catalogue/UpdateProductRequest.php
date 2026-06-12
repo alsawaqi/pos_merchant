@@ -35,6 +35,8 @@ class UpdateProductRequest extends FormRequest
             'stock_mode' => ['sometimes', 'string', 'in:unit,ingredient,untracked,cooked'],
             // Phase D2 — unit-mode LOW STOCK badge threshold. NULL = no badge.
             'low_stock_threshold' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:999999.999'],
+            // P-G1.5 — default shelf life in days (NULL = keeps indefinitely).
+            'shelf_life_days' => ['sometimes', 'nullable', 'integer', 'between:1,365'],
             'cost_price' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:999999.999'],
             'tax_rate' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:100'],
             // Phase D2 — §5.5.3 tax-inclusive flag (display-only for now).
