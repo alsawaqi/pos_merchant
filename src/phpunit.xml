@@ -37,5 +37,7 @@
         <env name="REVERB_APP_KEY" value=""/>
         <env name="REVERB_APP_SECRET" value=""/>
         <env name="REVERB_HOST" value=""/>
+        <!-- P-G9: never let the test suite reach the real scalefusion API -->
+        <env name="SCALEFUSION_TOKEN" value=""/>
     </php>
 </phpunit>

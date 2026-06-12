@@ -96,6 +96,12 @@ class SecurityHeaders
             "base-uri 'self'",
             "form-action 'self'",
             "frame-ancestors 'none'",
+            // P-G9 — the device Live dialog embeds a keyless Google Maps
+            // iframe; without an explicit frame-src it would inherit
+            // default-src 'self' and the browser would refuse to frame it.
+            // Both hosts listed because the embed endpoint has historically
+            // redirected between maps.google.com and www.google.com/maps.
+            "frame-src 'self' https://www.google.com https://maps.google.com",
             "object-src 'none'",
             "img-src {$imgSrc}",
             "font-src {$fontSrc}",

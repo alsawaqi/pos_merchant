@@ -197,6 +197,10 @@ final class SeedMerchantRolesAction
                     MerchantPermission::DeliveriesManage->value,
                     // P-G8: managers set branch sales targets.
                     MerchantPermission::TargetsManage->value,
+                    // P-G9: managers see live device telemetry + run the
+                    // four safe MDM commands on their devices.
+                    MerchantPermission::DevicesLiveView->value,
+                    MerchantPermission::DevicesLiveControl->value,
                 ],
             ],
 

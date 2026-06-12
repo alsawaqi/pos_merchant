@@ -19,6 +19,7 @@ use App\Http\Controllers\Pos\CategoriesController;
 use App\Http\Controllers\Pos\CustomersController;
 use App\Http\Controllers\Pos\DashboardController;
 use App\Http\Controllers\Pos\DeliveryProvidersController;
+use App\Http\Controllers\Pos\DeviceLiveController;
 use App\Http\Controllers\Pos\DiscountsController;
 use App\Http\Controllers\Pos\TaxesController;
 use App\Http\Controllers\Pos\ExpenseCategoryController;
@@ -432,6 +433,23 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('branch-targets.update');
         Route::delete('branch-targets/{target:uuid}', [BranchTargetsController::class, 'destroy'])
             ->name('branch-targets.destroy');
+
+        // -------- P-G9 — device Live (restricted scalefusion MDM) -----
+        // Telemetry view + EXACTLY four safe commands; the sharp verbs
+        // (lock / wipe / mark-lost / factory reset) have no route here
+        // AND no client method — admin-only by construction. devices.
+        // live.view gates the read, devices.live.control the commands;
+        // tenant 404 before F5 scope 403 in the controller.
+        Route::get('devices/{device:uuid}/live', [DeviceLiveController::class, 'show'])
+            ->name('devices.live.show');
+        Route::post('devices/{device:uuid}/live/reboot', [DeviceLiveController::class, 'reboot'])
+            ->name('devices.live.reboot');
+        Route::post('devices/{device:uuid}/live/shutdown', [DeviceLiveController::class, 'shutdown'])
+            ->name('devices.live.shutdown');
+        Route::post('devices/{device:uuid}/live/alarm', [DeviceLiveController::class, 'alarm'])
+            ->name('devices.live.alarm');
+        Route::post('devices/{device:uuid}/live/message', [DeviceLiveController::class, 'message'])
+            ->name('devices.live.message');
 
         // -------- Phase 5a — Inventory (Ingredients + Suppliers + Stock) --
         // All gated by inventory.{view,manage}. Branch-nested

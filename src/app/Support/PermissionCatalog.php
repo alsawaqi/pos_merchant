@@ -371,6 +371,27 @@ final class PermissionCatalog
                 ],
             ],
             [
+                // P-G9 — restricted device Live (MDM) surface: telemetry
+                // view + the four safe commands only. Reached from the
+                // branch detail page, so a role that gets these without
+                // branches.view has no way to open the dialog.
+                'key' => 'devices',
+                'label_en' => 'Devices',
+                'label_ar' => 'الأجهزة',
+                'permissions' => [
+                    [
+                        'key' => MerchantPermission::DevicesLiveView->value,
+                        'label_en' => 'See live device telemetry (battery, storage, network, location) — opens from the branch page, so pair with the branches view permission',
+                        'label_ar' => 'عرض بيانات الجهاز المباشرة (البطارية والتخزين والشبكة والموقع) — تُفتح من صفحة الفرع، فامنحها مع صلاحية عرض الفروع',
+                    ],
+                    [
+                        'key' => MerchantPermission::DevicesLiveControl->value,
+                        'label_en' => 'Restart / shut down / message / beep a device (own branches only)',
+                        'label_ar' => 'إعادة تشغيل الجهاز أو إيقافه أو إرسال رسالة أو التنبيه (فروعك فقط)',
+                    ],
+                ],
+            ],
+            [
                 'key' => 'roles',
                 'label_en' => 'Roles & Permissions',
                 'label_ar' => 'الأدوار والصلاحيات',

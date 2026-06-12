@@ -179,6 +179,16 @@ enum MerchantPermission: string
     // is auth-only — every portal user follows their scope's progress.
     case TargetsManage = 'targets.manage';
 
+    // P-G9 — the restricted device Live (scalefusion MDM) surface, split
+    // per the spec so view-only vs control can be handed to different
+    // people: `view` gates the telemetry dialog (RAM / storage / battery
+    // / network / location), `control` additionally gates the four safe
+    // commands (restart / shutdown / message / beep). The sharp MDM
+    // verbs (lock, wipe, mark-lost, factory reset) remain pos_admin-only
+    // by construction — no merchant key unlocks them.
+    case DevicesLiveView = 'devices.live.view';
+    case DevicesLiveControl = 'devices.live.control';
+
     /**
      * @return list<string>
      */

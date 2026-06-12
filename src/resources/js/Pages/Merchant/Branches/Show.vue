@@ -17,12 +17,13 @@ import { onMounted, ref } from 'vue';
 import { useRoute, RouterLink } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import {
-    ArrowLeft, Package, Users, MonitorSmartphone, Receipt, Clock, Boxes,
+    ArrowLeft, Package, Users, MonitorSmartphone, Receipt, Clock, Boxes, Activity,
 } from 'lucide-vue-next';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import OrderDetailDrawer from '@/Pages/Merchant/Orders/components/OrderDetailDrawer.vue';
 import SalesHeatmap from '@/Pages/Merchant/Reports/components/SalesHeatmap.vue';
 import ReceiptTemplateDialog from '@/Pages/Merchant/Branches/components/ReceiptTemplateDialog.vue';
+import DeviceLiveDialog from '@/Pages/Merchant/Branches/components/DeviceLiveDialog.vue';
 import {
     showMerchantBranch, getBranchProducts, getBranchStaff, getBranchActivity, listBranchDevices,
     type MerchantBranch, type BranchProductRow, type BranchStaffMember, type BranchActivity, type BranchDevice,
@@ -47,11 +48,14 @@ const loading = ref(true);
 const error = ref<string | null>(null);
 const detailUuid = ref<string | null>(null);
 const showReceiptDialog = ref(false);
+// P-G9 — the device whose restricted Live (MDM) dialog is open.
+const liveDevice = ref<BranchDevice | null>(null);
 
 const canCatalogue = can(MerchantPermission.CatalogueView);
 const canStaff = can(MerchantPermission.PosStaffView);
 const canReports = can(MerchantPermission.ReportsView);
 const canManageBranch = can(MerchantPermission.BranchesUpdate);
+const canDeviceLive = can(MerchantPermission.DevicesLiveView);
 
 function onReceiptSaved(updated: MerchantBranch): void {
     branch.value = updated;
@@ -259,7 +263,18 @@ onMounted(() => {
                                 <p class="text-sm font-semibold text-slate-900">{{ d.name ?? d.kiosk_id ?? '—' }}</p>
                                 <p class="text-xs text-slate-500">{{ humanize(d.device_type) }}<span v-if="d.last_seen_at"> · {{ t('branches.devices.last_seen') }} {{ formatDateTime(d.last_seen_at) }}</span></p>
                             </div>
-                            <span class="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold capitalize text-slate-600">{{ humanize(d.status) }}</span>
+                            <div class="flex items-center gap-2">
+                                <button
+                                    v-if="canDeviceLive"
+                                    type="button"
+                                    class="inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-800 transition hover:bg-teal-100"
+                                    @click="liveDevice = d"
+                                >
+                                    <Activity class="size-3.5" />
+                                    {{ t('device_live.button') }}
+                                </button>
+                                <span class="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold capitalize text-slate-600">{{ humanize(d.status) }}</span>
+                            </div>
                         </li>
                     </ul>
                 </section>
@@ -334,6 +349,12 @@ onMounted(() => {
             :branch="branch"
             @close="showReceiptDialog = false"
             @saved="onReceiptSaved"
+        />
+
+        <DeviceLiveDialog
+            v-if="liveDevice"
+            :device="liveDevice"
+            @close="liveDevice = null"
         />
     </MerchantLayout>
 </template>

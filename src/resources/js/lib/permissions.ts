@@ -89,6 +89,11 @@ export const MerchantPermission = {
     // P-G8 — branch sales targets config (the dashboard widget is
     // visible to every signed-in user).
     TargetsManage: 'targets.manage',
+    // P-G9 — restricted device Live (scalefusion MDM) surface, split so
+    // view-only telemetry and the four safe commands (restart / shutdown
+    // / message / beep) can go to different users.
+    DevicesLiveView: 'devices.live.view',
+    DevicesLiveControl: 'devices.live.control',
 } as const;
 
 export type MerchantPermissionValue =

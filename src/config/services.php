@@ -48,4 +48,17 @@ return [
         ],
     ],
 
+    // P-G9 — the merchant's restricted device Live (MDM) surface.
+    // SAME token as pos_admin (one scalefusion account fleet-wide);
+    // unset ⇒ every Live call degrades to a clean "not configured"
+    // failure instead of erroring. Only the keys the slim
+    // App\Support\ScalefusionClient reads — the admin-side caching
+    // knobs have no counterpart here.
+    'scalefusion' => [
+        'token' => env('SCALEFUSION_TOKEN'),
+        'base_v3' => env('SCALEFUSION_BASE_V3', 'https://api.scalefusion.com/api/v3'),
+        'base_v1' => env('SCALEFUSION_BASE_V1', 'https://api.scalefusion.com/api/v1'),
+        'http_timeout_seconds' => (int) env('SCALEFUSION_TIMEOUT_SECONDS', 12),
+    ],
+
 ];
