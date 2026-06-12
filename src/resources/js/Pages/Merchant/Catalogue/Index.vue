@@ -12,9 +12,10 @@
  *   - Create / edit / delete buttons only when CatalogueManage
  */
 
-import { Beaker, Building2, Boxes, Clock3, Globe2, Image, Layers, Minus, Package, Pencil, Plus, Sparkles, Tag, Trash2, Truck } from 'lucide-vue-next';
+import { Beaker, Building2, Boxes, Clock3, Globe2, Image, Layers, Package, Pencil, Plus, Sparkles, Trash2, Truck } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRoute, useRouter } from 'vue-router';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import BaseModal from '@/Components/BaseModal.vue';
 import Pagination from '@/Components/Pagination.vue';
@@ -25,26 +26,17 @@ import {
     createAddOn,
     createAddOnGroup,
     createCategory,
-    createProduct,
-    createProductAddOnGroup,
     deleteAddOn,
     deleteAddOnGroup,
     deleteCategory,
     deleteProduct,
-    getProductAddOnGroups,
     listAddOnGroups,
     listAddonLinkOptions,
     listCategories,
-    listComponentOptions,
     listProducts,
-    syncProductAddOnGroups,
-    syncProductBranches,
     updateAddOn,
     updateAddOnGroup,
     updateCategory,
-    updateProduct,
-    updateProductComponents,
-    updateProductRecipe,
     type AddOn,
     type AddOnGroup,
     type AddOnSelectionMode,
@@ -52,31 +44,22 @@ import {
     type AddonLinkOption,
     type Category,
     type CategoryStatus,
-    type ComponentLinePayload,
-    type ComponentOption,
-    type CreateProductPayload,
     type Product,
-    type ProductBranchAssignment,
-    type ProductStatus,
-    type RecipeLinePayload,
 } from '@/lib/api/catalogue';
-import { listIngredients, type Ingredient } from '@/lib/api/inventory';
 import { listBranches, type Branch as BranchLite } from '@/lib/api/branches';
 import {
     createDeliveryProvider,
     deleteDeliveryProvider,
     listDeliveryProviders,
-    listProductDeliveryPrices,
-    removeProductDeliveryPrice,
-    setProductDeliveryPrice,
     updateDeliveryProvider,
     type DeliveryProvider,
-    type ProductDeliveryPrice,
 } from '@/lib/api/deliveryProviders';
 import { MerchantPermission } from '@/lib/permissions';
 
 const { t, locale } = useI18n();
 const { can } = usePermissions();
+const route = useRoute();
+const router = useRouter();
 
 const isArabic = computed(() => locale.value === 'ar');
 const canManage = computed(() => can(MerchantPermission.CatalogueManage));
@@ -94,14 +77,6 @@ const addOnGroups = ref<AddOnGroup[]>([]);
 // Phase B - the company's branches, for the product editor's per-branch
 // availability + stock picker. Lean list (id + name), no permission gate.
 const branches = ref<BranchLite[]>([]);
-// Phase 5b — ingredients power the product Recipe section's
-// dropdown. Fetched from the inventory API; merchants without
-// inventory.view get an empty list and a disabled recipe
-// editor (which the UI explains via a hint).
-const ingredients = ref<Ingredient[]>([]);
-// P-G2 — the Physical items picker source (unit-mode products of the
-// company, internal items first). Slim payload, fetched once.
-const componentOptions = ref<ComponentOption[]>([]);
 // P-G3 — the product-as-add-on picker source (sellable products).
 const addonLinkOptions = ref<AddonLinkOption[]>([]);
 // Phase 6c — delivery providers used by the Providers tab AND
@@ -130,12 +105,6 @@ const productsMeta = ref<{ current_page: number; last_page: number; per_page: nu
 });
 let productSearchDebounce: ReturnType<typeof setTimeout> | null = null;
 
-// Non-global add-on groups only — used by the product modal's
-// multi-select picker. Global groups apply automatically and
-// would be confusing to show as opt-in.
-const selectableAddOnGroups = computed(() =>
-    addOnGroups.value.filter((g) => !g.is_global),
-);
 
 // ---- Category modal ---------------------------------------------
 const catModalOpen = ref(false);
@@ -166,97 +135,6 @@ const catForm = reactive<{
     branch_ids: [],
 });
 
-// ---- Product modal ----------------------------------------------
-const prodModalOpen = ref(false);
-const prodModalBusy = ref(false);
-const prodModalMode = ref<'create' | 'edit'>('create');
-const prodModalTarget = ref<Product | null>(null);
-const prodModalErrors = ref<Record<string, string[]>>({});
-const prodModalError = ref<string | null>(null);
-const prodForm = reactive<{
-    name: string;
-    name_ar: string;
-    description: string;
-    image_url: string;
-    category_id: number | null;
-    sku: string;
-    barcode: string;
-    base_price: string;
-    // Phase 4.9 — per-product delivery override (empty string
-    // = NULL on submit). Server defaults to base_price when
-    // null, so the cashier sees the same price for dine-in
-    // and the merchant only fills this when delivery should
-    // cost more.
-    delivery_price: string;
-    cost_price: string;
-    tax_rate: string;
-    // Phase D2 - §5.5.3 tax-inclusive flag. Display-only for now -
-    // order totals still add company taxes on top (exclusive).
-    tax_inclusive: boolean;
-    // Phase D2 - §5.5.3 customer tablet visibility (POS unaffected).
-    show_on_customer_tablet: boolean;
-    // G1 — menu time-window. 'HH:mm' input values ('' = no bound; both
-    // empty = always available). Converted to 'HH:MM:SS'/null on submit,
-    // exactly like the Discounts time_start/time_end dance.
-    available_from: string;
-    available_until: string;
-    display_order: number;
-    status: ProductStatus;
-    // Phase 7 — stock mode: unit (finished/piece-counted) | ingredient |
-    // untracked | cooked (P-G1: recipe consumed at kitchen production).
-    stock_mode: string;
-    // Phase D2 - unit-mode LOW STOCK badge threshold ('' = no badge).
-    low_stock_threshold: string;
-    // P-G1.5 - default shelf life in days ('' = keeps indefinitely).
-    shelf_life_days: string;
-    // P-G2 - internal item (cups/lids): never on the POS menu or the
-    // customer tablet, full stock participation.
-    is_internal: boolean;
-    // P-G2 - physical-item components per unit sold (coffee = 1 x cup +
-    // 1 x lid). Empty on submit = consumes no physical items.
-    component_rows: { component_uuid: string; quantity: string }[];
-    // Phase 4.9 — uuids of non-global add-on groups attached
-    // to this product. Mirrored from product.addon_groups on
-    // edit, posted to syncProductAddOnGroups on save.
-    addon_group_uuids: string[];
-    // Phase 5b — recipe lines. Empty array on submit = "no
-    // recipe / pre-made goods". Each row is mirrored to a
-    // RecipeLinePayload at submitProduct time. `unit` (v2 #13) =
-    // the alt-unit NAME the quantity was entered in, '' = base unit.
-    recipe_lines: { ingredient_uuid: string; quantity: string; unit: string }[];
-    // Phase B - per-branch availability + stock. branch_all = available
-    // everywhere (no rows). Otherwise one row per company branch.
-    branch_all: boolean;
-    // stock_qty: '' when blank, a NUMBER once typed (number-input v-model).
-    branch_rows: { branch_id: number; selected: boolean; stock_qty: string | number }[];
-}>({
-    name: '',
-    name_ar: '',
-    description: '',
-    image_url: '',
-    category_id: null,
-    sku: '',
-    barcode: '',
-    base_price: '',
-    delivery_price: '',
-    cost_price: '',
-    tax_rate: '',
-    tax_inclusive: false,
-    show_on_customer_tablet: true,
-    available_from: '',
-    available_until: '',
-    display_order: 0,
-    status: 'active',
-    stock_mode: 'untracked',
-    low_stock_threshold: '',
-    shelf_life_days: '',
-    is_internal: false,
-    component_rows: [],
-    addon_group_uuids: [],
-    recipe_lines: [],
-    branch_all: true,
-    branch_rows: [],
-});
 
 // ---- Add-on group modal (Phase 4.9) -----------------------------
 const agModalOpen = ref(false);
@@ -381,28 +259,7 @@ function goProductPage(page: number): void {
     void fetchProducts();
 }
 
-async function fetchIngredients(): Promise<void> {
-    // Soft-fail when the user lacks inventory.view — the recipe
-    // editor degrades gracefully (Add Ingredient stays disabled,
-    // hint asks them to visit Inventory first).
-    try {
-        const response = await listIngredients();
-        ingredients.value = response.data;
-    } catch {
-        ingredients.value = [];
-    }
-}
 
-async function fetchComponentOptions(): Promise<void> {
-    // P-G2 - the Physical items picker source (unit-mode products,
-    // internal first). Soft-fail: the section degrades to a hint.
-    try {
-        const response = await listComponentOptions();
-        componentOptions.value = response.data;
-    } catch {
-        componentOptions.value = [];
-    }
-}
 
 async function fetchAddonLinkOptions(): Promise<void> {
     // P-G3 - the product-as-add-on picker source. Soft-fail: the
@@ -450,8 +307,6 @@ async function fetchAll(): Promise<void> {
         fetchCategories(),
         fetchProducts(),
         fetchAddOnGroups(),
-        fetchIngredients(),
-        fetchComponentOptions(),
         fetchAddonLinkOptions(),
         fetchDeliveryProviders(),
         fetchBranches(),
@@ -460,6 +315,12 @@ async function fetchAll(): Promise<void> {
 }
 
 onMounted(() => {
+    // PD1 — the wizard returns to /catalogue?tab=products; honour the
+    // deep link instead of always landing on Categories.
+    const requestedTab = String(route.query.tab ?? '');
+    if ((['categories', 'products', 'addons', 'providers'] as const).some((k) => k === requestedTab)) {
+        activeTab.value = requestedTab as TabKey;
+    }
     void fetchAll();
 });
 
@@ -551,177 +412,7 @@ async function confirmDeleteCategory(): Promise<void> {
 
 // ---- Product flows ----------------------------------------------
 
-function openCreateProduct(): void {
-    prodModalMode.value = 'create';
-    prodModalTarget.value = null;
-    prodForm.name = '';
-    prodForm.name_ar = '';
-    prodForm.description = '';
-    prodForm.image_url = '';
-    prodForm.category_id = null;
-    prodForm.sku = '';
-    prodForm.barcode = '';
-    prodForm.base_price = '';
-    prodForm.delivery_price = '';
-    prodForm.cost_price = '';
-    prodForm.tax_rate = '';
-    prodForm.tax_inclusive = false;
-    prodForm.show_on_customer_tablet = true;
-    prodForm.available_from = '';
-    prodForm.available_until = '';
-    // Default the new product's sort order to the end of the full
-    // catalogue (total across pages, not just the current page).
-    prodForm.display_order = productsMeta.value.total;
-    prodForm.status = 'active';
-    prodForm.stock_mode = 'untracked';
-    prodForm.low_stock_threshold = '';
-    prodForm.shelf_life_days = '';
-    prodForm.is_internal = false;
-    prodForm.component_rows = [];
-    prodForm.addon_group_uuids = [];
-    prodForm.recipe_lines = [];
-    prodForm.branch_all = true;
-    prodForm.branch_rows = buildBranchRows();
-    prodModalErrors.value = {};
-    prodModalError.value = null;
-    prodModalOpen.value = true;
-    // Phase 6c — clear the provider-price grid for the create flow.
-    void loadProductProviderPrices(null);
-    // v2 #6 — owned add-on groups need a saved product id, so
-    // reset the editor; the template shows a "save first" hint.
-    resetOwnedAddons();
-}
 
-function openEditProduct(product: Product): void {
-    prodModalMode.value = 'edit';
-    prodModalTarget.value = product;
-    prodForm.name = product.name;
-    prodForm.name_ar = product.name_ar ?? '';
-    prodForm.description = product.description ?? '';
-    prodForm.image_url = product.image_url ?? '';
-    prodForm.category_id = product.category_id;
-    prodForm.sku = product.sku ?? '';
-    prodForm.barcode = product.barcode ?? '';
-    prodForm.base_price = product.base_price;
-    prodForm.delivery_price = product.delivery_price ?? '';
-    prodForm.cost_price = product.cost_price ?? '';
-    prodForm.tax_rate = product.tax_rate ?? '';
-    prodForm.tax_inclusive = product.tax_inclusive ?? false;
-    prodForm.show_on_customer_tablet = product.show_on_customer_tablet ?? true;
-    // G1 — 'HH:MM:SS' on the wire → 'HH:mm' for <input type="time">.
-    prodForm.available_from = product.available_from?.slice(0, 5) ?? '';
-    prodForm.available_until = product.available_until?.slice(0, 5) ?? '';
-    prodForm.display_order = product.display_order;
-    prodForm.status = (product.status ?? 'active') as ProductStatus;
-    prodForm.stock_mode = product.stock_mode ?? 'untracked';
-    prodForm.low_stock_threshold = product.low_stock_threshold ?? '';
-    prodForm.shelf_life_days = product.shelf_life_days !== null && product.shelf_life_days !== undefined
-        ? String(product.shelf_life_days)
-        : '';
-    prodForm.is_internal = product.is_internal ?? false;
-    // P-G2 - pre-populate the Physical items rows from the eager-loaded
-    // component lines. Falls back to [] when none.
-    prodForm.component_rows = (product.component_lines ?? []).map((line) => ({
-        component_uuid: line.component_uuid,
-        quantity: line.quantity,
-    }));
-    // Phase 4.9 — pre-populate the picker from the eager-
-    // loaded relation. The list endpoint doesn't return
-    // addon_groups, so editing relies on the resource emitting
-    // them. Falls back to [] safely when undefined.
-    prodForm.addon_group_uuids = (product.addon_groups ?? []).map((g) => g.uuid);
-    // Phase 5b — pre-populate recipe lines from the eager-
-    // loaded relation. Falls back to [] when none.
-    // Stored recipe quantities are already in BASE units, so default
-    // the entry unit to base ('') when preloading.
-    prodForm.recipe_lines = (product.recipe_lines ?? []).map((line) => ({
-        ingredient_uuid: line.ingredient?.uuid ?? '',
-        quantity: line.quantity,
-        unit: '',
-    }));
-    // Phase B - no assignments = available everywhere (branch_all on).
-    prodForm.branch_all = (product.branches ?? []).length === 0;
-    prodForm.branch_rows = buildBranchRows(product.branches);
-    prodModalErrors.value = {};
-    prodModalError.value = null;
-    prodModalOpen.value = true;
-    // Phase 6c — load existing provider prices for the grid.
-    void loadProductProviderPrices(product.uuid);
-    // v2 #6 — fetch this product's privately-owned add-on groups.
-    resetOwnedAddons();
-    void loadOwnedAddonGroups(product.uuid);
-}
-
-// ===================== Phase 5b — Recipe helpers =====================
-
-function addRecipeLine(): void {
-    // Default empty row — the merchant picks the ingredient
-    // then enters a quantity. Validation at submit time.
-    prodForm.recipe_lines.push({ ingredient_uuid: '', quantity: '', unit: '' });
-}
-
-function removeRecipeLine(idx: number): void {
-    prodForm.recipe_lines.splice(idx, 1);
-}
-
-/**
- * Live theoretical-cost preview: Σ (quantity × ingredient.default_unit_cost)
- * across the current form's recipe lines. Returns a string with
- * 3-decimal precision. Used inline to show the merchant what
- * the recipe will cost without waiting for the server round-trip.
- *
- * Skips rows with missing ingredient / quantity (a half-edited
- * row contributes zero).
- */
-const recipeLiveCost = computed<string>(() => {
-    let total = 0;
-    for (const line of prodForm.recipe_lines) {
-        if (!line.ingredient_uuid || line.quantity === '') continue;
-        const ingredient = ingredients.value.find((i) => i.uuid === line.ingredient_uuid);
-        if (!ingredient) continue;
-        // default_unit_cost is per BASE unit — convert the entered qty
-        // (which may be in an alt unit) to base before multiplying.
-        const qty = toBaseUnits(parseFloat(line.quantity), ingredient, line.unit);
-        const cost = parseFloat(ingredient.default_unit_cost);
-        if (!isFinite(qty) || !isFinite(cost)) continue;
-        total += qty * cost;
-    }
-    return total.toFixed(3);
-});
-
-/**
- * Live margin preview: (base_price − recipe cost) / base_price
- * as a percentage. Returns null when base_price is 0 or blank
- * (division-by-zero) — UI hides the row in that case.
- */
-const recipeLiveMargin = computed<string | null>(() => {
-    const basePrice = parseFloat(prodForm.base_price);
-    const cost = parseFloat(recipeLiveCost.value);
-    if (!isFinite(basePrice) || basePrice <= 0) return null;
-    if (!isFinite(cost)) return null;
-    const margin = ((basePrice - cost) / basePrice) * 100;
-    return margin.toFixed(1);
-});
-
-/**
- * True when the current recipe lines contain at least one
- * duplicate ingredient_uuid. Surfaces as an inline error +
- * disables the Save button (the server would 422 anyway).
- */
-const recipeHasDuplicates = computed<boolean>(() => {
-    const seen = new Set<string>();
-    for (const line of prodForm.recipe_lines) {
-        if (!line.ingredient_uuid) continue;
-        if (seen.has(line.ingredient_uuid)) return true;
-        seen.add(line.ingredient_uuid);
-    }
-    return false;
-});
-
-function ingredientUnitLabel(uuid: string): string {
-    const ingredient = ingredients.value.find((i) => i.uuid === uuid);
-    return ingredient?.unit ?? '';
-}
 
 /**
  * G1 — "06:00–11:00" row-badge label for a product with a menu
@@ -736,173 +427,8 @@ function availabilityWindowLabel(prod: Product): string | null {
     return `${from}–${until}`;
 }
 
-/** Resolve an ingredient (for its alt_units) from a recipe line uuid. */
-function ingredientByUuid(uuid: string): Ingredient | null {
-    if (!uuid) return null;
-    return ingredients.value.find((i) => i.uuid === uuid) ?? null;
-}
 
-// v2 #13 — map a selected entry-unit string to the wire value:
-// '' (base) → null, else the alt-unit name.
-function wireUnit(selected: string): string | null {
-    return selected.trim() === '' ? null : selected;
-}
 
-/**
- * Convert an entered quantity (number) to base units for the given
- * ingredient + selected alt-unit NAME ('' = base). Returns the raw
- * number unchanged when no matching alt unit is found. Local preview
- * only — never used to rebuild the value that gets sent.
- */
-function toBaseUnits(qty: number, ingredient: Ingredient | null | undefined, selected: string): number {
-    if (!ingredient || selected.trim() === '') return qty;
-    const alt = (ingredient.alt_units ?? []).find((u) => u.name === selected);
-    if (!alt) return qty;
-    const factor = parseFloat(alt.factor);
-    if (!Number.isFinite(factor)) return qty;
-    return qty * factor;
-}
-
-// ---- Phase B - per-branch availability + stock helpers ----
-function branchName(branchId: number): string {
-    return branches.value.find((b) => b.id === branchId)?.name ?? `#${branchId}`;
-}
-
-function buildBranchRows(
-    assignments?: ProductBranchAssignment[],
-): { branch_id: number; selected: boolean; stock_qty: string | number }[] {
-    const byBranch = new Map<number, ProductBranchAssignment>();
-    for (const a of assignments ?? []) byBranch.set(a.branch_id, a);
-    return branches.value.map((b) => {
-        const a = byBranch.get(b.id);
-        return {
-            branch_id: b.id,
-            selected: a ? a.is_available : false,
-            stock_qty: a && a.stock_qty !== null ? String(a.stock_qty) : '',
-        };
-    });
-}
-
-async function submitProduct(): Promise<void> {
-    prodModalBusy.value = true;
-    prodModalErrors.value = {};
-    prodModalError.value = null;
-    try {
-        const payload: CreateProductPayload = {
-            name: prodForm.name.trim(),
-            name_ar: prodForm.name_ar.trim() || null,
-            description: prodForm.description.trim() || null,
-            image_url: prodForm.image_url.trim() || null,
-            category_id: prodForm.category_id ?? null,
-            sku: prodForm.sku.trim() || null,
-            barcode: prodForm.barcode.trim() || null,
-            base_price: prodForm.base_price,
-            // Phase 4.9 — empty string means NULL on the server
-            // ("use base_price for delivery"). Otherwise pass
-            // through as a string (decimal precision).
-            delivery_price: prodForm.delivery_price === '' ? null : prodForm.delivery_price,
-            cost_price: prodForm.cost_price === '' ? null : prodForm.cost_price,
-            tax_rate: prodForm.tax_rate === '' ? null : prodForm.tax_rate,
-            // Phase D2 - display-only flag (totals still add tax on top).
-            tax_inclusive: prodForm.tax_inclusive,
-            // Phase D2 - future customer tablet menu visibility.
-            show_on_customer_tablet: prodForm.show_on_customer_tablet,
-            // G1 — menu time-window: 'HH:mm' input → 'HH:MM:SS' on the
-            // wire; empty = null = no bound (both empty = always).
-            available_from: prodForm.available_from ? `${prodForm.available_from}:00` : null,
-            available_until: prodForm.available_until ? `${prodForm.available_until}:00` : null,
-            stock_mode: prodForm.stock_mode as 'unit' | 'ingredient' | 'untracked' | 'cooked',
-            // Phase D2 - unit-mode LOW STOCK threshold ('' = none).
-            low_stock_threshold: prodForm.low_stock_threshold === '' ? null : prodForm.low_stock_threshold,
-            // P-G1.5 - default shelf life in days ('' = keeps indefinitely).
-            shelf_life_days: prodForm.shelf_life_days === '' ? null : Number(prodForm.shelf_life_days),
-            // P-G2 - internal item: never on the POS menu or tablet.
-            is_internal: prodForm.is_internal,
-            display_order: prodForm.display_order,
-        };
-
-        // Step 1: save the product itself.
-        let productUuid: string;
-        if (prodModalMode.value === 'create') {
-            const created = await createProduct(payload);
-            productUuid = created.data.uuid;
-        } else if (prodModalTarget.value) {
-            await updateProduct(prodModalTarget.value.uuid, { ...payload, status: prodForm.status });
-            productUuid = prodModalTarget.value.uuid;
-        } else {
-            return; // shouldn't happen
-        }
-
-        // Step 2 (Phase 4.9): sync the product's add-on groups.
-        // Idempotent — server does attach/detach diffing and
-        // writes one audit row. Safe to call even when the
-        // picker wasn't touched (empty change set = no-op).
-        await syncProductAddOnGroups(productUuid, prodForm.addon_group_uuids);
-
-        // Step 3 (Phase 5b): replace the product's recipe.
-        // Skip empty / incomplete rows on the client so a
-        // half-edited row doesn't trip the server validator.
-        // Server-side is still the source of truth — also no-op
-        // safe (returns 200 with no audit when recipe matches
-        // disk).
-        const cleanLines: RecipeLinePayload[] = prodForm.recipe_lines
-            .filter((l) => l.ingredient_uuid && l.quantity !== '')
-            .map((l) => ({
-                ingredient_uuid: l.ingredient_uuid,
-                quantity: l.quantity,
-                unit: wireUnit(l.unit),
-            }));
-        await updateProductRecipe(productUuid, { lines: cleanLines });
-
-        // Step 3a (P-G2): replace the product's physical-item
-        // components. Same idempotent full-replace semantics as the
-        // recipe; skip empty / incomplete rows client-side.
-        const cleanComponents: ComponentLinePayload[] = prodForm.component_rows
-            .filter((l) => l.component_uuid && l.quantity !== '')
-            .map((l) => ({
-                component_uuid: l.component_uuid,
-                quantity: l.quantity,
-            }));
-        await updateProductComponents(productUuid, cleanComponents);
-
-        // Step 3b (Phase B): replace per-branch availability + unit
-        // stock. branch_all = clear all rows (available everywhere);
-        // otherwise the ticked branches with their optional units.
-        const branchPayload: ProductBranchAssignment[] = prodForm.branch_all
-            ? []
-            : prodForm.branch_rows
-                .filter((r) => r.selected)
-                .map((r) => ({
-                    branch_id: r.branch_id,
-                    is_available: true,
-                    // v-model on a type="number" input stores a NUMBER once a
-                    // value is typed (Vue auto-casts) and '' when cleared —
-                    // coerce before trimming or submit crashes.
-                    stock_qty: String(r.stock_qty ?? '').trim() === '' ? null : Number(r.stock_qty),
-                }));
-        await syncProductBranches(productUuid, branchPayload);
-
-        // Step 4 (Phase 6c): sync per-provider price overrides.
-        // Iterates the touched provider prices and fires
-        // PUT (set) or DELETE (remove) per changed row. Same
-        // idempotent semantics on the server.
-        await syncProductProviderPrices(productUuid);
-
-        prodModalOpen.value = false;
-        await fetchProducts();
-        // P-G2 - a newly saved unit product may now be a valid component.
-        void fetchComponentOptions();
-    } catch (err) {
-        if (err instanceof ApiError && err.isValidationError()) {
-            prodModalErrors.value = err.payload.errors;
-            prodModalError.value = t('catalogue.validation_summary');
-        } else {
-            prodModalError.value = err instanceof Error ? err.message : 'Failed';
-        }
-    } finally {
-        prodModalBusy.value = false;
-    }
-}
 
 async function confirmDeleteProduct(): Promise<void> {
     if (!prodDeleteTarget.value) return;
@@ -1222,201 +748,7 @@ async function performProviderDelete(): Promise<void> {
     }
 }
 
-// =================== Phase 6c — Product provider-price grid ===================
 
-// Map of provider_uuid -> string price input. Populated when
-// the product modal opens (from product.delivery_provider_prices
-// if loaded, else fetched). Empty string = "no override" (will
-// fall back to delivery_price or base_price at POS time).
-const productProviderPrices = ref<Record<string, string>>({});
-const productProviderPricesLoading = ref(false);
-const productProviderPricesError = ref<string | null>(null);
-const productProviderPricesTouched = ref<Record<string, boolean>>({});
-
-async function loadProductProviderPrices(productUuid: string | null): Promise<void> {
-    productProviderPrices.value = {};
-    productProviderPricesTouched.value = {};
-    productProviderPricesError.value = null;
-    if (productUuid === null) return; // create flow — no prices yet
-    productProviderPricesLoading.value = true;
-    try {
-        const response = await listProductDeliveryPrices(productUuid);
-        for (const row of response.data) {
-            const providerUuid = row.delivery_provider?.uuid;
-            if (providerUuid) {
-                productProviderPrices.value[providerUuid] = row.price;
-            }
-        }
-    } catch (err) {
-        productProviderPricesError.value = err instanceof Error
-            ? err.message
-            : t('delivery_providers.errors.prices_load_failed');
-    } finally {
-        productProviderPricesLoading.value = false;
-    }
-}
-
-function markProviderPriceTouched(providerUuid: string): void {
-    productProviderPricesTouched.value[providerUuid] = true;
-}
-
-/**
- * After the product update PATCH succeeds, fire one round-trip
- * per TOUCHED provider price. The Action layer's idempotent
- * skip avoids no-op writes server-side; we still skip them
- * here to reduce network chatter.
- */
-async function syncProductProviderPrices(productUuid: string): Promise<void> {
-    for (const provider of deliveryProviders.value) {
-        if (!productProviderPricesTouched.value[provider.uuid]) continue;
-        const value = (productProviderPrices.value[provider.uuid] ?? '').trim();
-        try {
-            if (value === '') {
-                await removeProductDeliveryPrice(productUuid, provider.uuid);
-            } else {
-                await setProductDeliveryPrice(productUuid, provider.uuid, { price: value });
-            }
-        } catch {
-            // Don't fail the parent flow on a single price
-            // sync error -- the modal will still close. The
-            // merchant can retry the specific row.
-        }
-    }
-}
-
-// =================== v2 #6 — product-unique add-on groups ===================
-// Groups privately owned by THIS product (separate from the
-// shared addon_group_uuids picker). Only meaningful when editing
-// a saved product — owned groups attach to a persisted product
-// id, so create mode shows a "save first" hint instead.
-
-const ownedAddonGroups = ref<AddOnGroup[]>([]);
-const ownedAddonsBusy = ref(false);
-const ownedAddonsError = ref<string | null>(null);
-// Per-group inline "add option" form state, keyed by group uuid.
-// price_delta: '' / '0.000' while blank, a NUMBER once typed (number-input v-model).
-const ownedOptionForms = ref<Record<string, { name: string; price_delta: string | number }>>({});
-// Inline "add a group" form.
-const ownedGroupForm = reactive<{ name: string; selection_mode: AddOnSelectionMode }>({
-    name: '',
-    selection_mode: 'single',
-});
-
-function resetOwnedAddons(): void {
-    ownedAddonGroups.value = [];
-    ownedOptionForms.value = {};
-    ownedAddonsError.value = null;
-    ownedGroupForm.name = '';
-    ownedGroupForm.selection_mode = 'single';
-}
-
-function optionFormFor(groupUuid: string): { name: string; price_delta: string | number } {
-    return ownedOptionForms.value[groupUuid] ?? { name: '', price_delta: '0.000' };
-}
-
-async function loadOwnedAddonGroups(productUuid: string): Promise<void> {
-    ownedAddonsBusy.value = true;
-    ownedAddonsError.value = null;
-    try {
-        const response = await getProductAddOnGroups(productUuid);
-        ownedAddonGroups.value = response.data;
-        // Seed one inline "add option" form per group so the
-        // template binds to a stable reactive object (no mutation
-        // during render).
-        const forms: Record<string, { name: string; price_delta: string | number }> = {};
-        for (const group of response.data) {
-            forms[group.uuid] = ownedOptionForms.value[group.uuid] ?? { name: '', price_delta: '0.000' };
-        }
-        ownedOptionForms.value = forms;
-    } catch (err) {
-        ownedAddonsError.value = err instanceof ApiError && err.payload && typeof err.payload === 'object' && 'message' in err.payload
-            ? String((err.payload as { message?: unknown }).message ?? t('catalogue.product_addons.save_failed'))
-            : t('catalogue.product_addons.save_failed');
-    } finally {
-        ownedAddonsBusy.value = false;
-    }
-}
-
-async function refetchOwnedAddonGroups(): Promise<void> {
-    if (!prodModalTarget.value) return;
-    await loadOwnedAddonGroups(prodModalTarget.value.uuid);
-}
-
-async function addOwnedGroup(): Promise<void> {
-    if (!prodModalTarget.value || ownedGroupForm.name.trim() === '') return;
-    ownedAddonsBusy.value = true;
-    ownedAddonsError.value = null;
-    try {
-        await createProductAddOnGroup(prodModalTarget.value.uuid, {
-            name: ownedGroupForm.name.trim(),
-            selection_mode: ownedGroupForm.selection_mode,
-        });
-        ownedGroupForm.name = '';
-        ownedGroupForm.selection_mode = 'single';
-        await refetchOwnedAddonGroups();
-    } catch (err) {
-        ownedAddonsError.value = err instanceof ApiError && err.payload && typeof err.payload === 'object' && 'message' in err.payload
-            ? String((err.payload as { message?: unknown }).message ?? t('catalogue.product_addons.save_failed'))
-            : t('catalogue.product_addons.save_failed');
-    } finally {
-        ownedAddonsBusy.value = false;
-    }
-}
-
-async function addOwnedOption(groupUuid: string): Promise<void> {
-    const form = ownedOptionForms.value[groupUuid];
-    if (!form || form.name.trim() === '') return;
-    ownedAddonsBusy.value = true;
-    ownedAddonsError.value = null;
-    try {
-        // price_delta rides a type="number" input — a typed value is a NUMBER
-        // (Vue v-model auto-cast), so coerce before trimming.
-        const priceDelta = String(form.price_delta ?? '').trim();
-        await createAddOn(groupUuid, {
-            name: form.name.trim(),
-            price_delta: priceDelta === '' ? '0.000' : priceDelta,
-        });
-        form.name = '';
-        form.price_delta = '0.000';
-        await refetchOwnedAddonGroups();
-    } catch (err) {
-        ownedAddonsError.value = err instanceof ApiError && err.payload && typeof err.payload === 'object' && 'message' in err.payload
-            ? String((err.payload as { message?: unknown }).message ?? t('catalogue.product_addons.save_failed'))
-            : t('catalogue.product_addons.save_failed');
-    } finally {
-        ownedAddonsBusy.value = false;
-    }
-}
-
-async function removeOwnedOption(addonUuid: string): Promise<void> {
-    ownedAddonsBusy.value = true;
-    ownedAddonsError.value = null;
-    try {
-        await deleteAddOn(addonUuid);
-        await refetchOwnedAddonGroups();
-    } catch (err) {
-        ownedAddonsError.value = err instanceof ApiError && err.payload && typeof err.payload === 'object' && 'message' in err.payload
-            ? String((err.payload as { message?: unknown }).message ?? t('catalogue.product_addons.save_failed'))
-            : t('catalogue.product_addons.save_failed');
-    } finally {
-        ownedAddonsBusy.value = false;
-    }
-}
-
-async function removeOwnedGroup(groupUuid: string): Promise<void> {
-    ownedAddonsBusy.value = true;
-    ownedAddonsError.value = null;
-    try {
-        await deleteAddOnGroup(groupUuid);
-        await refetchOwnedAddonGroups();
-    } catch (err) {
-        ownedAddonsError.value = err instanceof ApiError && err.payload && typeof err.payload === 'object' && 'message' in err.payload
-            ? String((err.payload as { message?: unknown }).message ?? t('catalogue.product_addons.save_failed'))
-            : t('catalogue.product_addons.save_failed');
-    } finally {
-        ownedAddonsBusy.value = false;
-    }
-}
 </script>
 
 <template>
@@ -1571,7 +903,7 @@ async function removeOwnedGroup(groupUuid: string): Promise<void> {
                         class="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-teal-600 to-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-teal-600/30 transition hover:-translate-y-0.5 hover:shadow-xl"
                         :disabled="categories.length === 0"
                         :title="categories.length === 0 ? t('catalogue.no_categories_hint') : ''"
-                        @click="openCreateProduct"
+                        @click="router.push('/catalogue/products/new')"
                     >
                         <Plus class="size-4" />
                         {{ t('catalogue.actions.add_product') }}
@@ -1660,7 +992,7 @@ async function removeOwnedGroup(groupUuid: string): Promise<void> {
                                 </td>
                                 <td class="px-5 py-4 text-end">
                                     <div class="inline-flex gap-2">
-                                        <button v-if="canManage" type="button" class="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50" @click="openEditProduct(prod)">
+                                        <button v-if="canManage" type="button" class="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50" @click="router.push(`/catalogue/products/${prod.uuid}/edit`)">
                                             <Pencil class="size-3" /> {{ t('catalogue.actions.edit') }}
                                         </button>
                                         <button v-if="prod.stock_mode === 'unit' || prod.stock_mode === 'cooked'" type="button" class="inline-flex items-center gap-1 rounded border border-teal-200 px-2 py-1 text-[11px] font-semibold text-teal-700 transition hover:bg-teal-50" @click="openStockDialog(prod)">
@@ -2033,657 +1365,6 @@ async function removeOwnedGroup(groupUuid: string): Promise<void> {
         </BaseModal>
 
         <!-- =============== PRODUCT MODAL =============== -->
-        <BaseModal
-            v-if="prodModalOpen"
-            :title="prodModalMode === 'create' ? t('catalogue.prod_modal.create_title') : t('catalogue.prod_modal.edit_title')"
-            size="2xl"
-            :loading="prodModalBusy"
-            @close="prodModalOpen = false"
-        >
-            <form id="prod-modal-form" class="space-y-4" @submit.prevent="submitProduct">
-                <div v-if="prodModalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
-                    {{ prodModalError }}
-                </div>
-                    <div class="grid gap-3 sm:grid-cols-2">
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.name') }} *</span>
-                            <input v-model="prodForm.name" required type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <p v-if="prodModalErrors.name" class="mt-1 text-xs text-rose-600">{{ prodModalErrors.name[0] }}</p>
-                        </label>
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.name_ar') }}</span>
-                            <input v-model="prodForm.name_ar" type="text" dir="rtl" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                        </label>
-                    </div>
-                    <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.category') }}</span>
-                        <select v-model="prodForm.category_id" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <option :value="null">{{ t('catalogue.uncategorized') }}</option>
-                            <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
-                        </select>
-                        <p v-if="prodModalErrors.category_id" class="mt-1 text-xs text-rose-600">{{ prodModalErrors.category_id[0] }}</p>
-                    </label>
-                    <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.description') }}</span>
-                        <textarea v-model="prodForm.description" rows="2" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100" />
-                    </label>
-                    <label class="block">
-                        <span class="text-sm font-medium text-slate-700">
-                            <Image class="me-1 inline size-3" />
-                            {{ t('catalogue.fields.image_url') }}
-                        </span>
-                        <input v-model="prodForm.image_url" type="url" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                    </label>
-                    <div class="grid gap-3 sm:grid-cols-3">
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.sku') }}</span>
-                            <input v-model="prodForm.sku" type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-mono focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <p v-if="prodModalErrors.sku" class="mt-1 text-xs text-rose-600">{{ prodModalErrors.sku[0] }}</p>
-                        </label>
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.barcode') }}</span>
-                            <input v-model="prodForm.barcode" type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-mono focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <p v-if="prodModalErrors.barcode" class="mt-1 text-xs text-rose-600">{{ prodModalErrors.barcode[0] }}</p>
-                        </label>
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">
-                                <Tag class="me-1 inline size-3" />
-                                {{ t('catalogue.fields.base_price') }} (OMR) *
-                            </span>
-                            <input v-model="prodForm.base_price" required type="number" step="0.001" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <p v-if="prodModalErrors.base_price" class="mt-1 text-xs text-rose-600">{{ prodModalErrors.base_price[0] }}</p>
-                        </label>
-                    </div>
-                    <div class="grid gap-3 sm:grid-cols-3">
-                        <!-- Phase 4.9 — delivery_price input. Hint
-                             tells the merchant what "blank" means. -->
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">
-                                <Truck class="me-1 inline size-3" />
-                                {{ t('catalogue.fields.delivery_price') }} (OMR)
-                            </span>
-                            <input
-                                v-model="prodForm.delivery_price"
-                                type="number"
-                                step="0.001"
-                                min="0"
-                                :placeholder="prodForm.base_price || '—'"
-                                class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
-                            >
-                            <p class="mt-1 text-xs text-slate-500">{{ t('catalogue.fields.delivery_price_hint') }}</p>
-                        </label>
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.cost_price') }} (OMR)</span>
-                            <input v-model="prodForm.cost_price" type="number" step="0.001" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                        </label>
-                        <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.tax_rate') }} (%)</span>
-                            <input v-model="prodForm.tax_rate" type="number" step="0.01" min="0" max="100" :placeholder="t('catalogue.fields.tax_rate_placeholder')" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <p class="mt-1 text-xs text-slate-500">{{ t('catalogue.fields.tax_rate_hint') }}</p>
-                        </label>
-                    </div>
-
-                    <!-- Phase D2 - §5.5.3 tax-inclusive flag. STORED + LABELLED
-                         only for now; totals still add company taxes on top. -->
-                    <div>
-                        <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
-                            <input
-                                v-model="prodForm.tax_inclusive"
-                                type="checkbox"
-                                class="rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200"
-                            >
-                            {{ t('catalogue.fields.tax_inclusive') }}
-                        </label>
-                        <p class="mt-1 text-xs text-slate-500">{{ t('catalogue.fields.tax_inclusive_hint') }}</p>
-                    </div>
-
-                    <label v-if="prodModalMode === 'edit'" class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.status') }}</span>
-                        <select v-model="prodForm.status" class="mt-1 w-full max-w-xs rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <option value="active">{{ t('catalogue.statuses.active') }}</option>
-                            <option value="inactive">{{ t('catalogue.statuses.inactive') }}</option>
-                        </select>
-                    </label>
-
-                    <!-- Phase D2 - §5.5.3 customer tablet visibility. Consumed by
-                         the future customer-facing tablet menu; the staff POS
-                         product grid is unaffected. -->
-                    <div>
-                        <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
-                            <input
-                                v-model="prodForm.show_on_customer_tablet"
-                                type="checkbox"
-                                class="rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200"
-                            >
-                            {{ t('catalogue.fields.show_on_tablet') }}
-                        </label>
-                        <p class="mt-1 text-xs text-slate-500">{{ t('catalogue.fields.show_on_tablet_hint') }}</p>
-                    </div>
-
-                    <!-- G1 — menu time-window. Two nullable time inputs, the
-                         Discounts time_start/time_end dance: HH:mm in the
-                         input, HH:MM:SS on the wire, empty = no bound. Both
-                         empty = always available; end before start wraps
-                         midnight (overnight menus). -->
-                    <div>
-                        <p class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.available_hours') }}</p>
-                        <div class="mt-1 grid max-w-md grid-cols-2 gap-3">
-                            <div>
-                                <label class="block text-xs font-medium text-slate-600">{{ t('catalogue.fields.available_from') }}</label>
-                                <input v-model="prodForm.available_from" type="time" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium text-slate-600">{{ t('catalogue.fields.available_until') }}</label>
-                                <input v-model="prodForm.available_until" type="time" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
-                            </div>
-                        </div>
-                        <p class="mt-1 text-xs text-slate-500">{{ t('catalogue.fields.available_hours_hint') }}</p>
-                    </div>
-
-                    <!-- Phase 7 — stock tracking mode. P-G1 adds Cooked:
-                         recipe consumed at PRODUCTION by the kitchen, sells
-                         from branch shelf stock like unit. -->
-                    <label class="block">
-                        <span class="text-sm font-medium text-slate-700">Stock tracking</span>
-                        <select v-model="prodForm.stock_mode" class="mt-1 w-full max-w-xs rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <option value="untracked">No stock tracking</option>
-                            <option value="ingredient">Made to order (recipe consumed at sale)</option>
-                            <option value="cooked">Cooked (kitchen produces batches ahead of sale)</option>
-                            <option value="unit">Ready / bought-in (count pieces)</option>
-                        </select>
-                        <p class="mt-1 text-xs text-slate-500">
-                            <template v-if="prodForm.stock_mode === 'unit'">Tracked by piece count. Manage the central pool + branch counts from the <strong>Stock</strong> button on the product row{{ prodModalMode === 'create' ? ' after saving' : '' }}.</template>
-                            <template v-else-if="prodForm.stock_mode === 'ingredient'">Availability comes from its recipe + per-branch ingredient stock — no piece count.</template>
-                            <template v-else-if="prodForm.stock_mode === 'cooked'">The kitchen produces batches from the recipe (ingredients are consumed at production); the finished pieces sell down from branch shelf stock. Starts SOLD OUT until the kitchen produces.</template>
-                            <template v-else>Sold freely — no stock is tracked.</template>
-                        </p>
-                    </label>
-
-                    <!-- Phase D2 - LOW STOCK badge threshold for piece-counted
-                         products (unit + P-G1 cooked). Ingredient-mode badges
-                         derive from each ingredient's own minimum instead. -->
-                    <label v-if="prodForm.stock_mode === 'unit' || prodForm.stock_mode === 'cooked'" class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.low_stock_threshold') }}</span>
-                        <input
-                            v-model="prodForm.low_stock_threshold"
-                            type="number"
-                            min="0"
-                            step="1"
-                            :placeholder="t('catalogue.fields.low_stock_threshold_placeholder')"
-                            class="mt-1 w-full max-w-xs rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
-                        >
-                        <p class="mt-1 text-xs text-slate-500">{{ t('catalogue.fields.low_stock_threshold_hint') }}</p>
-                    </label>
-
-                    <!-- P-G1.5 - default shelf life for cooked products. The
-                         chef can override per batch on the Finish dialog;
-                         empty = keeps indefinitely (no day-end disposition). -->
-                    <label v-if="prodForm.stock_mode === 'cooked'" class="block">
-                        <span class="text-sm font-medium text-slate-700">Shelf life (days)</span>
-                        <input
-                            v-model="prodForm.shelf_life_days"
-                            type="number"
-                            min="1"
-                            max="365"
-                            step="1"
-                            placeholder="e.g. 1 = same day"
-                            class="mt-1 w-full max-w-xs rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
-                        >
-                        <p class="mt-1 text-xs text-slate-500">Default expiry for each kitchen batch (the chef can adjust per batch at Finish). Leave empty if it keeps — no day-end disposition will be asked.</p>
-                    </label>
-
-                    <!-- P-G2 - internal item (cups / lids / tissue / boxes):
-                         a unit-stock product the company buys and counts but
-                         never sells directly. -->
-                    <label v-if="prodForm.stock_mode === 'unit'" class="flex items-start gap-2 rounded-lg border border-slate-200 p-3">
-                        <input v-model="prodForm.is_internal" type="checkbox" class="mt-0.5 rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200">
-                        <span>
-                            <span class="block text-sm font-medium text-slate-700">Internal item</span>
-                            <span class="block text-xs text-slate-500">Never shown on the POS menu or the customer tablet — but fully stock-managed (Receive &amp; Distribute, transfers, counts). For cups, lids, boxes… Attach it to sellable products below via their <strong>Physical items</strong> section.</span>
-                        </span>
-                    </label>
-
-                    <!-- Phase 4.9 — add-on groups picker. Only
-                         non-global groups appear. Globals are
-                         documented in the hint as "always attached". -->
-                    <fieldset class="rounded-lg border border-slate-200 p-3">
-                        <legend class="px-2 text-sm font-semibold text-slate-700">
-                            <Sparkles class="me-1 inline size-3.5 text-teal-600" />
-                            {{ t('catalogue.fields.addon_groups') }}
-                        </legend>
-                        <p class="mb-2 text-xs text-slate-500">{{ t('catalogue.fields.addon_groups_hint') }}</p>
-                        <div v-if="selectableAddOnGroups.length === 0" class="rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
-                            {{ t('catalogue.empty_addon_groups') }}
-                        </div>
-                        <div v-else class="grid gap-1.5 sm:grid-cols-2">
-                            <label
-                                v-for="group in selectableAddOnGroups"
-                                :key="group.id"
-                                class="flex items-center gap-2 rounded border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
-                            >
-                                <input
-                                    v-model="prodForm.addon_group_uuids"
-                                    type="checkbox"
-                                    :value="group.uuid"
-                                    class="rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200"
-                                >
-                                <span class="flex-1 truncate">{{ group.name }}</span>
-                                <span class="text-[10px] text-slate-400">{{ selectionModeLabel(group.selection_mode) }}</span>
-                            </label>
-                        </div>
-                    </fieldset>
-
-                    <!-- v2 #6 — product-unique add-on groups. Owned
-                         privately by THIS product (separate from the
-                         shared picker above). Only available once the
-                         product is saved (groups attach to a product
-                         id). Mirrors the Add-ons tab's group/option
-                         card styling for visual consistency. -->
-                    <fieldset class="rounded-lg border border-slate-200 p-3">
-                        <legend class="px-2 text-sm font-semibold text-slate-700">
-                            <Sparkles class="me-1 inline size-3.5 text-indigo-600" />
-                            {{ t('catalogue.product_addons.title') }}
-                        </legend>
-                        <p class="mb-2 text-xs text-slate-500">{{ t('catalogue.product_addons.hint') }}</p>
-
-                        <!-- Create mode: owned groups need a saved product id. -->
-                        <div v-if="prodModalMode === 'create'" class="rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
-                            {{ t('catalogue.product_addons.save_first') }}
-                        </div>
-
-                        <template v-else>
-                            <div v-if="ownedAddonsError" class="mb-2 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
-                                {{ ownedAddonsError }}
-                            </div>
-
-                            <div v-if="ownedAddonGroups.length === 0" class="rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
-                                {{ t('catalogue.product_addons.empty') }}
-                            </div>
-
-                            <div v-else class="space-y-3">
-                                <article
-                                    v-for="group in ownedAddonGroups"
-                                    :key="group.id"
-                                    class="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
-                                >
-                                    <header class="flex items-start justify-between gap-3">
-                                        <div class="min-w-0">
-                                            <h3 class="truncate text-sm font-semibold text-slate-950">{{ group.name }}</h3>
-                                            <p class="mt-0.5 text-[11px] text-slate-500">
-                                                <Boxes class="me-1 inline size-3" />
-                                                {{ selectionModeLabel(group.selection_mode) }}
-                                            </p>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            :disabled="ownedAddonsBusy"
-                                            class="inline-flex items-center gap-1 rounded border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                            @click="removeOwnedGroup(group.uuid)"
-                                        >
-                                            <Trash2 class="size-3" /> {{ t('catalogue.product_addons.delete_group') }}
-                                        </button>
-                                    </header>
-
-                                    <!-- Options list -->
-                                    <ul v-if="(group.addons ?? []).length > 0" class="mt-2 divide-y divide-slate-100 rounded-lg border border-slate-100 bg-slate-50/40">
-                                        <li
-                                            v-for="option in group.addons"
-                                            :key="option.id"
-                                            class="flex items-center justify-between gap-2 px-3 py-2"
-                                        >
-                                            <span class="min-w-0 flex-1 truncate text-sm font-medium text-slate-900">{{ option.name }}</span>
-                                            <span class="text-xs font-semibold tabular-nums text-slate-700">
-                                                +{{ option.price_delta }}
-                                                <span class="text-[10px] font-normal text-slate-400">OMR</span>
-                                            </span>
-                                            <button
-                                                type="button"
-                                                :disabled="ownedAddonsBusy"
-                                                class="rounded p-1 text-rose-500 transition hover:bg-rose-100 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
-                                                :title="t('catalogue.product_addons.remove')"
-                                                @click="removeOwnedOption(option.uuid)"
-                                            >
-                                                <Trash2 class="size-3.5" />
-                                            </button>
-                                        </li>
-                                    </ul>
-
-                                    <!-- Add option inline form -->
-                                    <div class="mt-2 flex flex-wrap items-end gap-2">
-                                        <label class="block flex-1 min-w-[8rem]">
-                                            <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.product_addons.option_name') }}</span>
-                                            <input
-                                                v-model="optionFormFor(group.uuid).name"
-                                                type="text"
-                                                class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
-                                            >
-                                        </label>
-                                        <label class="block w-28">
-                                            <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.product_addons.price_delta') }}</span>
-                                            <input
-                                                v-model="optionFormFor(group.uuid).price_delta"
-                                                type="number"
-                                                step="0.001"
-                                                class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
-                                            >
-                                        </label>
-                                        <button
-                                            type="button"
-                                            :disabled="ownedAddonsBusy || optionFormFor(group.uuid).name.trim() === ''"
-                                            class="inline-flex items-center gap-1 rounded border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-[11px] font-semibold text-teal-700 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-50"
-                                            @click="addOwnedOption(group.uuid)"
-                                        >
-                                            <Plus class="size-3" /> {{ t('catalogue.product_addons.add_option') }}
-                                        </button>
-                                    </div>
-                                </article>
-                            </div>
-
-                            <!-- Add a group inline form -->
-                            <div class="mt-3 flex flex-wrap items-end gap-2 rounded-lg border border-dashed border-slate-200 p-2.5">
-                                <label class="block flex-1 min-w-[8rem]">
-                                    <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.product_addons.group_name') }}</span>
-                                    <input
-                                        v-model="ownedGroupForm.name"
-                                        type="text"
-                                        class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
-                                    >
-                                </label>
-                                <label class="block w-36">
-                                    <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.selection_modes.single') }} / {{ t('catalogue.selection_modes.multi') }}</span>
-                                    <select
-                                        v-model="ownedGroupForm.selection_mode"
-                                        class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
-                                    >
-                                        <option value="single">{{ t('catalogue.selection_modes.single') }}</option>
-                                        <option value="multi">{{ t('catalogue.selection_modes.multi') }}</option>
-                                    </select>
-                                </label>
-                                <button
-                                    type="button"
-                                    :disabled="ownedAddonsBusy || ownedGroupForm.name.trim() === ''"
-                                    class="inline-flex items-center gap-1 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-50"
-                                    @click="addOwnedGroup"
-                                >
-                                    <Plus class="size-3.5" /> {{ t('catalogue.product_addons.add_group') }}
-                                </button>
-                            </div>
-                        </template>
-                    </fieldset>
-
-                    <!-- Phase B - per-branch availability + unit stock.
-                         "All branches" = no rows (available everywhere).
-                         Otherwise tick the branches that sell this product
-                         and optionally set per-branch units. Branch
-                         location + devices are admin-managed. -->
-                    <fieldset class="rounded-lg border border-slate-200 p-3">
-                        <legend class="px-2 text-sm font-semibold text-slate-700">
-                            <Building2 class="me-1 inline size-3.5 text-teal-600" />
-                            {{ t('catalogue.branches.section_title') }}
-                        </legend>
-                        <p class="mb-2 text-xs text-slate-500">{{ t('catalogue.branches.section_hint') }}</p>
-
-                        <label class="mb-2 flex items-center gap-2 text-xs font-medium text-slate-700">
-                            <input
-                                v-model="prodForm.branch_all"
-                                type="checkbox"
-                                class="rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200"
-                            >
-                            {{ t('catalogue.branches.all_branches') }}
-                        </label>
-
-                        <div v-if="prodForm.branch_all" class="rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
-                            {{ t('catalogue.branches.all_branches_hint') }}
-                        </div>
-                        <div v-else-if="prodForm.branch_rows.length === 0" class="rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
-                            {{ t('catalogue.branches.no_branches') }}
-                        </div>
-                        <ul v-else class="space-y-1.5">
-                            <li
-                                v-for="(row, idx) in prodForm.branch_rows"
-                                :key="row.branch_id"
-                                class="flex items-center gap-2 rounded border border-slate-200 px-2.5 py-1.5 text-xs"
-                            >
-                                <label class="flex flex-1 items-center gap-2 font-medium text-slate-700">
-                                    <input
-                                        v-model="prodForm.branch_rows[idx].selected"
-                                        type="checkbox"
-                                        class="rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200"
-                                    >
-                                    <span class="truncate">{{ branchName(row.branch_id) }}</span>
-                                </label>
-                                <input
-                                    v-model="prodForm.branch_rows[idx].stock_qty"
-                                    type="number"
-                                    min="0"
-                                    step="1"
-                                    :disabled="!row.selected"
-                                    :placeholder="t('catalogue.branches.stock_placeholder')"
-                                    class="w-24 rounded border border-slate-200 px-2 py-1 text-xs tabular-nums disabled:cursor-not-allowed disabled:bg-slate-50"
-                                >
-                            </li>
-                        </ul>
-                    </fieldset>
-
-                    <!-- Phase 5b — Recipe section. Each line is an
-                         (ingredient, quantity) pair. Empty array
-                         on save = "no recipe / pre-made goods, no
-                         inventory deduction on sale". Live cost
-                         + margin update as the merchant edits. -->
-                    <fieldset class="rounded-lg border border-slate-200 p-3">
-                        <legend class="px-2 text-sm font-semibold text-slate-700">
-                            <Beaker class="me-1 inline size-3.5 text-amber-600" />
-                            {{ t('catalogue.recipe.section_title') }}
-                        </legend>
-                        <p class="mb-3 text-xs text-slate-500">{{ t('catalogue.recipe.section_hint') }}</p>
-
-                        <!-- Ingredients available hint when none exist -->
-                        <div v-if="ingredients.length === 0" class="rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
-                            {{ t('catalogue.recipe.no_ingredients_hint') }}
-                        </div>
-
-                        <!-- Recipe lines + add button -->
-                        <template v-else>
-                            <div v-if="prodForm.recipe_lines.length === 0" class="rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
-                                {{ t('catalogue.recipe.no_lines') }}
-                            </div>
-                            <ul v-else class="space-y-2">
-                                <li
-                                    v-for="(line, idx) in prodForm.recipe_lines"
-                                    :key="idx"
-                                    class="flex flex-wrap items-end gap-2 rounded border border-slate-200 bg-slate-50/50 p-2"
-                                >
-                                    <label class="flex-1 min-w-xs block">
-                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.fields.ingredient') }}</span>
-                                        <select
-                                            v-model="line.ingredient_uuid"
-                                            class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
-                                            @change="line.unit = ''"
-                                        >
-                                            <option value="">{{ t('catalogue.recipe.pick_ingredient') }}</option>
-                                            <option v-for="ing in ingredients" :key="ing.id" :value="ing.uuid">
-                                                {{ ing.name }} ({{ ing.unit }})
-                                            </option>
-                                        </select>
-                                    </label>
-                                    <label class="block w-28">
-                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.recipe.quantity') }}</span>
-                                        <input
-                                            v-model="line.quantity"
-                                            type="number"
-                                            step="0.001"
-                                            min="0.001"
-                                            placeholder="0.000"
-                                            class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
-                                        >
-                                    </label>
-                                    <label class="block w-24">
-                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.recipe.unit') }}</span>
-                                        <select
-                                            v-model="line.unit"
-                                            class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
-                                        >
-                                            <option value="">{{ ingredientUnitLabel(line.ingredient_uuid) }}</option>
-                                            <option v-for="au in (ingredientByUuid(line.ingredient_uuid)?.alt_units ?? [])" :key="au.uuid" :value="au.name">{{ au.name }}</option>
-                                        </select>
-                                    </label>
-                                    <button
-                                        type="button"
-                                        class="grid size-9 place-items-center rounded-lg border border-rose-200 text-rose-700 transition hover:bg-rose-50"
-                                        :title="t('catalogue.recipe.remove_line')"
-                                        @click="removeRecipeLine(idx)"
-                                    >
-                                        <Minus class="size-4" />
-                                    </button>
-                                </li>
-                            </ul>
-                            <button
-                                type="button"
-                                class="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100"
-                                @click="addRecipeLine"
-                            >
-                                <Plus class="size-3.5" />
-                                {{ t('catalogue.recipe.add_line') }}
-                            </button>
-
-                            <!-- Duplicate-ingredient warning -->
-                            <p v-if="recipeHasDuplicates" class="mt-2 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700">
-                                {{ t('catalogue.recipe.duplicate_ingredient') }}
-                            </p>
-
-                            <!-- Live cost + margin preview -->
-                            <div v-if="prodForm.recipe_lines.length > 0" class="mt-3 grid gap-2 sm:grid-cols-2">
-                                <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-                                    <p class="text-[10px] font-semibold uppercase tracking-wide text-amber-700">{{ t('catalogue.recipe.live_cost') }}</p>
-                                    <p class="text-base font-semibold tabular-nums text-amber-900">
-                                        {{ recipeLiveCost }} <span class="text-[10px] font-normal text-amber-600">OMR</span>
-                                    </p>
-                                </div>
-                                <div v-if="recipeLiveMargin !== null" class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
-                                    <p class="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">{{ t('catalogue.recipe.margin') }}</p>
-                                    <p class="text-base font-semibold tabular-nums text-emerald-900">
-                                        {{ recipeLiveMargin }}<span class="text-[10px] font-normal text-emerald-600">%</span>
-                                    </p>
-                                </div>
-                            </div>
-                        </template>
-                    </fieldset>
-
-                    <!-- P-G2 — Physical items section: unit-tracked products
-                         (cups, lids, boxes...) consumed per unit sold, from
-                         the same branch unit stock the Stock dialog manages.
-                         Hidden for internal items (a cup has no components). -->
-                    <fieldset v-if="!prodForm.is_internal" class="rounded-lg border border-slate-200 p-3">
-                        <legend class="px-2 text-sm font-semibold text-slate-700">
-                            <Boxes class="me-1 inline size-3.5 text-sky-600" />
-                            Physical items
-                        </legend>
-                        <p class="mb-3 text-xs text-slate-500">Countable goods consumed when one unit sells — coffee = 1 × cup 12oz + 1 × lid. Deducted from the branch's unit stock at sale and visible in the product's Stock history.</p>
-
-                        <div v-if="componentOptions.length === 0" class="rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
-                            No unit-tracked products yet. Create one (e.g. "Cup 12oz", stock tracking = Ready / bought-in, Internal item ticked) and it appears here.
-                        </div>
-
-                        <template v-else>
-                            <div v-if="prodForm.component_rows.length === 0" class="rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
-                                No physical items attached.
-                            </div>
-                            <ul v-else class="space-y-2">
-                                <li
-                                    v-for="(row, idx) in prodForm.component_rows"
-                                    :key="idx"
-                                    class="flex items-center gap-2"
-                                >
-                                    <select
-                                        v-model="row.component_uuid"
-                                        class="w-full flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
-                                    >
-                                        <option value="" disabled>Pick a unit product…</option>
-                                        <option
-                                            v-for="opt in componentOptions"
-                                            :key="opt.uuid"
-                                            :value="opt.uuid"
-                                            :disabled="opt.uuid === prodModalTarget?.uuid"
-                                        >
-                                            {{ opt.name }}{{ opt.is_internal ? ' (internal)' : '' }}
-                                        </option>
-                                    </select>
-                                    <input
-                                        v-model="row.quantity"
-                                        type="number"
-                                        min="0.001"
-                                        step="1"
-                                        placeholder="Qty / unit"
-                                        class="w-28 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
-                                    >
-                                    <button
-                                        type="button"
-                                        class="grid size-8 shrink-0 place-items-center rounded-lg border border-slate-200 text-rose-600 transition hover:bg-rose-50"
-                                        @click="prodForm.component_rows.splice(idx, 1)"
-                                    >
-                                        <Trash2 class="size-3.5" />
-                                    </button>
-                                </li>
-                            </ul>
-                            <button
-                                type="button"
-                                class="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 transition hover:bg-sky-100"
-                                @click="prodForm.component_rows.push({ component_uuid: '', quantity: '1' })"
-                            >
-                                <Plus class="size-3.5" />
-                                Add physical item
-                            </button>
-                        </template>
-                    </fieldset>
-
-                    <!-- Phase 6c — Provider pricing section -->
-                    <fieldset v-if="deliveryProviders.length > 0" class="rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
-                        <legend class="px-2 text-sm font-semibold text-slate-700 inline-flex items-center gap-2">
-                            <Truck class="size-4 text-teal-700" />
-                            {{ t('delivery_providers.product_grid.title') }}
-                        </legend>
-                        <p class="text-xs text-slate-500">
-                            {{ t('delivery_providers.product_grid.hint') }}
-                        </p>
-                        <div v-if="productProviderPricesError" class="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
-                            {{ productProviderPricesError }}
-                        </div>
-                        <div v-if="productProviderPricesLoading" class="text-xs text-slate-500">{{ t('common.loading') }}</div>
-                        <div v-else class="grid gap-2 sm:grid-cols-2">
-                            <div v-for="provider in deliveryProviders.filter((p) => p.is_active)" :key="provider.id" class="rounded-lg border border-slate-200 bg-white px-3 py-2 flex items-center gap-3">
-                                <span class="inline-flex items-center gap-2 min-w-[7rem] text-sm font-medium text-slate-700">
-                                    <span v-if="provider.color" class="inline-block size-3 rounded-full border border-slate-200" :style="{ backgroundColor: provider.color }"></span>
-                                    {{ provider.name }}
-                                </span>
-                                <input
-                                    :value="productProviderPrices[provider.uuid] ?? ''"
-                                    type="text"
-                                    inputmode="decimal"
-                                    :placeholder="prodForm.delivery_price || prodForm.base_price || '0.000'"
-                                    class="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-mono shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
-                                    :disabled="!canManage"
-                                    @input="(e) => { productProviderPrices[provider.uuid] = (e.target as HTMLInputElement).value; markProviderPriceTouched(provider.uuid); }"
-                                >
-                            </div>
-                        </div>
-                    </fieldset>
-
-            </form>
-            <template #footer>
-                <div class="flex justify-end gap-2">
-                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="prodModalOpen = false">{{ t('common.cancel') }}</button>
-                    <button
-                        type="submit"
-                        form="prod-modal-form"
-                        :disabled="prodModalBusy || recipeHasDuplicates"
-                        class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                        {{ prodModalBusy ? t('catalogue.prod_modal.submitting') : t('catalogue.prod_modal.submit') }}
-                    </button>
-                </div>
-            </template>
-        </BaseModal>
-
         <!-- =============== DELETE CONFIRMS =============== -->
         <BaseModal
             v-if="catDeleteTarget"

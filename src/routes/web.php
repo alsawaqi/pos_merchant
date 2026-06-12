@@ -298,6 +298,12 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('products.store');
         Route::post('products/import', [ProductsController::class, 'import'])
             ->name('products.import');
+        // PD1 — the 3-step wizard's atomic create (product + add-on
+        // groups + recipe + physical items + branches + provider
+        // prices in ONE transaction; edit mode keeps the per-section
+        // endpoints below).
+        Route::post('products/wizard', [ProductsController::class, 'storeWizard'])
+            ->name('products.store-wizard');
         Route::patch('products/{product:uuid}', [ProductsController::class, 'update'])
             ->name('products.update');
         Route::delete('products/{product:uuid}', [ProductsController::class, 'destroy'])
@@ -360,6 +366,12 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('products.addon-link-options');
         Route::put('products/{product:uuid}/components', [ProductsController::class, 'updateComponents'])
             ->name('products.update-components');
+
+        // PD1 — single-product read for the wizard's edit mode.
+        // Declared AFTER the literal GET routes above (component-options
+        // / addon-link-options) so the uuid binding can't swallow them.
+        Route::get('products/{product:uuid}', [ProductsController::class, 'show'])
+            ->name('products.show');
 
         // Phase 7 — UNIT (finished-good) product stock: central pool + allocate
         // to branches + branch->branch transfer + adjust + ledger.

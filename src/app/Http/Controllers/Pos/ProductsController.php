@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Pos;
 
 use App\Actions\Pos\Catalogue\CreateAddOnGroupAction;
 use App\Actions\Pos\Catalogue\CreateProductAction;
+use App\Actions\Pos\Catalogue\CreateProductWizardAction;
 use App\Actions\Pos\Catalogue\DeleteProductAction;
 use App\Actions\Pos\Catalogue\ImportProductsAction;
 use App\Actions\Pos\Catalogue\SyncProductAddOnGroupsAction;
@@ -17,6 +18,7 @@ use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Pos\Catalogue\CreateAddOnGroupRequest;
 use App\Http\Requests\Pos\Catalogue\CreateProductRequest;
+use App\Http\Requests\Pos\Catalogue\CreateProductWizardRequest;
 use App\Http\Requests\Pos\Catalogue\ImportProductsRequest;
 use App\Http\Requests\Pos\Catalogue\SyncProductAddOnGroupsRequest;
 use App\Http\Requests\Pos\Catalogue\SyncProductBranchesRequest;
@@ -28,11 +30,14 @@ use App\Http\Resources\Pos\Catalogue\ProductResource;
 use App\Models\AddOnGroup;
 use App\Models\Product;
 use App\Models\ProductCategory;
+use App\Support\BranchScope;
 use App\Support\MerchantTenantContext;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use RuntimeException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
  *   GET    /api/products                     → list (?category=uuid, ?search, ?page, ?per_page)
@@ -61,6 +66,7 @@ class ProductsController extends Controller
         private readonly UpdateProductComponentsAction $updateComponentsAction,
         private readonly SyncProductBranchesAction $syncBranches,
         private readonly CreateAddOnGroupAction $createAddOnGroup,
+        private readonly CreateProductWizardAction $createWizard,
     ) {}
 
     public function index(Request $request): AnonymousResourceCollection
@@ -130,6 +136,81 @@ class ProductsController extends Controller
         return response()->json([
             'data' => (new ProductResource($product))->resolve($request),
         ], 201);
+    }
+
+    /**
+     * POST /api/products/wizard
+     *
+     * PD1 — the 3-step wizard's atomic create: product + shared-group
+     * attachments + inline owned add-on groups with options + recipe +
+     * physical items + branches + delivery prices, all-or-nothing.
+     */
+    public function storeWizard(CreateProductWizardRequest $request): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::CatalogueManage);
+
+        // Branch assignment is HQ-only (full-replace semantics — same
+        // guard as the standalone PUT). A scoped user creates with
+        // branches: null and the product is available everywhere.
+        $validated = $request->validated();
+        if (($validated['branches'] ?? null) !== null) {
+            BranchScope::ensureUnrestricted(
+                $request->user(),
+                'Branch availability is managed by accounts with access to all branches.',
+            );
+        }
+
+        try {
+            $product = $this->createWizard->handle($validated, $request->user());
+        } catch (QueryException|HttpException $e) {
+            // Both EXTEND RuntimeException — without this rethrow a DB
+            // error would leak its raw SQL to the browser as a "422"
+            // and an abort() would lose its real status. Let the
+            // global handler classify them (500 + Sentry / the abort).
+            throw $e;
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        $product->load([
+            'category',
+            'addOnGroups.addOns',
+            'recipeLines.ingredient',
+            'components.component',
+            'deliveryPrices.deliveryProvider',
+            ...$this->branchProductsEager($request),
+        ]);
+
+        return response()->json([
+            'data' => (new ProductResource($product))->resolve($request),
+        ], 201);
+    }
+
+    /**
+     * GET /api/products/{product:uuid}
+     *
+     * PD1 — single-product read for the wizard's edit mode (a direct
+     * URL load has no list payload to seed from). Carries everything
+     * the form prefills, including the relations the paginated index
+     * omits (delivery prices).
+     */
+    public function show(Request $request, Product $product): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::CatalogueView);
+        $this->refuseIfNotInTenant($product);
+
+        $product->load([
+            'category',
+            'addOnGroups.addOns.linkedProduct',
+            'recipeLines.ingredient',
+            'components.component',
+            'deliveryPrices.deliveryProvider',
+            ...$this->branchProductsEager($request),
+        ]);
+
+        return response()->json([
+            'data' => (new ProductResource($product))->resolve($request),
+        ]);
     }
 
     /**

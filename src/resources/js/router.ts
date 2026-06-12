@@ -10,6 +10,7 @@ import OrdersIndex from '@/Pages/Merchant/Orders/Index.vue';
 import BranchesIndex from '@/Pages/Merchant/Branches/Index.vue';
 import BranchesShow from '@/Pages/Merchant/Branches/Show.vue';
 import CatalogueIndex from '@/Pages/Merchant/Catalogue/Index.vue';
+import ProductWizard from '@/Pages/Merchant/Catalogue/ProductWizard.vue';
 import TaxesIndex from '@/Pages/Merchant/Taxes/Index.vue';
 import ExpenseCategoriesIndex from '@/Pages/Merchant/ExpenseCategories/Index.vue';
 import CustomersIndex from '@/Pages/Merchant/Customers/Index.vue';
@@ -155,6 +156,20 @@ const routes: RouteRecordRaw[] = [
         path: '/catalogue',
         name: 'merchant.catalogue',
         component: CatalogueIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        // PD1 — the 3-step product wizard (replaces the old product
+        // modal). Server-side gates by catalogue.manage.
+        path: '/catalogue/products/new',
+        name: 'merchant.catalogue.product-create',
+        component: ProductWizard,
+        meta: { requiresAuth: true },
+    },
+    {
+        path: '/catalogue/products/:uuid/edit',
+        name: 'merchant.catalogue.product-edit',
+        component: ProductWizard,
         meta: { requiresAuth: true },
     },
     {

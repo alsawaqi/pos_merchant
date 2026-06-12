@@ -424,6 +424,56 @@ export function deleteProduct(uuid: string): Promise<void> {
     return apiDelete<void>(`/api/products/${uuid}`);
 }
 
+// ---- PD1 — the 3-step product wizard --------------------------
+
+/** Inline option inside a wizard owned group (created with the product). */
+export interface WizardOwnedOptionPayload {
+    name: string;
+    name_ar?: string | null;
+    price_delta?: string | number;
+    is_default?: boolean;
+    linked_product_uuid?: string | null;
+    display_order?: number;
+}
+
+/** Inline product-owned add-on group, created atomically with the product. */
+export interface WizardOwnedGroupPayload {
+    name: string;
+    name_ar?: string | null;
+    selection_mode?: AddOnSelectionMode;
+    min_selections?: number | null;
+    max_selections?: number | null;
+    display_order?: number;
+    options: WizardOwnedOptionPayload[];
+}
+
+/**
+ * POST /api/products/wizard — ALL-OR-NOTHING create: the product plus
+ * every composition section in one transaction. `branches: null` skips
+ * the branch sync (available everywhere; required for scoped users).
+ */
+export interface CreateProductWizardPayload {
+    product: CreateProductPayload;
+    addon_group_uuids: string[];
+    owned_groups: WizardOwnedGroupPayload[];
+    recipe_lines: RecipeLinePayload[];
+    recipe_note?: string | null;
+    component_lines: ComponentLinePayload[];
+    branches: ProductBranchAssignment[] | null;
+    delivery_prices: { provider_uuid: string; price: string }[];
+}
+
+export function createProductWizard(
+    payload: CreateProductWizardPayload,
+): Promise<{ data: Product }> {
+    return apiPost<{ data: Product }>('/api/products/wizard', payload as unknown as JsonValue);
+}
+
+/** PD1 — single-product read for the wizard's edit mode (full prefill shape). */
+export function getProduct(uuid: string): Promise<{ data: Product }> {
+    return apiGet<{ data: Product }>(`/api/products/${uuid}`);
+}
+
 // ---- Phase 4.9 — Add-on Groups ---------------------------------
 
 export function listAddOnGroups(): Promise<{ data: AddOnGroup[] }> {
