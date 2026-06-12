@@ -34,6 +34,7 @@ import {
     getProductAddOnGroups,
     listAddOnGroups,
     listCategories,
+    listComponentOptions,
     listProducts,
     syncProductAddOnGroups,
     syncProductBranches,
@@ -41,6 +42,7 @@ import {
     updateAddOnGroup,
     updateCategory,
     updateProduct,
+    updateProductComponents,
     updateProductRecipe,
     type AddOn,
     type AddOnGroup,
@@ -48,6 +50,8 @@ import {
     type AddOnStatus,
     type Category,
     type CategoryStatus,
+    type ComponentLinePayload,
+    type ComponentOption,
     type CreateProductPayload,
     type Product,
     type ProductBranchAssignment,
@@ -93,6 +97,9 @@ const branches = ref<BranchLite[]>([]);
 // inventory.view get an empty list and a disabled recipe
 // editor (which the UI explains via a hint).
 const ingredients = ref<Ingredient[]>([]);
+// P-G2 — the Physical items picker source (unit-mode products of the
+// company, internal items first). Slim payload, fetched once.
+const componentOptions = ref<ComponentOption[]>([]);
 // Phase 6c — delivery providers used by the Providers tab AND
 // the per-product price grid in the product modal. We always
 // fetch them so the product modal can render its price grid
@@ -198,6 +205,12 @@ const prodForm = reactive<{
     low_stock_threshold: string;
     // P-G1.5 - default shelf life in days ('' = keeps indefinitely).
     shelf_life_days: string;
+    // P-G2 - internal item (cups/lids): never on the POS menu or the
+    // customer tablet, full stock participation.
+    is_internal: boolean;
+    // P-G2 - physical-item components per unit sold (coffee = 1 x cup +
+    // 1 x lid). Empty on submit = consumes no physical items.
+    component_rows: { component_uuid: string; quantity: string }[];
     // Phase 4.9 — uuids of non-global add-on groups attached
     // to this product. Mirrored from product.addon_groups on
     // edit, posted to syncProductAddOnGroups on save.
@@ -233,6 +246,8 @@ const prodForm = reactive<{
     stock_mode: 'untracked',
     low_stock_threshold: '',
     shelf_life_days: '',
+    is_internal: false,
+    component_rows: [],
     addon_group_uuids: [],
     recipe_lines: [],
     branch_all: true,
@@ -371,6 +386,17 @@ async function fetchIngredients(): Promise<void> {
     }
 }
 
+async function fetchComponentOptions(): Promise<void> {
+    // P-G2 - the Physical items picker source (unit-mode products,
+    // internal first). Soft-fail: the section degrades to a hint.
+    try {
+        const response = await listComponentOptions();
+        componentOptions.value = response.data;
+    } catch {
+        componentOptions.value = [];
+    }
+}
+
 async function fetchAddOnGroups(): Promise<void> {
     try {
         const response = await listAddOnGroups();
@@ -407,6 +433,7 @@ async function fetchAll(): Promise<void> {
         fetchProducts(),
         fetchAddOnGroups(),
         fetchIngredients(),
+        fetchComponentOptions(),
         fetchDeliveryProviders(),
         fetchBranches(),
     ]);
@@ -530,6 +557,8 @@ function openCreateProduct(): void {
     prodForm.stock_mode = 'untracked';
     prodForm.low_stock_threshold = '';
     prodForm.shelf_life_days = '';
+    prodForm.is_internal = false;
+    prodForm.component_rows = [];
     prodForm.addon_group_uuids = [];
     prodForm.recipe_lines = [];
     prodForm.branch_all = true;
@@ -570,6 +599,13 @@ function openEditProduct(product: Product): void {
     prodForm.shelf_life_days = product.shelf_life_days !== null && product.shelf_life_days !== undefined
         ? String(product.shelf_life_days)
         : '';
+    prodForm.is_internal = product.is_internal ?? false;
+    // P-G2 - pre-populate the Physical items rows from the eager-loaded
+    // component lines. Falls back to [] when none.
+    prodForm.component_rows = (product.component_lines ?? []).map((line) => ({
+        component_uuid: line.component_uuid,
+        quantity: line.quantity,
+    }));
     // Phase 4.9 — pre-populate the picker from the eager-
     // loaded relation. The list endpoint doesn't return
     // addon_groups, so editing relies on the resource emitting
@@ -761,6 +797,8 @@ async function submitProduct(): Promise<void> {
             low_stock_threshold: prodForm.low_stock_threshold === '' ? null : prodForm.low_stock_threshold,
             // P-G1.5 - default shelf life in days ('' = keeps indefinitely).
             shelf_life_days: prodForm.shelf_life_days === '' ? null : Number(prodForm.shelf_life_days),
+            // P-G2 - internal item: never on the POS menu or tablet.
+            is_internal: prodForm.is_internal,
             display_order: prodForm.display_order,
         };
 
@@ -797,6 +835,17 @@ async function submitProduct(): Promise<void> {
             }));
         await updateProductRecipe(productUuid, { lines: cleanLines });
 
+        // Step 3a (P-G2): replace the product's physical-item
+        // components. Same idempotent full-replace semantics as the
+        // recipe; skip empty / incomplete rows client-side.
+        const cleanComponents: ComponentLinePayload[] = prodForm.component_rows
+            .filter((l) => l.component_uuid && l.quantity !== '')
+            .map((l) => ({
+                component_uuid: l.component_uuid,
+                quantity: l.quantity,
+            }));
+        await updateProductComponents(productUuid, cleanComponents);
+
         // Step 3b (Phase B): replace per-branch availability + unit
         // stock. branch_all = clear all rows (available everywhere);
         // otherwise the ticked branches with their optional units.
@@ -822,6 +871,8 @@ async function submitProduct(): Promise<void> {
 
         prodModalOpen.value = false;
         await fetchProducts();
+        // P-G2 - a newly saved unit product may now be a valid component.
+        void fetchComponentOptions();
     } catch (err) {
         if (err instanceof ApiError && err.isValidationError()) {
             prodModalErrors.value = err.payload.errors;
@@ -1512,6 +1563,15 @@ async function removeOwnedGroup(groupUuid: string): Promise<void> {
                                 <td class="px-5 py-4">
                                     <span class="block text-sm font-semibold text-slate-950">{{ prod.name }}</span>
                                     <span v-if="prod.name_ar" class="block text-xs text-slate-500" dir="rtl">{{ prod.name_ar }}</span>
+                                    <!-- P-G2 — internal items never reach the POS
+                                         menu; flag them so the list reads honestly. -->
+                                    <span
+                                        v-if="prod.is_internal"
+                                        class="mt-1 inline-flex items-center gap-1 rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-600"
+                                    >
+                                        <Package class="size-3" />
+                                        Internal
+                                    </span>
                                     <!-- G1 — clock badge when a daily availability
                                          window is set. -->
                                     <span
@@ -2122,6 +2182,17 @@ async function removeOwnedGroup(groupUuid: string): Promise<void> {
                         <p class="mt-1 text-xs text-slate-500">Default expiry for each kitchen batch (the chef can adjust per batch at Finish). Leave empty if it keeps — no day-end disposition will be asked.</p>
                     </label>
 
+                    <!-- P-G2 - internal item (cups / lids / tissue / boxes):
+                         a unit-stock product the company buys and counts but
+                         never sells directly. -->
+                    <label v-if="prodForm.stock_mode === 'unit'" class="flex items-start gap-2 rounded-lg border border-slate-200 p-3">
+                        <input v-model="prodForm.is_internal" type="checkbox" class="mt-0.5 rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200">
+                        <span>
+                            <span class="block text-sm font-medium text-slate-700">Internal item</span>
+                            <span class="block text-xs text-slate-500">Never shown on the POS menu or the customer tablet — but fully stock-managed (Receive &amp; Distribute, transfers, counts). For cups, lids, boxes… Attach it to sellable products below via their <strong>Physical items</strong> section.</span>
+                        </span>
+                    </label>
+
                     <!-- Phase 4.9 — add-on groups picker. Only
                          non-global groups appear. Globals are
                          documented in the hint as "always attached". -->
@@ -2445,6 +2516,73 @@ async function removeOwnedGroup(groupUuid: string): Promise<void> {
                                     </p>
                                 </div>
                             </div>
+                        </template>
+                    </fieldset>
+
+                    <!-- P-G2 — Physical items section: unit-tracked products
+                         (cups, lids, boxes...) consumed per unit sold, from
+                         the same branch unit stock the Stock dialog manages.
+                         Hidden for internal items (a cup has no components). -->
+                    <fieldset v-if="!prodForm.is_internal" class="rounded-lg border border-slate-200 p-3">
+                        <legend class="px-2 text-sm font-semibold text-slate-700">
+                            <Boxes class="me-1 inline size-3.5 text-sky-600" />
+                            Physical items
+                        </legend>
+                        <p class="mb-3 text-xs text-slate-500">Countable goods consumed when one unit sells — coffee = 1 × cup 12oz + 1 × lid. Deducted from the branch's unit stock at sale and visible in the product's Stock history.</p>
+
+                        <div v-if="componentOptions.length === 0" class="rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
+                            No unit-tracked products yet. Create one (e.g. "Cup 12oz", stock tracking = Ready / bought-in, Internal item ticked) and it appears here.
+                        </div>
+
+                        <template v-else>
+                            <div v-if="prodForm.component_rows.length === 0" class="rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
+                                No physical items attached.
+                            </div>
+                            <ul v-else class="space-y-2">
+                                <li
+                                    v-for="(row, idx) in prodForm.component_rows"
+                                    :key="idx"
+                                    class="flex items-center gap-2"
+                                >
+                                    <select
+                                        v-model="row.component_uuid"
+                                        class="w-full flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                                    >
+                                        <option value="" disabled>Pick a unit product…</option>
+                                        <option
+                                            v-for="opt in componentOptions"
+                                            :key="opt.uuid"
+                                            :value="opt.uuid"
+                                            :disabled="opt.uuid === prodModalTarget?.uuid"
+                                        >
+                                            {{ opt.name }}{{ opt.is_internal ? ' (internal)' : '' }}
+                                        </option>
+                                    </select>
+                                    <input
+                                        v-model="row.quantity"
+                                        type="number"
+                                        min="0.001"
+                                        step="1"
+                                        placeholder="Qty / unit"
+                                        class="w-28 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                                    >
+                                    <button
+                                        type="button"
+                                        class="grid size-8 shrink-0 place-items-center rounded-lg border border-slate-200 text-rose-600 transition hover:bg-rose-50"
+                                        @click="prodForm.component_rows.splice(idx, 1)"
+                                    >
+                                        <Trash2 class="size-3.5" />
+                                    </button>
+                                </li>
+                            </ul>
+                            <button
+                                type="button"
+                                class="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 transition hover:bg-sky-100"
+                                @click="prodForm.component_rows.push({ component_uuid: '', quantity: '1' })"
+                            >
+                                <Plus class="size-3.5" />
+                                Add physical item
+                            </button>
                         </template>
                     </fieldset>
 

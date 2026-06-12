@@ -64,6 +64,14 @@ export interface Product {
     low_stock_threshold: string | null;
     /** P-G1.5 — default shelf life in days. null = keeps indefinitely. */
     shelf_life_days: number | null;
+    /** P-G2 — internal item: never on the POS menu or tablet. */
+    is_internal: boolean;
+    /** P-G2 — physical-item components per unit sold (when eager-loaded). */
+    component_lines?: {
+        component_uuid: string;
+        component_name: string | null;
+        quantity: string;
+    }[];
     cost_price: string | null;
     /** Percentage (5.00 = 5%). null = inherit company default. */
     tax_rate: string | null;
@@ -141,6 +149,21 @@ export interface RecipeLinePayload {
 export interface UpdateProductRecipePayload {
     lines: RecipeLinePayload[];
     note?: string | null;
+}
+
+// ---- P-G2 — physical-item components ---------------------------
+
+export interface ComponentLinePayload {
+    component_uuid: string;
+    /** Per ONE unit sold (coffee = 1 x cup + 1 x lid). */
+    quantity: string | number;
+}
+
+export interface ComponentOption {
+    uuid: string;
+    name: string;
+    name_ar: string | null;
+    is_internal: boolean;
 }
 
 // ---- Phase 4.9 — Add-ons ---------------------------------------
@@ -230,6 +253,8 @@ export interface CreateProductPayload {
     low_stock_threshold?: string | number | null;
     /** P-G1.5 — default shelf life in days. null = keeps indefinitely. */
     shelf_life_days?: number | null;
+    /** P-G2 — internal item: never on the POS menu or tablet. */
+    is_internal?: boolean;
     cost_price?: string | number | null;
     tax_rate?: string | number | null;
     /** Phase D2 — §5.5.3 tax-inclusive flag (display-only for now). */
@@ -258,6 +283,8 @@ export interface UpdateProductPayload {
     low_stock_threshold?: string | number | null;
     /** P-G1.5 — default shelf life in days. null = keeps indefinitely. */
     shelf_life_days?: number | null;
+    /** P-G2 — internal item: never on the POS menu or tablet. */
+    is_internal?: boolean;
     cost_price?: string | number | null;
     tax_rate?: string | number | null;
     /** Phase D2 — §5.5.3 tax-inclusive flag (display-only for now). */
@@ -488,6 +515,26 @@ export function updateProductRecipe(
         `/api/products/${productUuid}/recipe`,
         payload as unknown as JsonValue,
     );
+}
+
+/**
+ * P-G2 — idempotent full-replace of the product's physical-item
+ * components. Empty lines = consumes no physical items. Components
+ * must be unit-mode products of the same company (server-enforced).
+ */
+export function updateProductComponents(
+    productUuid: string,
+    lines: ComponentLinePayload[],
+): Promise<{ data: Product }> {
+    return apiPut<{ data: Product }>(
+        `/api/products/${productUuid}/components`,
+        { lines } as unknown as JsonValue,
+    );
+}
+
+/** P-G2 — the slim picker source: unit-mode products, internal first. */
+export function listComponentOptions(): Promise<{ data: ComponentOption[] }> {
+    return apiGet<{ data: ComponentOption[] }>('/api/products/component-options');
 }
 
 // ---- Phase B - product per-branch availability + stock ---------

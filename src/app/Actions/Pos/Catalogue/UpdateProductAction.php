@@ -50,6 +50,8 @@ final readonly class UpdateProductAction
         // Phase D2 — §5.5.3 flags (tax_inclusive display-only for now).
         'tax_inclusive',
         'show_on_customer_tablet',
+        // P-G2 — internal item (never on the POS menu or tablet).
+        'is_internal',
         // G1 — menu time-window (both NULL = always available).
         'available_from',
         'available_until',

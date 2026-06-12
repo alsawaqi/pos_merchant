@@ -43,6 +43,8 @@ class UpdateProductRequest extends FormRequest
             'tax_inclusive' => ['sometimes', 'boolean'],
             // Phase D2 — §5.5.3 "Show on Customer Tablet menu yes/no".
             'show_on_customer_tablet' => ['sometimes', 'boolean'],
+            // P-G2 — internal item (never on the POS menu or tablet).
+            'is_internal' => ['sometimes', 'boolean'],
             // G1 — menu time-window ('HH:MM:SS', NULL = no bound, both
             // NULL = always available, start > end wraps midnight).
             'available_from' => ['sometimes', 'nullable', 'string', 'regex:/^[0-2]\d:[0-5]\d(:[0-5]\d)?$/'],

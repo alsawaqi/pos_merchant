@@ -98,6 +98,17 @@ class ProductResource extends JsonResource
             'has_recipe' => $this->hasRecipe(),
             'theoretical_cost' => $this->theoreticalCost(),
             'recipe_lines' => ProductRecipeResource::collection($this->whenLoaded('recipeLines')),
+            // P-G2 — internal item (cups/lids): never on the POS menu or
+            // tablet; full stock participation.
+            'is_internal' => (bool) $this->is_internal,
+            // P-G2 — physical-item components per unit sold, inlined when
+            // the controller eager-loaded components.component (the edit
+            // modal pre-populates from this).
+            'component_lines' => $this->whenLoaded('components', fn (): array => $this->components->map(fn ($line): array => [
+                'component_uuid' => (string) $line->component?->uuid,
+                'component_name' => $line->component?->name,
+                'quantity' => (string) $line->quantity,
+            ])->values()->all()),
             // Per-branch availability + unit stock (which branches sell this
             // product + how many units each holds). Empty/absent = available
             // everywhere. Inlined when the controller eager-loads branchProducts.

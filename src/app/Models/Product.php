@@ -62,6 +62,9 @@ use Illuminate\Support\Str;
     'status',
     // Phase D2 — §5.5.3 "Show on Customer Tablet menu yes/no".
     'show_on_customer_tablet',
+    // P-G2 — internal items (cups/lids): never on the POS menu or the
+    // customer tablet, full stock participation.
+    'is_internal',
     // G1 — menu time-window. 'HH:MM:SS' strings, both NULL = always
     // available, start > end wraps midnight (pos_discounts convention).
     'available_from',
@@ -94,6 +97,7 @@ class Product extends Model
             'display_order' => 'integer',
             'status' => ProductStatus::class,
             'show_on_customer_tablet' => 'boolean',
+            'is_internal' => 'boolean',
         ];
     }
 
@@ -282,6 +286,18 @@ class Product extends Model
     public function branchProducts(): HasMany
     {
         return $this->hasMany(BranchProduct::class);
+    }
+
+    /**
+     * P-G2 — the physical items this product consumes per unit sold
+     * (coffee = 1 x cup 12oz + 1 x lid). Components are unit-mode
+     * products; empty = no component consumption.
+     *
+     * @return HasMany<ProductComponent, $this>
+     */
+    public function components(): HasMany
+    {
+        return $this->hasMany(ProductComponent::class)->orderBy('id');
     }
 
     /**

@@ -344,6 +344,14 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         Route::put('products/{product:uuid}/recipe', [ProductsController::class, 'updateRecipe'])
             ->name('products.update-recipe');
 
+        // P-G2 — physical-item components (cups/lids consumed per unit
+        // sold). Same idempotent full-replace shape as the recipe;
+        // component-options is the slim unit-product picker source.
+        Route::get('products/component-options', [ProductsController::class, 'componentOptions'])
+            ->name('products.component-options');
+        Route::put('products/{product:uuid}/components', [ProductsController::class, 'updateComponents'])
+            ->name('products.update-components');
+
         // Phase 7 — UNIT (finished-good) product stock: central pool + allocate
         // to branches + branch->branch transfer + adjust + ledger.
         Route::get('products/{product:uuid}/stock', [ProductStockController::class, 'show'])

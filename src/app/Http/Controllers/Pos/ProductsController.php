@@ -11,6 +11,7 @@ use App\Actions\Pos\Catalogue\ImportProductsAction;
 use App\Actions\Pos\Catalogue\SyncProductAddOnGroupsAction;
 use App\Actions\Pos\Catalogue\SyncProductBranchesAction;
 use App\Actions\Pos\Catalogue\UpdateProductAction;
+use App\Actions\Pos\Catalogue\UpdateProductComponentsAction;
 use App\Actions\Pos\Catalogue\UpdateProductRecipeAction;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
@@ -19,6 +20,7 @@ use App\Http\Requests\Pos\Catalogue\CreateProductRequest;
 use App\Http\Requests\Pos\Catalogue\ImportProductsRequest;
 use App\Http\Requests\Pos\Catalogue\SyncProductAddOnGroupsRequest;
 use App\Http\Requests\Pos\Catalogue\SyncProductBranchesRequest;
+use App\Http\Requests\Pos\Catalogue\UpdateProductComponentsRequest;
 use App\Http\Requests\Pos\Catalogue\UpdateProductRecipeRequest;
 use App\Http\Requests\Pos\Catalogue\UpdateProductRequest;
 use App\Http\Resources\Pos\Catalogue\AddOnGroupResource;
@@ -56,6 +58,7 @@ class ProductsController extends Controller
         private readonly DeleteProductAction $delete,
         private readonly SyncProductAddOnGroupsAction $syncAddOnGroups,
         private readonly UpdateProductRecipeAction $updateRecipe,
+        private readonly UpdateProductComponentsAction $updateComponentsAction,
         private readonly SyncProductBranchesAction $syncBranches,
         private readonly CreateAddOnGroupAction $createAddOnGroup,
     ) {}
@@ -75,7 +78,9 @@ class ProductsController extends Controller
             // Phase 5b — recipeLines + ingredient so the cost +
             // has_recipe + edit-modal pre-populate without extra
             // round-trips.
-            ->with(['category', 'addOnGroups', 'recipeLines.ingredient', 'branchProducts']);
+            // P-G2 — components + their product so the Physical items
+            // section pre-populates without an extra round-trip.
+            ->with(['category', 'addOnGroups', 'recipeLines.ingredient', 'branchProducts', 'components.component']);
 
         // Optional ?category=<uuid> filter. Unknown / cross-
         // tenant uuid silently yields zero results (no leak).
@@ -161,6 +166,63 @@ class ProductsController extends Controller
         $updated->load(['category', 'addOnGroups', 'recipeLines.ingredient', 'branchProducts']);
 
         return ProductResource::make($updated);
+    }
+
+    /**
+     * PUT /api/products/{product:uuid}/components
+     *
+     * P-G2 — idempotent full-replace of the product's physical-item
+     * components (coffee = 1 x cup 12oz + 1 x lid). Components must be
+     * unit-mode products of the same company; pos_api consumes them from
+     * branch unit stock at order.pay.
+     */
+    public function updateComponents(UpdateProductComponentsRequest $request, Product $product): ProductResource|JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::CatalogueManage);
+        $this->refuseIfNotInTenant($product);
+
+        try {
+            $updated = $this->updateComponentsAction->handle(
+                $product,
+                $request->validated()['lines'] ?? [],
+                $request->user(),
+            );
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        $updated->load(['category', 'addOnGroups', 'recipeLines.ingredient', 'branchProducts', 'components.component']);
+
+        return ProductResource::make($updated);
+    }
+
+    /**
+     * GET /api/products/component-options
+     *
+     * P-G2 — the slim picker source for the Physical items section:
+     * every unit-mode product of the company (internal items first —
+     * cups/lids are the typical components). Deliberately tiny: the
+     * full index resource is far too heavy for a dropdown.
+     */
+    public function componentOptions(Request $request): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::CatalogueView);
+
+        $options = Product::query()
+            ->where('company_id', $this->tenant->requiredId())
+            ->where('stock_mode', 'unit')
+            ->orderByDesc('is_internal')
+            ->orderBy('name')
+            ->limit(500)
+            ->get(['uuid', 'name', 'name_ar', 'is_internal'])
+            ->map(static fn (Product $p): array => [
+                'uuid' => $p->uuid,
+                'name' => $p->name,
+                'name_ar' => $p->name_ar,
+                'is_internal' => (bool) $p->is_internal,
+            ]);
+
+        return response()->json(['data' => $options]);
     }
 
     public function destroy(Request $request, Product $product): JsonResponse
