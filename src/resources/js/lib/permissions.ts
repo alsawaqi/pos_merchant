@@ -86,6 +86,9 @@ export const MerchantPermission = {
     // P-G7 — delivery-provider settlement (the Deliveries page +
     // confirm/adjust decisions).
     DeliveriesManage: 'deliveries.manage',
+    // P-G8 — branch sales targets config (the dashboard widget is
+    // visible to every signed-in user).
+    TargetsManage: 'targets.manage',
 } as const;
 
 export type MerchantPermissionValue =

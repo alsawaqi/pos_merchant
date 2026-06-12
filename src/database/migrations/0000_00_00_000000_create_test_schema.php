@@ -1521,6 +1521,40 @@ return new class extends Migration
             $table->timestamps();
             $table->unique(['portal_message_id', 'user_id'], 'pos_portal_message_reads_unique');
         });
+
+        // ---- P-G8 — branch performance targets (mirrors pos_admin's
+        // 2026_07_21_010000 migration): the per-branch goal definition +
+        // one row per finished evaluation window (lazy finalization).
+        Schema::create('pos_branch_targets', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->string('period', 16);
+            $table->decimal('amount', 12, 3);
+            $table->unsignedSmallInteger('window_periods')->default(1);
+            $table->date('starts_on');
+            $table->boolean('is_active')->default(true);
+            $table->foreignId('created_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->timestamps();
+            $table->softDeletes();
+            $table->index(['company_id', 'branch_id', 'is_active'], 'pos_branch_targets_company_branch_active_idx');
+        });
+
+        Schema::create('pos_branch_target_windows', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('target_id')->constrained('pos_branch_targets')->cascadeOnDelete();
+            $table->unsignedBigInteger('company_id')->index();
+            $table->unsignedBigInteger('branch_id')->index();
+            $table->date('window_start');
+            $table->date('window_end');
+            $table->decimal('goal_amount', 12, 3);
+            $table->decimal('actual_amount', 12, 3);
+            $table->boolean('hit');
+            $table->timestamp('finalized_at');
+            $table->timestamps();
+            $table->unique(['target_id', 'window_start'], 'pos_branch_target_windows_target_start_unique');
+        });
     }
 
     public function down(): void

@@ -24,11 +24,18 @@
 
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Sparkles, TrendingUp, TrendingDown, Minus, Trophy, AlertTriangle, History, CheckCircle2, HeartHandshake, MonitorSmartphone } from 'lucide-vue-next';
+import { Sparkles, Target, TrendingUp, TrendingDown, Minus, Trophy, AlertTriangle, History, CheckCircle2, HeartHandshake, MonitorSmartphone } from 'lucide-vue-next';
+import BaseModal from '@/Components/BaseModal.vue';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import ReportChart from '@/Pages/Merchant/Reports/components/ReportChart.vue';
 import { authState } from '@/stores/auth';
 import { fetchDashboardSummary, type DashboardSummaryPayload } from '@/lib/api/dashboard';
+import {
+    fetchBranchPerformance,
+    type BranchPerformanceRow,
+    type RecentMiss,
+} from '@/lib/api/branchTargets';
+import { markMissPopupShown, shouldShowMissPopup } from '@/stores/targets';
 import { ApiError } from '@/lib/api';
 import { usePermissions } from '@/composables/usePermissions';
 import { MerchantPermission } from '@/lib/permissions';
@@ -67,7 +74,60 @@ async function load(): Promise<void> {
     }
 }
 
-onMounted(() => { void load(); });
+// ---- P-G8 — Branch Performance (its own endpoint; degrades silently
+// so a targets hiccup never blanks the rest of the dashboard) ----
+const performance = ref<BranchPerformanceRow[]>([]);
+const recentMisses = ref<RecentMiss[]>([]);
+const missPopupOpen = ref(false);
+
+async function loadPerformance(): Promise<void> {
+    try {
+        const r = await fetchBranchPerformance();
+        performance.value = r.data;
+        recentMisses.value = r.recent_misses;
+        // "Popup on portal login when a branch just missed" — once per
+        // SPA session (the dashboard is the landing page after login).
+        if (r.recent_misses.length > 0 && shouldShowMissPopup()) {
+            markMissPopupShown();
+            missPopupOpen.value = true;
+        }
+    } catch {
+        performance.value = [];
+        recentMisses.value = [];
+    }
+}
+
+/** "day 2 of 3" / "week 1 of 2" / "month 1 of 1" per the target period. */
+function elapsedLabel(row: BranchPerformanceRow): string {
+    const key = `dashboard_targets.elapsed_${row.period}`;
+    return t(key, { n: row.elapsed_periods, total: row.window_periods });
+}
+
+function progressBarClass(row: BranchPerformanceRow): string {
+    // Pace-aware colour: green when at/above the pro-rata TIME pace.
+    // Computed from the window's actual day span (the server's
+    // elapsed_periods is 1-based and counts the in-progress period, which
+    // would demand a full period's takings the moment it starts). Each
+    // elapsed day earns a half-day credit so day 1 of a 1-day window
+    // expects ~50%, not 0% or 100%.
+    const dayMs = 86_400_000;
+    const start = new Date(`${row.window_start}T00:00:00`).getTime();
+    const end = new Date(`${row.window_end}T00:00:00`).getTime();
+    const totalDays = Math.max(1, Math.round((end - start) / dayMs) + 1);
+    const elapsedDays = Math.min(
+        totalDays,
+        Math.max(1, Math.floor((Date.now() - start) / dayMs) + 1),
+    );
+    const pace = ((elapsedDays - 0.5) / totalDays) * 100;
+    if (row.progress_pct >= Math.min(100, pace)) return 'bg-emerald-500';
+    if (row.progress_pct >= pace * 0.6) return 'bg-amber-500';
+    return 'bg-rose-500';
+}
+
+onMounted(() => {
+    void load();
+    void loadPerformance();
+});
 
 /**
  * Compute the % delta today vs yesterday. Returns null when
@@ -183,6 +243,45 @@ const paymentMixChart = computed(() => {
             </div>
 
             <div v-if="error" class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">{{ error }}</div>
+
+            <!-- P-G8 — Branch Performance: the current evaluation window
+                 per branch target ("380 / 600 — day 2 of 3"). -->
+            <div v-if="performance.length > 0" class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <Target class="size-4 text-teal-600" />
+                    {{ t('dashboard_targets.title') }}
+                </div>
+                <div class="mt-4 grid gap-4 sm:grid-cols-2">
+                    <div v-for="row in performance" :key="row.target_uuid" class="rounded-xl border border-slate-100 bg-slate-50/60 p-4">
+                        <div class="flex items-center justify-between gap-2">
+                            <p class="text-sm font-bold text-slate-900">{{ row.branch_name ?? '—' }}</p>
+                            <span class="text-xs font-semibold tabular-nums text-slate-600">{{ row.progress_pct }}%</span>
+                        </div>
+                        <div class="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-200">
+                            <div
+                                class="h-full rounded-full transition-all"
+                                :class="progressBarClass(row)"
+                                :style="{ width: `${Math.min(100, row.progress_pct)}%` }"
+                            />
+                        </div>
+                        <div class="mt-2 flex items-center justify-between text-xs text-slate-600">
+                            <span class="tabular-nums">{{ row.actual }} / {{ row.goal }}</span>
+                            <span>{{ elapsedLabel(row) }}</span>
+                        </div>
+                        <div class="mt-2 flex items-center gap-2 text-[11px] font-semibold">
+                            <span v-if="row.window_count > 0" class="rounded-full bg-slate-200 px-2 py-0.5 text-slate-700">
+                                {{ t('dashboard_targets.hit_rate', { hit: row.hit_count, total: row.window_count }) }}
+                            </span>
+                            <span v-if="row.last_window && !row.last_window.hit" class="rounded-full bg-rose-100 px-2 py-0.5 text-rose-700">
+                                {{ t('dashboard_targets.last_missed') }}
+                            </span>
+                            <span v-else-if="row.last_window && row.last_window.hit" class="rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700">
+                                {{ t('dashboard_targets.last_hit') }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             <!-- KPI tiles (only when payload loaded). Six tiles →
                  3-up on large screens keeps the two rows balanced. -->
@@ -386,5 +485,25 @@ const paymentMixChart = computed(() => {
                 </ul>
             </div>
         </section>
+
+        <!-- P-G8 — "a branch just missed its target" popup, once per
+             session (the dashboard is the post-login landing page). -->
+        <BaseModal v-if="missPopupOpen" :title="t('dashboard_targets.miss_popup_title')" @close="missPopupOpen = false">
+            <div class="space-y-3">
+                <p class="text-sm text-slate-600">{{ t('dashboard_targets.miss_popup_body') }}</p>
+                <div v-for="(miss, i) in recentMisses" :key="i" class="rounded-lg border border-rose-100 bg-rose-50 px-4 py-3">
+                    <p class="text-sm font-bold text-rose-800">{{ miss.branch_name ?? '—' }}</p>
+                    <p class="mt-0.5 text-xs text-rose-700">
+                        {{ miss.window_start }} → {{ miss.window_end }} ·
+                        <span class="font-semibold tabular-nums">{{ miss.actual_amount }} / {{ miss.goal_amount }}</span>
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    class="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                    @click="missPopupOpen = false"
+                >{{ t('dashboard_targets.miss_popup_dismiss') }}</button>
+            </div>
+        </BaseModal>
     </MerchantLayout>
 </template>

@@ -174,6 +174,11 @@ enum MerchantPermission: string
     // class as orders.cancel — it moves the books).
     case DeliveriesManage = 'deliveries.manage';
 
+    // P-G8 — branch performance targets. One key gates the config page
+    // (create / edit / retire targets); the dashboard performance widget
+    // is auth-only — every portal user follows their scope's progress.
+    case TargetsManage = 'targets.manage';
+
     /**
      * @return list<string>
      */

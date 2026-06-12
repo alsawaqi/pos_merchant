@@ -136,6 +136,7 @@
         "production": "Kitchen Production",
         "messages": "Messages",
         "deliveries": "Deliveries",
+        "branch_targets": "Branch Targets",
         "customers": "Customers",
         "loyalty": "Loyalty",
         "discounts": "Discounts",
@@ -821,6 +822,63 @@
             "cancelled": "Cancelled",
             "approved_by": "Cancel approved by"
         }
+    },
+    "branch_targets": {
+        "title": "Branch Targets",
+        "subtitle": "Sales goals per branch — an amount per day, week or month, evaluated cumulatively over back-to-back windows.",
+        "add": "New target",
+        "loading": "Loading targets…",
+        "load_failed": "Couldn't load the targets.",
+        "save_failed": "Saving the target failed.",
+        "delete_confirm": "Delete this target? Its window history is kept, but no new windows will be evaluated.",
+        "create_hint": "Creating a target replaces the branch's current active one (its history is kept). The period, window size and start date are fixed after creation — to change them, create a replacement.",
+        "edit_title": "Edit target — {branch}",
+        "edit_hint": "Only the goal amount and the active flag can change. The new amount applies to the current and future windows; finished windows keep the goal they were evaluated against.",
+        "window_goal_hint": "Cumulative goal per window: {goal} OMR.",
+        "edit": "Edit",
+        "delete": "Delete",
+        "history": "History",
+        "history_title": "Last 12 windows",
+        "no_history": "No finished windows yet.",
+        "empty": "No targets yet — set the first branch goal.",
+        "active": "Active",
+        "inactive": "Inactive",
+        "hit": "Hit",
+        "missed": "Missed",
+        "hit_of": "{hit} of {total} hit",
+        "periods": {
+            "day": "day",
+            "week": "week",
+            "month": "month"
+        },
+        "table": {
+            "branch": "Branch",
+            "goal": "Goal",
+            "starts_on": "Starts",
+            "current": "Current window",
+            "hit_rate": "Hit rate (12)",
+            "status": "Status"
+        },
+        "fields": {
+            "branch": "Branch",
+            "amount": "Goal amount (OMR)",
+            "period": "Per",
+            "window_periods": "Window (periods)",
+            "starts_on": "Starts on",
+            "is_active": "Active"
+        }
+    },
+    "dashboard_targets": {
+        "title": "Branch Performance",
+        "elapsed_day": "day {n} of {total}",
+        "elapsed_week": "week {n} of {total}",
+        "elapsed_month": "month {n} of {total}",
+        "hit_rate": "{hit}/{total} windows hit",
+        "last_missed": "Last window missed",
+        "last_hit": "Last window hit",
+        "miss_popup_title": "Branch target missed",
+        "miss_popup_body": "These branches finished their last evaluation window below the goal:",
+        "miss_popup_dismiss": "Got it"
     },
     "deliveries": {
         "title": "Deliveries",

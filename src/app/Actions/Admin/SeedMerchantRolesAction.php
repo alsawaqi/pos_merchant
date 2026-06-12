@@ -195,6 +195,8 @@ final class SeedMerchantRolesAction
                     // P-G7: managers reconcile delivery-provider
                     // statements (confirm / adjust pending orders).
                     MerchantPermission::DeliveriesManage->value,
+                    // P-G8: managers set branch sales targets.
+                    MerchantPermission::TargetsManage->value,
                 ],
             ],
 

@@ -39,6 +39,7 @@ use App\Http\Controllers\Pos\VoidReasonsController;
 use App\Http\Controllers\Pos\OffersController;
 use App\Http\Controllers\Pos\OrdersController;
 use App\Http\Controllers\Pos\PayoutsController;
+use App\Http\Controllers\Pos\BranchTargetsController;
 use App\Http\Controllers\Pos\DeliveriesController;
 use App\Http\Controllers\Pos\PortalMessagesController;
 use App\Http\Controllers\Pos\ProductionsController;
@@ -417,6 +418,20 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('deliveries.confirm');
         Route::post('deliveries/{order:uuid}/adjust', [DeliveriesController::class, 'adjust'])
             ->name('deliveries.adjust');
+
+        // -------- P-G8 — Branch performance targets --------
+        // Config (targets.manage) + the auth-only dashboard widget.
+        // Windows finalize lazily on these GETs — no scheduler exists.
+        Route::get('branch-targets', [BranchTargetsController::class, 'index'])
+            ->name('branch-targets.index');
+        Route::get('branch-targets/performance', [BranchTargetsController::class, 'performance'])
+            ->name('branch-targets.performance');
+        Route::post('branch-targets', [BranchTargetsController::class, 'store'])
+            ->name('branch-targets.store');
+        Route::patch('branch-targets/{target:uuid}', [BranchTargetsController::class, 'update'])
+            ->name('branch-targets.update');
+        Route::delete('branch-targets/{target:uuid}', [BranchTargetsController::class, 'destroy'])
+            ->name('branch-targets.destroy');
 
         // -------- Phase 5a — Inventory (Ingredients + Suppliers + Stock) --
         // All gated by inventory.{view,manage}. Branch-nested

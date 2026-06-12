@@ -14,6 +14,7 @@ import TaxesIndex from '@/Pages/Merchant/Taxes/Index.vue';
 import ExpenseCategoriesIndex from '@/Pages/Merchant/ExpenseCategories/Index.vue';
 import CustomersIndex from '@/Pages/Merchant/Customers/Index.vue';
 import CustomersShow from '@/Pages/Merchant/Customers/Show.vue';
+import BranchTargetsIndex from '@/Pages/Merchant/BranchTargets/Index.vue';
 import DeliveriesIndex from '@/Pages/Merchant/Deliveries/Index.vue';
 import DiscountsIndex from '@/Pages/Merchant/Discounts/Index.vue';
 import OffersIndex from '@/Pages/Merchant/Offers/Index.vue';
@@ -196,6 +197,15 @@ const routes: RouteRecordRaw[] = [
         path: '/deliveries',
         name: 'merchant.deliveries',
         component: DeliveriesIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        // Branch Targets — P-G8. Sales goals per branch + window history
+        // (server gates by targets.manage; the dashboard widget is the
+        // read-only twin for everyone).
+        path: '/branch-targets',
+        name: 'merchant.branch-targets',
+        component: BranchTargetsIndex,
         meta: { requiresAuth: true },
     },
     {

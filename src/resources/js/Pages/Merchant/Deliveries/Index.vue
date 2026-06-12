@@ -26,7 +26,8 @@ import { ApiError } from '@/lib/api';
 function apiMessage(e: unknown, fallback: string): string {
     if (e instanceof ApiError) {
         const payload = e.payload as { message?: string } | null;
-        return payload?.message ?? fallback;
+        // `||`, not `??`: a bare server abort() carries message "".
+        return payload?.message || fallback;
     }
     return fallback;
 }

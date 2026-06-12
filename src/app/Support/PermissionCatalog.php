@@ -358,6 +358,19 @@ final class PermissionCatalog
                 ],
             ],
             [
+                // P-G8 — branch performance targets (sales goals + windows).
+                'key' => 'targets',
+                'label_en' => 'Branch Targets',
+                'label_ar' => 'أهداف الفروع',
+                'permissions' => [
+                    [
+                        'key' => MerchantPermission::TargetsManage->value,
+                        'label_en' => 'Set / edit branch sales targets (the dashboard progress is visible to everyone)',
+                        'label_ar' => 'تحديد وتعديل أهداف مبيعات الفروع (تقدم اللوحة مرئي للجميع)',
+                    ],
+                ],
+            ],
+            [
                 'key' => 'roles',
                 'label_en' => 'Roles & Permissions',
                 'label_ar' => 'الأدوار والصلاحيات',
