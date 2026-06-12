@@ -11,7 +11,8 @@ uses(RefreshDatabase::class);
 
 it('assigns a product to branches with per-branch availability + stock', function (): void {
     $ctx = makeMerchantActor();
-    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    // Units belong to ready/bought-in products only (PD1 stock model).
+    $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'unit']);
     $b1 = $ctx['branch'];
     $b2 = Branch::factory()->for($ctx['company'], 'company')->create();
 
@@ -37,7 +38,7 @@ it('assigns a product to branches with per-branch availability + stock', functio
 
 it('replaces the set on re-sync, removing branches no longer present', function (): void {
     $ctx = makeMerchantActor();
-    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'unit']);
     $b1 = $ctx['branch'];
     $b2 = Branch::factory()->for($ctx['company'], 'company')->create();
 
@@ -80,4 +81,37 @@ it('404s when syncing branches on another company product', function (): void {
     $this->putJson("/api/products/{$foreignProduct->uuid}/branches", [
         'branches' => [],
     ])->assertNotFound();
+});
+
+it('ignores stock_qty for recipe-driven types and preserves production-written shelf counts', function (): void {
+    $ctx = makeMerchantActor();
+    $cooked = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'cooked']);
+    $b1 = $ctx['branch'];
+    $b2 = Branch::factory()->for($ctx['company'], 'company')->create();
+
+    // The kitchen produced 12 pieces at b1 (pos_api writes this row).
+    BranchProduct::query()->create([
+        'branch_id' => $b1->id, 'product_id' => $cooked->id,
+        'is_available' => true, 'stock_qty' => 12,
+    ]);
+
+    // A portal branch edit round-trips a stale qty for b1 and tries to
+    // hand-set units on the new b2 row — BOTH must be ignored: the
+    // shelf count belongs to production, not manual restocking.
+    $this->putJson("/api/products/{$cooked->uuid}/branches", [
+        'branches' => [
+            ['branch_id' => $b1->id, 'is_available' => true, 'stock_qty' => 3],
+            ['branch_id' => $b2->id, 'is_available' => true, 'stock_qty' => 50],
+        ],
+    ])->assertOk();
+
+    expect((float) BranchProduct::where(['product_id' => $cooked->id, 'branch_id' => $b1->id])->value('stock_qty'))->toBe(12.0);
+    expect(BranchProduct::where(['product_id' => $cooked->id, 'branch_id' => $b2->id])->value('stock_qty'))->toBeNull();
+
+    // Made-to-order: same — assignment is purely WHERE it's offered.
+    $made = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'ingredient']);
+    $this->putJson("/api/products/{$made->uuid}/branches", [
+        'branches' => [['branch_id' => $b1->id, 'is_available' => true, 'stock_qty' => 7]],
+    ])->assertOk();
+    expect(BranchProduct::where(['product_id' => $made->id, 'branch_id' => $b1->id])->value('stock_qty'))->toBeNull();
 });

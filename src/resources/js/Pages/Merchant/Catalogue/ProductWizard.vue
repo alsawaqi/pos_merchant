@@ -605,7 +605,13 @@ function branchesPayload(): ProductBranchAssignment[] | null {
         .map((r) => ({
             branch_id: r.branch_id,
             is_available: true,
-            stock_qty: String(r.stock_qty ?? '').trim() === '' ? null : Number(r.stock_qty),
+            // Units belong to ready/bought-in products ONLY — for the
+            // recipe-driven types the server ignores stock_qty anyway
+            // (made-to-order follows ingredient stock; cooked shelf
+            // counts are written by kitchen production).
+            stock_qty: form.stock_mode === 'unit' && String(r.stock_qty ?? '').trim() !== ''
+                ? Number(r.stock_qty)
+                : null,
         }));
 }
 
@@ -1386,6 +1392,9 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                 {{ t('catalogue.branches.section_title') }}
                             </h2>
                             <p class="mt-0.5 text-xs text-slate-500">{{ t('catalogue.branches.section_hint') }}</p>
+                            <p v-if="form.stock_mode !== 'unit'" class="mt-1.5 rounded border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+                                {{ form.stock_mode === 'cooked' ? t('catalogue.wizard.branches_cooked_hint') : t('catalogue.wizard.branches_recipe_hint') }}
+                            </p>
 
                             <label class="mt-3 flex items-center gap-2 text-xs font-medium text-slate-700">
                                 <input v-model="form.branch_all" type="checkbox" class="rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200">
@@ -1404,7 +1413,7 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                         <input v-model="form.branch_rows[idx]!.selected" type="checkbox" class="rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200">
                                         <span class="truncate">{{ branchName(row.branch_id) }}</span>
                                     </label>
-                                    <input v-model="form.branch_rows[idx]!.stock_qty" type="number" min="0" step="1" :disabled="!row.selected" :placeholder="t('catalogue.branches.stock_placeholder')" class="w-24 rounded border border-slate-200 px-2 py-1 text-xs tabular-nums disabled:cursor-not-allowed disabled:bg-slate-50">
+                                    <input v-if="form.stock_mode === 'unit'" v-model="form.branch_rows[idx]!.stock_qty" type="number" min="0" step="1" :disabled="!row.selected" :placeholder="t('catalogue.branches.stock_placeholder')" class="w-24 rounded border border-slate-200 px-2 py-1 text-xs tabular-nums disabled:cursor-not-allowed disabled:bg-slate-50">
                                 </li>
                             </ul>
                         </section>
@@ -1527,7 +1536,7 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                 </p>
                                 <ul v-else class="mt-1.5 flex flex-wrap gap-2">
                                     <li v-for="row in reviewSelectedBranches" :key="row.branch_id" class="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-                                        {{ branchName(row.branch_id) }}<span v-if="String(row.stock_qty).trim() !== ''" class="ms-1 tabular-nums text-slate-500">({{ row.stock_qty }})</span>
+                                        {{ branchName(row.branch_id) }}<span v-if="form.stock_mode === 'unit' && String(row.stock_qty).trim() !== ''" class="ms-1 tabular-nums text-slate-500">({{ row.stock_qty }})</span>
                                     </li>
                                 </ul>
                             </template>

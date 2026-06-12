@@ -647,6 +647,8 @@
             "unsaved_confirm": "You have unsaved changes — leave this page and discard them?",
             "components_dropped": "An internal item doesn't consume physical items — the rows you entered will not be saved.",
             "branches_none_selected": "No branches ticked — this saves as available at EVERY branch (and clears any per-branch rows).",
+            "branches_recipe_hint": "A made-to-order product has no piece count — you only choose WHERE it's offered. Whether a branch can make it follows that branch's ingredient stock (and any physical items).",
+            "branches_cooked_hint": "A cooked product has no manual units — you only choose WHERE it's offered. Its shelf count at each branch comes from kitchen production and starts sold out until the kitchen produces.",
             "review_addons": "Add-ons",
             "review_none": "None.",
             "recipe_dropped": "This product type doesn't carry a recipe — the recipe lines you entered will not be saved.",

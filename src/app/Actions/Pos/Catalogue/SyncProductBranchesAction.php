@@ -26,6 +26,15 @@ use RuntimeException;
  * else the whole sync aborts (RuntimeException -> 422). stock_qty NULL = not
  * unit-tracked at that branch.
  *
+ * PD1 stock-model rule: per-branch UNITS belong to ready/bought-in
+ * ('unit') products ONLY. For every other type the payload's stock_qty
+ * is IGNORED — made-to-order availability derives from branch
+ * ingredient stock, and a cooked product's shelf count is written by
+ * kitchen production (pos_api), so overwriting it here with the form's
+ * stale round-tripped number would corrupt the shelf. Existing rows
+ * keep their stock_qty; new rows start NULL (cooked = sold out until
+ * produced, by design).
+ *
  * Audit event: catalogue.product.branches_synced.
  */
 final readonly class SyncProductBranchesAction
@@ -58,18 +67,36 @@ final readonly class SyncProductBranchesAction
             }
         }
 
-        return DB::transaction(function () use ($product, $branches, $branchIds, $actor, $companyId): array {
+        $isUnitMode = $product->stock_mode === 'unit';
+
+        return DB::transaction(function () use ($product, $branches, $branchIds, $actor, $companyId, $isUnitMode): array {
             $before = $this->snapshot($product->id);
 
             foreach ($branches as $b) {
-                $stockQty = array_key_exists('stock_qty', $b) && $b['stock_qty'] !== null && $b['stock_qty'] !== ''
-                    ? (float) $b['stock_qty']
-                    : null;
+                $attributes = ['is_available' => (bool) $b['is_available']];
 
-                BranchProduct::updateOrCreate(
-                    ['branch_id' => (int) $b['branch_id'], 'product_id' => $product->id],
-                    ['is_available' => (bool) $b['is_available'], 'stock_qty' => $stockQty],
-                );
+                if ($isUnitMode) {
+                    $attributes['stock_qty'] = array_key_exists('stock_qty', $b) && $b['stock_qty'] !== null && $b['stock_qty'] !== ''
+                        ? (float) $b['stock_qty']
+                        : null;
+                }
+
+                $row = BranchProduct::query()
+                    ->where('branch_id', (int) $b['branch_id'])
+                    ->where('product_id', $product->id)
+                    ->first();
+
+                if ($row !== null) {
+                    // Non-unit: stock_qty absent from $attributes → the
+                    // production-written shelf count survives the sync.
+                    $row->update($attributes);
+                } else {
+                    BranchProduct::query()->create($attributes + [
+                        'branch_id' => (int) $b['branch_id'],
+                        'product_id' => $product->id,
+                        'stock_qty' => $attributes['stock_qty'] ?? null,
+                    ]);
+                }
             }
 
             BranchProduct::query()

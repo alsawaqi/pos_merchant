@@ -995,7 +995,11 @@ async function performProviderDelete(): Promise<void> {
                                         <button v-if="canManage" type="button" class="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50" @click="router.push(`/catalogue/products/${prod.uuid}/edit`)">
                                             <Pencil class="size-3" /> {{ t('catalogue.actions.edit') }}
                                         </button>
-                                        <button v-if="prod.stock_mode === 'unit' || prod.stock_mode === 'cooked'" type="button" class="inline-flex items-center gap-1 rounded border border-teal-200 px-2 py-1 text-[11px] font-semibold text-teal-700 transition hover:bg-teal-50" @click="openStockDialog(prod)">
+                                        <!-- PD1 stock model: restock belongs to ready/bought-in
+                                             (unit) products ONLY — made-to-order has no piece
+                                             count and a cooked product's shelf stock is written
+                                             by kitchen production, never manual restocking. -->
+                                        <button v-if="prod.stock_mode === 'unit'" type="button" class="inline-flex items-center gap-1 rounded border border-teal-200 px-2 py-1 text-[11px] font-semibold text-teal-700 transition hover:bg-teal-50" @click="openStockDialog(prod)">
                                             <Boxes class="size-3" /> Stock
                                         </button>
                                         <button v-if="canManage" type="button" class="inline-flex items-center gap-1 rounded border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-50" @click="prodDeleteTarget = prod">
