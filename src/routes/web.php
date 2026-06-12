@@ -39,6 +39,7 @@ use App\Http\Controllers\Pos\VoidReasonsController;
 use App\Http\Controllers\Pos\OffersController;
 use App\Http\Controllers\Pos\OrdersController;
 use App\Http\Controllers\Pos\PayoutsController;
+use App\Http\Controllers\Pos\DeliveriesController;
 use App\Http\Controllers\Pos\PortalMessagesController;
 use App\Http\Controllers\Pos\ProductionsController;
 use App\Http\Controllers\Pos\ProductsController;
@@ -404,6 +405,18 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('messages.store');
         Route::post('messages/{message:uuid}/read', [PortalMessagesController::class, 'read'])
             ->name('messages.read');
+
+        // -------- P-G7 — Deliveries settlement --------
+        // No-tender delivery-provider orders await the provider's
+        // statement here. Confirm (matched) / adjust (variance recorded)
+        // flips them to paid, dated at confirmation. deliveries.manage-
+        // gated; F5 branch scope on lists + decisions.
+        Route::get('deliveries', [DeliveriesController::class, 'index'])
+            ->name('deliveries.index');
+        Route::post('deliveries/confirm', [DeliveriesController::class, 'confirm'])
+            ->name('deliveries.confirm');
+        Route::post('deliveries/{order:uuid}/adjust', [DeliveriesController::class, 'adjust'])
+            ->name('deliveries.adjust');
 
         // -------- Phase 5a — Inventory (Ingredients + Suppliers + Stock) --
         // All gated by inventory.{view,manage}. Branch-nested

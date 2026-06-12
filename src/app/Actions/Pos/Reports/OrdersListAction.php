@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Pos\Reports;
 
 use App\Data\Reports\ReportFilter;
+use App\Enums\OrderStatus;
 use App\Models\Order;
 use App\Support\MerchantTenantContext;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -54,7 +55,16 @@ final readonly class OrdersListAction
         }
 
         // Totals across the ENTIRE filtered set (before pagination).
-        $grandTotal = (float) (clone $query)->sum('grand_total');
+        // P-G7 — pending-verification deliveries stay visible in the rows
+        // but are NOT revenue until confirmed, so the banner excludes them —
+        // UNLESS the user explicitly filtered for them (then the banner is
+        // the outstanding-with-providers total, not revenue; excluding would
+        // contradict the rows with a 0.000 over visible money).
+        $totalsQuery = clone $query;
+        if ($status !== OrderStatus::PendingVerification->value) {
+            $totalsQuery->where('status', '!=', OrderStatus::PendingVerification->value);
+        }
+        $grandTotal = (float) $totalsQuery->sum('grand_total');
 
         /** @var LengthAwarePaginator $paginator */
         $paginator = $query->paginate(perPage: $perPage, page: $page);

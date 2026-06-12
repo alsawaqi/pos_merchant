@@ -22,6 +22,8 @@ class UpdateDeliveryProviderRequest extends FormRequest
         return [
             'name' => ['sometimes', 'required', 'string', 'max:64'],
             'color' => ['sometimes', 'nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
+            // P-G7 — the provider's cut; snapshotted onto orders at punch.
+            'commission_percent' => ['sometimes', 'numeric', 'min:0', 'max:100'],
             'is_active' => ['sometimes', 'boolean'],
             'sort_order' => ['sometimes', 'integer', 'min:0', 'max:65535'],
         ];

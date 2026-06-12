@@ -38,6 +38,7 @@ use Illuminate\Support\Str;
     'company_id',
     'name',
     'color',
+    'commission_percent',
     'is_active',
     'sort_order',
 ])]
@@ -56,6 +57,9 @@ class DeliveryProvider extends Model
         return [
             'is_active' => 'boolean',
             'sort_order' => 'integer',
+            // P-G7 — the provider's cut of a delivery order. Snapshotted
+            // onto each order at punch; this is only the CURRENT rate.
+            'commission_percent' => 'decimal:2',
         ];
     }
 

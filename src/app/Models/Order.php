@@ -56,6 +56,20 @@ use Illuminate\Support\Str;
     'client_event_id',
     'note',
     'receipt_number',
+    // P-G7 — delivery-provider lifecycle (written by pos_api at punch;
+    // the confirm/adjust columns by the Deliveries settlement actions).
+    'delivery_provider_id',
+    'delivery_provider_name',
+    'delivery_reference',
+    'delivery_customer_phone',
+    'delivery_driver_phone',
+    'delivery_commission_percent',
+    'delivery_expected_payout',
+    'delivery_received_amount',
+    'delivery_variance',
+    'delivery_punched_at',
+    'delivery_confirmed_at',
+    'delivery_confirmed_by_user_id',
 ])]
 class Order extends Model
 {
@@ -79,6 +93,13 @@ class Order extends Model
             'grand_total' => 'decimal:3',
             'opened_at' => 'datetime',
             'closed_at' => 'datetime',
+            // P-G7 — delivery-provider lifecycle.
+            'delivery_commission_percent' => 'decimal:2',
+            'delivery_expected_payout' => 'decimal:3',
+            'delivery_received_amount' => 'decimal:3',
+            'delivery_variance' => 'decimal:3',
+            'delivery_punched_at' => 'datetime',
+            'delivery_confirmed_at' => 'datetime',
         ];
     }
 
@@ -118,6 +139,17 @@ class Order extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    /**
+     * P-G7 — the delivery provider this order was punched under
+     * (delivery orders only; soft-deleted providers still resolve).
+     *
+     * @return BelongsTo<DeliveryProvider, $this>
+     */
+    public function deliveryProvider(): BelongsTo
+    {
+        return $this->belongsTo(DeliveryProvider::class, 'delivery_provider_id')->withTrashed();
     }
 
     /**

@@ -1130,9 +1130,10 @@ const providerModalMode = ref<'create' | 'edit'>('create');
 const providerModalBusy = ref(false);
 const providerModalError = ref<string | null>(null);
 const providerModalTarget = ref<DeliveryProvider | null>(null);
-const providerForm = reactive<{ name: string; color: string; is_active: boolean; sort_order: number }>({
+const providerForm = reactive<{ name: string; color: string; commission_percent: number; is_active: boolean; sort_order: number }>({
     name: '',
     color: '',
+    commission_percent: 0,
     is_active: true,
     sort_order: 0,
 });
@@ -1142,6 +1143,7 @@ function openCreateProvider(): void {
     providerModalTarget.value = null;
     providerForm.name = '';
     providerForm.color = '';
+    providerForm.commission_percent = 0;
     providerForm.is_active = true;
     providerForm.sort_order = (deliveryProviders.value.length + 1) * 10;
     providerModalError.value = null;
@@ -1153,6 +1155,7 @@ function openEditProvider(p: DeliveryProvider): void {
     providerModalTarget.value = p;
     providerForm.name = p.name;
     providerForm.color = p.color ?? '';
+    providerForm.commission_percent = Number(p.commission_percent ?? 0);
     providerForm.is_active = p.is_active;
     providerForm.sort_order = p.sort_order;
     providerModalError.value = null;
@@ -1165,6 +1168,8 @@ async function submitProvider(): Promise<void> {
     const payload = {
         name: providerForm.name,
         color: providerForm.color || null,
+        // P-G7 — the provider's cut (expected payout = punched − this %).
+        commission_percent: providerForm.commission_percent,
         is_active: providerForm.is_active,
         sort_order: providerForm.sort_order,
     };
@@ -1204,9 +1209,14 @@ async function performProviderDelete(): Promise<void> {
             (p) => p.uuid !== providerToDelete.value!.uuid,
         );
         providerToDelete.value = null;
-    } catch {
-        // best-effort UI; the server's 422 (none defined yet)
-        // would surface here. Keep the modal open for retry.
+    } catch (err) {
+        // P-G7 — the server now 422s while the provider has deliveries
+        // awaiting verification; surface that instead of failing silently.
+        if (err instanceof ApiError) {
+            const p = err.payload as { message?: string } | null;
+            error.value = p?.message ?? t('delivery_providers.errors.save_failed');
+        }
+        providerToDelete.value = null;
     } finally {
         providerDeleteBusy.value = false;
     }
@@ -1874,6 +1884,14 @@ async function removeOwnedGroup(groupUuid: string): Promise<void> {
                         <input v-model="providerForm.color" type="color" class="size-9 cursor-pointer rounded border border-slate-200">
                     </div>
                     <p class="mt-1 text-xs text-slate-500">{{ t('delivery_providers.fields.color_hint') }}</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">{{ t('delivery_providers.fields.commission_percent') }}</label>
+                    <div class="mt-1 flex items-center gap-2">
+                        <input v-model.number="providerForm.commission_percent" type="number" min="0" max="100" step="0.01" class="block w-32 rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                        <span class="text-sm text-slate-500">%</span>
+                    </div>
+                    <p class="mt-1 text-xs text-slate-500">{{ t('delivery_providers.fields.commission_hint') }}</p>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-slate-700">{{ t('delivery_providers.fields.sort_order') }}</label>

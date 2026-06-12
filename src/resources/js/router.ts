@@ -14,6 +14,7 @@ import TaxesIndex from '@/Pages/Merchant/Taxes/Index.vue';
 import ExpenseCategoriesIndex from '@/Pages/Merchant/ExpenseCategories/Index.vue';
 import CustomersIndex from '@/Pages/Merchant/Customers/Index.vue';
 import CustomersShow from '@/Pages/Merchant/Customers/Show.vue';
+import DeliveriesIndex from '@/Pages/Merchant/Deliveries/Index.vue';
 import DiscountsIndex from '@/Pages/Merchant/Discounts/Index.vue';
 import OffersIndex from '@/Pages/Merchant/Offers/Index.vue';
 import ExpensesIndex from '@/Pages/Merchant/Expenses/Index.vue';
@@ -187,6 +188,14 @@ const routes: RouteRecordRaw[] = [
         path: '/messages',
         name: 'merchant.messages',
         component: MessagesIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        // Deliveries — P-G7. Provider-statement reconciliation for
+        // no-tender delivery orders (server gates by deliveries.manage).
+        path: '/deliveries',
+        name: 'merchant.deliveries',
+        component: DeliveriesIndex,
         meta: { requiresAuth: true },
     },
     {

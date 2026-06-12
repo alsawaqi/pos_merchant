@@ -17,7 +17,7 @@
 import { computed, onMounted, ref, type Component } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { RouterLink } from 'vue-router';
-import { BadgeCheck, BadgePercent, Ban, Book, Boxes, Building2, ChefHat, ChevronDown, Contact, FolderTree, Gauge, Gift, Globe, Hash, KeyRound, LayoutGrid, LineChart, LogOut, Mail, Menu, Percent, Receipt, ShieldAlert, ShoppingBag, Tags, Users, X } from 'lucide-vue-next';
+import { BadgeCheck, BadgePercent, Ban, Bike, Book, Boxes, Building2, ChefHat, ChevronDown, Contact, FolderTree, Gauge, Gift, Globe, Hash, KeyRound, LayoutGrid, LineChart, LogOut, Mail, Menu, Percent, Receipt, ShieldAlert, ShoppingBag, Tags, Users, X } from 'lucide-vue-next';
 import { authState } from '@/stores/auth';
 import { messagesState, refreshUnreadCount } from '@/stores/messages';
 import { setLocale, type SupportedLocale } from '@/lib/i18n';
@@ -52,6 +52,8 @@ onMounted(() => {
 const navigationCatalog: readonly NavItem[] = [
     { key: 'dashboard', to: '/', icon: Gauge, permission: null },
     { key: 'orders', to: '/orders', icon: ShoppingBag, permission: MerchantPermission.ReportsView },
+    // P-G7 — provider-statement reconciliation for delivery orders.
+    { key: 'deliveries', to: '/deliveries', icon: Bike, permission: MerchantPermission.DeliveriesManage },
     { key: 'branches', to: '/branches', icon: Building2, permission: MerchantPermission.BranchesView },
     { key: 'floor_plan', to: '/floor-plan', icon: LayoutGrid, permission: MerchantPermission.FloorPlanView },
     { key: 'catalogue', to: '/catalogue', icon: Book, permission: MerchantPermission.CatalogueView },

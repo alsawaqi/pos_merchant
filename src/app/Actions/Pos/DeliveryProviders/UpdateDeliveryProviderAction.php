@@ -21,7 +21,7 @@ use RuntimeException;
  */
 final readonly class UpdateDeliveryProviderAction
 {
-    private const MUTABLE_FIELDS = ['name', 'color', 'is_active', 'sort_order'];
+    private const MUTABLE_FIELDS = ['name', 'color', 'commission_percent', 'is_active', 'sort_order'];
 
     public function __construct(
         private WriteAuditLogAction $writeAuditLog,
@@ -67,6 +67,8 @@ final readonly class UpdateDeliveryProviderAction
                 $newValue = match ($field) {
                     'is_active' => (bool) $attributes[$field],
                     'sort_order' => (int) $attributes[$field],
+                    // Normalised to 2dp so "20" == "20.00" reads unchanged.
+                    'commission_percent' => number_format((float) $attributes[$field], 2, '.', ''),
                     default => $attributes[$field],
                 };
                 if ($provider->{$field} == $newValue) {

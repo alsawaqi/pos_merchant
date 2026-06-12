@@ -105,7 +105,12 @@ class DeliveryProvidersController extends Controller
         $this->ensure($request, MerchantPermission::CatalogueManage);
         $this->refuseIfProviderNotInTenant($provider);
 
-        $this->deleteProvider->handle($provider, $request->user());
+        try {
+            // P-G7 — refuses while pending-verification deliveries exist.
+            $this->deleteProvider->handle($provider, $request->user());
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
         return response()->json(['data' => null], 204);
     }

@@ -19,6 +19,8 @@ export interface DeliveryProvider {
     color: string | null;
     is_active: boolean;
     sort_order: number;
+    /** P-G7 — the provider's cut, decimal-2 string (e.g. "20.00"). */
+    commission_percent: string;
     /** Present when controller did withCount('prices'). */
     prices_count?: number;
     created_at: string | null;
@@ -47,6 +49,8 @@ export interface ProductDeliveryPrice {
 export interface CreateDeliveryProviderPayload {
     name: string;
     color?: string | null;
+    /** P-G7 — percent 0..100. */
+    commission_percent?: number;
     is_active?: boolean;
     sort_order?: number;
 }
@@ -54,6 +58,8 @@ export interface CreateDeliveryProviderPayload {
 export interface UpdateDeliveryProviderPayload {
     name?: string;
     color?: string | null;
+    /** P-G7 — percent 0..100. */
+    commission_percent?: number;
     is_active?: boolean;
     sort_order?: number;
 }

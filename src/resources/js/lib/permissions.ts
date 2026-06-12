@@ -83,6 +83,9 @@ export const MerchantPermission = {
     // P-G6 — staff announcements to POS devices (compose / retract /
     // read receipts). The portal inbox needs no permission.
     MessagesSend: 'messages.send',
+    // P-G7 — delivery-provider settlement (the Deliveries page +
+    // confirm/adjust decisions).
+    DeliveriesManage: 'deliveries.manage',
 } as const;
 
 export type MerchantPermissionValue =

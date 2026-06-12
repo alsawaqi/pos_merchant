@@ -35,7 +35,9 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 const branches = ref<Branch[]>([]);
 
-const statusOptions = ['open', 'paid', 'void'] as const;
+// P-G7 — pending_verification: no-tender delivery orders awaiting the
+// provider's statement (visible here, outside the revenue banner).
+const statusOptions = ['open', 'paid', 'pending_verification', 'void'] as const;
 
 async function run(): Promise<void> {
     loading.value = true;
@@ -91,6 +93,7 @@ function statusClass(status: string | null): string {
     switch (status) {
         case 'paid': return 'bg-emerald-100 text-emerald-700';
         case 'open': return 'bg-amber-100 text-amber-700';
+        case 'pending_verification': return 'bg-sky-100 text-sky-700';
         case 'void': return 'bg-rose-100 text-rose-700';
         default: return 'bg-slate-100 text-slate-600';
     }

@@ -135,6 +135,7 @@
         "inventory": "Inventory",
         "production": "Kitchen Production",
         "messages": "Messages",
+        "deliveries": "Deliveries",
         "customers": "Customers",
         "loyalty": "Loyalty",
         "discounts": "Discounts",
@@ -819,6 +820,45 @@
             "good_range": "Good",
             "cancelled": "Cancelled",
             "approved_by": "Cancel approved by"
+        }
+    },
+    "deliveries": {
+        "title": "Deliveries",
+        "subtitle": "Reconcile delivery-provider statements — confirm matched orders or adjust to what was actually received.",
+        "loading": "Loading deliveries…",
+        "load_failed": "Couldn't load the deliveries.",
+        "action_failed": "The action failed. Try again.",
+        "confirmed_ok": "{n} order(s) confirmed.",
+        "adjusted_ok": "Order settled at the received amount.",
+        "confirm_selected": "Confirm selected ({n})",
+        "select_all": "Select all",
+        "adjust": "Adjust",
+        "adjust_title": "Adjust to the received amount",
+        "adjust_hint": "The provider paid a different amount than expected. Enter what was actually received — the difference is stored as a reconciliation variance and the order settles at this amount.",
+        "adjust_submit": "Settle at this amount",
+        "received_label": "Received amount (OMR)",
+        "empty_pending": "No deliveries awaiting verification.",
+        "empty_confirmed": "No confirmed deliveries yet.",
+        "tabs": {
+            "pending": "Pending verification",
+            "confirmed": "Confirmed"
+        },
+        "totals": {
+            "pending_count": "Pending orders",
+            "punched": "Punched total (OMR)",
+            "expected": "Expected payout (OMR)"
+        },
+        "table": {
+            "provider": "Provider",
+            "reference": "Provider order #",
+            "branch": "Branch",
+            "punched_at": "Punched",
+            "confirmed_at": "Confirmed",
+            "punched": "Punched (OMR)",
+            "commission": "Commission",
+            "expected": "Expected",
+            "received": "Received",
+            "variance": "Variance"
         }
     },
     "messages": {
@@ -1547,6 +1587,8 @@
             "name": "Provider name",
             "color": "Chip color",
             "color_hint": "Used by the POS picker to distinguish providers at a glance.",
+            "commission_percent": "Commission",
+            "commission_hint": "The provider's cut. Expected payout per order = punched total minus this percentage (frozen onto each order at punch time).",
             "sort_order": "Sort order",
             "is_active": "Active (visible in the POS picker)"
         },
@@ -2276,6 +2318,7 @@
             "held": "Held",
             "kitchen": "In kitchen",
             "paid": "Paid",
+            "pending_verification": "Pending verification",
             "void": "Void",
             "refunded": "Refunded"
         },

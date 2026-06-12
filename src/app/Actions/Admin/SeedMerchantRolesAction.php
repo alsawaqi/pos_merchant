@@ -192,6 +192,9 @@ final class SeedMerchantRolesAction
                     // P-G6: managers announce to staff devices + read
                     // the receipts.
                     MerchantPermission::MessagesSend->value,
+                    // P-G7: managers reconcile delivery-provider
+                    // statements (confirm / adjust pending orders).
+                    MerchantPermission::DeliveriesManage->value,
                 ],
             ],
 

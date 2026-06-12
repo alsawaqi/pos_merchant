@@ -167,6 +167,13 @@ enum MerchantPermission: string
     // ungated: every authed user can send/receive internal mail.
     case MessagesSend = 'messages.send';
 
+    // P-G7 — delivery-provider settlement. One key gates the Deliveries
+    // page AND the confirm/adjust decisions: confirming recognises revenue
+    // + fires the commission split, so viewing the queue without being
+    // able to act on it has no audience. Manager + SuperAdmin (same risk
+    // class as orders.cancel — it moves the books).
+    case DeliveriesManage = 'deliveries.manage';
+
     /**
      * @return list<string>
      */

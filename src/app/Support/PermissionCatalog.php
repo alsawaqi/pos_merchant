@@ -344,6 +344,20 @@ final class PermissionCatalog
                 ],
             ],
             [
+                // P-G7 — delivery-provider settlement. Confirming/adjusting
+                // recognises revenue + fires the commission split.
+                'key' => 'deliveries',
+                'label_en' => 'Deliveries',
+                'label_ar' => 'التوصيل',
+                'permissions' => [
+                    [
+                        'key' => MerchantPermission::DeliveriesManage->value,
+                        'label_en' => 'Reconcile delivery-provider statements (confirm / adjust pending orders)',
+                        'label_ar' => 'تسوية كشوفات مزودي التوصيل (تأكيد أو تعديل الطلبات المعلقة)',
+                    ],
+                ],
+            ],
+            [
                 'key' => 'roles',
                 'label_en' => 'Roles & Permissions',
                 'label_ar' => 'الأدوار والصلاحيات',

@@ -23,6 +23,8 @@ class DeliveryProviderResource extends JsonResource
             'uuid' => $this->uuid,
             'name' => $this->name,
             'color' => $this->color,
+            // P-G7 — decimal-2 string ("20.00"); the provider's cut.
+            'commission_percent' => (string) $this->commission_percent,
             'is_active' => (bool) $this->is_active,
             'sort_order' => (int) $this->sort_order,
             // prices_count surfaces when the controller did

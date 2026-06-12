@@ -6,10 +6,13 @@ namespace App\Actions\Pos\DeliveryProviders;
 
 use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
+use App\Enums\OrderStatus;
 use App\Models\DeliveryProvider;
+use App\Models\Order;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 /**
  * Phase 6c — soft-delete a delivery provider.
@@ -23,9 +26,12 @@ use Illuminate\Support\Facades\DB;
  * (DeliveryProvider::scopeActive + the global SoftDeletes
  * scope).
  *
- * No future-order guard yet (Phase 7+ orders don't exist).
- * When they do, this gains a check refusing to soft-delete
- * a provider with any non-terminal orders.
+ * P-G7 — the promised future-order guard is now real: a
+ * provider with PENDING-VERIFICATION delivery orders cannot be
+ * retired until those orders are confirmed (or voided) — the
+ * Deliveries settlement page needs the provider row to group
+ * and reconcile them. Settled history (paid/void) is fine: the
+ * orders carry a name snapshot + a nullOnDelete FK.
  */
 final readonly class DeleteDeliveryProviderAction
 {
@@ -39,6 +45,17 @@ final readonly class DeleteDeliveryProviderAction
         $companyId = $this->tenant->requiredId();
         if ((int) $provider->company_id !== $companyId) {
             abort(404);
+        }
+
+        $pendingCount = Order::query()
+            ->where('company_id', $companyId)
+            ->where('delivery_provider_id', $provider->id)
+            ->where('status', OrderStatus::PendingVerification->value)
+            ->count();
+        if ($pendingCount > 0) {
+            throw new RuntimeException(
+                'This provider still has '.$pendingCount.' delivery order(s) awaiting verification — confirm them on the Deliveries page first.',
+            );
         }
 
         DB::transaction(function () use ($provider, $actor, $companyId): void {

@@ -29,7 +29,7 @@ final readonly class CreateDeliveryProviderAction
     ) {}
 
     /**
-     * @param  array{name: string, color?: string|null, is_active?: bool, sort_order?: int}  $attributes
+     * @param  array{name: string, color?: string|null, commission_percent?: numeric, is_active?: bool, sort_order?: int}  $attributes
      */
     public function handle(array $attributes, User $actor): DeliveryProvider
     {
@@ -54,6 +54,8 @@ final readonly class CreateDeliveryProviderAction
                 'company_id' => $companyId,
                 'name' => $name,
                 'color' => $attributes['color'] ?? null,
+                // P-G7 — the provider's cut of every delivery order.
+                'commission_percent' => $attributes['commission_percent'] ?? 0,
                 'is_active' => $attributes['is_active'] ?? true,
                 'sort_order' => $attributes['sort_order'] ?? 0,
             ]);
@@ -67,6 +69,7 @@ final readonly class CreateDeliveryProviderAction
                 newValues: [
                     'name' => $name,
                     'color' => $attributes['color'] ?? null,
+                    'commission_percent' => (float) ($attributes['commission_percent'] ?? 0),
                     'is_active' => (bool) ($attributes['is_active'] ?? true),
                 ],
             ));
