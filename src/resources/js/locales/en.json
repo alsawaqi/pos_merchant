@@ -845,6 +845,7 @@
             "adjust": "Adjust",
             "restock": "Restock",
             "purchase": "Purchase",
+            "warehouse": "Warehouse",
             "record_waste": "Record waste",
             "new_request": "New request",
             "submit": "Submit",
@@ -926,7 +927,10 @@
             "transfer_in": "Transfer in",
             "transfer_out": "Transfer out",
             "production_consumption": "Kitchen production",
-            "production_return": "Production cancelled"
+            "production_return": "Production cancelled",
+            "received": "Warehouse receive",
+            "allocation_out": "Allocated out",
+            "allocation_in": "Allocated in"
         },
         "empty_ingredients": "No ingredients yet. Add one to start tracking stock.",
         "empty_suppliers": "No suppliers yet. Add one so ingredients can reference them.",

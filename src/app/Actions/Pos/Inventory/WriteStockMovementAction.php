@@ -10,6 +10,7 @@ use App\Enums\StockMovementType;
 use App\Models\Branch;
 use App\Models\BranchStock;
 use App\Models\Ingredient;
+use App\Models\IngredientStock;
 use App\Models\PosStaff;
 use App\Models\StockMovement;
 use App\Models\User;
@@ -41,6 +42,12 @@ use RuntimeException;
  * The recorded_by split (user_id vs pos_staff_id) lets us tell
  * who triggered a movement: portal users for manual entries,
  * POS staff for sale-driven consumption (Phase 8).
+ *
+ * P-G4 — branch may be NULL: the movement then targets the company's
+ * CENTRAL warehouse pool (pos_ingredient_stock), the ingredient twin of
+ * WriteProductStockMovementAction's branch-null path. Invariant 2 holds
+ * there too: pos_ingredient_stock.quantity == SUM(movements) where
+ * branch_id IS NULL per (company, ingredient).
  */
 final readonly class WriteStockMovementAction
 {
@@ -59,7 +66,7 @@ final readonly class WriteStockMovementAction
      * @param  DateTimeInterface|null $occurredAt  When the movement happened (defaults to now)
      */
     public function handle(
-        Branch $branch,
+        ?Branch $branch,
         Ingredient $ingredient,
         StockMovementType $type,
         string|float|int $quantity,
@@ -77,7 +84,7 @@ final readonly class WriteStockMovementAction
         // we re-check here so internal callers (Phase 8 order
         // pipeline) can't accidentally route a sale-consumption
         // through the wrong company.
-        if ((int) $branch->company_id !== $companyId) {
+        if ($branch !== null && (int) $branch->company_id !== $companyId) {
             throw new RuntimeException('Branch does not belong to your company.');
         }
         if ((int) $ingredient->company_id !== $companyId) {
@@ -110,7 +117,7 @@ final readonly class WriteStockMovementAction
             // deleted — corrections are NEW Adjustment rows.
             /** @var StockMovement $movement */
             $movement = StockMovement::query()->create([
-                'branch_id' => $branch->id,
+                'branch_id' => $branch?->id,
                 'ingredient_id' => $ingredient->id,
                 'movement_type' => $type->value,
                 'quantity' => (string) $quantity,
@@ -128,23 +135,39 @@ final readonly class WriteStockMovementAction
             // handles the lazy-creation case (branch never stocked
             // this ingredient before); the subsequent increment
             // moves the running total by the signed delta.
-            /** @var BranchStock $balance */
-            $balance = BranchStock::query()->firstOrCreate(
-                [
-                    'branch_id' => $branch->id,
-                    'ingredient_id' => $ingredient->id,
-                ],
-                [
-                    'quantity' => '0.000',
-                ],
-            );
-            // increment() accepts a numeric delta and writes via
-            // a SQL `quantity = quantity + :delta` statement,
-            // which is safe under concurrent writes because the
-            // outer DB::transaction wraps it (Postgres' default
-            // READ COMMITTED gives us per-row consistency).
-            $balance->increment('quantity', (float) $quantity);
-            $balance->forceFill(['last_movement_at' => $occurredAt])->save();
+            if ($branch === null) {
+                // P-G4 — central warehouse pool.
+                /** @var IngredientStock $central */
+                $central = IngredientStock::query()->firstOrCreate(
+                    [
+                        'company_id' => $companyId,
+                        'ingredient_id' => $ingredient->id,
+                    ],
+                    [
+                        'quantity' => '0.000',
+                    ],
+                );
+                $central->increment('quantity', (float) $quantity);
+                $central->forceFill(['last_movement_at' => $occurredAt])->save();
+            } else {
+                /** @var BranchStock $balance */
+                $balance = BranchStock::query()->firstOrCreate(
+                    [
+                        'branch_id' => $branch->id,
+                        'ingredient_id' => $ingredient->id,
+                    ],
+                    [
+                        'quantity' => '0.000',
+                    ],
+                );
+                // increment() accepts a numeric delta and writes via
+                // a SQL `quantity = quantity + :delta` statement,
+                // which is safe under concurrent writes because the
+                // outer DB::transaction wraps it (Postgres' default
+                // READ COMMITTED gives us per-row consistency).
+                $balance->increment('quantity', (float) $quantity);
+                $balance->forceFill(['last_movement_at' => $occurredAt])->save();
+            }
 
             // Step 3: audit row. Distinct from the stock_movement
             // ledger — that's the accounting record, this is the
@@ -153,7 +176,7 @@ final readonly class WriteStockMovementAction
                 event: 'inventory.movement.created',
                 actorUserId: $actorUserId,
                 companyId: $companyId,
-                branchId: $branch->id,
+                branchId: $branch?->id,
                 auditableType: StockMovement::class,
                 auditableId: $movement->id,
                 newValues: [

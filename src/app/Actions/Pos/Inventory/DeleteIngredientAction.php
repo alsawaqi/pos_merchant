@@ -9,6 +9,7 @@ use App\Data\Security\AuditLogData;
 use App\Enums\RestockRequestStatus;
 use App\Models\BranchStock;
 use App\Models\Ingredient;
+use App\Models\IngredientStock;
 use App\Models\ProductRecipe;
 use App\Models\RestockRequestLine;
 use App\Models\User;
@@ -70,6 +71,19 @@ final readonly class DeleteIngredientAction
                 'Cannot delete ingredient — %d branch(es) still hold stock. Adjust the stock to zero first.',
                 $branchesWithStock,
             ));
+        }
+
+        // P-G4 — the central warehouse is a second place stock lives; a
+        // non-zero pool blocks deletion for the same orphaned-asset reason
+        // as guard #1.
+        $centralHoldsStock = IngredientStock::query()
+            ->where('ingredient_id', $ingredient->id)
+            ->where('quantity', '!=', '0.000')
+            ->exists();
+        if ($centralHoldsStock) {
+            throw new RuntimeException(
+                'Cannot delete ingredient — the central warehouse still holds stock. Adjust or allocate it to zero first.',
+            );
         }
 
         // Phase 5b — recipe-reference guard. Active product

@@ -69,6 +69,9 @@ final readonly class InventoryConsumptionReportAction
             ->where('pos_ingredients.company_id', $companyId)
             ->whereIn('pos_stock_movements.movement_type', self::CONSUMPTION_TYPES)
             ->where('pos_stock_movements.quantity', '<', 0)
+            // P-G4 — central-warehouse rows (branch_id NULL) are pool
+            // corrections, not consumption at a branch.
+            ->whereNotNull('pos_stock_movements.branch_id')
             ->whereBetween('pos_stock_movements.occurred_at', [$filter->dateFrom, $filter->dateTo])
             ->when($branchScope !== null, fn ($q) => $q->whereIn('pos_stock_movements.branch_id', $branchScope))
             ->selectRaw('
@@ -103,6 +106,7 @@ final readonly class InventoryConsumptionReportAction
             ->where('pos_ingredients.company_id', $companyId)
             ->whereIn('pos_stock_movements.movement_type', self::CONSUMPTION_TYPES)
             ->where('pos_stock_movements.quantity', '<', 0)
+            ->whereNotNull('pos_stock_movements.branch_id')
             ->where('pos_stock_movements.occurred_at', '>=', $trailingFrom)
             ->where('pos_stock_movements.occurred_at', '<', $filter->dateFrom)
             ->when($branchScope !== null, fn ($q) => $q->whereIn('pos_stock_movements.branch_id', $branchScope))

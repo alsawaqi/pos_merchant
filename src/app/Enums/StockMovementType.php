@@ -43,6 +43,15 @@ enum StockMovementType: string
     // listed here so movement history renders + filters them.
     case ProductionConsumption = 'production_consumption';
     case ProductionReturn = 'production_return';
+    // P-G4 central ingredient warehouse — the ingredient twin of the
+    // product-pool types (branch_id NULL = the central pool): Received
+    // credits the warehouse (+central); Allocation moves warehouse stock
+    // out to a branch as a PAIR — AllocationOut (-central) +
+    // AllocationIn (+branch). Reports that aggregate branch operations
+    // exclude central rows via whereNotNull(branch_id).
+    case Received = 'received';
+    case AllocationOut = 'allocation_out';
+    case AllocationIn = 'allocation_in';
 
     /**
      * @return list<string>

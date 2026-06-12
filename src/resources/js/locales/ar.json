@@ -845,6 +845,7 @@
             "adjust": "تعديل المخزون",
             "restock": "تجديد المخزون",
             "purchase": "شراء",
+            "warehouse": "المستودع",
             "record_waste": "تسجيل هدر",
             "new_request": "طلب جديد",
             "submit": "إرسال",
@@ -926,7 +927,10 @@
             "transfer_in": "تحويل وارد",
             "transfer_out": "تحويل صادر",
             "production_consumption": "إنتاج المطبخ",
-            "production_return": "إلغاء إنتاج"
+            "production_return": "إلغاء إنتاج",
+            "received": "استلام المستودع",
+            "allocation_out": "توزيع صادر",
+            "allocation_in": "توزيع وارد"
         },
         "empty_ingredients": "لا توجد مكونات بعد. أضف واحدًا لبدء تتبع المخزون.",
         "empty_suppliers": "لا يوجد موردون بعد. أضف واحدًا حتى تتمكن المكونات من الإشارة إليه.",

@@ -120,7 +120,8 @@ type ApexSeries = { name: string; data: number[] }[];
                             <tr><th class="px-5 py-2 text-start">{{ t('reports.shared.branch') }}</th><th class="px-5 py-2 text-end">{{ t('reports.shared.cost') }}</th><th class="px-5 py-2 text-end">{{ t('reports.shared.event_count') }}</th></tr>
                         </thead>
                         <tbody>
-                            <tr v-for="r in payload.by_branch" :key="r.branch_id" class="border-b border-slate-100 last:border-0">
+                            <!-- P-G4: branch_id null = the central Warehouse bucket. -->
+                            <tr v-for="r in payload.by_branch" :key="r.branch_id ?? 'warehouse'" class="border-b border-slate-100 last:border-0">
                                 <td class="px-5 py-2 font-medium text-slate-900">{{ r.branch_name }}</td>
                                 <td class="px-5 py-2 text-end tabular-nums">{{ r.cost }}</td>
                                 <td class="px-5 py-2 text-end tabular-nums">{{ r.event_count }}</td>

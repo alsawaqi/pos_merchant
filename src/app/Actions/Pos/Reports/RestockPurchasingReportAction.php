@@ -23,6 +23,14 @@ use Illuminate\Support\Facades\DB;
  * spend in Phase 5c/7b. Phase 9 might layer a richer invoice/PO
  * model on top, but until then "what did we buy and from whom"
  * is derived from the append-only ledger.
+ *
+ * P-G4 — central-warehouse receives count too: a 'received' row
+ * (branch_id NULL) is a purchase landing in the warehouse, costed
+ * at the snapshotted unit cost like a plain restock. It shows as
+ * the "Warehouse" bucket in the by-branch breakdown. The later
+ * allocation to branches deliberately does NOT count (it would
+ * double-bill the same stock). A branch-filtered report keeps
+ * excluding warehouse rows — they belong to no branch.
  */
 final readonly class RestockPurchasingReportAction
 {
@@ -41,12 +49,17 @@ final readonly class RestockPurchasingReportAction
         // Base query: restock movements in window for the tenant.
         // Restock quantity is always positive by convention
         // (see StockMovementType enum doc) so SUM is straight.
+        // P-G4: leftJoin — central 'received' rows have branch_id NULL.
+        // Tenancy anchors on pos_ingredients.company_id, not the branch.
         $restockBase = DB::table('pos_stock_movements')
             ->join('pos_ingredients', 'pos_ingredients.id', '=', 'pos_stock_movements.ingredient_id')
-            ->join('pos_branches', 'pos_branches.id', '=', 'pos_stock_movements.branch_id')
+            ->leftJoin('pos_branches', 'pos_branches.id', '=', 'pos_stock_movements.branch_id')
             ->leftJoin('pos_suppliers', 'pos_suppliers.id', '=', 'pos_ingredients.primary_supplier_id')
             ->where('pos_ingredients.company_id', $companyId)
-            ->where('pos_stock_movements.movement_type', StockMovementType::Restock->value)
+            ->whereIn('pos_stock_movements.movement_type', [
+                StockMovementType::Restock->value,
+                StockMovementType::Received->value,
+            ])
             ->whereBetween('pos_stock_movements.occurred_at', [$filter->dateFrom, $filter->dateTo]);
         if ($branchScope !== null) {
             $restockBase->whereIn('pos_stock_movements.branch_id', $branchScope);
@@ -96,8 +109,9 @@ final readonly class RestockPurchasingReportAction
             ->orderByDesc('cost')
             ->get()
             ->map(static fn ($r): array => [
-                'branch_id' => (int) $r->branch_id,
-                'branch_name' => (string) $r->branch_name,
+                // P-G4 — NULL = the central warehouse bucket.
+                'branch_id' => $r->branch_id !== null ? (int) $r->branch_id : null,
+                'branch_name' => $r->branch_name !== null ? (string) $r->branch_name : 'Warehouse',
                 'cost' => number_format((float) $r->cost, 3, '.', ''),
                 'event_count' => (int) $r->event_count,
             ])->all();

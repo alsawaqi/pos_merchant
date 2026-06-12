@@ -545,9 +545,23 @@ return new class extends Migration
             $table->unique(['branch_id', 'ingredient_id'], 'pos_branch_stock_branch_ingredient_unique');
         });
 
+        // P-G4 — central company ingredient pool: one row per (company,
+        // ingredient), moved by the branch_id-NULL rows of the movements
+        // ledger below. Mirrors pos_product_stock for ingredients.
+        Schema::create('pos_ingredient_stock', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
+            $table->decimal('quantity', 12, 3)->default(0);
+            $table->timestamp('last_movement_at')->nullable();
+            $table->timestamps();
+            $table->unique(['company_id', 'ingredient_id'], 'pos_ingredient_stock_company_ingredient_unique');
+        });
+
         Schema::create('pos_stock_movements', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            // P-G4 — NULL = the central company pool; set = a branch.
+            $table->foreignId('branch_id')->nullable()->constrained('pos_branches')->cascadeOnDelete();
             $table->foreignId('ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
             $table->string('movement_type', 32);
             $table->decimal('quantity', 12, 3);

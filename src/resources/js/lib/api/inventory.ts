@@ -27,7 +27,12 @@ export type StockMovementType =
     | 'loss'
     | 'adjustment'
     | 'transfer_in'
-    | 'transfer_out';
+    | 'transfer_out'
+    // P-G4 — central-warehouse types (branch_id NULL = the warehouse side;
+    // allocation_in is the branch-side leg shown in branch ledgers).
+    | 'received'
+    | 'allocation_out'
+    | 'allocation_in';
 
 // ---- Domain types -----------------------------------------------
 

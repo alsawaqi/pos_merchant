@@ -25,6 +25,7 @@ use App\Http\Controllers\Pos\ExpenseCategoryController;
 use App\Http\Controllers\Pos\ExpensesController;
 use App\Http\Controllers\Pos\FloorsController;
 use App\Http\Controllers\Pos\IngredientsController;
+use App\Http\Controllers\Pos\IngredientStockController;
 use App\Http\Controllers\Pos\IngredientUnitsController;
 use App\Http\Controllers\Pos\LoyaltyController;
 use App\Http\Controllers\Pos\PosStaffController;
@@ -394,6 +395,24 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // Phase A — purchase batch history (Additions §2.4).
         Route::get('ingredients/{ingredient:uuid}/purchases', [IngredientsController::class, 'purchases'])
             ->name('ingredients.purchases');
+
+        // P-G4 — central ingredient warehouse: company pool + Receive &
+        // Distribute to branches + transfer + adjust + ledger (the ingredient
+        // twin of the product-stock routes below).
+        Route::get('ingredients/{ingredient:uuid}/stock', [IngredientStockController::class, 'show'])
+            ->name('ingredient-stock.show');
+        Route::post('ingredients/{ingredient:uuid}/stock/receive', [IngredientStockController::class, 'receive'])
+            ->name('ingredient-stock.receive');
+        Route::post('ingredients/{ingredient:uuid}/stock/receive-distribute', [IngredientStockController::class, 'receiveDistribute'])
+            ->name('ingredient-stock.receive-distribute');
+        Route::post('ingredients/{ingredient:uuid}/stock/allocate', [IngredientStockController::class, 'allocate'])
+            ->name('ingredient-stock.allocate');
+        Route::post('ingredients/{ingredient:uuid}/stock/transfer', [IngredientStockController::class, 'transfer'])
+            ->name('ingredient-stock.transfer');
+        Route::post('ingredients/{ingredient:uuid}/stock/adjust', [IngredientStockController::class, 'adjust'])
+            ->name('ingredient-stock.adjust');
+        Route::get('ingredients/{ingredient:uuid}/stock/movements', [IngredientStockController::class, 'movements'])
+            ->name('ingredient-stock.movements');
 
         // v2 #13 — per-ingredient alternate units (base unit + factor). Read on
         // inventory.view, writes on inventory.manage (gated in the controller).

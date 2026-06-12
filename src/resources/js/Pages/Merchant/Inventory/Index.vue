@@ -48,6 +48,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import BaseModal from '@/Components/BaseModal.vue';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
+import IngredientStockDialog from './IngredientStockDialog.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
 import { listBranches, type Branch } from '@/lib/api/branches';
@@ -1213,6 +1214,12 @@ function movementTypeLabel(type: string): string {
     return t(`inventory.movement_types.${type}`);
 }
 
+// P-G4 — central warehouse dialog (company pool + Receive & Distribute).
+const warehouseDialogIngredient = ref<Ingredient | null>(null);
+function openWarehouseDialog(ing: Ingredient): void {
+    warehouseDialogIngredient.value = ing;
+}
+
 function supplierName(id: number | null): string {
     if (id === null) return t('inventory.fields.primary_supplier_none');
     const match = suppliers.value.find((s) => s.id === id);
@@ -1965,6 +1972,9 @@ async function submitSuggestions(): Promise<void> {
                                         <button v-if="canManage" type="button" class="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50" @click="openEditIngredient(ing)">
                                             <Pencil class="size-3" /> {{ t('inventory.actions.edit') }}
                                         </button>
+                                        <button type="button" class="inline-flex items-center gap-1 rounded border border-teal-200 px-2 py-1 text-[11px] font-semibold text-teal-700 transition hover:bg-teal-50" @click="openWarehouseDialog(ing)">
+                                            <Boxes class="size-3" /> {{ t('inventory.actions.warehouse') }}
+                                        </button>
                                         <button v-if="canManage" type="button" class="inline-flex items-center gap-1 rounded border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-50" @click="ingDeleteTarget = ing">
                                             <Trash2 class="size-3" /> {{ t('inventory.actions.delete') }}
                                         </button>
@@ -2154,6 +2164,7 @@ async function submitSuggestions(): Promise<void> {
                             <option value="addon_consumption">{{ t('inventory.movement_types.addon_consumption') }}</option>
                             <option value="transfer_in">{{ t('inventory.movement_types.transfer_in') }}</option>
                             <option value="transfer_out">{{ t('inventory.movement_types.transfer_out') }}</option>
+                            <option value="allocation_in">{{ t('inventory.movement_types.allocation_in') }}</option>
                         </select>
                     </label>
                 </div>
@@ -3635,5 +3646,14 @@ async function submitSuggestions(): Promise<void> {
                 </div>
             </template>
         </BaseModal>
+
+        <!-- P-G4 — central ingredient warehouse dialog -->
+        <IngredientStockDialog
+            :open="warehouseDialogIngredient !== null"
+            :ingredient-uuid="warehouseDialogIngredient?.uuid ?? null"
+            :ingredient-name="warehouseDialogIngredient?.name ?? ''"
+            :can-manage="canManage"
+            @close="warehouseDialogIngredient = null"
+        />
     </MerchantLayout>
 </template>

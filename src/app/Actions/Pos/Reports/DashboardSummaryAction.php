@@ -259,6 +259,8 @@ final readonly class DashboardSummaryAction
             ->where('pos_ingredients.company_id', $companyId)
             ->whereIn('pos_stock_movements.movement_type', self::CONSUMPTION_TYPES)
             ->where('pos_stock_movements.quantity', '<', 0)
+            // P-G4 — exclude central-warehouse rows (branch_id NULL).
+            ->whereNotNull('pos_stock_movements.branch_id')
             ->whereBetween('pos_stock_movements.occurred_at', [$from, $to])
             ->selectRaw('
                 pos_ingredients.name AS ingredient_name,

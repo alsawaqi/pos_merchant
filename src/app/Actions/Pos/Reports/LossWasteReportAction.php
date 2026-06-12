@@ -124,6 +124,10 @@ final readonly class LossWasteReportAction
             ->join('pos_ingredients', 'pos_ingredients.id', '=', 'pos_stock_movements.ingredient_id')
             ->where('pos_ingredients.company_id', $companyId)
             ->where('pos_stock_movements.quantity', '<', 0)
+            // P-G4 — branch operations only: central-warehouse rows
+            // (branch_id NULL, e.g. allocation_out / a central adjust-down)
+            // are pool moves, not branch depletion.
+            ->whereNotNull('pos_stock_movements.branch_id')
             ->whereBetween('pos_stock_movements.occurred_at', [$filter->dateFrom, $filter->dateTo])
             ->when($branchScope !== null, fn ($q) => $q->whereIn('pos_stock_movements.branch_id', $branchScope))
             ->selectRaw("

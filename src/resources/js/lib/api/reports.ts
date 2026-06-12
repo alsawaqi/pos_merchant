@@ -384,7 +384,8 @@ export interface RestockPurchasingReportPayload {
     window: { from: string; to: string; consolidated: boolean; branch_ids: number[] | null };
     headline: { total_cost: string; total_qty: string; event_count: number };
     by_supplier: { supplier_id: number | null; supplier_name: string; cost: string; event_count: number }[];
-    by_branch: { branch_id: number; branch_name: string; cost: string; event_count: number }[];
+    /** P-G4 — branch_id null = the central "Warehouse" bucket. */
+    by_branch: { branch_id: number | null; branch_name: string; cost: string; event_count: number }[];
     top_purchased: { ingredient_id: number; ingredient_name: string; unit: string; total_qty: string; cost: string }[];
     _phase?: { invoice_stub?: string };
 }
