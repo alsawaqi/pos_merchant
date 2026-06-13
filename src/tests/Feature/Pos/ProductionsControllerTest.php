@@ -125,9 +125,11 @@ it('filters by branch, status, and date range', function (): void {
     $res = $this->getJson('/api/productions?status=cancelled')->assertOk();
     expect($res->json('total'))->toBe(1);
 
-    // Date range: only the two recent batches started today.
-    $today = now()->toDateString();
-    $res = $this->getJson("/api/productions?from={$today}&to={$today}")->assertOk();
+    // Date range: only the two recent batches. seedProduction backdates
+    // started_at by 45 minutes, so anchor the queried day to THAT moment
+    // (running the suite within 45 minutes after midnight must not flake).
+    $day = now()->subMinutes(45)->toDateString();
+    $res = $this->getJson("/api/productions?from={$day}&to={$day}")->assertOk();
     expect($res->json('total'))->toBe(2);
 });
 
