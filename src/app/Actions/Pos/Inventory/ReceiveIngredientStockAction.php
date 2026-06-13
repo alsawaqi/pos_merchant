@@ -11,6 +11,7 @@ use App\Models\Expense;
 use App\Models\Ingredient;
 use App\Models\StockMovement;
 use App\Models\User;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -43,6 +44,9 @@ final readonly class ReceiveIngredientStockAction
         User $actor,
         string|float|int|null $totalCost = null,
         string|float|int|null $deliveryCost = null,
+        // PD6 — the accounting date the booked expenses are stamped with
+        // (the Goods Received Note's received_at). NULL = now.
+        ?Carbon $occurredAt = null,
     ): StockMovement {
         if ((float) $quantity <= 0) {
             throw new RuntimeException('Received quantity must be greater than zero.');
@@ -57,7 +61,7 @@ final readonly class ReceiveIngredientStockAction
         $companyId = (int) $ingredient->company_id;
 
         return DB::transaction(function () use (
-            $ingredient, $quantity, $note, $actor, $cost, $delivery, $companyId
+            $ingredient, $quantity, $note, $actor, $cost, $delivery, $companyId, $occurredAt
         ): StockMovement {
             $expense = null;
             if ($cost > 0) {
@@ -74,6 +78,7 @@ final readonly class ReceiveIngredientStockAction
                     amount: $cost,
                     note: trim(($note !== null && $note !== '') ? $desc.' - '.$note : $desc),
                     actorUserId: (int) $actor->getKey(),
+                    at: $occurredAt,
                 );
             }
 
@@ -85,6 +90,7 @@ final readonly class ReceiveIngredientStockAction
                     amount: $delivery,
                     note: 'Delivery: '.$ingredient->name,
                     actorUserId: (int) $actor->getKey(),
+                    at: $occurredAt,
                 );
             }
 

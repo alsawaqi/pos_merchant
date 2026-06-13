@@ -8,6 +8,7 @@ use App\Models\Branch;
 use App\Models\Product;
 use App\Models\ProductStockMovement;
 use App\Models\User;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -43,6 +44,9 @@ final readonly class ReceiveAndDistributeProductStockAction
         User $actor,
         string|float|int|null $totalCost = null,
         string|float|int|null $deliveryCost = null,
+        // PD6 — the accounting date forwarded to the receive's booked
+        // expenses (the Goods Received Note's received_at). NULL = now.
+        ?Carbon $occurredAt = null,
     ): array {
         $totalQty = (float) $total;
         if ($totalQty <= 0) {
@@ -61,11 +65,11 @@ final readonly class ReceiveAndDistributeProductStockAction
             ));
         }
 
-        return DB::transaction(function () use ($product, $total, $lines, $note, $actor, $totalCost, $deliveryCost): array {
+        return DB::transaction(function () use ($product, $total, $lines, $note, $actor, $totalCost, $deliveryCost, $occurredAt): array {
             // PD2/PD5 — the purchase cost + delivery belong to the RECEIVE leg
             // (one expense pair for the whole delivery; the split changes
             // nothing about the money).
-            $received = $this->receive->handle($product, $total, $note, $actor, $totalCost, $deliveryCost);
+            $received = $this->receive->handle($product, $total, $note, $actor, $totalCost, $deliveryCost, $occurredAt);
             $allocations = $lines === []
                 ? []
                 : $this->allocate->handle($product, $lines, $note, $actor);

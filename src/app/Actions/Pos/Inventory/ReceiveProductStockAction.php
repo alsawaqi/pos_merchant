@@ -11,6 +11,7 @@ use App\Models\Expense;
 use App\Models\Product;
 use App\Models\ProductStockMovement;
 use App\Models\User;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -45,6 +46,9 @@ final readonly class ReceiveProductStockAction
         User $actor,
         string|float|int|null $totalCost = null,
         string|float|int|null $deliveryCost = null,
+        // PD6 — the accounting date the booked expenses are stamped with
+        // (the Goods Received Note's received_at). NULL = now.
+        ?Carbon $occurredAt = null,
     ): ProductStockMovement {
         if ((float) $quantity <= 0) {
             throw new RuntimeException('Received quantity must be greater than zero.');
@@ -64,7 +68,7 @@ final readonly class ReceiveProductStockAction
         $label = $product->is_internal ? 'Physical-item purchase' : 'Stock purchase';
 
         return DB::transaction(function () use (
-            $product, $quantity, $note, $actor, $cost, $delivery, $companyId, $category, $label
+            $product, $quantity, $note, $actor, $cost, $delivery, $companyId, $category, $label, $occurredAt
         ): ProductStockMovement {
             $expense = null;
             if ($cost > 0) {
@@ -81,6 +85,7 @@ final readonly class ReceiveProductStockAction
                     amount: $cost,
                     note: ($note !== null && $note !== '') ? $desc.' - '.$note : $desc,
                     actorUserId: (int) $actor->getKey(),
+                    at: $occurredAt,
                 );
             }
 
@@ -93,6 +98,7 @@ final readonly class ReceiveProductStockAction
                     amount: $delivery,
                     note: 'Delivery: '.$product->name,
                     actorUserId: (int) $actor->getKey(),
+                    at: $occurredAt,
                 );
             }
 

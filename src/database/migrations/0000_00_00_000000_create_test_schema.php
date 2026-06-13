@@ -1462,6 +1462,59 @@ return new class extends Migration
             $table->timestamps();
         });
 
+        // ---- PD6 Goods Received Note (Saved Purchase Receipt) ----
+        // One saved document for a whole delivery: many mixed lines
+        // (ingredients + products + physical items) + named extra charges.
+        // Mirrors pos_admin's 2026_07_24_010000 migration. Lines/charges FK
+        // pos_expenses (defined above), so these come after it.
+        Schema::create('pos_purchase_receipts', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('supplier_id')->nullable()->constrained('pos_suppliers')->nullOnDelete();
+            $table->string('reference', 100)->nullable();
+            $table->decimal('items_total', 12, 3)->default(0);
+            $table->decimal('charges_total', 12, 3)->default(0);
+            $table->decimal('grand_total', 12, 3)->default(0);
+            $table->string('status', 32)->default('received');
+            $table->text('note')->nullable();
+            $table->foreignId('recorded_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->timestamp('received_at')->useCurrent();
+            $table->timestamps();
+            $table->softDeletes();
+            $table->index(['company_id', 'received_at'], 'pos_purchase_receipts_company_received_idx');
+        });
+
+        Schema::create('pos_purchase_receipt_lines', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('purchase_receipt_id')->constrained('pos_purchase_receipts')->cascadeOnDelete();
+            $table->string('item_type', 16);
+            $table->foreignId('ingredient_id')->nullable()->constrained('pos_ingredients')->nullOnDelete();
+            $table->foreignId('product_id')->nullable()->constrained('pos_products')->nullOnDelete();
+            $table->string('item_name');
+            $table->decimal('quantity', 12, 3);
+            $table->string('unit', 16)->nullable();
+            $table->decimal('line_cost', 12, 3)->default(0);
+            $table->string('expense_category', 32)->nullable();
+            $table->json('allocations_json')->nullable();
+            $table->foreignId('expense_id')->nullable()->constrained('pos_expenses')->nullOnDelete();
+            $table->unsignedSmallInteger('display_order')->default(0);
+            $table->timestamps();
+            $table->index(['purchase_receipt_id'], 'pos_purchase_receipt_lines_receipt_idx');
+        });
+
+        Schema::create('pos_purchase_receipt_charges', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('purchase_receipt_id')->constrained('pos_purchase_receipts')->cascadeOnDelete();
+            $table->string('name');
+            $table->string('expense_category', 32)->default('delivery');
+            $table->decimal('amount', 12, 3)->default(0);
+            $table->foreignId('expense_id')->nullable()->constrained('pos_expenses')->nullOnDelete();
+            $table->unsignedSmallInteger('display_order')->default(0);
+            $table->timestamps();
+            $table->index(['purchase_receipt_id'], 'pos_purchase_receipt_charges_receipt_idx');
+        });
+
         // ---- Sessions (used by some auth integration tests) -------
         // Mirrors the Laravel default sessions table — pos_merchant
         // is configured to use session driver=array in tests so this

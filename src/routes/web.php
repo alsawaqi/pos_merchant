@@ -47,6 +47,7 @@ use App\Http\Controllers\Pos\PortalMessagesController;
 use App\Http\Controllers\Pos\ProductionsController;
 use App\Http\Controllers\Pos\ProductsController;
 use App\Http\Controllers\Pos\ProductStockController;
+use App\Http\Controllers\Pos\PurchaseReceiptController;
 use App\Http\Controllers\Pos\ReportsController;
 use App\Http\Controllers\Pos\RestockRequestsController;
 use App\Http\Controllers\Pos\RolesController;
@@ -536,6 +537,20 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('suppliers.update');
         Route::delete('suppliers/{supplier:uuid}', [SuppliersController::class, 'destroy'])
             ->name('suppliers.destroy');
+
+        // -------- PD6 — Goods Received Note (Saved Purchase Receipt) --
+        // One saved document for a whole delivery: many mixed lines
+        // (ingredients + products + physical items) each with a cost +
+        // optional inline branch split, plus named extra charges. Reading is
+        // inventory.view; recording is inventory.manage + unrestricted scope
+        // (it credits the central warehouse). Composes the per-item
+        // receive/allocate/expense machinery in one atomic submit.
+        Route::get('purchase-receipts', [PurchaseReceiptController::class, 'index'])
+            ->name('purchase-receipts.index');
+        Route::post('purchase-receipts', [PurchaseReceiptController::class, 'store'])
+            ->name('purchase-receipts.store');
+        Route::get('purchase-receipts/{receipt:uuid}', [PurchaseReceiptController::class, 'show'])
+            ->name('purchase-receipts.show');
 
         // Per-branch stock: current balances, adjust, restock,
         // and paginated movement ledger.

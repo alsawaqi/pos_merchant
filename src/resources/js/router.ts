@@ -23,6 +23,9 @@ import ExpensesIndex from '@/Pages/Merchant/Expenses/Index.vue';
 import LoyaltyIndex from '@/Pages/Merchant/Loyalty/Index.vue';
 import FloorPlanIndex from '@/Pages/Merchant/FloorPlan/Index.vue';
 import InventoryIndex from '@/Pages/Merchant/Inventory/Index.vue';
+import PurchaseReceiptsIndex from '@/Pages/Merchant/Inventory/PurchaseReceipts/Index.vue';
+import PurchaseReceiptsCreate from '@/Pages/Merchant/Inventory/PurchaseReceipts/Create.vue';
+import PurchaseReceiptsShow from '@/Pages/Merchant/Inventory/PurchaseReceipts/Show.vue';
 import MessagesIndex from '@/Pages/Merchant/Messages/Index.vue';
 import ProductionIndex from '@/Pages/Merchant/Production/Index.vue';
 import PortalUsersIndex from '@/Pages/Merchant/PortalUsers/Index.vue';
@@ -230,6 +233,29 @@ const routes: RouteRecordRaw[] = [
         path: '/inventory',
         name: 'merchant.inventory',
         component: InventoryIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        // PD6 — Goods Received Notes (Saved Purchase Receipts) list.
+        // Server gates by inventory.view.
+        path: '/inventory/receipts',
+        name: 'merchant.purchase-receipts',
+        component: PurchaseReceiptsIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        // PD6 — the full-page Goods Received form. Server gates by
+        // inventory.manage + access to all branches.
+        path: '/inventory/receipts/new',
+        name: 'merchant.purchase-receipts.create',
+        component: PurchaseReceiptsCreate,
+        meta: { requiresAuth: true },
+    },
+    {
+        // PD6 — a saved receipt, read-only.
+        path: '/inventory/receipts/:uuid',
+        name: 'merchant.purchase-receipts.show',
+        component: PurchaseReceiptsShow,
         meta: { requiresAuth: true },
     },
     {

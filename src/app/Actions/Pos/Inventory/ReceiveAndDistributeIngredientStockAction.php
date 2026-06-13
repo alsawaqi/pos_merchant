@@ -8,6 +8,7 @@ use App\Models\Branch;
 use App\Models\Ingredient;
 use App\Models\StockMovement;
 use App\Models\User;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -44,6 +45,9 @@ final readonly class ReceiveAndDistributeIngredientStockAction
         User $actor,
         string|float|int|null $totalCost = null,
         string|float|int|null $deliveryCost = null,
+        // PD6 — the accounting date forwarded to the receive's booked
+        // expenses (the Goods Received Note's received_at). NULL = now.
+        ?Carbon $occurredAt = null,
     ): array {
         $totalQty = (float) $total;
         if ($totalQty <= 0) {
@@ -62,11 +66,11 @@ final readonly class ReceiveAndDistributeIngredientStockAction
             ));
         }
 
-        return DB::transaction(function () use ($ingredient, $total, $lines, $note, $actor, $totalCost, $deliveryCost): array {
+        return DB::transaction(function () use ($ingredient, $total, $lines, $note, $actor, $totalCost, $deliveryCost, $occurredAt): array {
             // PD5 — the cost/delivery ride the single receive into the central
             // warehouse (one purchase = one expense pair); the allocations are
             // pure internal movement, no expense.
-            $received = $this->receive->handle($ingredient, $total, $note, $actor, $totalCost, $deliveryCost);
+            $received = $this->receive->handle($ingredient, $total, $note, $actor, $totalCost, $deliveryCost, $occurredAt);
             $allocations = $lines === []
                 ? []
                 : $this->allocate->handle($ingredient, $lines, $note, $actor);

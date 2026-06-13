@@ -17,7 +17,7 @@
 import { computed, onMounted, ref, type Component } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { RouterLink } from 'vue-router';
-import { BadgeCheck, BadgePercent, Ban, Bike, Book, Boxes, Building2, ChefHat, ChevronDown, Contact, FolderTree, Gauge, Gift, Globe, Hash, KeyRound, LayoutGrid, LineChart, LogOut, Mail, Menu, Percent, Receipt, ShieldAlert, ShoppingBag, Tags, Target, Users, X } from 'lucide-vue-next';
+import { BadgeCheck, BadgePercent, Ban, Bike, Book, Boxes, Building2, ChefHat, ChevronDown, ClipboardList, Contact, FolderTree, Gauge, Gift, Globe, Hash, KeyRound, LayoutGrid, LineChart, LogOut, Mail, Menu, Percent, Receipt, ShieldAlert, ShoppingBag, Tags, Target, Users, X } from 'lucide-vue-next';
 import { authState } from '@/stores/auth';
 import { messagesState, refreshUnreadCount } from '@/stores/messages';
 import { setLocale, type SupportedLocale } from '@/lib/i18n';
@@ -61,6 +61,8 @@ const navigationCatalog: readonly NavItem[] = [
     { key: 'catalogue', to: '/catalogue', icon: Book, permission: MerchantPermission.CatalogueView },
     { key: 'taxes', to: '/taxes', icon: Percent, permission: MerchantPermission.CatalogueView },
     { key: 'inventory', to: '/inventory', icon: Boxes, permission: MerchantPermission.InventoryView },
+    // PD6 — Goods Received Notes (Saved Purchase Receipts).
+    { key: 'purchase_receipts', to: '/inventory/receipts', icon: ClipboardList, permission: MerchantPermission.InventoryView },
     { key: 'production', to: '/production', icon: ChefHat, permission: MerchantPermission.ProductionView },
     // P-G6 — the inbox is for everyone; the page itself hides the
     // announcements tab without messages.send.
