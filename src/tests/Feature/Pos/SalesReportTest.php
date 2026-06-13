@@ -406,7 +406,7 @@ it('computes COGS and gross_profit from order-item recipe snapshots', function (
     expect($response->json('data.headline.gross_profit'))->toBe('9.800'); // net_sales 10.000 − cogs 0.200
 });
 
-it('computes net_profit = gross_profit minus operating expenses, excluding ingredients', function (): void {
+it('PD5 cash model: net_profit = net_sales minus ALL expenses (ingredients included)', function (): void {
     $ctx = makeMerchantActor();
     $product = Product::factory()->for($ctx['company'], 'company')->create();
     $order = Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->paid()->create([
@@ -415,10 +415,10 @@ it('computes net_profit = gross_profit minus operating expenses, excluding ingre
     ]);
     OrderItem::factory()->for($order, 'order')->for($product, 'product')->create([
         'qty' => '2.000', 'unit_price_snapshot' => '5.000', 'line_total' => '10.000',
-        'recipe_snapshot_json' => [['ingredient_id' => 1, 'qty' => 0.25, 'unit' => 'l', 'unit_cost' => 0.400]], // COGS 0.200
+        'recipe_snapshot_json' => [['ingredient_id' => 1, 'qty' => 0.25, 'unit' => 'l', 'unit_cost' => 0.400]], // COGS 0.200 (informational)
     ]);
-    // Utilities counts toward operating expenses; the ingredients expense
-    // (e.g. auto-logged by a restock) is excluded -- COGS already covers it.
+    // PD5 cash model — EVERY purchase counts as an expense when bought, so the
+    // ingredient expense now counts too (the merchant's chosen accounting).
     \App\Models\Expense::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->create([
         'category' => \App\Enums\ExpenseCategory::Utilities->value, 'amount' => '4.000', 'logged_at' => '2026-06-15 09:00:00',
     ]);
@@ -428,9 +428,18 @@ it('computes net_profit = gross_profit minus operating expenses, excluding ingre
 
     $response = $this->getJson('/api/reports/sales?date_from=2026-06-01&date_to=2026-06-30')->assertOk();
 
+    // gross_profit + cogs stay as an informational recipe margin...
     expect($response->json('data.headline.gross_profit'))->toBe('9.800');
-    expect($response->json('data.headline.operating_expenses'))->toBe('4.000'); // utilities only
-    expect($response->json('data.headline.net_profit'))->toBe('5.800'); // 9.800 - 4.000
+    expect($response->json('data.headline.cogs'))->toBe('0.200');
+    // ...but net profit is the cash one: net_sales − ALL expenses (no COGS
+    // double-count). 10.000 − (4.000 + 5.000) = 1.000.
+    expect($response->json('data.headline.operating_expenses'))->toBe('9.000');
+    expect($response->json('data.headline.net_profit'))->toBe('1.000');
+
+    // The by-category breakdown drives the new expenses view.
+    $byCat = collect($response->json('data.by_expense_category'))->keyBy('category');
+    expect((string) $byCat['ingredients']['amount'])->toBe('5.000')
+        ->and((string) $byCat['utilities']['amount'])->toBe('4.000');
 });
 
 it('excludes rejected expenses from net_profit', function (): void {

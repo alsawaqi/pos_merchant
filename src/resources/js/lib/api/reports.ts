@@ -125,6 +125,8 @@ export interface SalesReportPayload {
     /** P-F9 — offer applications (offer_id-tagged discount rows) per offer. */
     by_offer?: { offer_id: number; name: string; amount: string; count: number }[];
     by_branch?: { branch_id: number; branch_name: string; gross: string; count: number }[];
+    /** PD5 — cash-model expense breakdown (every purchase + manual expense). */
+    by_expense_category?: { category: string; name: string; name_ar: string | null; amount: string; count: number }[];
 }
 
 export function fetchSalesReport(filter: ReportFilter): Promise<{ data: SalesReportPayload }> {

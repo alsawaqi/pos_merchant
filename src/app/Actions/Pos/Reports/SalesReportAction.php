@@ -6,7 +6,6 @@ namespace App\Actions\Pos\Reports;
 
 use App\Actions\Pos\Reports\Support\RecipeSnapshotCost;
 use App\Data\Reports\ReportFilter;
-use App\Enums\ExpenseCategory;
 use App\Enums\ExpenseStatus;
 use App\Enums\OrderStatus;
 use App\Support\MerchantTenantContext;
@@ -121,23 +120,25 @@ final readonly class SalesReportAction
         $cogs = $this->cogs($paidQuery);
         $grossProfit = $netSales - $cogs;
 
-        // Operating expenses for NET profit. Excludes the 'ingredients'
-        // category (COGS already recognises ingredient cost when the stock
-        // is consumed in a sale -- counting the purchase here too would
-        // double-count) and rejected expenses. Scoped to the same window +
-        // branch scope as the sales: a branch-filtered report counts that
-        // branch's expenses; consolidated counts every branch PLUS the
-        // general (no-branch) expenses.
+        // PD5 — CASH model. Every non-rejected expense counts the day it was
+        // logged, INCLUDING ingredient/stock/physical-item purchases: buying
+        // stock IS the expense (the merchant's chosen accounting). COGS below
+        // stays computed + shown as an informational recipe-based margin, but
+        // is NOT subtracted into net profit — otherwise a recipe user would
+        // count ingredient cost twice (the purchase here AND consumption at
+        // sale). Scoped to the same window + branch scope as the sales:
+        // a branch-filtered report counts that branch's expenses; consolidated
+        // counts every branch PLUS central (no-branch HQ) purchases.
         $expenseQuery = DB::table('pos_expenses')
             ->where('company_id', $companyId)
             ->whereBetween('logged_at', [$filter->dateFrom, $filter->dateTo])
-            ->where('status', '!=', ExpenseStatus::Rejected->value)
-            ->where('category', '!=', ExpenseCategory::Ingredients->value);
+            ->where('status', '!=', ExpenseStatus::Rejected->value);
         if ($branchScope !== null) {
             $expenseQuery->whereIn('branch_id', $branchScope);
         }
         $operatingExpenses = (float) $expenseQuery->sum('amount');
-        $netProfit = $grossProfit - $operatingExpenses;
+        $netProfit = $netSales - $operatingExpenses;
+        $byExpenseCategory = $this->byExpenseCategory($companyId, $filter, $branchScope);
 
         // Breakdowns
         $byHour = $this->byHour($paidQuery);
@@ -161,6 +162,9 @@ final readonly class SalesReportAction
                 'net_sales' => self::fmt($netSales),
                 'tax_total' => self::fmt($taxTotal),
                 'refunds_total' => self::fmt($refundsTotal),
+                // PD5 — COGS + gross_profit are INFORMATIONAL (recipe-based
+                // ingredient margin); net_profit uses the cash expenses, not
+                // these, so recipe users still see a margin without double-count.
                 'cogs' => self::fmt($cogs),
                 'gross_profit' => self::fmt($grossProfit),
                 'operating_expenses' => self::fmt($operatingExpenses),
@@ -181,7 +185,58 @@ final readonly class SalesReportAction
             'by_order_type' => $byOrderType,
             'by_offer' => $byOffer,
             'by_branch' => $byBranch,
+            'by_expense_category' => $byExpenseCategory,
         ];
+    }
+
+    /**
+     * PD5 — the expense breakdown that drives net profit: non-rejected
+     * pos_expenses in the window/scope grouped by category, biggest first,
+     * with the company's display name for each category key.
+     *
+     * @param  list<int>|null  $branchScope
+     * @return list<array{category: string, name: string, name_ar: string|null, amount: string, count: int}>
+     */
+    private function byExpenseCategory(int $companyId, ReportFilter $filter, ?array $branchScope): array
+    {
+        $query = DB::table('pos_expenses')
+            ->where('company_id', $companyId)
+            ->whereBetween('logged_at', [$filter->dateFrom, $filter->dateTo])
+            ->where('status', '!=', ExpenseStatus::Rejected->value);
+        if ($branchScope !== null) {
+            $query->whereIn('branch_id', $branchScope);
+        }
+
+        $rows = $query
+            ->selectRaw('category, COALESCE(SUM(amount), 0) AS amount, COUNT(*) AS cnt')
+            ->groupBy('category')
+            ->orderByRaw('SUM(amount) DESC')
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return [];
+        }
+
+        // Display names from the company's category rows (key -> {name,
+        // name_ar}); fall back to a title-cased key for any legacy/un-seeded
+        // category. The frontend picks name vs name_ar by the active locale.
+        $categories = DB::table('pos_expense_categories')
+            ->where('company_id', $companyId)
+            ->whereNull('deleted_at')
+            ->get(['key', 'name', 'name_ar'])
+            ->keyBy('key');
+
+        return $rows->map(static function ($r) use ($categories): array {
+            $cat = $categories->get($r->category);
+
+            return [
+                'category' => (string) $r->category,
+                'name' => (string) ($cat->name ?? ucfirst(str_replace('_', ' ', (string) $r->category))),
+                'name_ar' => $cat->name_ar ?? null,
+                'amount' => self::fmt((float) $r->amount),
+                'count' => (int) $r->cnt,
+            ];
+        })->all();
     }
 
     /**

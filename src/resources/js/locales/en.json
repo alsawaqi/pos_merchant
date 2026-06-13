@@ -1268,6 +1268,13 @@
             "submit": "Save",
             "submitting": "Saving…"
         },
+        "purchase_cost": {
+            "cost": "Cost paid",
+            "delivery": "Delivery",
+            "no_cost": "No cost (free / correction)",
+            "hint": "What you paid for this stock — booked automatically as an expense. Delivery is booked as a separate expense.",
+            "no_cost_hint": "No expense will be booked for this receive."
+        },
         "alt_units": {
             "title": "Alternate units",
             "hint": "Optional larger or packaged units. The factor is how many base units make up one of this unit (e.g. base g, alt kg, factor 1000).",
@@ -2177,6 +2184,10 @@
             "by_hour": "Sales by hour",
             "by_hour_sub": "Day of week × hour",
             "by_weekday": "By weekday",
+            "expenses_by_category": "Expenses by category",
+            "expense_category": "Category",
+            "expense_amount": "Amount",
+            "expense_count": "Entries",
             "by_payment_method": "By payment method",
             "by_order_type": "By order type",
             "by_offer": "Offers",

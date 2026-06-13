@@ -7,13 +7,14 @@ namespace App\Actions\Pos\Expenses;
 use App\Models\ExpenseCategory;
 
 /**
- * Seed the six default expense categories for a company the first time it
- * touches the expense-categories screen. Idempotent: returns early if the
- * company already has any category (so a deliberate prune isn't re-seeded after
- * the first row exists). No audit — these are system defaults, not a user edit.
+ * Seed the default expense categories for a company the first time it touches
+ * the expense-categories screen (nine: the original six + PD2 stock_purchases
+ * + PD5 physical_items / delivery). Idempotent: returns early if the company
+ * already has any category (so a deliberate prune isn't re-seeded after the
+ * first row exists). No audit — these are system defaults, not a user edit.
  *
- * The default set mirrors the legacy {@see \App\Enums\ExpenseCategory} fixed
- * list so previously logged expenses (storing those keys) resolve cleanly.
+ * The default set mirrors the {@see \App\Enums\ExpenseCategory} fixed list so
+ * previously logged expenses (storing those keys) resolve cleanly.
  */
 final readonly class EnsureDefaultExpenseCategoriesAction
 {
@@ -31,6 +32,10 @@ final readonly class EnsureDefaultExpenseCategoriesAction
         // with a cost). Existing companies get it lazily from
         // ReceiveProductStockAction the first time they need it.
         ['key' => 'stock_purchases', 'name' => 'Stock purchases', 'name_ar' => 'مشتريات البضائع الجاهزة', 'sort_order' => 6],
+        // PD5 — physical items + delivery get their own buckets; lazily added
+        // for existing companies by RecordPurchaseExpenseAction.
+        ['key' => 'physical_items', 'name' => 'Physical items', 'name_ar' => 'الأصناف المادية', 'sort_order' => 7],
+        ['key' => 'delivery', 'name' => 'Delivery', 'name_ar' => 'التوصيل', 'sort_order' => 8],
     ];
 
     public function handle(int $companyId): void

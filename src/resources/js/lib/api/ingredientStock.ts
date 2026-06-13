@@ -45,6 +45,17 @@ export interface IngredientAllocationLine {
     quantity: string | number;
 }
 
+/**
+ * PD5 — the cash-model purchase cost on a receive. A positive total_cost (or an
+ * explicit no_cost) is required; total_cost books an 'ingredients' expense and
+ * delivery_cost a separate 'delivery' expense.
+ */
+export interface PurchaseCostFields {
+    total_cost?: string | number | null;
+    delivery_cost?: string | number | null;
+    no_cost?: boolean;
+}
+
 // ---- Endpoints --------------------------------------------------
 
 export function getIngredientStock(uuid: string): Promise<{ data: IngredientStockSummary }> {
@@ -53,7 +64,7 @@ export function getIngredientStock(uuid: string): Promise<{ data: IngredientStoc
 
 export function receiveIngredientStock(
     uuid: string,
-    payload: { quantity: string | number; note?: string | null },
+    payload: { quantity: string | number; note?: string | null } & PurchaseCostFields,
 ): Promise<{ data: IngredientStockSummary }> {
     return apiPost<{ data: IngredientStockSummary }>(`/api/ingredients/${uuid}/stock/receive`, payload as unknown as JsonValue);
 }
@@ -71,7 +82,7 @@ export function allocateIngredientStock(
  */
 export function receiveAndDistributeIngredientStock(
     uuid: string,
-    payload: { quantity: string | number; allocations: IngredientAllocationLine[]; note?: string | null },
+    payload: { quantity: string | number; allocations: IngredientAllocationLine[]; note?: string | null } & PurchaseCostFields,
 ): Promise<{ data: IngredientStockSummary }> {
     return apiPost<{ data: IngredientStockSummary }>(`/api/ingredients/${uuid}/stock/receive-distribute`, payload as unknown as JsonValue);
 }

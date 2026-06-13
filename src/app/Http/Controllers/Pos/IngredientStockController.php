@@ -127,7 +127,14 @@ class IngredientStockController extends Controller
         \App\Support\BranchScope::ensureUnrestricted($request->user(), 'The central warehouse is managed by accounts with access to all branches.');
 
         try {
-            $this->receive->handle($ingredient, $request->input('quantity'), $request->input('note'), $request->user());
+            $this->receive->handle(
+                $ingredient,
+                $request->input('quantity'),
+                $request->input('note'),
+                $request->user(),
+                $request->input('total_cost'),
+                $request->input('delivery_cost'),
+            );
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
@@ -164,6 +171,8 @@ class IngredientStockController extends Controller
                 $lines,
                 $request->input('note'),
                 $request->user(),
+                $request->input('total_cost'),
+                $request->input('delivery_cost'),
             );
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);

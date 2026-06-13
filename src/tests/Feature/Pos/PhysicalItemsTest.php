@@ -56,7 +56,7 @@ it('lists physical items only, with the central pool quantity', function (): voi
     Product::factory()->for(Company::factory()->create(), 'company')->create(['name' => 'Foreign Cup', 'stock_mode' => 'unit', 'is_internal' => true]);
 
     $created = $this->postJson('/api/physical-items', ['name' => 'Cup', 'purpose' => 'packaging'])->json('data');
-    $this->postJson("/api/products/{$created['uuid']}/stock/receive", ['quantity' => '40'])->assertOk();
+    $this->postJson("/api/products/{$created['uuid']}/stock/receive", ['no_cost' => true, 'quantity' => '40'])->assertOk();
 
     $rows = $this->getJson('/api/physical-items')->assertOk()->json('data');
 
@@ -107,18 +107,23 @@ it('keeps physical items out of the catalogue products list', function (): void 
     expect($names)->toBe(['Latte']);
 });
 
-it('receives stock with a cost through the shared machinery (PD2 expense)', function (): void {
+it('receives stock with a cost booked to the physical_items expense (PD5)', function (): void {
     $ctx = makeMerchantActor();
     $created = $this->postJson('/api/physical-items', ['name' => 'Cup 12oz', 'purpose' => 'packaging'])->json('data');
 
     $this->postJson("/api/products/{$created['uuid']}/stock/receive", [
         'quantity' => '500',
         'total_cost' => '22.500',
+        'delivery_cost' => '1.500',
     ])->assertOk();
 
-    $expense = Expense::query()->where('category', 'stock_purchases')->firstOrFail();
+    // PD5 — physical items book to their OWN category, not stock_purchases.
+    $expense = Expense::query()->where('category', 'physical_items')->firstOrFail();
     expect((string) $expense->amount)->toBe('22.500')
         ->and($expense->note)->toContain('Cup 12oz');
+
+    // The delivery rode a separate 'delivery' expense line.
+    expect((string) Expense::query()->where('category', 'delivery')->firstOrFail()->amount)->toBe('1.500');
 });
 
 it('deletes a physical item unless it is still attached to a product', function (): void {

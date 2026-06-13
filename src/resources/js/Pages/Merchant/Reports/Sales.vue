@@ -17,7 +17,7 @@ import ReportChart from './components/ReportChart.vue';
 import SalesHeatmap from './components/SalesHeatmap.vue';
 import { useReportRunner } from './components/useReportRunner';
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const { filter, payload, loading, error, run } = useReportRunner<SalesReportPayload>(fetchSalesReport);
 
 const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -192,6 +192,35 @@ type ApexSeries = { name: string; data: number[] }[];
                 hide-legend
                 :empty-text="t('reports.shared.no_data')"
             />
+
+            <!-- PD5 — where the money went: every purchase + manual expense by
+                 category (the cash-model net-profit breakdown). -->
+            <div v-if="payload.by_expense_category && payload.by_expense_category.length" class="rounded-xl border border-slate-200 bg-white shadow-sm">
+                <h2 class="border-b border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700">{{ t('reports.sales.expenses_by_category') }}</h2>
+                <table class="w-full text-sm">
+                    <thead class="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                            <th class="px-5 py-2 text-start">{{ t('reports.sales.expense_category') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.sales.expense_amount') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.sales.expense_count') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="row in payload.by_expense_category" :key="row.category" class="border-b border-slate-100 last:border-0">
+                            <td class="px-5 py-2 font-medium text-slate-900">{{ (locale === 'ar' && row.name_ar) ? row.name_ar : row.name }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ row.amount }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ row.count }}</td>
+                        </tr>
+                    </tbody>
+                    <tfoot class="border-t border-slate-200 bg-slate-50 text-sm font-semibold text-slate-900">
+                        <tr>
+                            <td class="px-5 py-2">{{ t('reports.sales.headline_labels.operating_expenses') }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ payload.headline.operating_expenses }}</td>
+                            <td class="px-5 py-2"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
 
             <div v-if="payload.by_branch && payload.by_branch.length" class="rounded-xl border border-slate-200 bg-white shadow-sm">
                 <h2 class="border-b border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700">{{ t('reports.shared.by_branch') }}</h2>

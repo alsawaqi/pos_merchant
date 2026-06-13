@@ -42,6 +42,8 @@ final readonly class ReceiveAndDistributeIngredientStockAction
         array $lines,
         ?string $note,
         User $actor,
+        string|float|int|null $totalCost = null,
+        string|float|int|null $deliveryCost = null,
     ): array {
         $totalQty = (float) $total;
         if ($totalQty <= 0) {
@@ -60,8 +62,11 @@ final readonly class ReceiveAndDistributeIngredientStockAction
             ));
         }
 
-        return DB::transaction(function () use ($ingredient, $total, $lines, $note, $actor): array {
-            $received = $this->receive->handle($ingredient, $total, $note, $actor);
+        return DB::transaction(function () use ($ingredient, $total, $lines, $note, $actor, $totalCost, $deliveryCost): array {
+            // PD5 — the cost/delivery ride the single receive into the central
+            // warehouse (one purchase = one expense pair); the allocations are
+            // pure internal movement, no expense.
+            $received = $this->receive->handle($ingredient, $total, $note, $actor, $totalCost, $deliveryCost);
             $allocations = $lines === []
                 ? []
                 : $this->allocate->handle($ingredient, $lines, $note, $actor);

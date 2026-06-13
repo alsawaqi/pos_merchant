@@ -17,15 +17,15 @@ use Spatie\Permission\PermissionRegistrar;
 
 uses(RefreshDatabase::class);
 
-it('auto-seeds the seven default categories on first index', function (): void {
+it('auto-seeds the default categories on first index', function (): void {
     makeMerchantActor();
 
     $res = $this->getJson('/api/expense-categories')->assertOk();
 
-    // PD2 added stock_purchases (bought-in goods purchases).
-    expect($res->json('data'))->toHaveCount(7);
+    // PD2 added stock_purchases; PD5 added physical_items + delivery.
+    expect($res->json('data'))->toHaveCount(9);
     $keys = collect($res->json('data'))->pluck('key')->all();
-    expect($keys)->toContain('utilities', 'supplies', 'ingredients', 'maintenance', 'salaries', 'other', 'stock_purchases');
+    expect($keys)->toContain('utilities', 'supplies', 'ingredients', 'maintenance', 'salaries', 'other', 'stock_purchases', 'physical_items', 'delivery');
 });
 
 it('creates a custom category with a slug key', function (): void {

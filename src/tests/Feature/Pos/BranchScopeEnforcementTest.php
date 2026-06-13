@@ -295,10 +295,13 @@ it('locks central-warehouse mutations to unrestricted accounts', function (): vo
     $ctx = scopedManagerCtx();
     $sugar = Ingredient::factory()->for($ctx['company'], 'company')->create();
 
-    $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive", ['quantity' => '5'])
+    // no_cost so the PD5 cost-required validation passes and the SCOPE 403 is
+    // what blocks the scoped manager.
+    $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive", ['quantity' => '5', 'no_cost' => true])
         ->assertForbidden();
     $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive-distribute", [
         'quantity' => '5',
+        'no_cost' => true,
         'allocations' => [['branch_uuid' => $ctx['branch']->uuid, 'quantity' => '5']],
     ])->assertForbidden();
     $this->postJson("/api/ingredients/{$sugar->uuid}/stock/allocate", [
@@ -349,7 +352,7 @@ it('locks the product central pool too', function (): void {
     $ctx = scopedManagerCtx();
     $cake = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'unit']);
 
-    $this->postJson("/api/products/{$cake->uuid}/stock/receive", ['quantity' => '5'])
+    $this->postJson("/api/products/{$cake->uuid}/stock/receive", ['quantity' => '5', 'no_cost' => true])
         ->assertForbidden();
 });
 

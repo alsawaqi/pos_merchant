@@ -7,6 +7,7 @@
  */
 import { computed, reactive, ref, watch } from 'vue';
 import BaseModal from '@/Components/BaseModal.vue';
+import PurchaseCostFields, { type PurchaseCostModel } from '@/Pages/Merchant/Inventory/PurchaseCostFields.vue';
 import { ApiError } from '@/lib/api';
 import { authState } from '@/stores/auth';
 import {
@@ -53,9 +54,20 @@ const availableActions = computed<Action[]>(() =>
 // Quantity fields are bound to type="number" inputs: Vue's v-model stores a
 // NUMBER once a value is typed ('' only while blank) — hence string | number,
 // and qty() below normalizes before every trim/parseFloat/wire payload.
-const distributeForm = reactive<{ quantity: string | number; total_cost: string | number; note: string }>({ quantity: '', total_cost: '', note: '' });
+const distributeForm = reactive<{ quantity: string | number; note: string }>({ quantity: '', note: '' });
 const distributeRows = ref<{ branch_uuid: string; branch_name: string; quantity: string | number }[]>([]);
-const receiveForm = reactive<{ quantity: string | number; total_cost: string | number; note: string }>({ quantity: '', total_cost: '', note: '' });
+const receiveForm = reactive<{ quantity: string | number; note: string }>({ quantity: '', note: '' });
+// PD5 — the cash-model purchase cost (item + delivery + "no cost") for the buys.
+function blankCost(): PurchaseCostModel { return { total_cost: '', delivery_cost: '', no_cost: false }; }
+const receiveCost = ref<PurchaseCostModel>(blankCost());
+const distributeCost = ref<PurchaseCostModel>(blankCost());
+function costPayload(c: PurchaseCostModel): { total_cost: string | null; delivery_cost: string | null; no_cost: boolean } {
+    return {
+        total_cost: c.no_cost ? null : (qty(c.total_cost) || null),
+        delivery_cost: c.no_cost ? null : (qty(c.delivery_cost) || null),
+        no_cost: c.no_cost,
+    };
+}
 const allocateRows = ref<{ branch_uuid: string; branch_name: string; quantity: string | number }[]>([]);
 const allocateNote = ref('');
 const transferForm = reactive<{ from_branch_uuid: string; to_branch_uuid: string; quantity: string | number; note: string }>(
@@ -104,16 +116,16 @@ function round3(n: number): number {
 
 function resetForms(): void {
     distributeForm.quantity = '';
-    distributeForm.total_cost = '';
     distributeForm.note = '';
+    distributeCost.value = blankCost();
     distributeRows.value = branches.value.map((b) => ({
         branch_uuid: b.branch_uuid,
         branch_name: b.branch_name,
         quantity: '',
     }));
     receiveForm.quantity = '';
-    receiveForm.total_cost = '';
     receiveForm.note = '';
+    receiveCost.value = blankCost();
     allocateRows.value = branches.value.map((b) => ({
         branch_uuid: b.branch_uuid,
         branch_name: b.branch_name,
@@ -203,9 +215,9 @@ function doDistribute(): void {
     void run(
         () => receiveAndDistributeProductStock(props.productUuid as string, {
             quantity: qty(distributeForm.quantity),
-            total_cost: qty(distributeForm.total_cost) || null,
             allocations: lines,
             note: distributeForm.note || null,
+            ...costPayload(distributeCost.value),
         }),
         'Received and distributed to branches.',
     );
@@ -216,8 +228,8 @@ function doReceive(): void {
     void run(
         () => receiveProductStock(props.productUuid as string, {
             quantity: qty(receiveForm.quantity),
-            total_cost: qty(receiveForm.total_cost) || null,
             note: receiveForm.note || null,
+            ...costPayload(receiveCost.value),
         }),
         'Received into the central pool.',
     );
@@ -337,10 +349,8 @@ function fmtType(t: string): string {
                             <div class="flex flex-wrap items-center gap-3">
                                 <label class="text-xs font-semibold text-slate-600">Total received</label>
                                 <input v-model="distributeForm.quantity" type="number" step="0.001" min="0" placeholder="e.g. 80" class="w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
-                                <label class="text-xs font-semibold text-slate-600">Total cost (OMR)</label>
-                                <input v-model="distributeForm.total_cost" type="number" step="0.001" min="0" :placeholder="costSuggestion(distributeForm.quantity)" class="w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
                             </div>
-                            <p class="text-xs text-slate-500">What you paid for this delivery — booked automatically as a <span class="font-semibold">Stock purchases</span> expense. Leave empty for corrections or free goods.</p>
+                            <PurchaseCostFields v-model="distributeCost" :cost-placeholder="costSuggestion(distributeForm.quantity)" />
                             <div class="space-y-2">
                                 <div v-for="row in distributeRows" :key="row.branch_uuid" class="flex items-center gap-3">
                                     <span class="flex-1 text-sm text-slate-700">{{ row.branch_name }}</span>
@@ -364,16 +374,12 @@ function fmtType(t: string): string {
                                     <span class="text-xs font-semibold text-slate-600">Quantity</span>
                                     <input v-model="receiveForm.quantity" type="number" step="0.001" min="0" placeholder="e.g. 80" class="mt-1 w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
                                 </label>
-                                <label class="block">
-                                    <span class="text-xs font-semibold text-slate-600">Total cost (OMR)</span>
-                                    <input v-model="receiveForm.total_cost" type="number" step="0.001" min="0" :placeholder="costSuggestion(receiveForm.quantity)" class="mt-1 w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
-                                </label>
                                 <label class="block min-w-[10rem] flex-1">
                                     <span class="text-xs font-semibold text-slate-600">Note (optional)</span>
                                     <input v-model="receiveForm.note" type="text" placeholder="" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
                                 </label>
                             </div>
-                            <p class="text-xs text-slate-500">The cost is what you paid for this delivery — booked automatically as a <span class="font-semibold">Stock purchases</span> expense. Leave it empty for corrections or free goods.</p>
+                            <PurchaseCostFields v-model="receiveCost" :cost-placeholder="costSuggestion(receiveForm.quantity)" />
                             <button type="submit" :disabled="busy" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Add to central</button>
                         </form>
 

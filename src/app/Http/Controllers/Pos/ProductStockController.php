@@ -131,6 +131,7 @@ class ProductStockController extends Controller
                 $request->input('note'),
                 $request->user(),
                 $request->input('total_cost'),
+                $request->input('delivery_cost'),
             );
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
@@ -169,6 +170,7 @@ class ProductStockController extends Controller
                 $request->input('note'),
                 $request->user(),
                 $request->input('total_cost'),
+                $request->input('delivery_cost'),
             );
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);

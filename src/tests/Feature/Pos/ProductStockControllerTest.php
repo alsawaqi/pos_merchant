@@ -41,7 +41,7 @@ it('receives finished goods into the central pool', function (): void {
     $ctx = makeMerchantActor();
     $product = unitProduct($ctx);
 
-    $res = $this->postJson("/api/products/{$product->uuid}/stock/receive", [
+    $res = $this->postJson("/api/products/{$product->uuid}/stock/receive", ['no_cost' => true, 
         'quantity' => '50',
         'note' => 'Baked 50 cakes',
     ])->assertOk();
@@ -62,7 +62,7 @@ it('allocates the central pool across branches and debits the pool', function ()
     $branchB = Branch::factory()->for($ctx['company'], 'company')->create();
     $product = unitProduct($ctx);
 
-    $this->postJson("/api/products/{$product->uuid}/stock/receive", ['quantity' => '50'])->assertOk();
+    $this->postJson("/api/products/{$product->uuid}/stock/receive", ['no_cost' => true, 'quantity' => '50'])->assertOk();
 
     $res = $this->postJson("/api/products/{$product->uuid}/stock/allocate", [
         'allocations' => [
@@ -84,7 +84,7 @@ it('allocates the central pool across branches and debits the pool', function ()
 it('rejects allocating more than the central balance', function (): void {
     $ctx = makeMerchantActor();
     $product = unitProduct($ctx);
-    $this->postJson("/api/products/{$product->uuid}/stock/receive", ['quantity' => '10'])->assertOk();
+    $this->postJson("/api/products/{$product->uuid}/stock/receive", ['no_cost' => true, 'quantity' => '10'])->assertOk();
 
     $this->postJson("/api/products/{$product->uuid}/stock/allocate", [
         'allocations' => [['branch_uuid' => $ctx['branch']->uuid, 'quantity' => '25']],
@@ -101,7 +101,7 @@ it('receives a bulk quantity and distributes it across branches in one call', fu
     $product = unitProduct($ctx);
 
     // 80 in: 50 to branch A, 30 to branch B — all in one request.
-    $res = $this->postJson("/api/products/{$product->uuid}/stock/receive-distribute", [
+    $res = $this->postJson("/api/products/{$product->uuid}/stock/receive-distribute", ['no_cost' => true, 
         'quantity' => '80',
         'allocations' => [
             ['branch_uuid' => $ctx['branch']->uuid, 'quantity' => '50'],
@@ -125,7 +125,7 @@ it('leaves the undistributed remainder in the central pool', function (): void {
     $product = unitProduct($ctx);
 
     // 80 in, only 50 sent out -> 30 stays central.
-    $res = $this->postJson("/api/products/{$product->uuid}/stock/receive-distribute", [
+    $res = $this->postJson("/api/products/{$product->uuid}/stock/receive-distribute", ['no_cost' => true, 
         'quantity' => '80',
         'allocations' => [
             ['branch_uuid' => $ctx['branch']->uuid, 'quantity' => '50'],
@@ -142,7 +142,7 @@ it('rejects distributing more than the received total and writes nothing', funct
     $product = unitProduct($ctx);
 
     // 50 received but 60 distributed (30 + 30) -> rejected, atomic rollback.
-    $this->postJson("/api/products/{$product->uuid}/stock/receive-distribute", [
+    $this->postJson("/api/products/{$product->uuid}/stock/receive-distribute", ['no_cost' => true, 
         'quantity' => '50',
         'allocations' => [
             ['branch_uuid' => $ctx['branch']->uuid, 'quantity' => '30'],
@@ -160,7 +160,7 @@ it('transfers units between branches', function (): void {
     $ctx = makeMerchantActor();
     $branchB = Branch::factory()->for($ctx['company'], 'company')->create();
     $product = unitProduct($ctx);
-    $this->postJson("/api/products/{$product->uuid}/stock/receive", ['quantity' => '30'])->assertOk();
+    $this->postJson("/api/products/{$product->uuid}/stock/receive", ['no_cost' => true, 'quantity' => '30'])->assertOk();
     $this->postJson("/api/products/{$product->uuid}/stock/allocate", [
         'allocations' => [['branch_uuid' => $ctx['branch']->uuid, 'quantity' => '30']],
     ])->assertOk();
@@ -179,7 +179,7 @@ it('rejects a transfer that overdraws the source branch', function (): void {
     $ctx = makeMerchantActor();
     $branchB = Branch::factory()->for($ctx['company'], 'company')->create();
     $product = unitProduct($ctx);
-    $this->postJson("/api/products/{$product->uuid}/stock/receive", ['quantity' => '5'])->assertOk();
+    $this->postJson("/api/products/{$product->uuid}/stock/receive", ['no_cost' => true, 'quantity' => '5'])->assertOk();
     $this->postJson("/api/products/{$product->uuid}/stock/allocate", [
         'allocations' => [['branch_uuid' => $ctx['branch']->uuid, 'quantity' => '5']],
     ])->assertOk();
@@ -196,7 +196,7 @@ it('rejects a transfer that overdraws the source branch', function (): void {
 it('adjusts a branch count with a required note', function (): void {
     $ctx = makeMerchantActor();
     $product = unitProduct($ctx);
-    $this->postJson("/api/products/{$product->uuid}/stock/receive", ['quantity' => '10'])->assertOk();
+    $this->postJson("/api/products/{$product->uuid}/stock/receive", ['no_cost' => true, 'quantity' => '10'])->assertOk();
     $this->postJson("/api/products/{$product->uuid}/stock/allocate", [
         'allocations' => [['branch_uuid' => $ctx['branch']->uuid, 'quantity' => '10']],
     ])->assertOk();
@@ -223,7 +223,7 @@ it('refuses stock operations on a non-unit product', function (): void {
     $ctx = makeMerchantActor();
     $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'ingredient']);
 
-    $this->postJson("/api/products/{$product->uuid}/stock/receive", ['quantity' => '5'])->assertStatus(422);
+    $this->postJson("/api/products/{$product->uuid}/stock/receive", ['no_cost' => true, 'quantity' => '5'])->assertStatus(422);
 });
 
 it('allows stock operations on a P-G1 cooked product', function (): void {
@@ -232,7 +232,7 @@ it('allows stock operations on a P-G1 cooked product', function (): void {
     $ctx = makeMerchantActor();
     $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'cooked']);
 
-    $this->postJson("/api/products/{$product->uuid}/stock/receive", ['quantity' => '5'])->assertOk();
+    $this->postJson("/api/products/{$product->uuid}/stock/receive", ['no_cost' => true, 'quantity' => '5'])->assertOk();
     expect($this->getJson("/api/products/{$product->uuid}/stock")->assertOk()->json('data.central_quantity'))
         ->toBe('5.000');
 });
@@ -287,8 +287,8 @@ it('books no expense when a receive has no cost (corrections / free goods)', fun
     $ctx = makeMerchantActor();
     $product = unitProduct($ctx);
 
-    $this->postJson("/api/products/{$product->uuid}/stock/receive", ['quantity' => '50'])->assertOk();
-    $this->postJson("/api/products/{$product->uuid}/stock/receive", ['quantity' => '5', 'total_cost' => '0'])->assertOk();
+    $this->postJson("/api/products/{$product->uuid}/stock/receive", ['no_cost' => true, 'quantity' => '50'])->assertOk();
+    $this->postJson("/api/products/{$product->uuid}/stock/receive", ['no_cost' => true, 'quantity' => '5', 'total_cost' => '0'])->assertOk();
 
     expect(\App\Models\Expense::query()->count())->toBe(0)
         ->and(ProductStockMovement::query()->where('product_id', $product->id)->whereNotNull('reference_id')->count())->toBe(0);
@@ -352,8 +352,8 @@ it('seeds the FULL default category set when a fresh company books its first cos
     ])->assertOk();
 
     $keys = \App\Models\ExpenseCategory::query()->where('company_id', $ctx['company']->id)->pluck('key')->all();
-    expect($keys)->toHaveCount(7)
-        ->and($keys)->toContain('utilities', 'supplies', 'ingredients', 'maintenance', 'salaries', 'other', 'stock_purchases');
+    expect($keys)->toHaveCount(9)
+        ->and($keys)->toContain('utilities', 'supplies', 'ingredients', 'maintenance', 'salaries', 'other', 'stock_purchases', 'physical_items', 'delivery');
 });
 
 it('refuses a recipe on a ready / bought-in product but lets it be cleared', function (): void {
@@ -368,4 +368,39 @@ it('refuses a recipe on a ready / bought-in product but lets it be cleared', fun
 
     // Clearing stays allowed (how a converted product sheds a stale recipe).
     $this->putJson("/api/products/{$product->uuid}/recipe", ['lines' => []])->assertOk();
+});
+
+it('PD5 — receive-and-distribute books the delivery expense too', function (): void {
+    $ctx = makeMerchantActor();
+    $product = unitProduct($ctx);
+
+    $this->postJson("/api/products/{$product->uuid}/stock/receive-distribute", [
+        'quantity' => '40',
+        'total_cost' => '20.000',
+        'delivery_cost' => '2.500',
+        'allocations' => [['branch_uuid' => $ctx['branch']->uuid, 'quantity' => '40']],
+    ])->assertOk();
+
+    expect((string) \App\Models\Expense::query()->where('category', 'stock_purchases')->firstOrFail()->amount)->toBe('20.000')
+        ->and((string) \App\Models\Expense::query()->where('category', 'delivery')->firstOrFail()->amount)->toBe('2.500');
+});
+
+it('PD5 — a receive needs a cost or an explicit no_cost, and no_cost refuses a cost', function (): void {
+    $ctx = makeMerchantActor();
+    $product = unitProduct($ctx);
+
+    // No cost + no opt-out → 422 (cost is required).
+    $this->postJson("/api/products/{$product->uuid}/stock/receive", ['quantity' => '10'])
+        ->assertStatus(422)->assertJsonValidationErrors(['total_cost']);
+
+    // no_cost + a cost is contradictory → 422 (the contract is enforced
+    // server-side, not just in the UI).
+    $this->postJson("/api/products/{$product->uuid}/stock/receive", [
+        'quantity' => '10', 'no_cost' => true, 'delivery_cost' => '5.000',
+    ])->assertStatus(422)->assertJsonValidationErrors(['no_cost']);
+
+    // no_cost alone → ok, books nothing.
+    $this->postJson("/api/products/{$product->uuid}/stock/receive", ['quantity' => '10', 'no_cost' => true])
+        ->assertOk();
+    expect(\App\Models\Expense::query()->count())->toBe(0);
 });

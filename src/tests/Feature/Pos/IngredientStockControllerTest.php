@@ -47,7 +47,7 @@ it('receives a purchase into the central warehouse', function (): void {
     $ctx = makeMerchantActor();
     $sugar = warehouseIngredient($ctx);
 
-    $res = $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive", [
+    $res = $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive", ['no_cost' => true, 
         'quantity' => '100',
         'note' => 'Bought 100 kg of sugar',
     ])->assertOk();
@@ -69,7 +69,7 @@ it('allocates the warehouse across branches and debits the pool', function (): v
     $branchB = Branch::factory()->for($ctx['company'], 'company')->create();
     $sugar = warehouseIngredient($ctx);
 
-    $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive", ['quantity' => '100'])->assertOk();
+    $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive", ['no_cost' => true, 'quantity' => '100'])->assertOk();
 
     $res = $this->postJson("/api/ingredients/{$sugar->uuid}/stock/allocate", [
         'allocations' => [
@@ -92,7 +92,7 @@ it('allocates the warehouse across branches and debits the pool', function (): v
 it('rejects allocating more than the central balance', function (): void {
     $ctx = makeMerchantActor();
     $sugar = warehouseIngredient($ctx);
-    $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive", ['quantity' => '10'])->assertOk();
+    $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive", ['no_cost' => true, 'quantity' => '10'])->assertOk();
 
     $this->postJson("/api/ingredients/{$sugar->uuid}/stock/allocate", [
         'allocations' => [['branch_uuid' => $ctx['branch']->uuid, 'quantity' => '25']],
@@ -110,7 +110,7 @@ it('receives a bulk purchase and distributes it across branches in one call', fu
     $sugar = warehouseIngredient($ctx);
 
     // The spec example: 100 kg in — 20 to A, 20 to B, 25 to C, 35 stays.
-    $res = $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive-distribute", [
+    $res = $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive-distribute", ['no_cost' => true, 
         'quantity' => '100',
         'allocations' => [
             ['branch_uuid' => $ctx['branch']->uuid, 'quantity' => '20'],
@@ -135,7 +135,7 @@ it('rejects distributing more than the received total and writes nothing', funct
     $branchB = Branch::factory()->for($ctx['company'], 'company')->create();
     $sugar = warehouseIngredient($ctx);
 
-    $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive-distribute", [
+    $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive-distribute", ['no_cost' => true, 
         'quantity' => '50',
         'allocations' => [
             ['branch_uuid' => $ctx['branch']->uuid, 'quantity' => '30'],
@@ -153,7 +153,7 @@ it('transfers stock between branches as a real branch transfer', function (): vo
     $ctx = makeMerchantActor();
     $branchB = Branch::factory()->for($ctx['company'], 'company')->create();
     $sugar = warehouseIngredient($ctx);
-    $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive-distribute", [
+    $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive-distribute", ['no_cost' => true, 
         'quantity' => '30',
         'allocations' => [['branch_uuid' => $ctx['branch']->uuid, 'quantity' => '30']],
     ])->assertOk();
@@ -179,7 +179,7 @@ it('rejects a transfer that overdraws the source branch', function (): void {
     $ctx = makeMerchantActor();
     $branchB = Branch::factory()->for($ctx['company'], 'company')->create();
     $sugar = warehouseIngredient($ctx);
-    $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive-distribute", [
+    $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive-distribute", ['no_cost' => true, 
         'quantity' => '5',
         'allocations' => [['branch_uuid' => $ctx['branch']->uuid, 'quantity' => '5']],
     ])->assertOk();
@@ -197,7 +197,7 @@ it('rejects a transfer that overdraws the source branch', function (): void {
 it('adjusts the central warehouse with a required note', function (): void {
     $ctx = makeMerchantActor();
     $sugar = warehouseIngredient($ctx);
-    $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive", ['quantity' => '10'])->assertOk();
+    $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive", ['no_cost' => true, 'quantity' => '10'])->assertOk();
 
     // branch_uuid omitted = the central pool.
     $res = $this->postJson("/api/ingredients/{$sugar->uuid}/stock/adjust", [
@@ -238,7 +238,7 @@ it('keeps central rows out of branch consumption and depletion reports', functio
     // 100 in, 40 to the branch (central allocation_out -40), then a CENTRAL
     // adjust-down (-3, type 'adjustment' — the one consumption-listed type
     // central writes) and a BRANCH adjust-down (-2).
-    $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive-distribute", [
+    $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive-distribute", ['no_cost' => true, 
         'quantity' => '100',
         'allocations' => [['branch_uuid' => $ctx['branch']->uuid, 'quantity' => '40']],
     ])->assertOk();
@@ -272,7 +272,7 @@ it('keeps central rows out of a branch movement ledger', function (): void {
     $ctx = makeMerchantActor();
     $sugar = warehouseIngredient($ctx);
 
-    $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive-distribute", [
+    $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive-distribute", ['no_cost' => true, 
         'quantity' => '10',
         'allocations' => [['branch_uuid' => $ctx['branch']->uuid, 'quantity' => '4']],
     ])->assertOk();
@@ -292,7 +292,7 @@ it('keeps central rows out of a branch movement ledger', function (): void {
 it('blocks deleting an ingredient that still holds warehouse stock', function (): void {
     $ctx = makeMerchantActor();
     $sugar = warehouseIngredient($ctx);
-    $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive", ['quantity' => '10'])->assertOk();
+    $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive", ['no_cost' => true, 'quantity' => '10'])->assertOk();
 
     // Branches are all at zero, but the WAREHOUSE holds 10 — deleting now
     // would orphan a real physical asset (the pre-G4 guard only saw branches).
@@ -313,7 +313,7 @@ it('counts warehouse receives in the purchasing report without double-billing al
         ->create(['name' => 'Sugar', 'unit' => 'kg', 'default_unit_cost' => '0.500']);
 
     // 100 kg into the warehouse at the 0.500 snapshot = 50.000 spend.
-    $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive", ['quantity' => '100'])->assertOk();
+    $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive", ['no_cost' => true, 'quantity' => '100'])->assertOk();
 
     $today = now()->toDateString();
     $data = $this->getJson("/api/reports/restock-purchasing?date_from={$today}&date_to={$today}")
@@ -337,6 +337,6 @@ it('forbids a viewer role from mutating the warehouse', function (): void {
     $ctx = makeMerchantActor(App\Enums\MerchantRole::CashierSupervisor->value);
     $sugar = Ingredient::factory()->for($ctx['company'], 'company')->create();
 
-    $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive", ['quantity' => '5'])
+    $this->postJson("/api/ingredients/{$sugar->uuid}/stock/receive", ['no_cost' => true, 'quantity' => '5'])
         ->assertForbidden();
 });
