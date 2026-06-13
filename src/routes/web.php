@@ -40,6 +40,7 @@ use App\Http\Controllers\Pos\VoidReasonsController;
 use App\Http\Controllers\Pos\OffersController;
 use App\Http\Controllers\Pos\OrdersController;
 use App\Http\Controllers\Pos\PayoutsController;
+use App\Http\Controllers\Pos\PhysicalItemsController;
 use App\Http\Controllers\Pos\BranchTargetsController;
 use App\Http\Controllers\Pos\DeliveriesController;
 use App\Http\Controllers\Pos\PortalMessagesController;
@@ -512,6 +513,20 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         Route::delete('ingredients/{ingredient:uuid}/units/{unit:uuid}', [IngredientUnitsController::class, 'destroy'])
             ->withoutScopedBindings()
             ->name('ingredients.units.destroy');
+
+        // -------- PD3a — Physical items (things that cannot be eaten) --
+        // Cups / boxes ('packaging', attachable to food) and bulbs /
+        // cleaning items ('general', branch use). Created HERE, never in
+        // the catalogue; stock rides ProductStockController (the rows are
+        // internal unit products under the hood). inventory.view/manage.
+        Route::get('physical-items', [PhysicalItemsController::class, 'index'])
+            ->name('physical-items.index');
+        Route::post('physical-items', [PhysicalItemsController::class, 'store'])
+            ->name('physical-items.store');
+        Route::patch('physical-items/{product:uuid}', [PhysicalItemsController::class, 'update'])
+            ->name('physical-items.update');
+        Route::delete('physical-items/{product:uuid}', [PhysicalItemsController::class, 'destroy'])
+            ->name('physical-items.destroy');
 
         Route::get('suppliers', [SuppliersController::class, 'index'])
             ->name('suppliers.index');

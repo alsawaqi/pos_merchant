@@ -84,6 +84,9 @@ final readonly class CreateProductAction
                 'show_on_customer_tablet' => (bool) ($attributes['show_on_customer_tablet'] ?? true),
                 // P-G2 — internal item: never on the POS menu or tablet.
                 'is_internal' => (bool) ($attributes['is_internal'] ?? false),
+                // PD3a — physical-item kind (set by the physical-items
+                // endpoint only; NULL for catalogue products).
+                'internal_purpose' => $attributes['internal_purpose'] ?? null,
                 // G1 — menu time-window ('HH:MM:SS' strings, both NULL
                 // = always available, start > end wraps midnight).
                 'available_from' => $attributes['available_from'] ?? null,

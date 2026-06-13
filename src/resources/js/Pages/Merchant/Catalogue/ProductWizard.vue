@@ -144,7 +144,6 @@ const form = reactive<{
     stock_mode: string;
     low_stock_threshold: string;
     shelf_life_days: string;
-    is_internal: boolean;
     component_rows: { component_uuid: string; quantity: string }[];
     addon_group_uuids: string[];
     recipe_lines: { ingredient_uuid: string; quantity: string; unit: string }[];
@@ -171,7 +170,6 @@ const form = reactive<{
     stock_mode: 'untracked',
     low_stock_threshold: '',
     shelf_life_days: '',
-    is_internal: false,
     component_rows: [],
     addon_group_uuids: [],
     recipe_lines: [],
@@ -576,7 +574,6 @@ function productPayload(): CreateProductPayload {
         stock_mode: form.stock_mode as 'unit' | 'ingredient' | 'untracked' | 'cooked',
         low_stock_threshold: isPieceCounted.value && form.low_stock_threshold !== '' ? form.low_stock_threshold : null,
         shelf_life_days: form.stock_mode === 'cooked' && form.shelf_life_days !== '' ? Number(form.shelf_life_days) : null,
-        is_internal: form.stock_mode === 'unit' ? form.is_internal : false,
         display_order: form.display_order,
     };
 }
@@ -591,7 +588,6 @@ function recipePayload(): RecipeLinePayload[] {
 }
 
 function componentsPayload(): ComponentLinePayload[] {
-    if (form.stock_mode === 'unit' && form.is_internal) return [];
     return form.component_rows
         .filter((l) => l.component_uuid && l.quantity !== '')
         .map((l) => ({ component_uuid: l.component_uuid, quantity: l.quantity }));
@@ -742,11 +738,13 @@ function prefillFromProduct(product: Product): void {
     form.shelf_life_days = product.shelf_life_days !== null && product.shelf_life_days !== undefined
         ? String(product.shelf_life_days)
         : '';
-    form.is_internal = product.is_internal ?? false;
     form.component_rows = (product.component_lines ?? []).map((line) => ({
         component_uuid: line.component_uuid,
         quantity: line.quantity,
     }));
+    for (const line of product.component_lines ?? []) {
+        attachedComponentNames.value[line.component_uuid] = line.component_name ?? line.component_uuid;
+    }
     // Shared groups only — owned groups render in their own editor.
     form.addon_group_uuids = (product.addon_groups ?? [])
         .filter((g) => g.owner_product_id === null && !g.is_global)
@@ -838,12 +836,20 @@ const reviewProviderPrices = computed(() => activeProviders.value
     .filter((row) => row.price !== ''));
 const reviewSelectedBranches = computed(() => form.branch_rows.filter((r) => r.selected));
 const droppedRecipeLines = computed(() => !hasRecipeStep.value && form.recipe_lines.some((l) => l.ingredient_uuid));
-// Internal items consume nothing themselves — entered component rows
-// will be dropped at save, so the review must say so (not list them).
-const componentsAreDropped = computed(() => form.stock_mode === 'unit' && form.is_internal && form.component_rows.some((l) => l.component_uuid !== ''));
+
+// PD3a — the picker now offers used-with-food physical items only, but
+// legacy attachments (pre-PD3a sellable components, items later flipped
+// to branch-use) must stay VISIBLE and re-saveable: merge them into the
+// option list under their frozen names instead of rendering blank rows.
+const attachedComponentNames = ref<Record<string, string>>({});
+const extraComponentOptions = computed(() => Object.entries(attachedComponentNames.value)
+    .filter(([uuid]) => !componentOptions.value.some((o) => o.uuid === uuid))
+    .map(([uuid, name]) => ({ uuid, name })));
 
 function componentName(uuid: string): string {
-    return componentOptions.value.find((o) => o.uuid === uuid)?.name ?? '—';
+    return componentOptions.value.find((o) => o.uuid === uuid)?.name
+        ?? attachedComponentNames.value[uuid]
+        ?? '—';
 }
 
 /** True for a persisted AddOn with linked_product OR a draft with the uuid set. */
@@ -1084,13 +1090,9 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                 <input v-model="form.shelf_life_days" type="number" min="1" max="365" step="1" :placeholder="t('catalogue.wizard.shelf_life_placeholder')" class="mt-1 w-full max-w-xs rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                                 <p class="mt-1 text-xs text-slate-500">{{ t('catalogue.wizard.shelf_life_hint') }}</p>
                             </label>
-                            <label v-if="form.stock_mode === 'unit'" class="flex items-start gap-2 rounded-lg border border-slate-200 p-3">
-                                <input v-model="form.is_internal" type="checkbox" class="mt-0.5 rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200">
-                                <span>
-                                    <span class="block text-sm font-medium text-slate-700">{{ t('catalogue.wizard.internal_label') }}</span>
-                                    <span class="block text-xs text-slate-500">{{ t('catalogue.wizard.internal_hint') }}</span>
-                                </span>
-                            </label>
+                            <!-- PD3a: the "Internal item" checkbox is gone —
+                                 physical items (cups, boxes, bulbs) are created
+                                 on the Inventory page, never as products. -->
                         </section>
 
                         <!-- Visibility + available hours -->
@@ -1349,7 +1351,7 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                         </section>
 
                         <!-- Physical items (hidden for internal items) -->
-                        <section v-if="!(form.stock_mode === 'unit' && form.is_internal)" class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                             <h2 class="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
                                 <Boxes class="size-4 text-sky-600" />
                                 {{ t('catalogue.wizard.physical_title') }}
@@ -1369,7 +1371,10 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                         <select v-model="row.component_uuid" class="w-full flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
                                             <option value="" disabled>{{ t('catalogue.wizard.physical_pick') }}</option>
                                             <option v-for="opt in componentOptions" :key="opt.uuid" :value="opt.uuid" :disabled="opt.uuid === editUuid">
-                                                {{ opt.name }}{{ opt.is_internal ? ` (${t('catalogue.wizard.internal_badge')})` : '' }}
+                                                {{ opt.name }}
+                                            </option>
+                                            <option v-for="opt in extraComponentOptions" :key="opt.uuid" :value="opt.uuid">
+                                                {{ opt.name }} ({{ t('catalogue.wizard.physical_attached') }})
                                             </option>
                                         </select>
                                         <input v-model="row.quantity" type="number" min="0.001" step="1" :placeholder="t('catalogue.wizard.physical_qty')" class="w-28 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
@@ -1441,7 +1446,6 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                 <div><dt class="text-xs text-slate-500">{{ t('catalogue.fields.available_hours') }}</dt><dd class="tabular-nums text-slate-900">{{ form.available_from || form.available_until ? `${form.available_from || '00:00'} – ${form.available_until || '23:59'}` : t('catalogue.wizard.always_available') }}</dd></div>
                                 <div v-if="isPieceCounted"><dt class="text-xs text-slate-500">{{ t('catalogue.fields.low_stock_threshold') }}</dt><dd class="tabular-nums text-slate-900">{{ form.low_stock_threshold || '—' }}</dd></div>
                                 <div v-if="form.stock_mode === 'cooked'"><dt class="text-xs text-slate-500">{{ t('catalogue.wizard.shelf_life') }}</dt><dd class="tabular-nums text-slate-900">{{ form.shelf_life_days || t('catalogue.wizard.keeps') }}</dd></div>
-                                <div v-if="form.stock_mode === 'unit' && form.is_internal"><dt class="text-xs text-slate-500">{{ t('catalogue.wizard.internal_label') }}</dt><dd class="font-semibold text-slate-900">✓</dd></div>
                                 <div v-if="isEdit"><dt class="text-xs text-slate-500">{{ t('catalogue.fields.status') }}</dt><dd class="font-semibold text-slate-900">{{ t(`catalogue.statuses.${form.status}`) }}</dd></div>
                             </dl>
                             <div v-if="reviewProviderPrices.length > 0" class="mt-3 border-t border-slate-100 pt-3">
@@ -1512,18 +1516,13 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                 <Boxes class="size-4 text-sky-600" />
                                 {{ t('catalogue.wizard.physical_title') }}
                             </h2>
-                            <p v-if="componentsAreDropped" class="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
-                                {{ t('catalogue.wizard.components_dropped') }}
-                            </p>
-                            <template v-else>
-                                <p v-if="reviewComponents.length === 0" class="mt-2 text-xs italic text-slate-500">{{ t('catalogue.wizard.review_none') }}</p>
-                                <ul v-else class="mt-3 space-y-1 text-sm">
-                                    <li v-for="(row, i) in reviewComponents" :key="i" class="flex justify-between text-slate-700">
-                                        <span>{{ componentName(row.component_uuid) }}</span>
-                                        <span class="tabular-nums">× {{ row.quantity }}</span>
-                                    </li>
-                                </ul>
-                            </template>
+                            <p v-if="reviewComponents.length === 0" class="mt-2 text-xs italic text-slate-500">{{ t('catalogue.wizard.review_none') }}</p>
+                            <ul v-else class="mt-3 space-y-1 text-sm">
+                                <li v-for="(row, i) in reviewComponents" :key="i" class="flex justify-between text-slate-700">
+                                    <span>{{ componentName(row.component_uuid) }}</span>
+                                    <span class="tabular-nums">× {{ row.quantity }}</span>
+                                </li>
+                            </ul>
 
                             <template v-if="isUnrestricted">
                                 <h3 class="mt-4 inline-flex items-center gap-2 border-t border-slate-100 pt-3 text-sm font-semibold text-slate-900">

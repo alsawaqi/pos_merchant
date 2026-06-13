@@ -77,6 +77,11 @@ class ProductsController extends Controller
 
         $query = Product::query()
             ->where('company_id', $companyId)
+            // PD3a — physical items (internal rows) live on the Inventory
+            // page now; the catalogue lists SELLABLE products only. This
+            // also keeps them out of the Offers/Discounts pickers that
+            // feed from this index.
+            ->where('is_internal', false)
             // Phase 4.9 — eager-load the product-specific add-on
             // groups so the edit modal's picker can pre-populate
             // without an extra round-trip. Globals are NOT included
@@ -198,6 +203,7 @@ class ProductsController extends Controller
     {
         $this->ensure($request, MerchantPermission::CatalogueView);
         $this->refuseIfNotInTenant($product);
+        $this->refuseIfPhysicalItem($product);
 
         $product->load([
             'category',
@@ -237,6 +243,7 @@ class ProductsController extends Controller
     {
         $this->ensure($request, MerchantPermission::CatalogueManage);
         $this->refuseIfNotInTenant($product);
+        $this->refuseIfPhysicalItem($product);
 
         try {
             $updated = $this->update->handle($product, $request->validated(), $request->user());
@@ -289,10 +296,18 @@ class ProductsController extends Controller
     {
         $this->ensure($request, MerchantPermission::CatalogueView);
 
+        // PD3a — the composition picker offers PHYSICAL ITEMS used with
+        // food only: internal rows whose purpose is 'packaging' (NULL =
+        // legacy pre-PD3a items, treated as packaging until edited).
+        // Branch-use items (bulbs, cleaning) and sellable unit products
+        // are not attachable; existing attachments keep consuming.
         $options = Product::query()
             ->where('company_id', $this->tenant->requiredId())
             ->where('stock_mode', 'unit')
-            ->orderByDesc('is_internal')
+            ->where('is_internal', true)
+            ->where(function ($q): void {
+                $q->whereNull('internal_purpose')->orWhere('internal_purpose', 'packaging');
+            })
             ->orderBy('name')
             ->limit(500)
             ->get(['uuid', 'name', 'name_ar', 'is_internal'])
@@ -337,6 +352,7 @@ class ProductsController extends Controller
     {
         $this->ensure($request, MerchantPermission::CatalogueManage);
         $this->refuseIfNotInTenant($product);
+        $this->refuseIfPhysicalItem($product);
 
         $this->delete->handle($product, $request->user());
 
@@ -504,6 +520,20 @@ class ProductsController extends Controller
     private function refuseIfNotInTenant(Product $product): void
     {
         if ((int) $product->company_id !== $this->tenant->requiredId()) {
+            abort(404);
+        }
+    }
+
+    /**
+     * PD3a — physical items are managed ONLY via /api/physical-items
+     * (inventory gates); the catalogue endpoints 404 them so a user with
+     * catalogue.manage but not inventory.manage can't rename, re-mode
+     * (a stock_mode flip would brick the item's stock machinery) or
+     * delete them through this side door.
+     */
+    private function refuseIfPhysicalItem(Product $product): void
+    {
+        if ($product->is_internal) {
             abort(404);
         }
     }

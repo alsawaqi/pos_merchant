@@ -937,15 +937,9 @@ async function performProviderDelete(): Promise<void> {
                                 <td class="px-5 py-4">
                                     <span class="block text-sm font-semibold text-slate-950">{{ prod.name }}</span>
                                     <span v-if="prod.name_ar" class="block text-xs text-slate-500" dir="rtl">{{ prod.name_ar }}</span>
-                                    <!-- P-G2 — internal items never reach the POS
-                                         menu; flag them so the list reads honestly. -->
-                                    <span
-                                        v-if="prod.is_internal"
-                                        class="mt-1 inline-flex items-center gap-1 rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-600"
-                                    >
-                                        <Package class="size-3" />
-                                        Internal
-                                    </span>
+                                    <!-- PD3a: physical items moved to Inventory →
+                                         Physical items; this list is sellable
+                                         products only (server-side filter). -->
                                     <!-- G1 — clock badge when a daily availability
                                          window is set. -->
                                     <span

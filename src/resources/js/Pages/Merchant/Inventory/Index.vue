@@ -105,6 +105,15 @@ import {
     type WasteReason,
     type WasteRecord,
 } from '@/lib/api/inventory';
+import {
+    createPhysicalItem,
+    deletePhysicalItem,
+    listPhysicalItems,
+    updatePhysicalItem,
+    type PhysicalItem,
+    type PhysicalItemPurpose,
+} from '@/lib/api/physicalItems';
+import ProductStockDialog from '@/Pages/Merchant/Catalogue/ProductStockDialog.vue';
 import { MerchantPermission } from '@/lib/permissions';
 
 const { t, locale } = useI18n();
@@ -119,7 +128,7 @@ const canManage = computed(() => can(MerchantPermission.InventoryManage));
 const canCreateRestock = computed(() => can(MerchantPermission.RestockRequestCreate));
 const canReviewRestock = computed(() => can(MerchantPermission.RestockRequestReview));
 
-type TabKey = 'ingredients' | 'suppliers' | 'stock' | 'movements' | 'waste' | 'stock_counts' | 'restock_requests' | 'transfers';
+type TabKey = 'ingredients' | 'physical_items' | 'suppliers' | 'stock' | 'movements' | 'waste' | 'stock_counts' | 'restock_requests' | 'transfers';
 const activeTab = ref<TabKey>('ingredients');
 
 // =================== Shared data =================================
@@ -129,6 +138,32 @@ const selectedBranchUuid = ref<string | null>(null);
 
 const ingredients = ref<Ingredient[]>([]);
 const suppliers = ref<Supplier[]>([]);
+
+// PD3a — physical items: things that CANNOT be eaten (cups, boxes,
+// bulbs, cleaning items). Created + managed ONLY here; the rows ride
+// the product piece-counting machinery under the hood, so the stock
+// dialog below is the same one unit products use.
+const physicalItems = ref<PhysicalItem[]>([]);
+const physicalItemModalOpen = ref(false);
+const physicalItemModalBusy = ref(false);
+const physicalItemModalMode = ref<'create' | 'edit'>('create');
+const physicalItemModalTarget = ref<PhysicalItem | null>(null);
+const physicalItemModalErrors = ref<Record<string, string[]>>({});
+const physicalItemModalError = ref<string | null>(null);
+const physicalItemForm = reactive<{
+    name: string;
+    name_ar: string;
+    purpose: PhysicalItemPurpose;
+    cost_price: string;
+    low_stock_threshold: string;
+    status: 'active' | 'inactive';
+}>({ name: '', name_ar: '', purpose: 'packaging', cost_price: '', low_stock_threshold: '', status: 'active' });
+// Stock dialog target (receive w/ cost -> expense, distribute, transfer...).
+const physicalItemStockTarget = ref<PhysicalItem | null>(null);
+// Delete confirm (the server 422s while the item is still attached to
+// a product's composition — that message surfaces on the page banner).
+const physicalItemDeleteTarget = ref<PhysicalItem | null>(null);
+const physicalItemDeleting = ref(false);
 const branchStock = ref<BranchStockRow[]>([]);
 const movements = ref<PaginatedMovements | null>(null);
 
@@ -447,6 +482,97 @@ async function fetchIngredients(): Promise<void> {
     }
 }
 
+async function fetchPhysicalItems(): Promise<void> {
+    try {
+        const response = await listPhysicalItems();
+        physicalItems.value = response.data;
+    } catch {
+        physicalItems.value = [];
+    }
+}
+
+function openCreatePhysicalItem(): void {
+    physicalItemModalMode.value = 'create';
+    physicalItemModalTarget.value = null;
+    physicalItemForm.name = '';
+    physicalItemForm.name_ar = '';
+    physicalItemForm.purpose = 'packaging';
+    physicalItemForm.cost_price = '';
+    physicalItemForm.low_stock_threshold = '';
+    physicalItemForm.status = 'active';
+    physicalItemModalErrors.value = {};
+    physicalItemModalError.value = null;
+    physicalItemModalOpen.value = true;
+}
+
+function openEditPhysicalItem(item: PhysicalItem): void {
+    physicalItemModalMode.value = 'edit';
+    physicalItemModalTarget.value = item;
+    physicalItemForm.name = item.name;
+    physicalItemForm.name_ar = item.name_ar ?? '';
+    physicalItemForm.purpose = item.purpose;
+    physicalItemForm.cost_price = item.cost_price ?? '';
+    physicalItemForm.low_stock_threshold = item.low_stock_threshold ?? '';
+    physicalItemForm.status = (item.status ?? 'active') as 'active' | 'inactive';
+    physicalItemModalErrors.value = {};
+    physicalItemModalError.value = null;
+    physicalItemModalOpen.value = true;
+}
+
+async function submitPhysicalItem(): Promise<void> {
+    physicalItemModalBusy.value = true;
+    physicalItemModalErrors.value = {};
+    physicalItemModalError.value = null;
+    try {
+        const payload = {
+            name: physicalItemForm.name.trim(),
+            name_ar: physicalItemForm.name_ar.trim() || null,
+            purpose: physicalItemForm.purpose,
+            cost_price: String(physicalItemForm.cost_price ?? '').trim() === '' ? null : String(physicalItemForm.cost_price).trim(),
+            low_stock_threshold: String(physicalItemForm.low_stock_threshold ?? '').trim() === '' ? null : String(physicalItemForm.low_stock_threshold).trim(),
+        };
+        if (physicalItemModalMode.value === 'create') {
+            await createPhysicalItem(payload);
+        } else if (physicalItemModalTarget.value) {
+            await updatePhysicalItem(physicalItemModalTarget.value.uuid, { ...payload, status: physicalItemForm.status });
+        }
+        physicalItemModalOpen.value = false;
+        await fetchPhysicalItems();
+    } catch (err) {
+        if (err instanceof ApiError && err.isValidationError()) {
+            physicalItemModalErrors.value = err.payload.errors;
+            physicalItemModalError.value = t('inventory.physical_items.validation');
+        } else if (err instanceof ApiError && err.payload && typeof err.payload === 'object' && 'message' in err.payload) {
+            const message = (err.payload as { message?: unknown }).message;
+            physicalItemModalError.value = (typeof message === 'string' && message !== '') ? message : t('inventory.physical_items.save_failed');
+        } else {
+            physicalItemModalError.value = t('inventory.physical_items.save_failed');
+        }
+    } finally {
+        physicalItemModalBusy.value = false;
+    }
+}
+
+async function confirmDeletePhysicalItem(): Promise<void> {
+    if (!physicalItemDeleteTarget.value) return;
+    physicalItemDeleting.value = true;
+    try {
+        await deletePhysicalItem(physicalItemDeleteTarget.value.uuid);
+        physicalItemDeleteTarget.value = null;
+        await fetchPhysicalItems();
+    } catch (err) {
+        if (err instanceof ApiError && err.payload && typeof err.payload === 'object' && 'message' in err.payload) {
+            const message = (err.payload as { message?: unknown }).message;
+            error.value = (typeof message === 'string' && message !== '') ? message : t('inventory.physical_items.save_failed');
+        } else {
+            error.value = t('inventory.physical_items.save_failed');
+        }
+        physicalItemDeleteTarget.value = null;
+    } finally {
+        physicalItemDeleting.value = false;
+    }
+}
+
 async function fetchSuppliers(): Promise<void> {
     try {
         const response = await listSuppliers();
@@ -544,7 +670,7 @@ async function bootstrap(): Promise<void> {
     // Restock requests aren't branch-scoped on the API — load
     // them eagerly so the count badge on the tab is accurate
     // even before the user clicks the tab.
-    await Promise.all([fetchBranches(), fetchIngredients(), fetchSuppliers(), fetchRestockRequests(), fetchBranchTransfers()]);
+    await Promise.all([fetchBranches(), fetchIngredients(), fetchPhysicalItems(), fetchSuppliers(), fetchRestockRequests(), fetchBranchTransfers()]);
     if (selectedBranchUuid.value !== null) {
         await Promise.all([fetchBranchStock(), fetchMovements(), fetchWaste(), fetchStockCounts()]);
     }
@@ -1831,6 +1957,17 @@ async function submitSuggestions(): Promise<void> {
                     {{ t('inventory.tabs.ingredients') }}
                     <span class="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">{{ ingredients.length }}</span>
                 </button>
+                <!-- PD3a — physical items: things that cannot be eaten. -->
+                <button
+                    type="button"
+                    class="flex-1 min-w-max inline-flex items-center justify-center gap-2 rounded px-3 py-2 text-sm font-semibold transition"
+                    :class="activeTab === 'physical_items' ? 'bg-slate-950 text-white shadow' : 'text-slate-700 hover:bg-slate-50'"
+                    @click="activeTab = 'physical_items'"
+                >
+                    <Lightbulb class="size-4" />
+                    {{ t('inventory.tabs.physical_items') }}
+                    <span class="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">{{ physicalItems.length }}</span>
+                </button>
                 <button
                     type="button"
                     class="flex-1 min-w-max inline-flex items-center justify-center gap-2 rounded px-3 py-2 text-sm font-semibold transition"
@@ -1977,6 +2114,76 @@ async function submitSuggestions(): Promise<void> {
                                         </button>
                                         <button v-if="canManage" type="button" class="inline-flex items-center gap-1 rounded border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-50" @click="ingDeleteTarget = ing">
                                             <Trash2 class="size-3" /> {{ t('inventory.actions.delete') }}
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- ============ PD3a — PHYSICAL ITEMS TAB ============ -->
+            <section v-if="activeTab === 'physical_items'" class="space-y-4">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <p class="max-w-2xl text-xs text-slate-500">{{ t('inventory.physical_items.subtitle') }}</p>
+                    <button
+                        v-if="canManage"
+                        type="button"
+                        class="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-teal-600 to-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-teal-600/30 transition hover:-translate-y-0.5 hover:shadow-xl"
+                        @click="openCreatePhysicalItem"
+                    >
+                        <Plus class="size-4" />
+                        {{ t('inventory.physical_items.add') }}
+                    </button>
+                </div>
+
+                <div v-if="physicalItems.length === 0" class="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">
+                    <Lightbulb class="mx-auto size-10 text-slate-300" />
+                    <p class="mt-3 text-sm font-semibold text-slate-600">{{ t('inventory.physical_items.empty') }}</p>
+                </div>
+                <div v-else class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <table class="min-w-full divide-y divide-slate-200">
+                        <thead class="bg-slate-50">
+                            <tr>
+                                <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.physical_items.table.name') }}</th>
+                                <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.physical_items.table.kind') }}</th>
+                                <th class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.physical_items.table.cost') }}</th>
+                                <th class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.physical_items.table.low_stock') }}</th>
+                                <th class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.physical_items.table.central') }}</th>
+                                <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.table.status') }}</th>
+                                <th class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.table.actions') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 bg-white">
+                            <tr v-for="item in physicalItems" :key="item.id" class="transition hover:bg-slate-50">
+                                <td class="px-5 py-3">
+                                    <span class="block text-sm font-semibold text-slate-950">{{ item.name }}</span>
+                                    <span v-if="item.name_ar" class="block text-xs text-slate-500" dir="rtl">{{ item.name_ar }}</span>
+                                </td>
+                                <td class="px-5 py-3">
+                                    <span class="inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider" :class="item.purpose === 'packaging' ? 'bg-sky-100 text-sky-700' : 'bg-slate-200 text-slate-700'">
+                                        {{ t(`inventory.physical_items.purposes.${item.purpose}`) }}
+                                    </span>
+                                </td>
+                                <td class="px-5 py-3 text-end text-sm tabular-nums text-slate-700">{{ item.cost_price ?? '—' }}</td>
+                                <td class="px-5 py-3 text-end text-sm tabular-nums text-slate-700">{{ item.low_stock_threshold ?? '—' }}</td>
+                                <td class="px-5 py-3 text-end text-sm font-semibold tabular-nums text-slate-950">{{ item.central_quantity }}</td>
+                                <td class="px-5 py-3">
+                                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider" :class="item.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'">
+                                        {{ t(`catalogue.statuses.${item.status ?? 'active'}`) }}
+                                    </span>
+                                </td>
+                                <td class="px-5 py-3 text-end">
+                                    <div class="inline-flex gap-2">
+                                        <button v-if="canManage" type="button" class="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50" @click="openEditPhysicalItem(item)">
+                                            <Pencil class="size-3" /> {{ t('catalogue.actions.edit') }}
+                                        </button>
+                                        <button type="button" class="inline-flex items-center gap-1 rounded border border-teal-200 px-2 py-1 text-[11px] font-semibold text-teal-700 transition hover:bg-teal-50" @click="physicalItemStockTarget = item">
+                                            <Package class="size-3" /> {{ t('inventory.physical_items.stock') }}
+                                        </button>
+                                        <button v-if="canManage" type="button" class="inline-flex items-center gap-1 rounded border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-50" @click="physicalItemDeleteTarget = item">
+                                            <Trash2 class="size-3" /> {{ t('inventory.physical_items.delete') }}
                                         </button>
                                     </div>
                                 </td>
@@ -3646,6 +3853,110 @@ async function submitSuggestions(): Promise<void> {
                 </div>
             </template>
         </BaseModal>
+
+        <!-- PD3a — physical item create/edit -->
+        <BaseModal
+            v-if="physicalItemModalOpen"
+            :title="physicalItemModalMode === 'create' ? t('inventory.physical_items.create_title') : t('inventory.physical_items.edit_title')"
+            size="lg"
+            :loading="physicalItemModalBusy"
+            @close="physicalItemModalOpen = false"
+        >
+            <form id="physical-item-form" class="space-y-4" @submit.prevent="submitPhysicalItem">
+                <div v-if="physicalItemModalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                    {{ physicalItemModalError }}
+                </div>
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <label class="block">
+                        <span class="text-sm font-medium text-slate-700">{{ t('inventory.fields.name') }} *</span>
+                        <input v-model="physicalItemForm.name" required type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <p v-if="physicalItemModalErrors.name" class="mt-1 text-xs text-rose-600">{{ physicalItemModalErrors.name[0] }}</p>
+                    </label>
+                    <label class="block">
+                        <span class="text-sm font-medium text-slate-700">{{ t('inventory.fields.name_ar') }}</span>
+                        <input v-model="physicalItemForm.name_ar" type="text" dir="rtl" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <p v-if="physicalItemModalErrors.name_ar" class="mt-1 text-xs text-rose-600">{{ physicalItemModalErrors.name_ar[0] }}</p>
+                    </label>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-slate-700">{{ t('inventory.physical_items.kind_label') }}</p>
+                    <div class="mt-2 grid gap-2 sm:grid-cols-2">
+                        <label class="flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition" :class="physicalItemForm.purpose === 'packaging' ? 'border-teal-500 bg-teal-50/60 ring-2 ring-teal-100' : 'border-slate-200 hover:bg-slate-50'">
+                            <input v-model="physicalItemForm.purpose" type="radio" value="packaging" class="mt-1 border-slate-300 text-teal-600 focus:ring-teal-500">
+                            <span>
+                                <span class="block text-sm font-semibold text-slate-900">{{ t('inventory.physical_items.purposes.packaging') }}</span>
+                                <span class="block text-xs text-slate-500">{{ t('inventory.physical_items.purpose_packaging_hint') }}</span>
+                            </span>
+                        </label>
+                        <label class="flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition" :class="physicalItemForm.purpose === 'general' ? 'border-teal-500 bg-teal-50/60 ring-2 ring-teal-100' : 'border-slate-200 hover:bg-slate-50'">
+                            <input v-model="physicalItemForm.purpose" type="radio" value="general" class="mt-1 border-slate-300 text-teal-600 focus:ring-teal-500">
+                            <span>
+                                <span class="block text-sm font-semibold text-slate-900">{{ t('inventory.physical_items.purposes.general') }}</span>
+                                <span class="block text-xs text-slate-500">{{ t('inventory.physical_items.purpose_general_hint') }}</span>
+                            </span>
+                        </label>
+                    </div>
+                </div>
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <label class="block">
+                        <span class="text-sm font-medium text-slate-700">{{ t('inventory.physical_items.cost_label') }} (OMR)</span>
+                        <input v-model="physicalItemForm.cost_price" type="number" step="0.001" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <p class="mt-1 text-xs text-slate-500">{{ t('inventory.physical_items.cost_hint') }}</p>
+                        <p v-if="physicalItemModalErrors.cost_price" class="mt-1 text-xs text-rose-600">{{ physicalItemModalErrors.cost_price[0] }}</p>
+                    </label>
+                    <label class="block">
+                        <span class="text-sm font-medium text-slate-700">{{ t('inventory.physical_items.low_stock_label') }}</span>
+                        <input v-model="physicalItemForm.low_stock_threshold" type="number" step="1" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <p v-if="physicalItemModalErrors.low_stock_threshold" class="mt-1 text-xs text-rose-600">{{ physicalItemModalErrors.low_stock_threshold[0] }}</p>
+                    </label>
+                </div>
+                <label v-if="physicalItemModalMode === 'edit'" class="block">
+                    <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.status') }}</span>
+                    <select v-model="physicalItemForm.status" class="mt-1 w-full max-w-xs rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <option value="active">{{ t('catalogue.statuses.active') }}</option>
+                        <option value="inactive">{{ t('catalogue.statuses.inactive') }}</option>
+                    </select>
+                </label>
+            </form>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="physicalItemModalOpen = false">{{ t('common.cancel') }}</button>
+                    <button type="submit" form="physical-item-form" :disabled="physicalItemModalBusy" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60">
+                        {{ physicalItemModalBusy ? t('common.saving') : t('common.save') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
+
+        <!-- PD3a — physical-item delete confirm -->
+        <BaseModal
+            v-if="physicalItemDeleteTarget"
+            :title="t('inventory.physical_items.delete_title')"
+            size="md"
+            :loading="physicalItemDeleting"
+            @close="physicalItemDeleteTarget = null"
+        >
+            <p class="text-sm text-slate-700">{{ t('inventory.physical_items.delete_body', { name: physicalItemDeleteTarget.name }) }}</p>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="physicalItemDeleteTarget = null">{{ t('common.cancel') }}</button>
+                    <button type="button" :disabled="physicalItemDeleting" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:opacity-60" @click="confirmDeletePhysicalItem">
+                        {{ physicalItemDeleting ? t('common.deleting') : t('inventory.physical_items.delete') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
+
+        <!-- PD3a — physical-item stock (the product stock dialog: the rows
+             share the piece-counting machinery, incl. PD2 cost->expense). -->
+        <ProductStockDialog
+            :open="physicalItemStockTarget !== null"
+            :product-uuid="physicalItemStockTarget?.uuid ?? null"
+            :product-name="physicalItemStockTarget?.name ?? ''"
+            :can-manage="canManage"
+            :cost-price="physicalItemStockTarget?.cost_price ?? null"
+            @close="physicalItemStockTarget = null"
+        />
 
         <!-- P-G4 — central ingredient warehouse dialog -->
         <IngredientStockDialog

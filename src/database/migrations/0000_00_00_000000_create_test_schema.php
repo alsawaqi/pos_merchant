@@ -256,6 +256,11 @@ return new class extends Migration
             // P-G2 — internal items (cups/lids): never on the POS menu or
             // tablet, full stock participation.
             $table->boolean('is_internal')->default(false);
+            // PD3a — which KIND of physical item an internal row is:
+            // 'packaging' (used with food, offered by the composition
+            // picker) | 'general' (branch use — bulbs, cleaning) | NULL
+            // (non-internal products + pre-PD3a legacy = packaging).
+            $table->string('internal_purpose', 16)->nullable();
             // G1 — menu time-window ('HH:MM:SS', both NULL = always
             // available, start > end wraps midnight).
             $table->string('available_from', 8)->nullable();

@@ -46,7 +46,9 @@ class CategoriesController extends Controller
 
         $categories = ProductCategory::query()
             ->where('company_id', $this->tenant->requiredId())
-            ->withCount(['products', 'subcategories'])
+            // PD3a — the catalogue product list hides internal rows, so
+            // the count must match what the merchant can actually see.
+            ->withCount(['products' => fn ($q) => $q->where('is_internal', false), 'subcategories'])
             ->orderBy('display_order')
             ->orderBy('name')
             ->get();

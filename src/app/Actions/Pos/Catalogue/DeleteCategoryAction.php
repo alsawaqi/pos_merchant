@@ -37,7 +37,11 @@ final readonly class DeleteCategoryAction
             abort(404);
         }
 
-        $productCount = $category->products()->count();
+        // PD3a — internal rows are invisible in the catalogue, so they
+        // must not block a delete the merchant can't diagnose (the
+        // category FK is nullOnDelete; an orphaned legacy physical item
+        // simply loses its meaningless category).
+        $productCount = $category->products()->where('is_internal', false)->count();
         if ($productCount > 0) {
             throw new RuntimeException(
                 sprintf(

@@ -52,6 +52,9 @@ final readonly class UpdateProductAction
         'show_on_customer_tablet',
         // P-G2 — internal item (never on the POS menu or tablet).
         'is_internal',
+        // PD3a — physical-item kind (only the physical-items endpoint
+        // sends it; the catalogue requests don't validate it through).
+        'internal_purpose',
         // G1 — menu time-window (both NULL = always available).
         'available_from',
         'available_until',

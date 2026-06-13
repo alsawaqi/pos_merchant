@@ -65,6 +65,9 @@ use Illuminate\Support\Str;
     // P-G2 — internal items (cups/lids): never on the POS menu or the
     // customer tablet, full stock participation.
     'is_internal',
+    // PD3a — physical-item kind: 'packaging' (used with food) |
+    // 'general' (branch use) | NULL (non-internal / legacy=packaging).
+    'internal_purpose',
     // G1 — menu time-window. 'HH:MM:SS' strings, both NULL = always
     // available, start > end wraps midnight (pos_discounts convention).
     'available_from',

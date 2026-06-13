@@ -49,6 +49,12 @@ final readonly class UpdateProductComponentsAction
             abort(404);
         }
 
+        // PD3a — a physical item consumes nothing itself (a cup has no
+        // components); only sellable products carry composition.
+        if ($product->is_internal && $lines !== []) {
+            throw new RuntimeException('A physical item cannot consume other items.');
+        }
+
         $uuids = array_map(static fn (array $l): string => (string) $l['component_uuid'], $lines);
         if (count($uuids) !== count(array_unique($uuids))) {
             throw new RuntimeException('Duplicate component in payload — merge them client-side first.');
@@ -70,6 +76,17 @@ final readonly class UpdateProductComponentsAction
             if ($component->stock_mode !== 'unit') {
                 throw new RuntimeException(sprintf(
                     '"%s" is not a unit-tracked product — physical items must be piece-counted (set it to Ready / bought-in first).',
+                    $component->name,
+                ));
+            }
+            // PD3a — branch-use items (bulbs, cleaning) are never
+            // attachable to food. Legacy NULL = packaging stays allowed,
+            // as do pre-PD3a sellable-unit attachments (the picker no
+            // longer offers new ones, but re-saving a legacy product
+            // must not break).
+            if ($component->internal_purpose === 'general') {
+                throw new RuntimeException(sprintf(
+                    '"%s" is a branch-use physical item — it cannot be attached to a product.',
                     $component->name,
                 ));
             }

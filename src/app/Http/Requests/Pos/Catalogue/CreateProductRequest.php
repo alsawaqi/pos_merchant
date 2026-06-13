@@ -58,9 +58,9 @@ class CreateProductRequest extends FormRequest
             // Phase D2 — §5.5.3 "Show on Customer Tablet menu yes/no". The
             // future tablet menu consumes it; the staff POS ignores it.
             'show_on_customer_tablet' => ['nullable', 'boolean'],
-            // P-G2 — internal item (cups/lids): never on the POS menu or
-            // tablet, full stock participation.
-            'is_internal' => ['nullable', 'boolean'],
+            // PD3a — is_internal is NOT accepted here any more: physical
+            // items are created on the Inventory page (PhysicalItemsController
+            // forces the flag); a catalogue product is always sellable.
             // G1 — menu time-window. 'HH:MM:SS' (seconds optional on the
             // wire), NULL = no bound. Both NULL = always available.
             // start > end wraps midnight (the pos_discounts convention).
