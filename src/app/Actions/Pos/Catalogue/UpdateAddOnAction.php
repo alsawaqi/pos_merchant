@@ -41,6 +41,7 @@ final readonly class UpdateAddOnAction
     public function __construct(
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
+        private SyncAddOnConsumptionAction $syncConsumption,
     ) {}
 
     /**
@@ -74,6 +75,40 @@ final readonly class UpdateAddOnAction
             }
         }
 
+        // PD3b — the stock-usage lines sync independently of the scalar
+        // fields: a key present in the payload (even []) replaces the
+        // set; an absent key leaves the lines untouched.
+        $syncLines = array_key_exists('consumption', $attributes);
+        $consumption = $syncLines && is_array($attributes['consumption']) ? $attributes['consumption'] : [];
+
+        // Re-linking onto a product an EXISTING usage line already consumes
+        // (and this payload isn't replacing the lines) would double-consume
+        // at sale — the mirror of the sync action's own collision guard.
+        if (! $syncLines
+            && isset($attributes['linked_product_id'])
+            && $addon->consumptionLines()->where('component_product_id', (int) $attributes['linked_product_id'])->exists()) {
+            throw new RuntimeException('This option already has a stock-usage line for that product — selling it would consume the product twice. Remove the line first.');
+        }
+
+        // ONE outer transaction for scalars + lines: a rejected usage line
+        // must roll back the scalar changes too (the create path's
+        // contract — "a bad line rolls back the whole option").
+        return DB::transaction(function () use ($addon, $attributes, $actor, $companyId, $syncLines, $consumption): AddOn {
+            $updated = $this->applyScalarFields($addon, $attributes, $actor, $companyId);
+
+            if ($syncLines) {
+                $updated = $this->syncConsumption->handle($updated, $consumption, $actor);
+            }
+
+            return $updated;
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    private function applyScalarFields(AddOn $addon, array $attributes, User $actor, int $companyId): AddOn
+    {
         return DB::transaction(function () use ($addon, $attributes, $actor, $companyId): AddOn {
             $changes = [];
             foreach (self::MUTABLE_FIELDS as $field) {

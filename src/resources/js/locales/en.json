@@ -164,6 +164,7 @@
         "cancel": "Cancel",
         "save": "Save",
         "saving": "Saving…",
+        "delete": "Delete",
         "deleting": "Deleting…",
         "close": "Close"
     },
@@ -750,6 +751,28 @@
         "selection_modes": {
             "single": "Single (radio)",
             "multi": "Multi (checkbox)"
+        },
+        "consumption": {
+            "section_title": "Stock usage (optional)",
+            "section_hint": "What picking this option uses from stock — or removes from the product's own usage (e.g. \"no salad\"). Removals never push consumption below zero at sale time.",
+            "new_option_title": "Stock usage for the new option (optional)",
+            "button": "Stock usage",
+            "badge": "stock ×{count}",
+            "direction": "Effect",
+            "uses": "Uses",
+            "removes": "Removes",
+            "kind": "Kind",
+            "kind_ingredient": "Ingredient",
+            "kind_item": "Item",
+            "ingredient": "Ingredient",
+            "item": "Item (packaging / prepared)",
+            "quantity": "Qty",
+            "unit": "Unit",
+            "pieces": "pieces",
+            "base_unit": "base",
+            "prepared": "prepared",
+            "attached": "attached",
+            "add_line": "Add stock line"
         },
         "addon_group_card": {
             "global_badge": "Global"

@@ -208,6 +208,9 @@ class ProductsController extends Controller
         $product->load([
             'category',
             'addOnGroups.addOns.linkedProduct',
+            // PD3b — the wizard's option editor prefills stock-usage lines.
+            'addOnGroups.addOns.consumptionLines.ingredient',
+            'addOnGroups.addOns.consumptionLines.componentProduct',
             'recipeLines.ingredient',
             'components.component',
             'deliveryPrices.deliveryProvider',
@@ -301,21 +304,33 @@ class ProductsController extends Controller
         // legacy pre-PD3a items, treated as packaging until edited).
         // Branch-use items (bulbs, cleaning) and sellable unit products
         // are not attachable; existing attachments keep consuming.
+        // PD3b — PLUS prepared components: non-internal COOKED products
+        // (a patty inside a burger). Their shelf stock is consumed at
+        // sale exactly like a piece of packaging. The same option set
+        // feeds the add-on stock-usage editor's product lines.
         $options = Product::query()
             ->where('company_id', $this->tenant->requiredId())
-            ->where('stock_mode', 'unit')
-            ->where('is_internal', true)
             ->where(function ($q): void {
-                $q->whereNull('internal_purpose')->orWhere('internal_purpose', 'packaging');
+                $q->where(function ($packaging): void {
+                    $packaging->where('stock_mode', 'unit')
+                        ->where('is_internal', true)
+                        ->where(function ($purpose): void {
+                            $purpose->whereNull('internal_purpose')->orWhere('internal_purpose', 'packaging');
+                        });
+                })->orWhere(function ($prepared): void {
+                    $prepared->where('stock_mode', 'cooked')
+                        ->where('is_internal', false);
+                });
             })
             ->orderBy('name')
             ->limit(500)
-            ->get(['uuid', 'name', 'name_ar', 'is_internal'])
+            ->get(['uuid', 'name', 'name_ar', 'is_internal', 'stock_mode'])
             ->map(static fn (Product $p): array => [
                 'uuid' => $p->uuid,
                 'name' => $p->name,
                 'name_ar' => $p->name_ar,
                 'is_internal' => (bool) $p->is_internal,
+                'stock_mode' => $p->stock_mode,
             ]);
 
         return response()->json(['data' => $options]);
@@ -478,6 +493,8 @@ class ProductsController extends Controller
             }])
             // P-G3 — show what each option sells.
             ->with('addOns.linkedProduct')
+            // PD3b — and what each option consumes.
+            ->with(['addOns.consumptionLines.ingredient', 'addOns.consumptionLines.componentProduct'])
             ->withCount('addOns')
             ->orderBy('display_order')
             ->orderBy('name')

@@ -48,15 +48,19 @@ import {
     listProducts,
     syncProductAddOnGroups,
     syncProductBranches,
+    updateAddOn,
     updateProduct,
     updateProductComponents,
     updateProductRecipe,
+    type AddOn,
+    type AddOnConsumptionLine,
     type AddOnGroup,
     type AddOnSelectionMode,
     type AddonLinkOption,
     type Category,
     type ComponentLinePayload,
     type ComponentOption,
+    type ConsumptionLinePayload,
     type CreateProductPayload,
     type Product,
     type ProductBranchAssignment,
@@ -65,6 +69,7 @@ import {
     type WizardOwnedGroupPayload,
     type WizardOwnedOptionPayload,
 } from '@/lib/api/catalogue';
+import AddonConsumptionEditor from '@/Pages/Merchant/Catalogue/AddonConsumptionEditor.vue';
 import { listIngredients, type Ingredient } from '@/lib/api/inventory';
 import { listBranches, type Branch as BranchLite } from '@/lib/api/branches';
 import {
@@ -199,6 +204,8 @@ interface DraftOption {
     price_delta: string;
     is_default: boolean;
     linked_product_uuid: string;
+    /** PD3b — stock-usage lines buffered with the draft. */
+    consumption: ConsumptionLinePayload[];
 }
 interface DraftGroup {
     /** Stable client-side key — NEVER the array index (deleting a
@@ -229,7 +236,7 @@ const ownedGroupForm = reactive<{
 const optionForms = ref<Record<string, DraftOption>>({});
 
 function blankOption(): DraftOption {
-    return { name: '', name_ar: '', price_delta: '0', is_default: false, linked_product_uuid: '' };
+    return { name: '', name_ar: '', price_delta: '0', is_default: false, linked_product_uuid: '', consumption: [] };
 }
 
 function optionFormFor(key: string): DraftOption {
@@ -304,6 +311,8 @@ async function addOwnedOption(key: string, persistedGroupUuid: string | null, dr
         price_delta: String(formRow.price_delta ?? '').trim() === '' ? '0' : String(formRow.price_delta).trim(),
         is_default: formRow.is_default,
         linked_product_uuid: formRow.linked_product_uuid || null,
+        // PD3b — only fully-specified stock-usage lines ride along.
+        consumption: completeConsumptionLines(formRow.consumption),
     };
 
     if (draftIndex !== null) {
@@ -313,6 +322,7 @@ async function addOwnedOption(key: string, persistedGroupUuid: string | null, dr
             price_delta: String(optionPayload.price_delta),
             is_default: formRow.is_default,
             linked_product_uuid: formRow.linked_product_uuid,
+            consumption: optionPayload.consumption ?? [],
         });
         optionForms.value[key] = blankOption();
         return;
@@ -377,6 +387,85 @@ async function loadOwnedAddonGroups(): Promise<void> {
     if (!isEdit) return;
     const response = await getProductAddOnGroups(editUuid!);
     ownedAddonGroups.value = response.data;
+}
+
+// ---- PD3b — per-option stock usage ----------------------------------
+
+/** Drop rows the user left half-filled (no ref, no quantity, or zero). */
+function completeConsumptionLines(lines: ConsumptionLinePayload[]): ConsumptionLinePayload[] {
+    return lines
+        .filter((l) => String(l.quantity ?? '').trim() !== ''
+            && Number(l.quantity) > 0
+            && (l.type === 'ingredient' ? !!l.ingredient_uuid : !!l.product_uuid))
+        .map((l) => ({
+            type: l.type,
+            ingredient_uuid: l.type === 'ingredient' ? l.ingredient_uuid : undefined,
+            product_uuid: l.type === 'product' ? l.product_uuid : undefined,
+            direction: l.direction,
+            quantity: String(l.quantity).trim(),
+            unit: l.type === 'ingredient' ? (l.unit || null) : null,
+        }));
+}
+
+/** Read-shape → editor write-shape. Stored ingredient quantities are
+ * already BASE-unit, so unit stays '' (base) on the round-trip; names ride
+ * along so refs missing from the picker lists still render. */
+function consumptionToPayload(lines: AddOnConsumptionLine[] | undefined): ConsumptionLinePayload[] {
+    return (lines ?? []).map((l) => ({
+        type: l.type,
+        ingredient_uuid: l.ingredient?.uuid ?? '',
+        product_uuid: l.product?.uuid ?? '',
+        direction: l.direction,
+        quantity: l.quantity,
+        unit: '',
+        ingredient_label: l.ingredient?.name,
+        product_label: l.product?.name,
+    }));
+}
+
+/** The option editor's product source: packaging + prepared (cooked) from
+ * componentOptions PLUS bought-in sellable unit products (legal consumption
+ * the backend accepts — sourced from the addon-link list, no extra fetch). */
+const consumptionProductOptions = computed<ComponentOption[]>(() => {
+    const merged = [...componentOptions.value];
+    for (const opt of addonLinkOptions.value) {
+        if (opt.stock_mode === 'unit' && !merged.some((m) => m.uuid === opt.uuid)) {
+            merged.push({ uuid: opt.uuid, name: opt.name, name_ar: opt.name_ar, is_internal: false, stock_mode: 'unit' });
+        }
+    }
+    return merged;
+});
+
+function consumptionCount(option: AddOn | DraftOption): number {
+    return ('consumption' in option ? option.consumption?.length : 0) ?? 0;
+}
+
+// Expanded stock-usage editor per PERSISTED option (edit mode) — drafts
+// bind straight to the buffered consumption array instead.
+const optionStockOpen = ref<Record<string, boolean>>({});
+const optionStockDrafts = ref<Record<string, ConsumptionLinePayload[]>>({});
+
+function toggleOptionStock(option: AddOn): void {
+    if (optionStockOpen.value[option.uuid]) {
+        optionStockOpen.value[option.uuid] = false;
+        return;
+    }
+    optionStockDrafts.value[option.uuid] = consumptionToPayload(option.consumption);
+    optionStockOpen.value[option.uuid] = true;
+}
+
+async function saveOptionStock(uuid: string): Promise<void> {
+    ownedBusy.value = true;
+    ownedError.value = null;
+    try {
+        await updateAddOn(uuid, { consumption: completeConsumptionLines(optionStockDrafts.value[uuid] ?? []) });
+        optionStockOpen.value[uuid] = false;
+        await loadOwnedAddonGroups();
+    } catch (err) {
+        ownedError.value = apiMessage(err, t('catalogue.product_addons.save_failed'));
+    } finally {
+        ownedBusy.value = false;
+    }
 }
 
 // ---- Recipe helpers (ported from the modal) -------------------------
@@ -624,6 +713,7 @@ function ownedGroupsPayload(): WizardOwnedGroupPayload[] {
             price_delta: o.price_delta === '' ? '0' : o.price_delta,
             is_default: o.is_default,
             linked_product_uuid: o.linked_product_uuid || null,
+            consumption: completeConsumptionLines(o.consumption),
         })),
     }));
 }
@@ -1189,26 +1279,52 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                         <li
                                             v-for="(option, oi) in (isEdit ? ((group as AddOnGroup).addons ?? []) : (group as DraftGroup).options)"
                                             :key="oi"
-                                            class="flex items-center justify-between gap-2 px-3 py-2"
+                                            class="px-3 py-2"
                                         >
-                                            <span class="min-w-0 flex-1 truncate text-sm font-medium text-slate-900">
-                                                {{ option.name }}
-                                                <span v-if="option.is_default" class="ms-1 rounded bg-teal-100 px-1.5 py-0.5 text-[10px] font-semibold text-teal-700">{{ t('catalogue.wizard.option_default') }}</span>
-                                                <span v-if="optionIsLinked(option)" class="ms-1 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700">{{ t('catalogue.wizard.option_linked') }}</span>
-                                            </span>
-                                            <span class="text-xs font-semibold tabular-nums text-slate-700">
-                                                +{{ option.price_delta }}
-                                                <span class="text-[10px] font-normal text-slate-400">OMR</span>
-                                            </span>
-                                            <button
-                                                type="button"
-                                                :disabled="ownedBusy"
-                                                class="rounded p-1 text-rose-500 transition hover:bg-rose-100 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
-                                                :title="t('catalogue.product_addons.remove')"
-                                                @click="isEdit ? removePersistedOption(persistedUuid(option)) : removeDraftOption(gi, oi)"
-                                            >
-                                                <Trash2 class="size-3.5" />
-                                            </button>
+                                            <div class="flex items-center justify-between gap-2">
+                                                <span class="min-w-0 flex-1 truncate text-sm font-medium text-slate-900">
+                                                    {{ option.name }}
+                                                    <span v-if="option.is_default" class="ms-1 rounded bg-teal-100 px-1.5 py-0.5 text-[10px] font-semibold text-teal-700">{{ t('catalogue.wizard.option_default') }}</span>
+                                                    <span v-if="optionIsLinked(option)" class="ms-1 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700">{{ t('catalogue.wizard.option_linked') }}</span>
+                                                    <!-- PD3b — the option carries stock-usage lines. -->
+                                                    <span v-if="consumptionCount(option) > 0" class="ms-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">{{ t('catalogue.consumption.badge', { count: consumptionCount(option) }) }}</span>
+                                                </span>
+                                                <span class="text-xs font-semibold tabular-nums text-slate-700">
+                                                    +{{ option.price_delta }}
+                                                    <span class="text-[10px] font-normal text-slate-400">OMR</span>
+                                                </span>
+                                                <button
+                                                    v-if="isEdit"
+                                                    type="button"
+                                                    :disabled="ownedBusy"
+                                                    class="inline-flex items-center gap-1 rounded border border-slate-200 px-1.5 py-1 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                                    @click="toggleOptionStock(option as AddOn)"
+                                                >
+                                                    <Boxes class="size-3" /> {{ t('catalogue.consumption.button') }}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    :disabled="ownedBusy"
+                                                    class="rounded p-1 text-rose-500 transition hover:bg-rose-100 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                                    :title="t('catalogue.product_addons.remove')"
+                                                    @click="isEdit ? removePersistedOption(persistedUuid(option)) : removeDraftOption(gi, oi)"
+                                                >
+                                                    <Trash2 class="size-3.5" />
+                                                </button>
+                                            </div>
+                                            <!-- PD3b — expanded stock-usage editor (persisted options) -->
+                                            <div v-if="isEdit && optionStockOpen[persistedUuid(option)]" class="mt-2 border-t border-slate-100 pt-2">
+                                                <AddonConsumptionEditor
+                                                    v-model="optionStockDrafts[persistedUuid(option)]"
+                                                    :ingredients="ingredients"
+                                                    :products="consumptionProductOptions"
+                                                    :disabled="ownedBusy"
+                                                />
+                                                <div class="mt-2 flex justify-end gap-2">
+                                                    <button type="button" class="rounded border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50" @click="optionStockOpen[persistedUuid(option)] = false">{{ t('common.cancel') }}</button>
+                                                    <button type="button" :disabled="ownedBusy" class="rounded border border-teal-200 bg-teal-50 px-2.5 py-1 text-[11px] font-semibold text-teal-700 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-50" @click="saveOptionStock(persistedUuid(option))">{{ t('common.save') }}</button>
+                                                </div>
+                                            </div>
                                         </li>
                                     </ul>
 
@@ -1247,6 +1363,19 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                                 <Plus class="size-3" /> {{ t('catalogue.product_addons.add_option') }}
                                             </button>
                                         </div>
+                                    </div>
+
+                                    <!-- PD3b — stock usage for the option being added: what
+                                         picking it consumes (cups, beans...) or hands back
+                                         ("remove salad"). Optional; empty = price-only option. -->
+                                    <div class="mt-2 rounded-lg border border-dashed border-slate-200 p-2">
+                                        <p class="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.consumption.new_option_title') }}</p>
+                                        <AddonConsumptionEditor
+                                            v-model="optionFormFor(groupFormKey(group)).consumption"
+                                            :ingredients="ingredients"
+                                            :products="consumptionProductOptions"
+                                            :disabled="ownedBusy"
+                                        />
                                     </div>
                                 </article>
                             </div>

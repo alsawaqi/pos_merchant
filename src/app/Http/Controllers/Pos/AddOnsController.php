@@ -54,7 +54,7 @@ class AddOnsController extends Controller
         }
 
         return response()->json([
-            'data' => (new AddOnResource($addon->load('linkedProduct')))->resolve($request),
+            'data' => (new AddOnResource($addon->load(['linkedProduct', 'consumptionLines.ingredient', 'consumptionLines.componentProduct'])))->resolve($request),
         ], 201);
     }
 
@@ -70,7 +70,7 @@ class AddOnsController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        return AddOnResource::make($updated->load('linkedProduct'));
+        return AddOnResource::make($updated->load(['linkedProduct', 'consumptionLines.ingredient', 'consumptionLines.componentProduct']));
     }
 
     public function destroy(Request $request, AddOn $addon): JsonResponse

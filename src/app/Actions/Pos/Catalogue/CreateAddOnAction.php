@@ -29,6 +29,7 @@ final readonly class CreateAddOnAction
     public function __construct(
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
+        private SyncAddOnConsumptionAction $syncConsumption,
     ) {}
 
     /**
@@ -85,6 +86,13 @@ final readonly class CreateAddOnAction
                     'price_delta' => (string) $addon->price_delta,
                 ],
             ));
+
+            // PD3b — the option's stock-usage lines ride along at create
+            // (nested transaction = savepoint; a bad line rolls back the
+            // whole option, never a half-created one).
+            if (! empty($attributes['consumption']) && is_array($attributes['consumption'])) {
+                $this->syncConsumption->handle($addon, $attributes['consumption'], $actor);
+            }
 
             return $addon;
         });

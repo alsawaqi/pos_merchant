@@ -33,19 +33,25 @@ import {
     listAddOnGroups,
     listAddonLinkOptions,
     listCategories,
+    listComponentOptions,
     listProducts,
     updateAddOn,
     updateAddOnGroup,
     updateCategory,
     type AddOn,
+    type AddOnConsumptionLine,
     type AddOnGroup,
     type AddOnSelectionMode,
     type AddOnStatus,
     type AddonLinkOption,
     type Category,
     type CategoryStatus,
+    type ComponentOption,
+    type ConsumptionLinePayload,
     type Product,
 } from '@/lib/api/catalogue';
+import AddonConsumptionEditor from '@/Pages/Merchant/Catalogue/AddonConsumptionEditor.vue';
+import { listIngredients, type Ingredient } from '@/lib/api/inventory';
 import { listBranches, type Branch as BranchLite } from '@/lib/api/branches';
 import {
     createDeliveryProvider,
@@ -79,6 +85,9 @@ const addOnGroups = ref<AddOnGroup[]>([]);
 const branches = ref<BranchLite[]>([]);
 // P-G3 — the product-as-add-on picker source (sellable products).
 const addonLinkOptions = ref<AddonLinkOption[]>([]);
+// PD3b — the option stock-usage editor's sources (soft-fail to []).
+const consumptionIngredients = ref<Ingredient[]>([]);
+const consumptionProducts = ref<ComponentOption[]>([]);
 // Phase 6c — delivery providers used by the Providers tab AND
 // the per-product price grid in the product modal. We always
 // fetch them so the product modal can render its price grid
@@ -270,6 +279,17 @@ async function fetchAddonLinkOptions(): Promise<void> {
     } catch {
         addonLinkOptions.value = [];
     }
+    // PD3b - the stock-usage editor sources. Independent catches: the
+    // ingredients list is inventory.view-gated while this page only needs
+    // catalogue rights - a 403 there must not wipe the product picker too.
+    await Promise.all([
+        listIngredients()
+            .then((r) => { consumptionIngredients.value = r.data; })
+            .catch(() => { consumptionIngredients.value = []; }),
+        listComponentOptions()
+            .then((r) => { consumptionProducts.value = r.data; })
+            .catch(() => { consumptionProducts.value = []; }),
+    ]);
 }
 
 async function fetchAddOnGroups(): Promise<void> {
@@ -538,6 +558,65 @@ async function confirmDeleteAddOnGroup(): Promise<void> {
 
 // =================== ADD-ON OPTION FLOWS (Phase 4.9) ===================
 
+// PD3b — the modal's stock-usage lines (editor write-shape).
+const aoConsumption = ref<ConsumptionLinePayload[]>([]);
+
+/** Read-shape → editor write-shape. Stored ingredient quantities are
+ * already BASE-unit, so unit stays '' (base) on the round-trip; names ride
+ * along so refs missing from the picker lists still render. */
+function consumptionToPayload(lines: AddOnConsumptionLine[] | undefined): ConsumptionLinePayload[] {
+    return (lines ?? []).map((l) => ({
+        type: l.type,
+        ingredient_uuid: l.ingredient?.uuid ?? '',
+        product_uuid: l.product?.uuid ?? '',
+        direction: l.direction,
+        quantity: l.quantity,
+        unit: '',
+        ingredient_label: l.ingredient?.name,
+        product_label: l.product?.name,
+    }));
+}
+
+/** Drop rows the user left half-filled (no ref, no quantity, or zero). */
+function completeConsumptionLines(lines: ConsumptionLinePayload[]): ConsumptionLinePayload[] {
+    return lines
+        .filter((l) => String(l.quantity ?? '').trim() !== ''
+            && Number(l.quantity) > 0
+            && (l.type === 'ingredient' ? !!l.ingredient_uuid : !!l.product_uuid))
+        .map((l) => ({
+            type: l.type,
+            ingredient_uuid: l.type === 'ingredient' ? l.ingredient_uuid : undefined,
+            product_uuid: l.type === 'product' ? l.product_uuid : undefined,
+            direction: l.direction,
+            quantity: String(l.quantity).trim(),
+            unit: l.type === 'ingredient' ? (l.unit || null) : null,
+        }));
+}
+
+/** The option editor's product source: packaging + prepared (cooked) from
+ * componentOptions PLUS bought-in sellable unit products (legal consumption
+ * the backend accepts — sourced from the addon-link list, no extra fetch). */
+const consumptionProductOptions = computed<ComponentOption[]>(() => {
+    const merged = [...consumptionProducts.value];
+    for (const opt of addonLinkOptions.value) {
+        if (opt.stock_mode === 'unit' && !merged.some((m) => m.uuid === opt.uuid)) {
+            merged.push({ uuid: opt.uuid, name: opt.name, name_ar: opt.name_ar, is_internal: false, stock_mode: 'unit' });
+        }
+    }
+    return merged;
+});
+
+/** First nested consumption.* validation message (the rules emit keys like
+ * consumption.0.quantity, which no per-field outlet renders). */
+const aoConsumptionError = computed<string | null>(() => {
+    for (const [key, messages] of Object.entries(aoModalErrors.value)) {
+        if (key === 'consumption' || key.startsWith('consumption.')) {
+            return (messages as string[])[0] ?? null;
+        }
+    }
+    return null;
+});
+
 function openCreateAddOn(group: AddOnGroup): void {
     aoModalMode.value = 'create';
     aoModalParentGroup.value = group;
@@ -549,6 +628,7 @@ function openCreateAddOn(group: AddOnGroup): void {
     aoForm.linked_product_uuid = '';
     aoForm.display_order = (group.addons ?? []).length;
     aoForm.status = 'active';
+    aoConsumption.value = [];
     aoModalErrors.value = {};
     aoModalError.value = null;
     aoModalOpen.value = true;
@@ -565,6 +645,7 @@ function openEditAddOn(group: AddOnGroup, addon: AddOn): void {
     aoForm.linked_product_uuid = addon.linked_product?.uuid ?? '';
     aoForm.display_order = addon.display_order;
     aoForm.status = (addon.status ?? 'active') as AddOnStatus;
+    aoConsumption.value = consumptionToPayload(addon.consumption);
     aoModalErrors.value = {};
     aoModalError.value = null;
     aoModalOpen.value = true;
@@ -592,6 +673,9 @@ async function submitAddOn(): Promise<void> {
             // P-G3 — the real product behind this option ('' = none).
             linked_product_uuid: aoForm.linked_product_uuid || null,
             display_order: aoForm.display_order,
+            // PD3b — key always present: the modal owns the full line
+            // set, so an emptied editor clears the stored lines too.
+            consumption: completeConsumptionLines(aoConsumption.value),
         };
         if (aoModalMode.value === 'create' && aoModalParentGroup.value) {
             await createAddOn(aoModalParentGroup.value.uuid, payload);
@@ -1548,6 +1632,19 @@ async function performProviderDelete(): Promise<void> {
                         <span class="block text-xs text-slate-500">{{ t('catalogue.fields.is_default_hint') }}</span>
                     </span>
                 </label>
+                <!-- PD3b — what picking this option uses or removes from
+                     stock, on top of the parent product's recipe/items. -->
+                <div class="rounded-lg border border-slate-200 p-3">
+                    <span class="block text-sm font-medium text-slate-700">{{ t('catalogue.consumption.section_title') }}</span>
+                    <span class="mb-2 block text-xs text-slate-500">{{ t('catalogue.consumption.section_hint') }}</span>
+                    <AddonConsumptionEditor
+                        v-model="aoConsumption"
+                        :ingredients="consumptionIngredients"
+                        :products="consumptionProductOptions"
+                        :disabled="aoModalBusy"
+                    />
+                    <p v-if="aoConsumptionError" class="mt-1 text-xs text-rose-600">{{ aoConsumptionError }}</p>
+                </div>
                 <div v-if="aoModalMode === 'edit'" class="grid gap-3 sm:grid-cols-2">
                     <label class="block">
                         <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.display_order') }}</span>

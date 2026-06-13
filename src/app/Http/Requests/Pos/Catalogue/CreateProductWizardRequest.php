@@ -59,6 +59,12 @@ class CreateProductWizardRequest extends FormRequest
             'owned_groups.*.options.*.is_default' => ['nullable', 'boolean'],
             'owned_groups.*.options.*.linked_product_uuid' => ['nullable', 'string', 'uuid'],
             'owned_groups.*.options.*.display_order' => ['nullable', 'integer', 'between:0,999'],
+            // PD3b — per-option stock-usage lines, same rules as the
+            // standalone option create (composed, not copied — the
+            // wizard passes option payloads RAW into CreateAddOnAction,
+            // so an unvalidated key would be silently stripped here
+            // while working on the standalone path).
+            ...CreateAddOnRequest::consumptionRules('owned_groups.*.options.*.consumption'),
 
             // Recipe — only meaningful for made-to-order + cooked
             // (cross-checked against product.stock_mode below).

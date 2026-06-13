@@ -669,6 +669,25 @@ return new class extends Migration
             $table->unique(['product_id', 'component_product_id'], 'pos_product_components_pair_unique');
         });
 
+        // ---- pos_addon_consumptions (PD3b per-option consumption) ---
+        // Stock-usage lines on an add-on option: ingredient XOR
+        // component-product (app-enforced), direction add|remove,
+        // quantity per ONE parent line unit. Mirrors pos_admin's
+        // 2026_07_23_010000 migration.
+        Schema::create('pos_addon_consumptions', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('add_on_id')->constrained('pos_addons')->cascadeOnDelete();
+            $table->foreignId('ingredient_id')->nullable()->constrained('pos_ingredients')->cascadeOnDelete();
+            $table->foreignId('component_product_id')->nullable()->constrained('pos_products')->cascadeOnDelete();
+            $table->string('direction', 8)->default('add');
+            $table->decimal('quantity', 12, 3);
+            $table->string('unit', 16)->nullable();
+            $table->unsignedSmallInteger('display_order')->default(0);
+            $table->timestamps();
+            $table->unique(['add_on_id', 'ingredient_id', 'direction'], 'pos_addon_consumptions_ing_dir_unique');
+            $table->unique(['add_on_id', 'component_product_id', 'direction'], 'pos_addon_consumptions_prod_dir_unique');
+        });
+
         // ---- pos_product_stock + pos_product_stock_movements (Phase 7) ---
         // Central company unit-product pool + the product-units ledger.
         Schema::create('pos_product_stock', function (Blueprint $table): void {
@@ -1141,6 +1160,8 @@ return new class extends Migration
             // P-G3 — product-as-add-on freeze (consumption + reporting).
             $table->unsignedBigInteger('linked_product_id')->nullable()->index();
             $table->text('product_snapshot_json')->nullable();
+            // PD3b — per-option consumption lines frozen at order create.
+            $table->text('consumption_snapshot_json')->nullable();
             $table->timestamps();
         });
 

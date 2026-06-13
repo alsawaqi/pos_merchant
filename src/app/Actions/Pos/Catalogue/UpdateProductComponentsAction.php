@@ -73,9 +73,13 @@ final readonly class UpdateProductComponentsAction
             if ((int) $component->id === (int) $product->id) {
                 throw new RuntimeException('A product cannot be its own component.');
             }
-            if ($component->stock_mode !== 'unit') {
+            // PD3b — components are piece-counted things: unit products
+            // (packaging, bought-in) or PREPARED cooked products (a patty
+            // inside a burger — its shelf stock decrements at sale; its
+            // own recipe was already consumed at production time).
+            if (! in_array($component->stock_mode, ['unit', 'cooked'], true)) {
                 throw new RuntimeException(sprintf(
-                    '"%s" is not a unit-tracked product — physical items must be piece-counted (set it to Ready / bought-in first).',
+                    '"%s" is not piece-counted — a component must be Ready / bought-in or a prepared (Cooked) product.',
                     $component->name,
                 ));
             }

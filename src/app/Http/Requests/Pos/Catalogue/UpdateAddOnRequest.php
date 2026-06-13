@@ -24,6 +24,8 @@ class UpdateAddOnRequest extends FormRequest
             'linked_product_uuid' => ['sometimes', 'nullable', 'string', 'uuid'],
             'display_order' => ['sometimes', 'integer', 'between:0,999'],
             'status' => ['sometimes', 'string', Rule::in(['active', 'inactive'])],
-        ];
+            // PD3b — key present (even []) replaces the stock-usage
+            // lines; absent leaves them untouched.
+        ] + CreateAddOnRequest::consumptionRules();
     }
 }

@@ -37,6 +37,25 @@ class AddOnResource extends JsonResource
                 'name' => $this->linkedProduct->name,
                 'stock_mode' => $this->linkedProduct->stock_mode,
             ]),
+            // PD3b — the option's stock-usage lines (ingredient lines in
+            // the ingredient's BASE unit; product lines in pieces).
+            'consumption' => $this->whenLoaded('consumptionLines', fn (): array => $this->consumptionLines->map(static fn ($line): array => [
+                'type' => $line->ingredient_id !== null ? 'ingredient' : 'product',
+                'direction' => $line->direction,
+                'quantity' => (string) $line->quantity,
+                'unit' => $line->unit,
+                'ingredient' => $line->ingredient === null ? null : [
+                    'uuid' => $line->ingredient->uuid,
+                    'name' => $line->ingredient->name,
+                    'unit' => $line->ingredient->unit?->value,
+                ],
+                'product' => $line->componentProduct === null ? null : [
+                    'uuid' => $line->componentProduct->uuid,
+                    'name' => $line->componentProduct->name,
+                    'stock_mode' => $line->componentProduct->stock_mode,
+                    'is_internal' => (bool) $line->componentProduct->is_internal,
+                ],
+            ])->values()->all()),
             'display_order' => $this->display_order,
             'status' => $this->status,
             'created_at' => $this->created_at?->toIso8601String(),

@@ -65,16 +65,32 @@ it('sets, replaces, and clears the physical items of a product', function (): vo
     ]);
 });
 
-it('rejects a non-unit component', function (): void {
+it('accepts cooked components and rejects non-piece-counted ones', function (): void {
     $ctx = makeMerchantActor();
     [$coffee] = coffeeAndCups($ctx);
-    $cake = Product::factory()->for($ctx['company'], 'company')->create(['name' => 'Cake', 'stock_mode' => 'cooked']);
 
+    // PD3b — a prepared COOKED product (patty in a burger) is a valid
+    // component: its shelf stock decrements at sale.
+    $patty = Product::factory()->for($ctx['company'], 'company')->create(['name' => 'Patty', 'stock_mode' => 'cooked']);
     $this->putJson("/api/products/{$coffee->uuid}/components", [
-        'lines' => [['component_uuid' => $cake->uuid, 'quantity' => 1]],
+        'lines' => [['component_uuid' => $patty->uuid, 'quantity' => 1]],
+    ])->assertOk();
+    $this->assertDatabaseCount('pos_product_components', 1);
+
+    // Recipe-driven and untracked products have no per-branch pieces
+    // to consume — still refused.
+    $sauce = Product::factory()->for($ctx['company'], 'company')->create(['name' => 'Sauce', 'stock_mode' => 'ingredient']);
+    $this->putJson("/api/products/{$coffee->uuid}/components", [
+        'lines' => [['component_uuid' => $sauce->uuid, 'quantity' => 1]],
     ])->assertStatus(422);
 
-    $this->assertDatabaseCount('pos_product_components', 0);
+    $misc = Product::factory()->for($ctx['company'], 'company')->create(['name' => 'Misc', 'stock_mode' => 'untracked']);
+    $this->putJson("/api/products/{$coffee->uuid}/components", [
+        'lines' => [['component_uuid' => $misc->uuid, 'quantity' => 1]],
+    ])->assertStatus(422);
+
+    // The failed replaces never touched the stored set.
+    $this->assertDatabaseCount('pos_product_components', 1);
 });
 
 it('rejects a cross-tenant component and a self-reference and duplicates', function (): void {

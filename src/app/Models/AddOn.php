@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
@@ -102,5 +103,19 @@ class AddOn extends Model
     public function linkedProduct(): BelongsTo
     {
         return $this->belongsTo(Product::class, 'linked_product_id');
+    }
+
+    /**
+     * PD3b — the option's stock-usage lines (ingredient XOR product,
+     * direction add|remove). Replaced wholesale by
+     * {@see \App\Actions\Pos\Catalogue\SyncAddOnConsumptionAction}.
+     *
+     * @return HasMany<AddOnConsumption, $this>
+     */
+    public function consumptionLines(): HasMany
+    {
+        return $this->hasMany(AddOnConsumption::class, 'add_on_id')
+            ->orderBy('display_order')
+            ->orderBy('id');
     }
 }

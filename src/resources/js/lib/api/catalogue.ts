@@ -164,6 +164,37 @@ export interface ComponentOption {
     name: string;
     name_ar: string | null;
     is_internal: boolean;
+    /** PD3b — 'unit' (packaging / bought-in) or 'cooked' (prepared). */
+    stock_mode?: string | null;
+}
+
+// ---- PD3b — per-option stock-usage lines -------------------------
+
+export type ConsumptionDirection = 'add' | 'remove';
+
+/** A stored line as the API returns it (read shape). */
+export interface AddOnConsumptionLine {
+    type: 'ingredient' | 'product';
+    direction: ConsumptionDirection;
+    /** Ingredient lines: base-unit quantity. Product lines: pieces. */
+    quantity: string;
+    unit: string | null;
+    ingredient: { uuid: string; name: string; unit: string | null } | null;
+    product: { uuid: string; name: string; stock_mode: string | null; is_internal: boolean } | null;
+}
+
+/** A line as the editor sends it (write shape). The *_label fields are
+ * editor-only carry-overs from the read shape (so refs missing from the
+ * picker lists still render) — completeConsumptionLines strips them. */
+export interface ConsumptionLinePayload {
+    type: 'ingredient' | 'product';
+    ingredient_uuid?: string;
+    product_uuid?: string;
+    direction: ConsumptionDirection;
+    quantity: string | number;
+    unit?: string | null;
+    ingredient_label?: string;
+    product_label?: string;
 }
 
 // ---- Phase 4.9 — Add-ons ---------------------------------------
@@ -181,6 +212,8 @@ export interface AddOn {
     /** P-G3 — the real product behind this option (null = label-only). */
     linked_product_id: number | null;
     linked_product?: { uuid: string; name: string; stock_mode: string | null } | null;
+    /** PD3b — stock-usage lines (present when eager-loaded). */
+    consumption?: AddOnConsumptionLine[];
     display_order: number;
     status: AddOnStatus;
     created_at: string | null;
@@ -335,6 +368,8 @@ export interface CreateAddOnPayload {
     /** P-G3 — the real product behind this option (null = label-only). */
     linked_product_uuid?: string | null;
     display_order?: number;
+    /** PD3b — stock-usage lines created with the option. */
+    consumption?: ConsumptionLinePayload[];
 }
 
 export interface UpdateAddOnPayload {
@@ -346,6 +381,8 @@ export interface UpdateAddOnPayload {
     linked_product_uuid?: string | null;
     display_order?: number;
     status?: AddOnStatus;
+    /** PD3b — key present (even []) replaces the stock-usage lines. */
+    consumption?: ConsumptionLinePayload[];
 }
 
 // ---- Categories -------------------------------------------------
@@ -434,6 +471,8 @@ export interface WizardOwnedOptionPayload {
     is_default?: boolean;
     linked_product_uuid?: string | null;
     display_order?: number;
+    /** PD3b — stock-usage lines created with the option. */
+    consumption?: ConsumptionLinePayload[];
 }
 
 /** Inline product-owned add-on group, created atomically with the product. */
