@@ -8,7 +8,7 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Plus, Trash2 } from 'lucide-vue-next';
 import type { ComponentOption, ConsumptionLinePayload } from '@/lib/api/catalogue';
-import type { Ingredient } from '@/lib/api/inventory';
+import { ingredientUnitOptions, type Ingredient } from '@/lib/api/inventory';
 
 const props = defineProps<{
     modelValue: ConsumptionLinePayload[];
@@ -78,15 +78,13 @@ const extraProductRefs = computed(() => {
     return out;
 });
 
-/** Base + alternate unit names for the picked ingredient. */
+/** Base + custom alt + auto metric siblings (PD4) for the picked ingredient;
+ * the base option is relabelled "(base)". */
 function unitsFor(ingredientUuid: string | undefined): { value: string; label: string }[] {
     const ingredient = props.ingredients.find((i) => i.uuid === ingredientUuid);
     if (!ingredient) return [];
-    const units = [{ value: '', label: `${ingredient.unit} (${t('catalogue.consumption.base_unit')})` }];
-    for (const alt of ingredient.alt_units ?? []) {
-        units.push({ value: alt.name, label: alt.name });
-    }
-    return units;
+    return ingredientUnitOptions(ingredient).map((u) =>
+        u.value === '' ? { value: '', label: `${u.label} (${t('catalogue.consumption.base_unit')})` } : u);
 }
 
 function productLabel(option: ComponentOption): string {

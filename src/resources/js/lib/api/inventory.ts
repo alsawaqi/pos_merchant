@@ -95,8 +95,93 @@ export interface Ingredient {
     status: InventoryStatus;
     /** v2 #13 — eager-loaded alternate units (GET /api/ingredients). */
     alt_units?: IngredientAltUnit[];
+    /**
+     * PD4 — same-family metric units the system provides automatically (base
+     * kg -> g, base l -> ml...). Derived from the base unit server-side, so it
+     * ships on every ingredient; empty for count units. Merged into every unit
+     * dropdown alongside alt_units (custom wins on a name clash).
+     */
+    auto_units?: AutoUnit[];
     created_at: string | null;
     updated_at: string | null;
+}
+
+/** PD4 — a system-provided metric sibling: name + factor (base units per 1). */
+export interface AutoUnit {
+    name: string;
+    factor: string;
+}
+
+type UnitSource = Pick<Ingredient, 'unit' | 'alt_units' | 'auto_units'>;
+
+/**
+ * PD4 — the unit dropdown options for an ingredient: base (value '') + custom
+ * alternate units + system metric siblings, deduped by name with CUSTOM winning
+ * (legacy data may define a name the system now auto-provides). The single
+ * source every unit <select> should use.
+ */
+export function ingredientUnitOptions(
+    ingredient: UnitSource | null | undefined,
+): { value: string; label: string }[] {
+    if (!ingredient) return [];
+    const base: string = ingredient.unit ?? '';
+    const options: { value: string; label: string }[] = [{ value: '', label: base }];
+    const seen = new Set<string>([base]);
+    for (const au of ingredient.alt_units ?? []) {
+        if (seen.has(au.name)) continue;
+        seen.add(au.name);
+        options.push({ value: au.name, label: au.name });
+    }
+    for (const a of ingredient.auto_units ?? []) {
+        if (seen.has(a.name)) continue;
+        seen.add(a.name);
+        options.push({ value: a.name, label: a.name });
+    }
+    return options;
+}
+
+/**
+ * PD4 — resolve a selected unit NAME to its base-unit factor: '' or the base
+ * unit = 1; a custom alt unit wins over a metric sibling of the same name; an
+ * unknown unit = 1 (the server re-validates and rejects). Used by the live
+ * cost/quantity previews.
+ */
+export function ingredientUnitFactor(ingredient: UnitSource | null | undefined, selected: string): number {
+    if (!ingredient || selected.trim() === '' || selected === ingredient.unit) return 1;
+    const alt = (ingredient.alt_units ?? []).find((u) => u.name === selected);
+    if (alt) {
+        const factor = parseFloat(alt.factor);
+        // Mirror the backend's factor>0 guard (a non-positive factor would
+        // flip a signed preview); fall back to base on anything off.
+        return Number.isFinite(factor) && factor > 0 ? factor : 1;
+    }
+    const auto = (ingredient.auto_units ?? []).find((u) => u.name === selected);
+    if (auto) {
+        const factor = parseFloat(auto.factor);
+        return Number.isFinite(factor) && factor > 0 ? factor : 1;
+    }
+    return 1;
+}
+
+/**
+ * PD4 — the metric sibling NAMES a given base unit auto-provides, for the
+ * ingredient FORM to show before the ingredient is saved (no server resource
+ * yet). Mirrors IngredientUnit::metricSiblings() on the backend — kept name-only
+ * (no factors) so there is no conversion-math duplication to drift.
+ */
+export function autoUnitNames(baseUnit: IngredientUnit | null | undefined): string[] {
+    switch (baseUnit) {
+        case 'kg':
+            return ['g'];
+        case 'g':
+            return ['kg'];
+        case 'l':
+            return ['ml'];
+        case 'ml':
+            return ['l'];
+        default:
+            return [];
+    }
 }
 
 export interface BranchStockRow {

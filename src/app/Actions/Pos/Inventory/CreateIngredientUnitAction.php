@@ -45,6 +45,12 @@ final readonly class CreateIngredientUnitAction
         if ($name === $ingredient->unit?->value) {
             throw new RuntimeException("An alternate unit can't be named the same as the base unit.");
         }
+        // PD4 — the system already provides same-family metric units (g when the
+        // base is kg, ml when the base is l...). Refuse a custom duplicate so the
+        // dropdown never shows the same name twice.
+        if (array_key_exists($name, $ingredient->unit?->metricSiblings() ?? [])) {
+            throw new RuntimeException("'{$name}' is provided automatically for this base unit — you don't need to add it.");
+        }
 
         return DB::transaction(function () use ($ingredient, $attributes, $actor, $companyId, $name): IngredientAltUnit {
             $existing = IngredientAltUnit::withTrashed()

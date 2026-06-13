@@ -65,6 +65,9 @@ import {
     deleteIngredient,
     deleteIngredientUnit,
     deleteSupplier,
+    autoUnitNames,
+    ingredientUnitFactor,
+    ingredientUnitOptions,
     listBranchStock,
     listBranchTransfers,
     listIngredients,
@@ -1307,12 +1310,9 @@ function wireUnit(selected: string): string | null {
  * the raw number unchanged when no matching alt unit is found.
  */
 function toBaseUnits(qty: number, ingredient: Ingredient | null | undefined, selected: string): number {
-    if (!ingredient || selected.trim() === '') return qty;
-    const alt = (ingredient.alt_units ?? []).find((u) => u.name === selected);
-    if (!alt) return qty;
-    const factor = parseFloat(alt.factor);
-    if (!Number.isFinite(factor)) return qty;
-    return qty * factor;
+    // PD4 — base + custom alt + auto metric sibling, resolved by the shared
+    // helper; unknown unit = factor 1 (the server re-validates).
+    return qty * ingredientUnitFactor(ingredient, selected);
 }
 
 function statusBadgeClass(status: string | null): string {
@@ -2803,6 +2803,11 @@ async function submitSuggestions(): Promise<void> {
                             <select v-model="ingForm.unit" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                                 <option v-for="u in unitOptions" :key="u" :value="u">{{ unitLabel(u) }}</option>
                             </select>
+                            <!-- PD4 — the system already converts to/from these
+                                 same-family metric units; no need to add them. -->
+                            <p v-if="autoUnitNames(ingForm.unit).length" class="mt-1 text-xs text-slate-500">
+                                {{ t('inventory.alt_units.auto_provided', { units: autoUnitNames(ingForm.unit).join(', ') }) }}
+                            </p>
                         </label>
                         <label class="block">
                             <span class="text-sm font-medium text-slate-700">{{ t('inventory.fields.default_unit_cost') }} (OMR)</span>
@@ -3084,8 +3089,8 @@ async function submitSuggestions(): Promise<void> {
                         <div class="mt-1 flex gap-2">
                             <input v-model="adjustForm.signed_quantity" required type="number" step="0.001" class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                             <select v-model="adjustForm.unit" :title="t('inventory.fields.unit')" class="shrink-0 rounded-lg border border-slate-200 px-2 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                                <option value="">{{ unitShort(adjustTarget.ingredient.unit) }}</option>
-                                <option v-for="au in (adjustTarget.ingredient.alt_units ?? [])" :key="au.uuid" :value="au.name">{{ au.name }}</option>
+                                <!-- PD4 — base + custom alt + auto metric siblings. -->
+                                <option v-for="u in ingredientUnitOptions(adjustTarget.ingredient)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
                             </select>
                         </div>
                         <p class="mt-1 text-xs text-slate-500">{{ t('inventory.fields.signed_quantity_hint') }}</p>
@@ -3136,8 +3141,8 @@ async function submitSuggestions(): Promise<void> {
                             <div class="mt-1 flex gap-2">
                                 <input v-model="restockForm.quantity" required type="number" step="0.001" min="0.001" class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                                 <select v-model="restockForm.unit" :title="t('inventory.fields.unit')" class="shrink-0 rounded-lg border border-slate-200 px-2 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                                    <option value="">{{ unitShort(restockTarget.ingredient?.unit ?? null) }}</option>
-                                    <option v-for="au in (restockTarget.ingredient?.alt_units ?? [])" :key="au.uuid" :value="au.name">{{ au.name }}</option>
+                                    <!-- PD4 — base + custom alt + auto metric siblings. -->
+                                    <option v-for="u in ingredientUnitOptions(restockTarget.ingredient)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
                                 </select>
                             </div>
                             <p v-if="restockErrors.quantity" class="mt-1 text-xs text-rose-600">{{ restockErrors.quantity[0] }}</p>
@@ -3387,8 +3392,8 @@ async function submitSuggestions(): Promise<void> {
                             <div class="mt-1 flex gap-2">
                                 <input v-model="wasteForm.quantity" type="number" step="0.001" min="0.001" required class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                                 <select v-model="wasteForm.unit" :title="t('inventory.fields.unit')" class="shrink-0 rounded-lg border border-slate-200 px-2 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                                    <option value="">{{ unitShort(wasteIngredient?.unit ?? null) }}</option>
-                                    <option v-for="au in (wasteIngredient?.alt_units ?? [])" :key="au.uuid" :value="au.name">{{ au.name }}</option>
+                                    <!-- PD4 — base + custom alt + auto metric siblings. -->
+                                    <option v-for="u in ingredientUnitOptions(wasteIngredient)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
                                 </select>
                             </div>
                             <p v-if="wasteErrors.quantity" class="mt-1 text-xs text-rose-600">{{ wasteErrors.quantity[0] }}</p>
@@ -3468,8 +3473,8 @@ async function submitSuggestions(): Promise<void> {
                                 </select>
                                 <input v-model="line.quantity" type="number" step="0.001" min="0.001" :placeholder="t('inventory.restock.create_modal.quantity')" class="sm:col-span-2 rounded-lg border border-slate-200 px-2 py-2 text-sm tabular-nums">
                                 <select v-model="line.unit" :title="t('inventory.fields.unit')" class="sm:col-span-2 rounded-lg border border-slate-200 px-2 py-2 text-sm">
-                                    <option value="">{{ unitShort(ingredientByUuid(line.ingredient_uuid)?.unit ?? null) }}</option>
-                                    <option v-for="au in (ingredientByUuid(line.ingredient_uuid)?.alt_units ?? [])" :key="au.uuid" :value="au.name">{{ au.name }}</option>
+                                    <!-- PD4 — base + custom alt + auto metric siblings. -->
+                                    <option v-for="u in ingredientUnitOptions(ingredientByUuid(line.ingredient_uuid))" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
                                 </select>
                                 <input v-model="line.note" type="text" :placeholder="t('inventory.restock.create_modal.line_note')" class="sm:col-span-3 rounded-lg border border-slate-200 px-2 py-2 text-sm">
                                 <button type="button" :title="t('inventory.restock.create_modal.remove_line')" class="sm:col-span-1 inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-2 py-2 text-rose-700 transition hover:bg-rose-100" @click="removeRestockLine(idx)">
@@ -3542,8 +3547,8 @@ async function submitSuggestions(): Promise<void> {
                                 </select>
                                 <input v-model="line.quantity" type="number" step="0.001" min="0.001" :placeholder="t('inventory.transfers.create_modal.quantity')" class="sm:col-span-3 rounded-lg border border-slate-200 px-2 py-2 text-sm tabular-nums">
                                 <select v-model="line.unit" :title="t('inventory.fields.unit')" class="sm:col-span-2 rounded-lg border border-slate-200 px-2 py-2 text-sm">
-                                    <option value="">{{ unitShort(ingredientByUuid(line.ingredient_uuid)?.unit ?? null) }}</option>
-                                    <option v-for="au in (ingredientByUuid(line.ingredient_uuid)?.alt_units ?? [])" :key="au.uuid" :value="au.name">{{ au.name }}</option>
+                                    <!-- PD4 — base + custom alt + auto metric siblings. -->
+                                    <option v-for="u in ingredientUnitOptions(ingredientByUuid(line.ingredient_uuid))" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
                                 </select>
                                 <button type="button" :title="t('inventory.transfers.create_modal.remove_line')" class="sm:col-span-1 inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-2 py-2 text-rose-700 transition hover:bg-rose-100" @click="removeTransferLine(idx)">
                                     <Minus class="size-4" />

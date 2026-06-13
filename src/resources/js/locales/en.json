@@ -1272,6 +1272,7 @@
             "title": "Alternate units",
             "hint": "Optional larger or packaged units. The factor is how many base units make up one of this unit (e.g. base g, alt kg, factor 1000).",
             "base_unit_label": "Base: {unit} — factor 1",
+            "auto_provided": "Also accepts {units} automatically — no need to add them.",
             "name": "Unit name",
             "name_placeholder": "e.g. kg, box of 24",
             "name_ar": "Arabic name",

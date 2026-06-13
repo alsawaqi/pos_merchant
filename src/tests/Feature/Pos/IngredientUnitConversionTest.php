@@ -168,3 +168,61 @@ it('refuses a non-positive factor at conversion time (no sign flip)', function (
     $converter = new IngredientUnitConverter();
     expect(fn () => $converter->toBase($ing, 5, 'bad'))->toThrow(RuntimeException::class);
 });
+
+// ===== PD4 — system-provided same-family metric units (no alt unit needed) =====
+
+it('auto-converts metric siblings without an alternate unit defined', function (): void {
+    $ctx = makeMerchantActor();
+    $converter = new IngredientUnitConverter();
+
+    $kg = Ingredient::factory()->for($ctx['company'], 'company')->create(['unit' => 'kg']);
+    expect($converter->toBase($kg, 250, 'g'))->toBe(0.25);   // 250 g → 0.25 kg, no alt unit defined
+    expect($converter->toBase($kg, 2, 'kg'))->toBe(2.0);     // base passthrough
+
+    $g = Ingredient::factory()->for($ctx['company'], 'company')->create(['unit' => 'g']);
+    expect($converter->toBase($g, 2, 'kg'))->toBe(2000.0);   // 2 kg → 2000 g
+
+    $litre = Ingredient::factory()->for($ctx['company'], 'company')->create(['unit' => 'l']);
+    expect($converter->toBase($litre, 200, 'ml'))->toBe(0.2); // 200 ml → 0.2 l
+
+    $ml = Ingredient::factory()->for($ctx['company'], 'company')->create(['unit' => 'ml']);
+    expect($converter->toBase($ml, 1, 'l'))->toBe(1000.0);
+});
+
+it('does not auto-convert across families or for count units', function (): void {
+    $ctx = makeMerchantActor();
+    $converter = new IngredientUnitConverter();
+
+    // kg (mass) does not accept ml (volume) — that needs density (a custom unit).
+    $kg = Ingredient::factory()->for($ctx['company'], 'company')->create(['unit' => 'kg']);
+    expect(fn () => $converter->toBase($kg, 1, 'ml'))->toThrow(RuntimeException::class);
+
+    // count units have no universal subdivisions.
+    $piece = Ingredient::factory()->for($ctx['company'], 'company')->create(['unit' => 'piece']);
+    expect(fn () => $converter->toBase($piece, 1, 'g'))->toThrow(RuntimeException::class);
+});
+
+it('lets a custom alternate unit coexist with the auto siblings', function (): void {
+    $ctx = makeMerchantActor();
+    $converter = new IngredientUnitConverter();
+    $kg = Ingredient::factory()->for($ctx['company'], 'company')->create(['unit' => 'kg']);
+    // scoop is non-metric → a legit custom unit alongside the auto 'g'.
+    IngredientAltUnit::query()->create([
+        'company_id' => $ctx['company']->id, 'ingredient_id' => $kg->id, 'name' => 'scoop', 'factor' => '0.25',
+    ]);
+
+    expect($converter->toBase($kg, 2, 'scoop'))->toBe(0.5);  // custom
+    expect($converter->toBase($kg, 250, 'g'))->toBe(0.25);   // auto, still works
+});
+
+it('restock accepts an auto metric sibling with no alt unit defined', function (): void {
+    $ctx = makeMerchantActor();
+    $ing = Ingredient::factory()->for($ctx['company'], 'company')->create(['unit' => 'kg']);
+
+    $this->postJson("/api/branches/{$ctx['branch']->uuid}/stock/restock", [
+        'ingredient_uuid' => $ing->uuid, 'quantity' => '500', 'unit' => 'g',
+    ])->assertCreated();
+
+    // 500 g → 0.500 kg, stored in base with NO alternate unit defined.
+    expect((string) BranchStock::query()->where('ingredient_id', $ing->id)->value('quantity'))->toBe('0.500');
+});

@@ -54,6 +54,10 @@ final readonly class IngredientUnitConverter
 
     /**
      * Base units per ONE of [$unit]. 1.0 for the base unit (or null).
+     *
+     * Resolution order: base passthrough → custom alternate unit (explicit
+     * merchant data wins) → PD4 system-provided metric sibling (kg<->g,
+     * l<->ml) → unknown = 422.
      */
     public function factorFor(Ingredient $ingredient, ?string $unit): float
     {
@@ -67,18 +71,26 @@ final readonly class IngredientUnitConverter
             ->where('name', $unit)
             ->first();
 
-        if ($alt === null) {
-            throw new RuntimeException("Unit '{$unit}' is not defined for this ingredient.");
+        if ($alt !== null) {
+            // Defence-in-depth: the request layer enforces factor > 0, but if a
+            // corrupt / non-positive factor ever reached the DB it would
+            // silently flip a signed adjustment's direction. Refuse it here too.
+            $factor = (float) $alt->factor;
+            if ($factor <= 0) {
+                throw new RuntimeException("Unit '{$unit}' has an invalid (non-positive) conversion factor.");
+            }
+
+            return $factor;
         }
 
-        // Defence-in-depth: the request layer enforces factor > 0, but if a
-        // corrupt / non-positive factor ever reached the DB it would silently
-        // flip a signed adjustment's direction. Refuse it here too.
-        $factor = (float) $alt->factor;
-        if ($factor <= 0) {
-            throw new RuntimeException("Unit '{$unit}' has an invalid (non-positive) conversion factor.");
+        // PD4 — same-family metric units the system provides automatically
+        // (no IngredientAltUnit row needed): base kg accepts 'g', base l
+        // accepts 'ml', and so on. Count units (piece/pack/box) have none.
+        $siblings = $ingredient->unit?->metricSiblings() ?? [];
+        if (isset($siblings[$unit])) {
+            return $siblings[$unit];
         }
 
-        return $factor;
+        throw new RuntimeException("Unit '{$unit}' is not defined for this ingredient.");
     }
 }

@@ -70,7 +70,7 @@ import {
     type WizardOwnedOptionPayload,
 } from '@/lib/api/catalogue';
 import AddonConsumptionEditor from '@/Pages/Merchant/Catalogue/AddonConsumptionEditor.vue';
-import { listIngredients, type Ingredient } from '@/lib/api/inventory';
+import { ingredientUnitFactor, ingredientUnitOptions, listIngredients, type Ingredient } from '@/lib/api/inventory';
 import { listBranches, type Branch as BranchLite } from '@/lib/api/branches';
 import {
     listDeliveryProviders,
@@ -491,12 +491,9 @@ function wireUnit(selected: string): string | null {
 }
 
 function toBaseUnits(qty: number, ingredient: Ingredient | null | undefined, selected: string): number {
-    if (!ingredient || selected.trim() === '') return qty;
-    const alt = (ingredient.alt_units ?? []).find((u) => u.name === selected);
-    if (!alt) return qty;
-    const factor = parseFloat(alt.factor);
-    if (!Number.isFinite(factor)) return qty;
-    return qty * factor;
+    // PD4 — ingredientUnitFactor resolves base + custom alt + auto metric
+    // sibling (kg<->g, l<->ml) to a base factor; unknown = 1.
+    return qty * ingredientUnitFactor(ingredient, selected);
 }
 
 const recipeLiveCost = computed<string>(() => {
@@ -1450,8 +1447,8 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                         <label class="block w-24">
                                             <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.recipe.unit') }}</span>
                                             <select v-model="line.unit" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
-                                                <option value="">{{ ingredientUnitLabel(line.ingredient_uuid) }}</option>
-                                                <option v-for="au in (ingredientByUuid(line.ingredient_uuid)?.alt_units ?? [])" :key="au.uuid" :value="au.name">{{ au.name }}</option>
+                                                <!-- PD4 — base + custom alt + auto metric siblings. -->
+                                                <option v-for="u in ingredientUnitOptions(ingredientByUuid(line.ingredient_uuid))" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
                                             </select>
                                         </label>
                                         <button type="button" class="grid size-9 place-items-center rounded-lg border border-rose-200 text-rose-700 transition hover:bg-rose-50" :title="t('catalogue.recipe.remove_line')" @click="removeRecipeLine(idx)">
