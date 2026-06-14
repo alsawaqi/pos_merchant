@@ -19,7 +19,7 @@ import BaseModal from '@/Components/BaseModal.vue';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
-import { createTax, deleteTax, listTaxes, updateTax, type Tax } from '@/lib/api/taxes';
+import { createTax, deleteTax, getPurchaseTaxRecoverable, listTaxes, updatePurchaseTaxRecoverable, updateTax, type Tax } from '@/lib/api/taxes';
 import { MerchantPermission } from '@/lib/permissions';
 
 const { t } = useI18n();
@@ -58,6 +58,31 @@ async function fetchTaxes(): Promise<void> {
 }
 
 onMounted(fetchTaxes);
+
+// PT — the purchase-tax-recoverable company setting (lives on this page).
+const recoverable = ref(false);
+const recoverableSaving = ref(false);
+const recoverableError = ref<string | null>(null);
+async function fetchRecoverable(): Promise<void> {
+    try {
+        recoverable.value = (await getPurchaseTaxRecoverable()).data.purchase_tax_recoverable;
+    } catch { /* default false */ }
+}
+async function toggleRecoverable(value: boolean): Promise<void> {
+    if (!canManage.value || recoverableSaving.value) {
+        return;
+    }
+    recoverableSaving.value = true;
+    recoverableError.value = null;
+    try {
+        recoverable.value = (await updatePurchaseTaxRecoverable(value)).data.purchase_tax_recoverable;
+    } catch (e) {
+        recoverableError.value = apiErrorMessage(e);
+    } finally {
+        recoverableSaving.value = false;
+    }
+}
+onMounted(fetchRecoverable);
 
 // ---- create / edit modal ----
 const modalOpen = ref(false);
@@ -162,6 +187,24 @@ async function confirmDelete(): Promise<void> {
 
             <div v-if="loadError" class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
                 {{ loadError }}
+            </div>
+
+            <!-- PT — whether tracked purchase/input tax is recoverable. -->
+            <div class="mt-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <label class="flex items-start gap-3">
+                    <input
+                        type="checkbox"
+                        :checked="recoverable"
+                        :disabled="!canManage || recoverableSaving"
+                        class="mt-0.5 rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200 disabled:opacity-50"
+                        @change="toggleRecoverable(($event.target as HTMLInputElement).checked)"
+                    >
+                    <span>
+                        <span class="block text-sm font-semibold text-slate-800">{{ t('taxes.recoverable.title') }}</span>
+                        <span class="mt-0.5 block text-xs text-slate-500">{{ t('taxes.recoverable.hint') }}</span>
+                        <span v-if="recoverableError" class="mt-1 block text-xs text-rose-600">{{ recoverableError }}</span>
+                    </span>
+                </label>
             </div>
 
             <div class="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">

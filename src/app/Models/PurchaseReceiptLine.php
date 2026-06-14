@@ -30,6 +30,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'quantity',
     'unit',
     'line_cost',
+    'tax_amount',
+    'tax_rate',
     'expense_category',
     'allocations_json',
     'expense_id',
@@ -47,6 +49,8 @@ class PurchaseReceiptLine extends Model
         return [
             'quantity' => 'decimal:3',
             'line_cost' => 'decimal:3',
+            'tax_amount' => 'decimal:3',
+            'tax_rate' => 'decimal:2',
             'allocations_json' => 'array',
         ];
     }

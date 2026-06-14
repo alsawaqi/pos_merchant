@@ -47,6 +47,10 @@ final readonly class ReceiveIngredientStockAction
         // PD6 — the accounting date the booked expenses are stamped with
         // (the Goods Received Note's received_at). NULL = now.
         ?Carbon $occurredAt = null,
+        // PT — optional tax PAID on the item cost (on top of $totalCost); the
+        // booked expense's amount becomes the gross (cost + tax). NULL = none.
+        string|float|int|null $taxAmount = null,
+        string|float|int|null $taxRate = null,
     ): StockMovement {
         if ((float) $quantity <= 0) {
             throw new RuntimeException('Received quantity must be greater than zero.');
@@ -54,14 +58,16 @@ final readonly class ReceiveIngredientStockAction
 
         $cost = $totalCost !== null && $totalCost !== '' ? (float) $totalCost : 0.0;
         $delivery = $deliveryCost !== null && $deliveryCost !== '' ? (float) $deliveryCost : 0.0;
-        if ($cost < 0 || $delivery < 0) {
+        $tax = $taxAmount !== null && $taxAmount !== '' ? (float) $taxAmount : 0.0;
+        $taxRatePct = $taxRate !== null && $taxRate !== '' ? (float) $taxRate : null;
+        if ($cost < 0 || $delivery < 0 || $tax < 0) {
             throw new RuntimeException('The purchase cost cannot be negative.');
         }
 
         $companyId = (int) $ingredient->company_id;
 
         return DB::transaction(function () use (
-            $ingredient, $quantity, $note, $actor, $cost, $delivery, $companyId, $occurredAt
+            $ingredient, $quantity, $note, $actor, $cost, $delivery, $tax, $taxRatePct, $companyId, $occurredAt
         ): StockMovement {
             $expense = null;
             if ($cost > 0) {
@@ -75,10 +81,12 @@ final readonly class ReceiveIngredientStockAction
                     companyId: $companyId,
                     branchId: null,
                     category: ExpenseCategoryKey::Ingredients,
-                    amount: $cost,
+                    amount: $cost + $tax,
                     note: trim(($note !== null && $note !== '') ? $desc.' - '.$note : $desc),
                     actorUserId: (int) $actor->getKey(),
                     at: $occurredAt,
+                    taxAmount: $tax,
+                    taxRate: $taxRatePct,
                 );
             }
 

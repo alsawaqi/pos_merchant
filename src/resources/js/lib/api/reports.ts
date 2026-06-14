@@ -112,6 +112,10 @@ export interface SalesReportPayload {
         cogs: string;
         gross_profit: string;
         operating_expenses: string;
+        /** PT — total tax PAID on purchases in the window. */
+        purchase_tax_paid: string;
+        /** PT — whether that tax was credited back into net profit. */
+        purchase_tax_recoverable: boolean;
         net_profit: string;
         order_count: number;
         refund_count: number;

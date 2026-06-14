@@ -26,6 +26,9 @@ export interface PurchaseReceiptLine {
     quantity: string;
     unit: string | null;
     line_cost: string;
+    /** PT — tax paid on this line (decimal:3 string); rate % or null. */
+    tax_amount: string;
+    tax_rate: string | null;
     expense_category: string | null;
     allocations: PurchaseReceiptLineAllocation[];
 }
@@ -34,6 +37,8 @@ export interface PurchaseReceiptCharge {
     name: string;
     expense_category: string;
     amount: string;
+    tax_amount: string;
+    tax_rate: string | null;
 }
 
 export interface PurchaseReceipt {
@@ -43,6 +48,8 @@ export interface PurchaseReceipt {
     note: string | null;
     items_total: string;
     charges_total: string;
+    /** PT — Σ line + charge tax. */
+    tax_total: string;
     grand_total: string;
     received_at: string | null;
     supplier: { uuid: string; name: string } | null;
@@ -72,6 +79,9 @@ export interface PurchaseReceiptLinePayload {
     item_uuid: string;
     quantity: string | number;
     line_cost: string | number;
+    /** PT — optional tax paid on the line (on top of line_cost). */
+    tax_amount?: string | number | null;
+    tax_rate?: string | number | null;
     allocations?: Array<{ branch_uuid: string; quantity: string | number }>;
 }
 
@@ -79,6 +89,8 @@ export interface PurchaseReceiptChargePayload {
     name: string;
     category: string;
     amount: string | number;
+    tax_amount?: string | number | null;
+    tax_rate?: string | number | null;
 }
 
 export interface CreatePurchaseReceiptPayload {

@@ -36,6 +36,9 @@ class StorePurchaseReceiptRequest extends FormRequest
             'lines.*.item_uuid' => ['required', 'string', 'uuid'],
             'lines.*.quantity' => ['required', 'numeric', 'gt:0', 'max:999999.999'],
             'lines.*.line_cost' => ['required', 'numeric', 'min:0', 'max:999999.999'],
+            // PT — optional tax PAID on the line (on top of line_cost).
+            'lines.*.tax_amount' => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
+            'lines.*.tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'lines.*.allocations' => ['nullable', 'array'],
             'lines.*.allocations.*.branch_uuid' => ['required', 'string', 'uuid'],
             'lines.*.allocations.*.quantity' => ['required', 'numeric', 'gt:0', 'max:999999.999'],
@@ -44,6 +47,8 @@ class StorePurchaseReceiptRequest extends FormRequest
             'charges.*.name' => ['required', 'string', 'max:120'],
             'charges.*.category' => ['required', 'string', 'in:'.implode(',', ExpenseCategory::values())],
             'charges.*.amount' => ['required', 'numeric', 'gt:0', 'max:999999.999'],
+            'charges.*.tax_amount' => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
+            'charges.*.tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
         ];
     }
 

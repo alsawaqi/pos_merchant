@@ -24,7 +24,9 @@ import { listBranches, type Branch } from '@/lib/api/branches';
 import { listIngredients, listSuppliers, type Ingredient, type Supplier } from '@/lib/api/inventory';
 import { listProducts, type Product } from '@/lib/api/catalogue';
 import { listPhysicalItems, type PhysicalItem } from '@/lib/api/physicalItems';
+import { listTaxes, type Tax } from '@/lib/api/taxes';
 import { createPurchaseReceipt, type CreatePurchaseReceiptPayload } from '@/lib/api/purchaseReceipts';
+import PurchaseTaxField, { type PurchaseTaxModel } from '@/Pages/Merchant/Inventory/PurchaseTaxField.vue';
 
 const { t, locale } = useI18n();
 const router = useRouter();
@@ -36,6 +38,7 @@ const ingredients = ref<Ingredient[]>([]);
 const products = ref<Product[]>([]);
 const physicalItems = ref<PhysicalItem[]>([]);
 const branches = ref<Branch[]>([]);
+const taxes = ref<Tax[]>([]);
 const refDataError = ref<string | null>(null);
 
 // Charge categories the form offers (the server accepts the full enum; these
@@ -45,13 +48,15 @@ const chargeCategories = ['delivery', 'supplies', 'utilities', 'maintenance', 'o
 // ---- form state ----------------------------------------------------
 interface AllocationRow { branch_uuid: string; quantity: string | number; }
 interface LineRow {
+    id: number; // stable v-for key — see nextRowId()
     itemKey: string; // "ingredient:uuid" | "product:uuid" | "physical:uuid"
     quantity: string | number;
     line_cost: string | number;
+    tax: PurchaseTaxModel; // PT — optional tax paid on this line
     showAllocations: boolean;
     allocations: AllocationRow[];
 }
-interface ChargeRow { name: string; category: string; amount: string | number; }
+interface ChargeRow { id: number; name: string; category: string; amount: string | number; tax: PurchaseTaxModel; }
 
 const header = reactive({
     supplier_uuid: '',
@@ -66,12 +71,21 @@ const charges = ref<ChargeRow[]>([]);
 const submitting = ref(false);
 const submitError = ref<string | null>(null);
 
+// Monotonic row id so each line/charge keeps a STABLE v-for key across a
+// mid-list removal. Index keys would let Vue patch the wrong (stateful)
+// PurchaseTaxField instance in place when a row above it is spliced out, which
+// could rebind a stale tax choice onto the shifted row.
+let rowSeq = 0;
+function nextRowId(): number {
+    return (rowSeq += 1);
+}
+
 function blankAllocations(): AllocationRow[] {
     return branches.value.map((b) => ({ branch_uuid: b.uuid, quantity: '' }));
 }
 
 function addLine(): void {
-    lines.value.push({ itemKey: '', quantity: '', line_cost: '', showAllocations: false, allocations: blankAllocations() });
+    lines.value.push({ id: nextRowId(), itemKey: '', quantity: '', line_cost: '', tax: { tax_amount: 0, tax_rate: null }, showAllocations: false, allocations: blankAllocations() });
 }
 
 function removeLine(idx: number): void {
@@ -79,7 +93,7 @@ function removeLine(idx: number): void {
 }
 
 function addCharge(): void {
-    charges.value.push({ name: '', category: 'delivery', amount: '' });
+    charges.value.push({ id: nextRowId(), name: '', category: 'delivery', amount: '', tax: { tax_amount: 0, tax_rate: null } });
 }
 
 function removeCharge(idx: number): void {
@@ -129,7 +143,14 @@ function lineIncomplete(line: LineRow): boolean {
 
 const itemsTotal = computed(() => lines.value.reduce((sum, l) => sum + (Number(l.line_cost) || 0), 0));
 const chargesTotal = computed(() => charges.value.reduce((sum, c) => sum + (Number(c.amount) || 0), 0));
-const grandTotal = computed(() => itemsTotal.value + chargesTotal.value);
+// PT — Σ of every line + charge tax; grand = items + charges + tax (gross).
+// Mirror the backend's rule (tax only counts when the base cost is positive — a
+// free line / zero charge books no tax) so this preview matches the persisted
+// receipt totals exactly.
+const taxTotal = computed(() =>
+    lines.value.reduce((s, l) => s + (Number(l.line_cost) > 0 ? (Number(l.tax.tax_amount) || 0) : 0), 0)
+    + charges.value.reduce((s, c) => s + (Number(c.amount) > 0 ? (Number(c.tax.tax_amount) || 0) : 0), 0));
+const grandTotal = computed(() => itemsTotal.value + chargesTotal.value + taxTotal.value);
 
 function money(n: number): string {
     return n.toLocaleString(isAr.value ? 'ar' : 'en-GB', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
@@ -194,12 +215,14 @@ async function submit(): Promise<void> {
                 item_uuid: uuid,
                 quantity: l.quantity,
                 line_cost: l.line_cost === '' ? 0 : l.line_cost,
+                tax_amount: l.tax.tax_amount,
+                tax_rate: l.tax.tax_rate,
                 allocations: allocations.length > 0 ? allocations : undefined,
             };
         }),
         charges: charges.value
             .filter((c) => c.name.trim() !== '' && Number(c.amount) > 0)
-            .map((c) => ({ name: c.name.trim(), category: c.category, amount: c.amount })),
+            .map((c) => ({ name: c.name.trim(), category: c.category, amount: c.amount, tax_amount: c.tax.tax_amount, tax_rate: c.tax.tax_rate })),
     };
 
     try {
@@ -235,18 +258,21 @@ async function fetchAllUnitProducts(): Promise<Product[]> {
 
 onMounted(async () => {
     try {
-        const [sup, ing, prod, phys, br] = await Promise.all([
+        const [sup, ing, prod, phys, br, tax] = await Promise.all([
             listSuppliers(),
             listIngredients(),
             fetchAllUnitProducts(),
             listPhysicalItems(),
             listBranches(),
+            listTaxes(),
         ]);
         suppliers.value = sup.data;
         ingredients.value = ing.data;
         products.value = prod;
         physicalItems.value = phys.data;
         branches.value = br.data;
+        // PT — only ACTIVE taxes are offered as purchase-tax rates.
+        taxes.value = tax.data.filter((x) => x.is_active);
         addLine();
     } catch (e) {
         refDataError.value = e instanceof ApiError ? (e.message || t('purchase_receipts.form.load_failed')) : t('purchase_receipts.form.load_failed');
@@ -302,7 +328,7 @@ onMounted(async () => {
                 </div>
 
                 <div class="mt-3 space-y-3">
-                    <div v-for="(line, idx) in lines" :key="idx" class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div v-for="(line, idx) in lines" :key="line.id" class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                         <div class="flex flex-wrap items-end gap-3">
                             <label class="block min-w-[14rem] flex-1">
                                 <span class="text-xs font-medium text-slate-600">{{ t('purchase_receipts.form.item') }}</span>
@@ -336,6 +362,12 @@ onMounted(async () => {
                         </div>
 
                         <p v-if="lineIncomplete(line)" class="mt-2 text-xs text-rose-600">{{ t('purchase_receipts.form.needs_quantity') }}</p>
+
+                        <!-- PT — optional tax on this line (disabled on a free line:
+                             the backend books no tax when the cost is not positive). -->
+                        <div class="mt-2.5">
+                            <PurchaseTaxField v-model="line.tax" :base="Number(line.line_cost) || 0" :taxes="taxes" :disabled="!(Number(line.line_cost) > 0)" />
+                        </div>
 
                         <!-- Inline branch split -->
                         <div class="mt-3 border-t border-slate-100 pt-3">
@@ -378,7 +410,7 @@ onMounted(async () => {
                 </div>
 
                 <div v-if="charges.length > 0" class="mt-3 space-y-2">
-                    <div v-for="(charge, idx) in charges" :key="idx" class="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                    <div v-for="(charge, idx) in charges" :key="charge.id" class="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
                         <label class="block min-w-[12rem] flex-1">
                             <span class="text-xs font-medium text-slate-600">{{ t('purchase_receipts.form.charge_name') }}</span>
                             <input v-model="charge.name" type="text" maxlength="120" :placeholder="t('purchase_receipts.form.charge_name_ph')" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
@@ -396,6 +428,11 @@ onMounted(async () => {
                         <button type="button" class="mb-1.5 grid size-9 place-items-center rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-600" :aria-label="t('common.delete')" @click="removeCharge(idx)">
                             <Trash2 class="size-4" />
                         </button>
+                        <!-- PT — optional tax on this charge (disabled until a positive
+                             amount; a zero charge books no expense and no tax). -->
+                        <div class="w-full">
+                            <PurchaseTaxField v-model="charge.tax" :base="Number(charge.amount) || 0" :taxes="taxes" :disabled="!(Number(charge.amount) > 0)" />
+                        </div>
                     </div>
                 </div>
             </div>
@@ -406,6 +443,7 @@ onMounted(async () => {
                     <div class="flex items-center gap-4 text-sm">
                         <span class="text-slate-500">{{ t('purchase_receipts.form.items_total') }}: <span class="font-semibold tabular-nums text-slate-800">{{ money(itemsTotal) }}</span></span>
                         <span class="text-slate-500">{{ t('purchase_receipts.form.charges_total') }}: <span class="font-semibold tabular-nums text-slate-800">{{ money(chargesTotal) }}</span></span>
+                        <span v-if="taxTotal > 0" class="text-slate-500">{{ t('purchase_receipts.form.tax_total') }}: <span class="font-semibold tabular-nums text-slate-800">{{ money(taxTotal) }}</span></span>
                         <span class="text-slate-700">{{ t('purchase_receipts.form.grand_total') }}: <span class="text-base font-bold tabular-nums text-teal-700">{{ money(grandTotal) }}</span></span>
                     </div>
                     <div class="ms-auto flex items-center gap-3">

@@ -156,6 +156,13 @@
         "order_numbering": "Order Numbering",
         "profile": "My Profile"
     },
+    "purchase_tax": {
+        "label": "Tax paid",
+        "none": "No tax",
+        "manual": "Other amount…",
+        "amount": "Tax amount",
+        "summary": "+{tax} tax · total {total}"
+    },
     "purchase_receipts": {
         "title": "Purchase Receipts",
         "subtitle": "Goods Received Notes — record a whole delivery in one document.",
@@ -234,6 +241,7 @@
             },
             "items_total": "Items",
             "charges_total": "Charges",
+            "tax_total": "Tax",
             "grand_total": "Total",
             "save": "Save receipt",
             "saving": "Saving…"
@@ -1847,6 +1855,10 @@
     "taxes": {
         "title": "Taxes",
         "subtitle": "Define the taxes your company collects (e.g. VAT, Municipality). The POS fetches the active set when staff log in and adds each, as its own line, on top of every order total.",
+        "recoverable": {
+            "title": "Purchase tax is recoverable",
+            "hint": "When on, the tax you record on purchases (on the Goods Received Note, stock receives and expenses) is credited back into net profit on the Sales report — like a reclaimable VAT receivable. When off, it's just tracked as a figure."
+        },
         "empty_state": "No taxes yet. Add VAT or any charge your company collects.",
         "add": "Add tax",
         "edit": "Edit",
@@ -2263,6 +2275,8 @@
                 "cogs": "Cost of goods",
                 "gross_profit": "Gross profit",
                 "operating_expenses": "Operating expenses",
+                "purchase_tax_paid": "Purchase tax paid",
+                "purchase_tax_recoverable": "Purchase tax (recoverable)",
                 "net_profit": "Net profit"
             },
             "by_hour": "Sales by hour",

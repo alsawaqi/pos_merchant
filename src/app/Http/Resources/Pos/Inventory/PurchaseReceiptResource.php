@@ -31,6 +31,7 @@ class PurchaseReceiptResource extends JsonResource
             'note' => $this->note,
             'items_total' => (string) $this->items_total,
             'charges_total' => (string) $this->charges_total,
+            'tax_total' => (string) $this->tax_total,
             'grand_total' => (string) $this->grand_total,
             'received_at' => $this->received_at?->toIso8601String(),
             'supplier' => $this->whenLoaded('supplier', fn (): ?array => $this->supplier !== null ? [
@@ -46,6 +47,8 @@ class PurchaseReceiptResource extends JsonResource
                     'quantity' => (string) $line->quantity,
                     'unit' => $line->unit,
                     'line_cost' => (string) $line->line_cost,
+                    'tax_amount' => (string) $line->tax_amount,
+                    'tax_rate' => $line->tax_rate !== null ? (string) $line->tax_rate : null,
                     'expense_category' => $line->expense_category,
                     'allocations' => $line->allocations_json ?? [],
                 ])->all()),
@@ -54,6 +57,8 @@ class PurchaseReceiptResource extends JsonResource
                     'name' => $charge->name,
                     'expense_category' => $charge->expense_category,
                     'amount' => (string) $charge->amount,
+                    'tax_amount' => (string) $charge->tax_amount,
+                    'tax_rate' => $charge->tax_rate !== null ? (string) $charge->tax_rate : null,
                 ])->all()),
             'created_at' => $this->created_at?->toIso8601String(),
         ];

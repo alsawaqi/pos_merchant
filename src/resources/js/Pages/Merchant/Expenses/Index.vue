@@ -36,6 +36,8 @@ import {
     type PaginationMeta,
 } from '@/lib/api/expenses';
 import { listExpenseCategories, type ExpenseCategory as ExpenseCategoryItem } from '@/lib/api/expenseCategories';
+import { listTaxes, type Tax } from '@/lib/api/taxes';
+import PurchaseTaxField, { type PurchaseTaxModel } from '@/Pages/Merchant/Inventory/PurchaseTaxField.vue';
 
 const { t } = useI18n();
 const { can } = usePermissions();
@@ -50,6 +52,8 @@ const error = ref<string | null>(null);
 // v2 #7: the company's expense categories drive the filter + log dropdowns and
 // resolve a key → display name in the table.
 const categories = ref<ExpenseCategoryItem[]>([]);
+// PT — active company taxes offered as purchase-tax rates on the log modal.
+const taxes = ref<Tax[]>([]);
 function categoryName(key: string | null): string {
     if (!key) return '—';
     return categories.value.find((c) => c.key === key)?.name ?? key.replace(/_/g, ' ');
@@ -110,6 +114,10 @@ onMounted(async () => {
     } catch (err) {
         if (!(err instanceof ApiError)) throw err;
     }
+    try {
+        // PT — active tax rates for the log modal's tax control (best-effort).
+        taxes.value = (await listTaxes()).data.filter((x) => x.is_active);
+    } catch { /* tax control optional */ }
     void fetchExpenses();
 });
 
@@ -117,10 +125,11 @@ onMounted(async () => {
 const logOpen = ref(false);
 const logBusy = ref(false);
 const logError = ref<string | null>(null);
-const logForm = reactive<{ branch_id: number | null; category: ExpenseCategory; amount: string; note: string; logged_at: string }>({
+const logForm = reactive<{ branch_id: number | null; category: ExpenseCategory; amount: string; tax: PurchaseTaxModel; note: string; logged_at: string }>({
     branch_id: null,
     category: '',
     amount: '',
+    tax: { tax_amount: 0, tax_rate: null },
     note: '',
     logged_at: '',
 });
@@ -129,6 +138,7 @@ function openLog(): void {
     logForm.branch_id = branches.value[0]?.id ?? null;
     logForm.category = categories.value[0]?.key ?? '';
     logForm.amount = '';
+    logForm.tax = { tax_amount: 0, tax_rate: null };
     logForm.note = '';
     logForm.logged_at = new Date().toISOString().slice(0, 10);
     logError.value = null;
@@ -144,6 +154,8 @@ async function submitLog(): Promise<void> {
             branch_id: logForm.branch_id,
             category: logForm.category,
             amount: logForm.amount,
+            tax_amount: Number(logForm.tax.tax_amount) > 0 ? logForm.tax.tax_amount : null,
+            tax_rate: logForm.tax.tax_rate ?? null,
             note: logForm.note || null,
             logged_at: logForm.logged_at || undefined,
         });
@@ -383,6 +395,8 @@ function fmt(dt: string | null): string {
                     {{ t('expenses.log_modal.amount') }}
                     <input v-model="logForm.amount" type="text" inputmode="decimal" placeholder="0.000" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm tabular-nums" />
                 </label>
+                <!-- PT — optional tax paid on this expense -->
+                <PurchaseTaxField v-model="logForm.tax" :base="Number(logForm.amount) || 0" :taxes="taxes" />
                 <label class="block text-sm font-semibold text-slate-700">
                     {{ t('expenses.log_modal.date') }}
                     <input v-model="logForm.logged_at" type="date" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />

@@ -32,6 +32,7 @@ use App\Http\Controllers\Pos\LoyaltyController;
 use App\Http\Controllers\Pos\PosStaffController;
 use App\Http\Controllers\Pos\CompReasonsController;
 use App\Http\Controllers\Pos\KitchenPositionsSettingController;
+use App\Http\Controllers\Pos\PurchaseTaxRecoverableSettingController;
 use App\Http\Controllers\Pos\ManagerApprovalSettingController;
 use App\Http\Controllers\Pos\OrderCancellationSettingController;
 use App\Http\Controllers\Pos\OrderNumberingSettingController;
@@ -873,6 +874,14 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         Route::post('taxes', [TaxesController::class, 'store'])->name('taxes.store');
         Route::patch('taxes/{tax:uuid}', [TaxesController::class, 'update'])->name('taxes.update');
         Route::delete('taxes/{tax:uuid}', [TaxesController::class, 'destroy'])->name('taxes.destroy');
+
+        // PT — whether tracked purchase/input tax is recoverable (credited back
+        // into net profit) or informational. Lives on the Taxes page; gated by
+        // catalogue.view / catalogue.manage like the rest of the page.
+        Route::get('settings/purchase-tax-recoverable', [PurchaseTaxRecoverableSettingController::class, 'show'])
+            ->name('settings.purchase-tax-recoverable.show');
+        Route::put('settings/purchase-tax-recoverable', [PurchaseTaxRecoverableSettingController::class, 'update'])
+            ->name('settings.purchase-tax-recoverable.update');
 
         // v2 #14 — order cancellation policy: which staff positions may cancel a
         // completed order at the POS. Emitted in /device/config + enforced on the

@@ -134,6 +134,8 @@ class IngredientStockController extends Controller
                 $request->user(),
                 $request->input('total_cost'),
                 $request->input('delivery_cost'),
+                taxAmount: $request->input('tax_amount'),
+                taxRate: $request->input('tax_rate'),
             );
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
@@ -173,6 +175,8 @@ class IngredientStockController extends Controller
                 $request->user(),
                 $request->input('total_cost'),
                 $request->input('delivery_cost'),
+                taxAmount: $request->input('tax_amount'),
+                taxRate: $request->input('tax_rate'),
             );
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);

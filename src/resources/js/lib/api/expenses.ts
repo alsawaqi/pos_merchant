@@ -23,6 +23,9 @@ export interface Expense {
     category: ExpenseCategory;
     /** Decimal:3 OMR string. Never parseFloat for money. */
     amount: string;
+    /** PT — tax portion of `amount` (the gross paid), + the % rate or null. */
+    tax_amount: string;
+    tax_rate: string | null;
     note: string | null;
     receipt_photo_path: string | null;
     logged_by_pos_staff_id: number | null;
@@ -63,7 +66,11 @@ export interface ExpenseFilters {
 export interface LogExpensePayload {
     branch_id: number | null;
     category: ExpenseCategory;
+    /** The NET (before-tax) amount; tax (below) is added on top. */
     amount: string;
+    /** PT — optional tax paid on top of `amount` (rate % or a typed amount). */
+    tax_amount?: string | number | null;
+    tax_rate?: string | number | null;
     note?: string | null;
     receipt_photo_path?: string | null;
     logged_at?: string;

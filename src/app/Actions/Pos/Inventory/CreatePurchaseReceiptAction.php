@@ -57,9 +57,11 @@ final readonly class CreatePurchaseReceiptAction
      *     product?: Product|null,
      *     quantity: string|float|int,
      *     line_cost: string|float|int,
+     *     tax_amount?: string|float|int|null,
+     *     tax_rate?: string|float|int|null,
      *     allocations: list<array{branch: Branch, quantity: string|float|int}>,
      * }>  $lines
-     * @param  list<array{name: string, category: ExpenseCategory, amount: string|float|int}>  $charges
+     * @param  list<array{name: string, category: ExpenseCategory, amount: string|float|int, tax_amount?: string|float|int|null, tax_rate?: string|float|int|null}>  $charges
      */
     public function handle(
         int $companyId,
@@ -89,22 +91,30 @@ final readonly class CreatePurchaseReceiptAction
                 'received_at' => $at,
             ]);
 
+            // PT — tax_total accumulates every line + charge tax; grand_total is
+            // the gross (items + charges + tax = what was actually paid).
             $itemsTotal = 0.0;
+            $taxTotal = 0.0;
             $order = 0;
             foreach ($lines as $line) {
-                $itemsTotal += $this->writeLine($receipt, $line, $note, $actor, $at, $order++);
+                $r = $this->writeLine($receipt, $line, $note, $actor, $at, $order++);
+                $itemsTotal += $r['cost'];
+                $taxTotal += $r['tax'];
             }
 
             $chargesTotal = 0.0;
             $order = 0;
             foreach ($charges as $charge) {
-                $chargesTotal += $this->writeCharge($receipt, $charge, $companyId, $actor, $at, $order++);
+                $r = $this->writeCharge($receipt, $charge, $companyId, $actor, $at, $order++);
+                $chargesTotal += $r['amount'];
+                $taxTotal += $r['tax'];
             }
 
             $receipt->update([
                 'items_total' => number_format($itemsTotal, 3, '.', ''),
                 'charges_total' => number_format($chargesTotal, 3, '.', ''),
-                'grand_total' => number_format($itemsTotal + $chargesTotal, 3, '.', ''),
+                'tax_total' => number_format($taxTotal, 3, '.', ''),
+                'grand_total' => number_format($itemsTotal + $chargesTotal + $taxTotal, 3, '.', ''),
             ]);
 
             return $receipt->fresh(['lines', 'charges', 'supplier', 'recordedByUser']);
@@ -112,8 +122,8 @@ final readonly class CreatePurchaseReceiptAction
     }
 
     /**
-     * Receive + distribute one line, snapshot it, and return its cost so the
-     * header total can be tallied.
+     * Receive + distribute one line, snapshot it, and return its net cost + tax
+     * so the header totals can be tallied.
      *
      * @param  array{
      *     item_type: string,
@@ -121,8 +131,11 @@ final readonly class CreatePurchaseReceiptAction
      *     product?: Product|null,
      *     quantity: string|float|int,
      *     line_cost: string|float|int,
+     *     tax_amount?: string|float|int|null,
+     *     tax_rate?: string|float|int|null,
      *     allocations: list<array{branch: Branch, quantity: string|float|int}>,
      * }  $line
+     * @return array{cost: float, tax: float}
      */
     private function writeLine(
         PurchaseReceipt $receipt,
@@ -131,8 +144,14 @@ final readonly class CreatePurchaseReceiptAction
         User $actor,
         Carbon $at,
         int $order,
-    ): float {
+    ): array {
         $cost = (float) $line['line_cost'];
+        // PT — tax paid on this line's item cost (on top of line_cost). No tax
+        // on a free line (cost 0). tax_rate is the % when a rate was picked.
+        $tax = $cost > 0 && isset($line['tax_amount']) ? (float) $line['tax_amount'] : 0.0;
+        $taxRate = ($cost > 0 && isset($line['tax_rate']) && $line['tax_rate'] !== null && $line['tax_rate'] !== '')
+            ? (float) $line['tax_rate']
+            : null;
         // The line cost rides the single receive (0 = a free line, books no
         // expense); the allocation split is pure internal movement.
         $allocLines = array_map(
@@ -152,6 +171,8 @@ final readonly class CreatePurchaseReceiptAction
                 $cost > 0 ? $cost : null,
                 null,
                 $at,
+                taxAmount: $tax > 0 ? $tax : null,
+                taxRate: $taxRate,
             );
             $movement = $result['received'];
             $itemName = (string) $ingredient->name;
@@ -171,6 +192,8 @@ final readonly class CreatePurchaseReceiptAction
                 $cost > 0 ? $cost : null,
                 null,
                 $at,
+                taxAmount: $tax > 0 ? $tax : null,
+                taxRate: $taxRate,
             );
             $movement = $result['received'];
             $itemName = (string) $product->name;
@@ -195,20 +218,23 @@ final readonly class CreatePurchaseReceiptAction
             'quantity' => (string) $line['quantity'],
             'unit' => $unit,
             'line_cost' => number_format($cost, 3, '.', ''),
+            'tax_amount' => number_format($tax, 3, '.', ''),
+            'tax_rate' => $taxRate,
             'expense_category' => $cost > 0 ? $category : null,
             'allocations_json' => $this->snapshotAllocations($line['allocations']),
             'expense_id' => $expenseId,
             'display_order' => $order,
         ]);
 
-        return $cost;
+        return ['cost' => $cost, 'tax' => $tax];
     }
 
     /**
-     * Book one named charge as its own expense, snapshot it, and return its
-     * amount.
+     * Book one named charge as its own expense, snapshot it, and return its net
+     * amount + tax.
      *
-     * @param  array{name: string, category: ExpenseCategory, amount: string|float|int}  $charge
+     * @param  array{name: string, category: ExpenseCategory, amount: string|float|int, tax_amount?: string|float|int|null, tax_rate?: string|float|int|null}  $charge
+     * @return array{amount: float, tax: float}
      */
     private function writeCharge(
         PurchaseReceipt $receipt,
@@ -217,18 +243,25 @@ final readonly class CreatePurchaseReceiptAction
         User $actor,
         Carbon $at,
         int $order,
-    ): float {
+    ): array {
         $amount = (float) $charge['amount'];
+        // PT — tax paid on this charge (on top); no tax on a zero charge.
+        $tax = $amount > 0 && isset($charge['tax_amount']) ? (float) $charge['tax_amount'] : 0.0;
+        $taxRate = ($amount > 0 && isset($charge['tax_rate']) && $charge['tax_rate'] !== null && $charge['tax_rate'] !== '')
+            ? (float) $charge['tax_rate']
+            : null;
         $expense = null;
         if ($amount > 0) {
             $expense = $this->recordExpense->handle(
                 companyId: $companyId,
                 branchId: null,
                 category: $charge['category'],
-                amount: $amount,
+                amount: $amount + $tax,
                 note: $charge['name'],
                 actorUserId: (int) $actor->getKey(),
                 at: $at,
+                taxAmount: $tax,
+                taxRate: $taxRate,
             );
         }
 
@@ -237,11 +270,13 @@ final readonly class CreatePurchaseReceiptAction
             'name' => $charge['name'],
             'expense_category' => $charge['category']->value,
             'amount' => number_format($amount, 3, '.', ''),
+            'tax_amount' => number_format($tax, 3, '.', ''),
+            'tax_rate' => $taxRate,
             'expense_id' => $expense?->id,
             'display_order' => $order,
         ]);
 
-        return $amount;
+        return ['amount' => $amount, 'tax' => $tax];
     }
 
     /**

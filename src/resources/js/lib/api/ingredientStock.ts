@@ -54,6 +54,9 @@ export interface PurchaseCostFields {
     total_cost?: string | number | null;
     delivery_cost?: string | number | null;
     no_cost?: boolean;
+    /** PT — optional tax paid on the item cost (rate % or a typed amount). */
+    tax_amount?: string | number | null;
+    tax_rate?: string | number | null;
 }
 
 // ---- Endpoints --------------------------------------------------

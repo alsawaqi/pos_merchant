@@ -47,6 +47,9 @@ final readonly class ReceiveAndDistributeProductStockAction
         // PD6 — the accounting date forwarded to the receive's booked
         // expenses (the Goods Received Note's received_at). NULL = now.
         ?Carbon $occurredAt = null,
+        // PT — tax paid on the item cost, forwarded to the receive.
+        string|float|int|null $taxAmount = null,
+        string|float|int|null $taxRate = null,
     ): array {
         $totalQty = (float) $total;
         if ($totalQty <= 0) {
@@ -65,11 +68,11 @@ final readonly class ReceiveAndDistributeProductStockAction
             ));
         }
 
-        return DB::transaction(function () use ($product, $total, $lines, $note, $actor, $totalCost, $deliveryCost, $occurredAt): array {
+        return DB::transaction(function () use ($product, $total, $lines, $note, $actor, $totalCost, $deliveryCost, $occurredAt, $taxAmount, $taxRate): array {
             // PD2/PD5 — the purchase cost + delivery belong to the RECEIVE leg
             // (one expense pair for the whole delivery; the split changes
             // nothing about the money).
-            $received = $this->receive->handle($product, $total, $note, $actor, $totalCost, $deliveryCost, $occurredAt);
+            $received = $this->receive->handle($product, $total, $note, $actor, $totalCost, $deliveryCost, $occurredAt, $taxAmount, $taxRate);
             $allocations = $lines === []
                 ? []
                 : $this->allocate->handle($product, $lines, $note, $actor);

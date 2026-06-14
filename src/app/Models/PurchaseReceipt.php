@@ -28,6 +28,7 @@ use Illuminate\Support\Str;
     'reference',
     'items_total',
     'charges_total',
+    'tax_total',
     'grand_total',
     'status',
     'note',
@@ -49,6 +50,7 @@ class PurchaseReceipt extends Model
             'received_at' => 'datetime',
             'items_total' => 'decimal:3',
             'charges_total' => 'decimal:3',
+            'tax_total' => 'decimal:3',
             'grand_total' => 'decimal:3',
         ];
     }

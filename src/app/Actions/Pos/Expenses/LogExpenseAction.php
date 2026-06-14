@@ -80,13 +80,26 @@ final readonly class LogExpenseAction
             throw new RuntimeException('Expense amount must be positive.');
         }
 
-        return DB::transaction(function () use ($attributes, $companyId, $branchId, $category, $amount, $actor): Expense {
+        // PT — `amount` is the NET (before tax); the stored expense amount is the
+        // GROSS (net + tax, the cash-model cash-out), with tax_amount the tax
+        // portion. Default 0 / NULL = an untaxed expense (amount stays as typed).
+        $tax = isset($attributes['tax_amount']) && $attributes['tax_amount'] !== '' && $attributes['tax_amount'] !== null
+            ? (float) $attributes['tax_amount']
+            : 0.0;
+        $taxRate = isset($attributes['tax_rate']) && $attributes['tax_rate'] !== '' && $attributes['tax_rate'] !== null
+            ? (float) $attributes['tax_rate']
+            : null;
+        $gross = $amount + max(0.0, $tax);
+
+        return DB::transaction(function () use ($attributes, $companyId, $branchId, $category, $gross, $tax, $taxRate, $actor): Expense {
             /** @var Expense $expense */
             $expense = Expense::query()->create([
                 'company_id' => $companyId,
                 'branch_id' => $branchId,
                 'category' => $category,
-                'amount' => number_format($amount, 3, '.', ''),
+                'amount' => number_format($gross, 3, '.', ''),
+                'tax_amount' => number_format(max(0.0, $tax), 3, '.', ''),
+                'tax_rate' => $taxRate,
                 'note' => $attributes['note'] ?? null,
                 'receipt_photo_path' => $attributes['receipt_photo_path'] ?? null,
                 'logged_by_portal_user_id' => $actor->getKey(),

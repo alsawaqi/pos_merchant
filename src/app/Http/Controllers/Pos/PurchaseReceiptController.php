@@ -96,6 +96,8 @@ class PurchaseReceiptController extends Controller
                 'name' => (string) $row['name'],
                 'category' => ExpenseCategory::from((string) $row['category']),
                 'amount' => $row['amount'],
+                'tax_amount' => $row['tax_amount'] ?? null,
+                'tax_rate' => $row['tax_rate'] ?? null,
             ];
         }
 
@@ -192,6 +194,8 @@ class PurchaseReceiptController extends Controller
 
         $resolved['quantity'] = $row['quantity'];
         $resolved['line_cost'] = $row['line_cost'];
+        $resolved['tax_amount'] = $row['tax_amount'] ?? null;
+        $resolved['tax_rate'] = $row['tax_rate'] ?? null;
         $resolved['allocations'] = $allocations;
 
         return $resolved;

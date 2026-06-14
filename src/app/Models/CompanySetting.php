@@ -57,6 +57,14 @@ class CompanySetting extends Model
     public const KEY_KITCHEN_POSITIONS = 'kitchen_positions';
 
     /**
+     * PT — whether purchase/input tax tracked on expenses is RECOVERABLE
+     * (credited back into net profit on the Sales report, like a VAT
+     * receivable) or merely informational (default false). A JSON boolean.
+     * Portal-only — pos_api does not read it.
+     */
+    public const KEY_PURCHASE_TAX_RECOVERABLE = 'purchase_tax_recoverable';
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

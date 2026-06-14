@@ -45,6 +45,11 @@ final readonly class RecordPurchaseExpenseAction
     /**
      * @param  int  $actorUserId  the portal user who logged it
      */
+    /**
+     * @param  float  $amount  the GROSS paid (net + tax); the cash-model expense.
+     * @param  float  $taxAmount  PT — the tax portion of $amount (0 = untaxed).
+     * @param  float|null  $taxRate  PT — the % rate used (NULL = a typed amount).
+     */
     public function handle(
         int $companyId,
         ?int $branchId,
@@ -53,6 +58,8 @@ final readonly class RecordPurchaseExpenseAction
         string $note,
         int $actorUserId,
         ?Carbon $at = null,
+        float $taxAmount = 0.0,
+        ?float $taxRate = null,
     ): Expense {
         $this->ensureCategoryExists($companyId, $category);
 
@@ -61,6 +68,8 @@ final readonly class RecordPurchaseExpenseAction
             'branch_id' => $branchId,
             'category' => $category->value,
             'amount' => number_format($amount, 3, '.', ''),
+            'tax_amount' => number_format($taxAmount, 3, '.', ''),
+            'tax_rate' => $taxRate,
             'note' => $note,
             'logged_by_portal_user_id' => $actorUserId,
             'logged_at' => $at ?? now(),

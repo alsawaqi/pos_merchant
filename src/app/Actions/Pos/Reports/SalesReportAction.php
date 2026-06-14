@@ -137,7 +137,17 @@ final readonly class SalesReportAction
             $expenseQuery->whereIn('branch_id', $branchScope);
         }
         $operatingExpenses = (float) $expenseQuery->sum('amount');
-        $netProfit = $netSales - $operatingExpenses;
+        // PT — the tax PAID on purchases in the window (Σ of the tax portion of
+        // those same expense amounts). Always surfaced as a tracked figure;
+        // whether it's RECOVERABLE (credited back into net profit, like a VAT
+        // receivable) is the per-company purchase_tax_recoverable setting. The
+        // gross expense total (and its by-category breakdown) is unchanged — the
+        // recoverable case just adds the tax back as a profit credit, so the
+        // expenses still reconcile.
+        $purchaseTaxPaid = (float) $expenseQuery->sum('tax_amount');
+        $purchaseTaxRecoverable = $this->purchaseTaxRecoverable($companyId);
+        $netProfit = $netSales - $operatingExpenses
+            + ($purchaseTaxRecoverable ? $purchaseTaxPaid : 0.0);
         $byExpenseCategory = $this->byExpenseCategory($companyId, $filter, $branchScope);
 
         // Breakdowns
@@ -168,6 +178,10 @@ final readonly class SalesReportAction
                 'cogs' => self::fmt($cogs),
                 'gross_profit' => self::fmt($grossProfit),
                 'operating_expenses' => self::fmt($operatingExpenses),
+                // PT — total tax PAID on purchases in the window (always shown),
+                // + whether it was credited back into net profit (the setting).
+                'purchase_tax_paid' => self::fmt($purchaseTaxPaid),
+                'purchase_tax_recoverable' => $purchaseTaxRecoverable,
                 'net_profit' => self::fmt($netProfit),
                 'order_count' => (int) ($headline?->order_count ?? 0),
                 'refund_count' => (int) ($refundsRow?->refund_count ?? 0),
@@ -453,6 +467,30 @@ final readonly class SalesReportAction
         }
 
         return $baisas / 1000;
+    }
+
+    /**
+     * PT — the per-company purchase_tax_recoverable flag (pos_company_settings,
+     * a JSON boolean). Default false = the tracked purchase tax is informational
+     * (net profit unchanged). Read via the query builder + decoded defensively
+     * across drivers (Postgres jsonb vs sqlite text).
+     */
+    private function purchaseTaxRecoverable(int $companyId): bool
+    {
+        $value = DB::table('pos_company_settings')
+            ->where('company_id', $companyId)
+            ->where('key', 'purchase_tax_recoverable')
+            ->value('value');
+
+        if ($value === null) {
+            return false;
+        }
+        if (is_bool($value)) {
+            return $value;
+        }
+        $decoded = is_string($value) ? json_decode($value, true) : $value;
+
+        return $decoded === true || $decoded === 1 || $decoded === '1' || $decoded === 'true';
     }
 
     private static function fmt(float $omr): string

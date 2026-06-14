@@ -22,6 +22,7 @@ import {
     transferIngredientStock,
     type IngredientStockSummary,
 } from '@/lib/api/ingredientStock';
+import { listTaxes, type Tax } from '@/lib/api/taxes';
 
 const props = defineProps<{
     open: boolean;
@@ -62,9 +63,11 @@ const distributeRows = ref<{ branch_uuid: string; branch_name: string; quantity:
 const receiveForm = reactive<{ quantity: string | number; note: string }>({ quantity: '', note: '' });
 // PD5 — the cash-model purchase cost for the receive / receive-and-distribute
 // buys (buying ingredients into the warehouse is a purchase = an expense).
-function blankCost(): PurchaseCostModel { return { total_cost: '', delivery_cost: '', no_cost: false }; }
+function blankCost(): PurchaseCostModel { return { total_cost: '', delivery_cost: '', no_cost: false, tax_amount: 0, tax_rate: null }; }
 const receiveCost = ref<PurchaseCostModel>(blankCost());
 const distributeCost = ref<PurchaseCostModel>(blankCost());
+// PT — active company taxes offered as purchase-tax rates (loaded once).
+const taxes = ref<Tax[]>([]);
 const allocateRows = ref<{ branch_uuid: string; branch_name: string; quantity: string | number }[]>([]);
 const allocateNote = ref('');
 const transferForm = reactive<{ from_branch_uuid: string; to_branch_uuid: string; quantity: string | number; note: string }>(
@@ -146,6 +149,13 @@ async function load(): Promise<void> {
         // ingredient while this request was in flight — discard then.
         if (props.ingredientUuid !== uuid) return;
         summary.value = res.data;
+        // PT — load the active tax rates once (best-effort; the tax control just
+        // stays hidden if this fails).
+        if (taxes.value.length === 0) {
+            try {
+                taxes.value = (await listTaxes()).data.filter((x) => x.is_active);
+            } catch { /* tax control optional */ }
+        }
         resetForms();
     } catch (e) {
         if (props.ingredientUuid !== uuid) return;
@@ -214,11 +224,14 @@ function doDistribute(): void {
 }
 
 /** PD5 — the cash-model cost fields → wire payload. */
-function costPayload(c: PurchaseCostModel): { total_cost: string | null; delivery_cost: string | null; no_cost: boolean } {
+function costPayload(c: PurchaseCostModel): { total_cost: string | null; delivery_cost: string | null; no_cost: boolean; tax_amount: string | number | null; tax_rate: string | number | null } {
     return {
         total_cost: c.no_cost ? null : (qty(c.total_cost) || null),
         delivery_cost: c.no_cost ? null : (qty(c.delivery_cost) || null),
         no_cost: c.no_cost,
+        // PT — tax paid on the item cost (cleared when "No cost").
+        tax_amount: c.no_cost ? null : (Number(c.tax_amount) > 0 ? c.tax_amount : null),
+        tax_rate: c.no_cost ? null : (c.tax_rate ?? null),
     };
 }
 
@@ -364,7 +377,7 @@ function fmtType(t: string): string {
                                 <span class="font-semibold tabular-nums" :class="distributeOver ? 'text-rose-600' : 'text-slate-700'">{{ round3(distributeRemainder) }}</span> stays in the warehouse
                             </p>
                             <input v-model="distributeForm.note" type="text" placeholder="Note (optional)" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                            <PurchaseCostFields v-model="distributeCost" />
+                            <PurchaseCostFields v-model="distributeCost" :taxes="taxes" />
                             <button type="submit" :disabled="busy || distributeOver" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Receive &amp; distribute</button>
                         </form>
 
@@ -375,7 +388,7 @@ function fmtType(t: string): string {
                                 <input v-model="receiveForm.quantity" type="number" step="0.001" min="0" placeholder="Quantity" class="w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
                                 <input v-model="receiveForm.note" type="text" placeholder="Note (optional)" class="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm">
                             </div>
-                            <PurchaseCostFields v-model="receiveCost" />
+                            <PurchaseCostFields v-model="receiveCost" :taxes="taxes" />
                             <button type="submit" :disabled="busy" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Add to warehouse</button>
                         </form>
 

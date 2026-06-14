@@ -28,6 +28,9 @@ class ExpenseResource extends JsonResource
             // display name via the expense-categories list.
             'category' => $this->category,
             'amount' => (string) $this->amount,
+            // PT — the tax portion of `amount` (the gross paid), + the % used.
+            'tax_amount' => (string) $this->tax_amount,
+            'tax_rate' => $this->tax_rate !== null ? (string) $this->tax_rate : null,
             'note' => $this->note,
             'receipt_photo_path' => $this->receipt_photo_path,
             'logged_by_pos_staff_id' => $this->logged_by_pos_staff_id !== null ? (int) $this->logged_by_pos_staff_id : null,

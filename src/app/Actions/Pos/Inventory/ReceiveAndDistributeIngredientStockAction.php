@@ -48,6 +48,9 @@ final readonly class ReceiveAndDistributeIngredientStockAction
         // PD6 — the accounting date forwarded to the receive's booked
         // expenses (the Goods Received Note's received_at). NULL = now.
         ?Carbon $occurredAt = null,
+        // PT — tax paid on the item cost, forwarded to the receive.
+        string|float|int|null $taxAmount = null,
+        string|float|int|null $taxRate = null,
     ): array {
         $totalQty = (float) $total;
         if ($totalQty <= 0) {
@@ -66,11 +69,11 @@ final readonly class ReceiveAndDistributeIngredientStockAction
             ));
         }
 
-        return DB::transaction(function () use ($ingredient, $total, $lines, $note, $actor, $totalCost, $deliveryCost, $occurredAt): array {
+        return DB::transaction(function () use ($ingredient, $total, $lines, $note, $actor, $totalCost, $deliveryCost, $occurredAt, $taxAmount, $taxRate): array {
             // PD5 — the cost/delivery ride the single receive into the central
             // warehouse (one purchase = one expense pair); the allocations are
             // pure internal movement, no expense.
-            $received = $this->receive->handle($ingredient, $total, $note, $actor, $totalCost, $deliveryCost, $occurredAt);
+            $received = $this->receive->handle($ingredient, $total, $note, $actor, $totalCost, $deliveryCost, $occurredAt, $taxAmount, $taxRate);
             $allocations = $lines === []
                 ? []
                 : $this->allocate->handle($ingredient, $lines, $note, $actor);

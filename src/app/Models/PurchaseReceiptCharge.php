@@ -21,6 +21,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'name',
     'expense_category',
     'amount',
+    'tax_amount',
+    'tax_rate',
     'expense_id',
     'display_order',
 ])]
@@ -35,6 +37,8 @@ class PurchaseReceiptCharge extends Model
     {
         return [
             'amount' => 'decimal:3',
+            'tax_amount' => 'decimal:3',
+            'tax_rate' => 'decimal:2',
         ];
     }
 

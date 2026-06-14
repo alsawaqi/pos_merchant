@@ -19,6 +19,7 @@ import {
     transferProductStock,
     type ProductStockSummary,
 } from '@/lib/api/productStock';
+import { listTaxes, type Tax } from '@/lib/api/taxes';
 
 const props = defineProps<{
     open: boolean;
@@ -58,14 +59,19 @@ const distributeForm = reactive<{ quantity: string | number; note: string }>({ q
 const distributeRows = ref<{ branch_uuid: string; branch_name: string; quantity: string | number }[]>([]);
 const receiveForm = reactive<{ quantity: string | number; note: string }>({ quantity: '', note: '' });
 // PD5 — the cash-model purchase cost (item + delivery + "no cost") for the buys.
-function blankCost(): PurchaseCostModel { return { total_cost: '', delivery_cost: '', no_cost: false }; }
+function blankCost(): PurchaseCostModel { return { total_cost: '', delivery_cost: '', no_cost: false, tax_amount: 0, tax_rate: null }; }
 const receiveCost = ref<PurchaseCostModel>(blankCost());
 const distributeCost = ref<PurchaseCostModel>(blankCost());
-function costPayload(c: PurchaseCostModel): { total_cost: string | null; delivery_cost: string | null; no_cost: boolean } {
+// PT — active company taxes offered as purchase-tax rates (loaded once).
+const taxes = ref<Tax[]>([]);
+function costPayload(c: PurchaseCostModel): { total_cost: string | null; delivery_cost: string | null; no_cost: boolean; tax_amount: string | number | null; tax_rate: string | number | null } {
     return {
         total_cost: c.no_cost ? null : (qty(c.total_cost) || null),
         delivery_cost: c.no_cost ? null : (qty(c.delivery_cost) || null),
         no_cost: c.no_cost,
+        // PT — tax paid on the item cost (cleared when "No cost").
+        tax_amount: c.no_cost ? null : (Number(c.tax_amount) > 0 ? c.tax_amount : null),
+        tax_rate: c.no_cost ? null : (c.tax_rate ?? null),
     };
 }
 const allocateRows = ref<{ branch_uuid: string; branch_name: string; quantity: string | number }[]>([]);
@@ -158,6 +164,13 @@ async function load(): Promise<void> {
         // while this request was in flight — discard then.
         if (props.productUuid !== uuid) return;
         summary.value = res.data;
+        // PT — load the active tax rates once (best-effort; the tax control just
+        // stays hidden if this fails).
+        if (taxes.value.length === 0) {
+            try {
+                taxes.value = (await listTaxes()).data.filter((x) => x.is_active);
+            } catch { /* tax control optional */ }
+        }
         resetForms();
     } catch (e) {
         if (props.productUuid !== uuid) return;
@@ -350,7 +363,7 @@ function fmtType(t: string): string {
                                 <label class="text-xs font-semibold text-slate-600">Total received</label>
                                 <input v-model="distributeForm.quantity" type="number" step="0.001" min="0" placeholder="e.g. 80" class="w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
                             </div>
-                            <PurchaseCostFields v-model="distributeCost" :cost-placeholder="costSuggestion(distributeForm.quantity)" />
+                            <PurchaseCostFields v-model="distributeCost" :cost-placeholder="costSuggestion(distributeForm.quantity)" :taxes="taxes" />
                             <div class="space-y-2">
                                 <div v-for="row in distributeRows" :key="row.branch_uuid" class="flex items-center gap-3">
                                     <span class="flex-1 text-sm text-slate-700">{{ row.branch_name }}</span>
@@ -379,7 +392,7 @@ function fmtType(t: string): string {
                                     <input v-model="receiveForm.note" type="text" placeholder="" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
                                 </label>
                             </div>
-                            <PurchaseCostFields v-model="receiveCost" :cost-placeholder="costSuggestion(receiveForm.quantity)" />
+                            <PurchaseCostFields v-model="receiveCost" :cost-placeholder="costSuggestion(receiveForm.quantity)" :taxes="taxes" />
                             <button type="submit" :disabled="busy" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Add to central</button>
                         </form>
 

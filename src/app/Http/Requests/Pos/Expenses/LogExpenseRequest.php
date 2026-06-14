@@ -26,6 +26,10 @@ class LogExpenseRequest extends FormRequest
             'branch_id' => ['nullable', 'integer'],
             'category' => ['required', 'string', 'max:32'],
             'amount' => ['required', 'numeric', 'gt:0', 'max:999999.999'],
+            // PT — optional tax PAID on top of `amount` (the net). tax_rate is
+            // the % when a rate was picked, NULL for a typed amount.
+            'tax_amount' => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
+            'tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'note' => ['nullable', 'string', 'max:1000'],
             'receipt_photo_path' => ['nullable', 'string', 'max:1024'],
             // When the expense actually occurred (defaults to now).

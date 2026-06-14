@@ -8,7 +8,7 @@
  * each, as its own line, on top of the order total (exclusive).
  */
 
-import { apiDelete, apiGet, apiPatch, apiPost, type JsonValue } from '@/lib/api';
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut, type JsonValue } from '@/lib/api';
 
 // ---- Domain types -----------------------------------------------
 
@@ -59,4 +59,17 @@ export function updateTax(uuid: string, payload: UpdateTaxPayload): Promise<{ da
 
 export function deleteTax(uuid: string): Promise<void> {
     return apiDelete<void>(`/api/taxes/${uuid}`);
+}
+
+// ---- PT — purchase-tax-recoverable company setting ---------------
+
+export function getPurchaseTaxRecoverable(): Promise<{ data: { purchase_tax_recoverable: boolean } }> {
+    return apiGet<{ data: { purchase_tax_recoverable: boolean } }>('/api/settings/purchase-tax-recoverable');
+}
+
+export function updatePurchaseTaxRecoverable(value: boolean): Promise<{ data: { purchase_tax_recoverable: boolean } }> {
+    return apiPut<{ data: { purchase_tax_recoverable: boolean } }>(
+        '/api/settings/purchase-tax-recoverable',
+        { purchase_tax_recoverable: value } as unknown as JsonValue,
+    );
 }

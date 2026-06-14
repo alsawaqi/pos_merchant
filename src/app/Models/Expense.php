@@ -36,6 +36,10 @@ use Illuminate\Support\Str;
     'branch_id',
     'category',
     'amount',
+    // PT — the tax PAID portion of `amount` (which stays the gross paid), + the
+    // % rate used (NULL = a typed amount). Default 0 / NULL = an untaxed buy.
+    'tax_amount',
+    'tax_rate',
     'note',
     'receipt_photo_path',
     'logged_by_pos_staff_id',
@@ -64,6 +68,8 @@ class Expense extends Model
             // — so custom categories never trip an "undefined enum case" cast.
             'category' => 'string',
             'amount' => 'decimal:3',
+            'tax_amount' => 'decimal:3',
+            'tax_rate' => 'decimal:2',
             'logged_at' => 'datetime',
             'status' => ExpenseStatus::class,
             'reviewed_at' => 'datetime',

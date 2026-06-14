@@ -25,6 +25,10 @@ trait RequiresPurchaseCost
             'total_cost' => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
             'delivery_cost' => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
             'no_cost' => ['nullable', 'boolean'],
+            // PT — optional tax PAID on the item cost (added on top). tax_rate is
+            // the % when a rate was picked, NULL for a typed amount.
+            'tax_amount' => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
+            'tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
         ];
     }
 
@@ -38,10 +42,10 @@ trait RequiresPurchaseCost
             // Enforce the "No cost" contract server-side (not just in the UI):
             // a free / correction receive must carry no money at all, or it
             // would still book an expense via the actions' cost > 0 checks.
-            if ($positive($this->input('total_cost')) || $positive($this->input('delivery_cost'))) {
+            if ($positive($this->input('total_cost')) || $positive($this->input('delivery_cost')) || $positive($this->input('tax_amount'))) {
                 $validator->errors()->add(
                     'no_cost',
-                    'Untick "No cost" to enter a cost, or clear the cost and delivery to record a free receive.',
+                    'Untick "No cost" to enter a cost, or clear the cost, delivery and tax to record a free receive.',
                 );
             }
 

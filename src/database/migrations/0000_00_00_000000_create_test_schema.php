@@ -1450,6 +1450,8 @@ return new class extends Migration
             $table->foreignId('branch_id')->nullable()->constrained('pos_branches')->nullOnDelete();
             $table->string('category', 32);
             $table->decimal('amount', 12, 3);
+            $table->decimal('tax_amount', 12, 3)->default(0);
+            $table->decimal('tax_rate', 5, 2)->nullable();
             $table->text('note')->nullable();
             $table->string('receipt_photo_path')->nullable();
             $table->foreignId('logged_by_pos_staff_id')->nullable()->constrained('pos_staff')->nullOnDelete();
@@ -1475,6 +1477,7 @@ return new class extends Migration
             $table->string('reference', 100)->nullable();
             $table->decimal('items_total', 12, 3)->default(0);
             $table->decimal('charges_total', 12, 3)->default(0);
+            $table->decimal('tax_total', 12, 3)->default(0);
             $table->decimal('grand_total', 12, 3)->default(0);
             $table->string('status', 32)->default('received');
             $table->text('note')->nullable();
@@ -1495,6 +1498,8 @@ return new class extends Migration
             $table->decimal('quantity', 12, 3);
             $table->string('unit', 16)->nullable();
             $table->decimal('line_cost', 12, 3)->default(0);
+            $table->decimal('tax_amount', 12, 3)->default(0);
+            $table->decimal('tax_rate', 5, 2)->nullable();
             $table->string('expense_category', 32)->nullable();
             $table->json('allocations_json')->nullable();
             $table->foreignId('expense_id')->nullable()->constrained('pos_expenses')->nullOnDelete();
@@ -1509,6 +1514,8 @@ return new class extends Migration
             $table->string('name');
             $table->string('expense_category', 32)->default('delivery');
             $table->decimal('amount', 12, 3)->default(0);
+            $table->decimal('tax_amount', 12, 3)->default(0);
+            $table->decimal('tax_rate', 5, 2)->nullable();
             $table->foreignId('expense_id')->nullable()->constrained('pos_expenses')->nullOnDelete();
             $table->unsignedSmallInteger('display_order')->default(0);
             $table->timestamps();
