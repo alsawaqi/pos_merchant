@@ -268,19 +268,28 @@ it('forbids a branch-scoped user from recording a receipt (HQ act)', function ()
     expect(PurchaseReceipt::query()->count())->toBe(0);
 });
 
-it('accepts a cooked product but rejects an untracked one', function (): void {
+it('refuses cooked + made-to-order + untracked products — only ready/bought-in (unit) can be purchased', function (): void {
     $ctx = makeMerchantActor();
-    $cooked = grnProduct($ctx, ['stock_mode' => 'cooked']);
-    $untracked = grnProduct($ctx, ['stock_mode' => 'untracked']);
+    // Cooked + made-to-order ('ingredient') are recipe/kitchen-driven (shelf
+    // filled by production, not bought); untracked holds no stock. All refused.
+    foreach (['cooked', 'ingredient', 'untracked'] as $mode) {
+        $product = grnProduct($ctx, ['stock_mode' => $mode]);
+        $this->postJson('/api/purchase-receipts', [
+            'lines' => [['item_type' => 'product', 'item_uuid' => $product->uuid, 'quantity' => '5', 'line_cost' => '4']],
+        ])->assertStatus(422);
+    }
 
+    // A ready/bought-in (unit) product IS accepted, and so is a physical item
+    // (which is unit-mode + internal) — both belong on a purchase receipt.
+    $boughtIn = grnProduct($ctx, ['stock_mode' => 'unit', 'name' => 'Cola Can']);
+    $physical = grnProduct($ctx, ['stock_mode' => 'unit', 'is_internal' => true, 'name' => 'Paper Cup']);
     $this->postJson('/api/purchase-receipts', [
-        'lines' => [['item_type' => 'product', 'item_uuid' => $cooked->uuid, 'quantity' => '5', 'line_cost' => '4']],
+        'lines' => [
+            ['item_type' => 'product', 'item_uuid' => $boughtIn->uuid, 'quantity' => '5', 'line_cost' => '4'],
+            ['item_type' => 'product', 'item_uuid' => $physical->uuid, 'quantity' => '5', 'line_cost' => '4'],
+        ],
     ])->assertCreated();
 
-    $this->postJson('/api/purchase-receipts', [
-        'lines' => [['item_type' => 'product', 'item_uuid' => $untracked->uuid, 'quantity' => '5', 'line_cost' => '4']],
-    ])->assertStatus(422);
-
-    // Only the cooked receipt persisted.
+    // Only the bought-in/physical receipt persisted; the 3 refused booked nothing.
     expect(PurchaseReceipt::query()->count())->toBe(1);
 });

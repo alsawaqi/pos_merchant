@@ -238,9 +238,9 @@ async function submit(): Promise<void> {
 }
 
 /**
- * Fetch EVERY unit/cooked product, walking all pages — listProducts clamps
- * per_page to 200 server-side, so a single call would silently hide a large
- * catalogue's tail. The receive picker must show every receivable product.
+ * Fetch EVERY ready/bought-in (unit) product, walking all pages — listProducts
+ * clamps per_page to 200 server-side, so a single call would silently hide a
+ * large catalogue's tail. The receive picker must show every buyable product.
  */
 async function fetchAllUnitProducts(): Promise<Product[]> {
     const all: Product[] = [];
@@ -252,8 +252,10 @@ async function fetchAllUnitProducts(): Promise<Product[]> {
         lastPageNo = res.meta.last_page;
         pageNo += 1;
     } while (pageNo <= lastPageNo);
-    // Only unit/cooked products hold stock (and can be received).
-    return all.filter((p) => p.stock_mode === 'unit' || p.stock_mode === 'cooked');
+    // A receipt records BOUGHT goods, so only ready/bought-in ('unit') products
+    // are purchasable here. Cooked + made-to-order are recipe/kitchen-driven
+    // (their shelf is filled by production, not bought), so they're excluded.
+    return all.filter((p) => p.stock_mode === 'unit');
 }
 
 onMounted(async () => {

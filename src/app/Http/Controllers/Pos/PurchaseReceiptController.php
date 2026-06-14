@@ -170,11 +170,17 @@ class PurchaseReceiptController extends Controller
             if ($product === null) {
                 return response()->json(['message' => 'A product on the receipt was not found.'], 422);
             }
-            // Mirrors ProductStockController::requireUnitProduct — only
-            // unit/cooked products (and physical items) hold unit stock.
-            if (! in_array($product->stock_mode, ['unit', 'cooked'], true)) {
+            // A purchase receipt records BOUGHT goods, so only ready/bought-in
+            // (unit) products — and physical items, which are unit-mode — may be
+            // a line. Cooked + made-to-order ('ingredient') products are
+            // recipe/kitchen-driven: their shelf stock is written by production,
+            // never purchased; untracked products hold no stock. All are refused.
+            // (This deliberately DIVERGES from ProductStockController::
+            // requireUnitProduct, which also admits cooked — there for adjusting /
+            // transferring / viewing an existing cooked shelf, not buying one.)
+            if ($product->stock_mode !== 'unit') {
                 return response()->json([
-                    'message' => 'Only finished-good (unit), cooked products, or physical items can be received here.',
+                    'message' => 'Only ready/bought-in (unit) products or physical items can be received on a purchase receipt. Cooked and made-to-order items are stocked from their recipe, not purchased.',
                 ], 422);
             }
             $resolved['product'] = $product;
