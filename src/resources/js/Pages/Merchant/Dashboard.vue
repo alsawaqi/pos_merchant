@@ -42,7 +42,7 @@ import { ApiError } from '@/lib/api';
 import { usePermissions } from '@/composables/usePermissions';
 import { MerchantPermission } from '@/lib/permissions';
 
-const { t, tm } = useI18n();
+const { t, tm, locale } = useI18n();
 const { can } = usePermissions();
 
 const comingSoon = tm('dashboard.coming_soon_list') as string[];
@@ -203,6 +203,48 @@ const topStaffDonut = computed(() => {
 });
 
 const hourCells = computed(() => summary.value?.hour_weekday.cells ?? []);
+
+// Order-type (channel) label via the orders.types.* i18n map.
+function orderTypeLabel(type: string): string {
+    const key = `orders.types.${type}`;
+    const label = t(key);
+    return label !== key ? label : (type || '—').replace(/_/g, ' ');
+}
+
+// Short localized weekday name for index 0..6 (Sun=0). 2023-01-01 was a Sunday.
+function weekdayName(i: number): string {
+    return new Date(2023, 0, 1 + i).toLocaleDateString(locale.value === 'ar' ? 'ar' : 'en-GB', { weekday: 'short' });
+}
+
+// Channel mix — a polar-area of MTD sales by order type.
+const channelMix = computed(() => {
+    const rows = summary.value?.order_type_mix ?? [];
+    return { labels: rows.map((r) => orderTypeLabel(r.order_type)), series: rows.map((r) => num(r.gross)) };
+});
+
+// Busiest days — a radar of weekly sales rhythm (from the hour×weekday matrix).
+const busiestDays = computed(() => {
+    const totals = Array.from({ length: 7 }, () => 0);
+    for (const c of hourCells.value) {
+        if (c.weekday >= 0 && c.weekday < 7) totals[c.weekday] += num(c.gross);
+    }
+    return {
+        categories: Array.from({ length: 7 }, (_, i) => weekdayName(i)),
+        series: [{ name: t('dashboard_widgets.gross'), data: totals }] as ApexSeries,
+    };
+});
+
+// Today vs your recent daily average — an animated radial gauge.
+const todayVsAvg = computed(() => {
+    const trend = summary.value?.sales_trend ?? [];
+    const past = trend.slice(0, -1); // exclude today (the last point)
+    const sum = past.reduce((a, p) => a + num(p.gross), 0);
+    const avg = past.length ? sum / past.length : 0;
+    const pct = avg > 0 ? Math.round((num(summary.value?.today.gross) / avg) * 100) : 0;
+    return { series: [pct], labels: [t('dashboard_widgets.vs_avg_label')], hasData: avg > 0 };
+});
+
+const busiestDaysHasData = computed(() => busiestDays.value.series[0].data.some((v) => v > 0));
 
 // Payment mix today donut (§5.2). Method labels resolve through the
 // orders.payment_methods i18n map (P-F5: 'bank_pos' → "Bank POS"),
@@ -428,6 +470,40 @@ const paymentMixChart = computed(() => {
                         currency
                         distributed
                         hide-legend
+                    />
+                </div>
+
+                <!-- Beautiful trio: today-vs-average gauge · channel mix · busiest days -->
+                <div class="grid gap-6 lg:grid-cols-3">
+                    <ReportChart
+                        v-if="todayVsAvg.hasData"
+                        type="radialBar"
+                        :title="t('dashboard_widgets.today_vs_avg')"
+                        :series="todayVsAvg.series"
+                        :labels="todayVsAvg.labels"
+                        :height="300"
+                        :empty-text="t('dashboard_widgets.no_data')"
+                    />
+                    <ReportChart
+                        v-if="channelMix.series.length"
+                        type="polarArea"
+                        :title="t('dashboard_widgets.channel_mix')"
+                        :series="channelMix.series"
+                        :labels="channelMix.labels"
+                        :height="300"
+                        currency
+                        :empty-text="t('dashboard_widgets.no_data')"
+                    />
+                    <ReportChart
+                        v-if="busiestDaysHasData"
+                        type="radar"
+                        :title="t('dashboard_widgets.busiest_days')"
+                        :series="busiestDays.series"
+                        :categories="busiestDays.categories"
+                        :height="300"
+                        currency
+                        hide-legend
+                        :empty-text="t('dashboard_widgets.no_data')"
                     />
                 </div>
 

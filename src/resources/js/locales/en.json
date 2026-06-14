@@ -2643,7 +2643,11 @@
         "active_devices": "Active devices",
         "devices_online": "Online now, of {total} devices in your fleet.",
         "sales_by_hour": "Sales by hour",
-        "sales_by_hour_sub": "Paid sales by day & hour, last {days} days"
+        "sales_by_hour_sub": "Paid sales by day & hour, last {days} days",
+        "channel_mix": "Channel mix (month)",
+        "busiest_days": "Busiest days",
+        "today_vs_avg": "Today vs average",
+        "vs_avg_label": "of avg day"
     },
     "dashboard_compare": {
         "title": "Sales comparison",

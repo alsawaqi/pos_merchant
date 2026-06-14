@@ -129,6 +129,25 @@ it('emits a sales-by-hour heatmap matrix', function (): void {
     expect($cell['count'])->toBe(1);
 });
 
+it('splits MTD sales by order type (channel mix)', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-15 12:00:00'));
+    $ctx = makeMerchantActor();
+
+    Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->paid()->create([
+        'grand_total' => '30.000', 'order_type' => 'dine_in', 'opened_at' => Carbon::now()->setTime(10, 0),
+    ]);
+    Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->paid()->create([
+        'grand_total' => '20.000', 'order_type' => 'delivery', 'opened_at' => Carbon::now()->setTime(11, 0),
+    ]);
+
+    $mix = $this->getJson('/api/dashboard/summary')->assertOk()->json('data.order_type_mix');
+
+    // Biggest channel first: dine_in (30) then delivery (20).
+    expect($mix)->toHaveCount(2);
+    expect($mix[0])->toMatchArray(['order_type' => 'dine_in', 'gross' => '30.000', 'count' => 1]);
+    expect($mix[1])->toMatchArray(['order_type' => 'delivery', 'gross' => '20.000', 'count' => 1]);
+});
+
 it('builds a 14-day zero-filled sales trend ending today', function (): void {
     Carbon::setTestNow(Carbon::parse('2026-06-15 12:00:00'));
     $ctx = makeMerchantActor();

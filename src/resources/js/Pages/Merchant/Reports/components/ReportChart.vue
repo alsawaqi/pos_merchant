@@ -23,7 +23,10 @@ import { computed } from 'vue';
 import VueApexCharts from 'vue3-apexcharts';
 import type { ApexOptions, ApexAxisChartSeries, ApexNonAxisChartSeries } from 'apexcharts';
 
-type ChartType = 'bar' | 'line' | 'area' | 'donut';
+type ChartType = 'bar' | 'line' | 'area' | 'donut' | 'radialBar' | 'radar' | 'polarArea';
+
+// Chart types whose `series` is a flat number[] (not [{name, data}]).
+const FLAT_SERIES_TYPES = ['donut', 'radialBar', 'polarArea'];
 
 const props = withDefaults(
     defineProps<{
@@ -90,10 +93,10 @@ function fmtAxis(n: number): string {
 const isEmpty = computed<boolean>(() => {
     const s = props.series as unknown[];
     if (!Array.isArray(s) || s.length === 0) return true;
-    if (props.type === 'donut') {
+    if (FLAT_SERIES_TYPES.includes(props.type)) {
         return (s as number[]).every((v) => !v);
     }
-    // axis series: empty if every series has no non-zero datum
+    // axis/radar series: empty if every series has no non-zero datum
     return (s as ApexAxisChartSeries).every((ser) => {
         const data = (ser?.data ?? []) as number[];
         return data.length === 0 || data.every((v) => !v);
@@ -159,6 +162,62 @@ const options = computed<ApexOptions>(() => {
                 },
             },
             tooltip: { y: { formatter: (v: number) => `${fmtValue(v)}${suffix}` } },
+        };
+    }
+
+    if (props.type === 'polarArea') {
+        return {
+            ...base,
+            labels: props.labels ?? [],
+            stroke: { width: 1, colors: ['#ffffff'] },
+            fill: { opacity: 0.85 },
+            yaxis: { show: false },
+            plotOptions: { polarArea: { rings: { strokeColor: '#e2e8f0' }, spokes: { connectorColors: '#e2e8f0' } } },
+            tooltip: { y: { formatter: (v: number) => `${fmtValue(v)}${suffix}` } },
+        };
+    }
+
+    if (props.type === 'radialBar') {
+        // A single-value gauge. The arc fills toward 100%; the centre label
+        // shows the real figure (which may exceed 100, e.g. "above average").
+        return {
+            ...base,
+            labels: props.labels ?? [],
+            plotOptions: {
+                radialBar: {
+                    hollow: { size: '58%' },
+                    track: { background: '#eef2f7', strokeWidth: '100%' },
+                    dataLabels: {
+                        name: { color: '#64748b', fontSize: '12px', offsetY: 18 },
+                        value: {
+                            color: '#0f172a',
+                            fontSize: '26px',
+                            fontWeight: 700,
+                            offsetY: -14,
+                            formatter: (v: number) => `${Math.round(v)}%`,
+                        },
+                    },
+                },
+            },
+            fill: { type: 'gradient', gradient: { shade: 'light', type: 'diagonal2', gradientToColors: ['#0ea5e9'], stops: [0, 100] } },
+            stroke: { lineCap: 'round' },
+            legend: { show: false },
+            tooltip: { enabled: false },
+        };
+    }
+
+    if (props.type === 'radar') {
+        return {
+            ...base,
+            xaxis: {
+                categories: props.categories ?? [],
+                labels: { style: { colors: Array(12).fill('#64748b'), fontSize: '11px' } },
+            },
+            yaxis: { show: false },
+            stroke: { width: 2 },
+            fill: { opacity: 0.2 },
+            markers: { size: 3, hover: { size: 5 } },
+            plotOptions: { radar: { polygons: { strokeColors: '#e2e8f0', connectorColors: '#e2e8f0' } } },
         };
     }
 

@@ -112,7 +112,34 @@ final readonly class DashboardSummaryAction
             'top_customers' => $this->topCustomers($companyId, $branchIds, $monthStart, $todayEnd),
             'top_staff' => $this->topStaff($companyId, $branchIds, $monthStart, $todayEnd),
             'top_ingredients' => $this->topIngredients($companyId, $branchIds, $monthStart, $todayEnd),
+            // MTD sales split by order type (channel) — quick / dine-in / to-go
+            // / delivery / car — for the channel-mix chart.
+            'order_type_mix' => $this->orderTypeMix($companyId, $branchIds, $monthStart, $todayEnd),
         ];
+    }
+
+    /**
+     * MTD paid gross + count grouped by order type (channel).
+     *
+     * @param  list<int>|null  $branchIds
+     * @return list<array{order_type: string, gross: string, count: int}>
+     */
+    private function orderTypeMix(int $companyId, ?array $branchIds, Carbon $from, Carbon $to): array
+    {
+        return DB::table('pos_orders')
+            ->where('company_id', $companyId)
+            ->when($branchIds !== null, fn ($q) => $q->whereIn('branch_id', $branchIds))
+            ->where('status', OrderStatus::Paid->value)
+            ->whereBetween('opened_at', [$from, $to])
+            ->selectRaw('order_type, COALESCE(SUM(grand_total), 0) AS gross, COUNT(*) AS cnt')
+            ->groupBy('order_type')
+            ->orderByDesc('gross')
+            ->get()
+            ->map(static fn ($r): array => [
+                'order_type' => (string) ($r->order_type ?? ''),
+                'gross' => number_format((float) $r->gross, 3, '.', ''),
+                'count' => (int) $r->cnt,
+            ])->all();
     }
 
     /**

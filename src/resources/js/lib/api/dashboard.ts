@@ -56,6 +56,8 @@ export interface DashboardSummaryPayload {
         window_days: number;
         cells: { weekday: number; hour: number; gross: string; count: number }[];
     };
+    // MTD sales split by order type (channel) — for the channel-mix chart.
+    order_type_mix: { order_type: string; gross: string; count: number }[];
     // §5.2 tiles: today's tender split, charity round-up, device fleet.
     payment_mix_today: PaymentMixSlice[];
     roundup_today: { total: string; count: number };
