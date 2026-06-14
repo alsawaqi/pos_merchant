@@ -777,6 +777,9 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // mini-report).
         Route::get('dashboard/summary', [DashboardController::class, 'summary'])
             ->name('dashboard.summary');
+        // Period-over-period sales comparison (dashboard + branch control center).
+        Route::get('dashboard/sales-comparison', [DashboardController::class, 'salesComparison'])
+            ->name('dashboard.sales-comparison');
 
         // -------- Saved views — per-user filter presets -----------
         // Personal bookmarks; NO permission gate (every authed user

@@ -23,6 +23,7 @@ import {
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import OrderDetailDrawer from '@/Pages/Merchant/Orders/components/OrderDetailDrawer.vue';
 import SalesHeatmap from '@/Pages/Merchant/Reports/components/SalesHeatmap.vue';
+import SalesComparison from '@/Pages/Merchant/Reports/components/SalesComparison.vue';
 import ReportChart from '@/Pages/Merchant/Reports/components/ReportChart.vue';
 import ReceiptTemplateDialog from '@/Pages/Merchant/Branches/components/ReceiptTemplateDialog.vue';
 import DeviceLiveDialog from '@/Pages/Merchant/Branches/components/DeviceLiveDialog.vue';
@@ -250,6 +251,9 @@ onMounted(() => {
                         <div class="mt-0.5 text-xs text-slate-500">{{ activity.sales.mtd.count }} {{ t('orders.totals.count') }}</div>
                     </div>
                 </div>
+
+                <!-- Period-over-period sales comparison (this week/month vs previous) -->
+                <SalesComparison v-if="canReports && branch" :branch-id="branch.id" />
 
                 <!-- Sales-by-hour performance heatmap -->
                 <SalesHeatmap

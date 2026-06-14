@@ -51,6 +51,11 @@ export interface DashboardSummaryPayload {
     top_customers: { customer_name: string; total_spend: string }[];
     top_staff: { staff_name: string; revenue: string }[];
     top_ingredients: { ingredient_name: string; unit: string; consumed: string }[];
+    // Sales-by-hour (day-of-week × hour) heatmap over the trailing window.
+    hour_weekday: {
+        window_days: number;
+        cells: { weekday: number; hour: number; gross: string; count: number }[];
+    };
     // §5.2 tiles: today's tender split, charity round-up, device fleet.
     payment_mix_today: PaymentMixSlice[];
     roundup_today: { total: string; count: number };
@@ -60,4 +65,43 @@ export interface DashboardSummaryPayload {
 
 export function fetchDashboardSummary(): Promise<{ data: DashboardSummaryPayload }> {
     return apiGet<{ data: DashboardSummaryPayload }>('/api/dashboard/summary');
+}
+
+// ---- Period-over-period sales comparison (dashboard + branch) ----
+
+export interface SalesComparisonPoint {
+    i: number;
+    date: string;  // YYYY-MM-DD
+    gross: string; // decimal-3 OMR
+}
+
+export interface SalesComparisonSide {
+    from: string;
+    to: string;
+    /** Comparable to-date total (drives change_pct). */
+    total: string;
+    /** Whole-period total (previous side only). */
+    full_total?: string;
+    series: SalesComparisonPoint[];
+}
+
+export interface SalesComparisonPayload {
+    period: 'week' | 'month';
+    offset: number;
+    in_progress: boolean;
+    change_pct: number | null;
+    current: SalesComparisonSide;
+    previous: SalesComparisonSide;
+}
+
+export function fetchSalesComparison(params: {
+    period: 'week' | 'month';
+    offset?: number;
+    branchId?: number;
+}): Promise<{ data: SalesComparisonPayload }> {
+    const q = new URLSearchParams();
+    q.set('period', params.period);
+    if (params.offset) q.set('offset', String(params.offset));
+    if (params.branchId != null) q.set('branch_id', String(params.branchId));
+    return apiGet<{ data: SalesComparisonPayload }>(`/api/dashboard/sales-comparison?${q.toString()}`);
 }

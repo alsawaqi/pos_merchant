@@ -28,6 +28,8 @@ import { Sparkles, Target, TrendingUp, TrendingDown, Minus, Trophy, AlertTriangl
 import BaseModal from '@/Components/BaseModal.vue';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import ReportChart from '@/Pages/Merchant/Reports/components/ReportChart.vue';
+import SalesHeatmap from '@/Pages/Merchant/Reports/components/SalesHeatmap.vue';
+import SalesComparison from '@/Pages/Merchant/Reports/components/SalesComparison.vue';
 import { authState } from '@/stores/auth';
 import { fetchDashboardSummary, type DashboardSummaryPayload } from '@/lib/api/dashboard';
 import {
@@ -165,14 +167,6 @@ const trendChart = computed(() => {
     };
 });
 
-const topProductsChart = computed(() => {
-    const rows = summary.value?.top_products ?? [];
-    return {
-        categories: rows.map((r) => r.product_name),
-        series: [{ name: t('dashboard_widgets.gross'), data: rows.map((r) => num(r.revenue)) }] as ApexSeries,
-    };
-});
-
 const topBranchesChart = computed(() => {
     const rows = summary.value?.top_branches ?? [];
     return {
@@ -189,14 +183,6 @@ const topCustomersChart = computed(() => {
     };
 });
 
-const topStaffChart = computed(() => {
-    const rows = summary.value?.top_staff ?? [];
-    return {
-        categories: rows.map((r) => r.staff_name),
-        series: [{ name: t('dashboard_widgets.gross'), data: rows.map((r) => num(r.revenue)) }] as ApexSeries,
-    };
-});
-
 const topIngredientsChart = computed(() => {
     const rows = summary.value?.top_ingredients ?? [];
     return {
@@ -204,6 +190,19 @@ const topIngredientsChart = computed(() => {
         series: [{ name: t('reports.inventory_consumption.columns.consumed'), data: rows.map((r) => num(r.consumed)) }] as ApexSeries,
     };
 });
+
+// Donut variants (chart variety): revenue share by product + by staff.
+const topProductsDonut = computed(() => {
+    const rows = summary.value?.top_products ?? [];
+    return { labels: rows.map((r) => r.product_name), series: rows.map((r) => num(r.revenue)) };
+});
+
+const topStaffDonut = computed(() => {
+    const rows = summary.value?.top_staff ?? [];
+    return { labels: rows.map((r) => r.staff_name), series: rows.map((r) => num(r.revenue)) };
+});
+
+const hourCells = computed(() => summary.value?.hour_weekday.cells ?? []);
 
 // Payment mix today donut (§5.2). Method labels resolve through the
 // orders.payment_methods i18n map (P-F5: 'bank_pos' → "Bank POS"),
@@ -361,6 +360,11 @@ const paymentMixChart = computed(() => {
 
             <!-- v2 dashboard graphs -->
             <div v-if="summary" class="space-y-6">
+                <!-- Period-over-period comparison (this week/month vs the previous,
+                     filterable, with an up/down % delta). -->
+                <SalesComparison />
+
+                <!-- Daily sales trend (area). -->
                 <ReportChart
                     type="area"
                     :title="t('dashboard_widgets.sales_trend')"
@@ -372,9 +376,16 @@ const paymentMixChart = computed(() => {
                     :empty-text="t('dashboard_widgets.no_data')"
                 />
 
+                <!-- Sales by hour (day-of-week × hour heatmap). -->
+                <SalesHeatmap
+                    :title="t('dashboard_widgets.sales_by_hour')"
+                    :subtitle="t('dashboard_widgets.sales_by_hour_sub', { days: summary.hour_weekday.window_days })"
+                    :cells="hourCells"
+                    :empty-text="t('dashboard_widgets.no_data')"
+                />
+
                 <div class="grid gap-6 lg:grid-cols-2">
-                    <!-- Payment mix today (§5.2) — donut of successful
-                         tenders on today's paid orders. -->
+                    <!-- Payment mix today (§5.2) — donut of today's tenders. -->
                     <ReportChart
                         v-if="paymentMixChart.series.length"
                         type="donut"
@@ -383,33 +394,44 @@ const paymentMixChart = computed(() => {
                         :labels="paymentMixChart.labels"
                         currency
                     />
+                    <!-- Top products — revenue-share donut. -->
                     <ReportChart
-                        v-if="topProductsChart.categories.length"
-                        type="bar"
+                        v-if="topProductsDonut.series.length"
+                        type="donut"
                         :title="t('dashboard_widgets.top_products')"
-                        :series="topProductsChart.series"
-                        :categories="topProductsChart.categories"
-                        :height="Math.max(220, topProductsChart.categories.length * 44)"
+                        :series="topProductsDonut.series"
+                        :labels="topProductsDonut.labels"
                         currency
-                        horizontal
-                        distributed
-                        hide-legend
+                        :empty-text="t('dashboard_widgets.no_data')"
                     />
                 </div>
 
                 <div class="grid gap-6 lg:grid-cols-2">
+                    <!-- Top staff — revenue-share donut. -->
+                    <ReportChart
+                        v-if="topStaffDonut.series.length"
+                        type="donut"
+                        :title="t('dashboard_widgets.top_staff')"
+                        :series="topStaffDonut.series"
+                        :labels="topStaffDonut.labels"
+                        currency
+                        :empty-text="t('dashboard_widgets.no_data')"
+                    />
+                    <!-- Top branches — vertical bar (variety vs the horizontal ones). -->
                     <ReportChart
                         v-if="topBranchesChart.categories.length"
                         type="bar"
                         :title="t('dashboard_widgets.top_branches')"
                         :series="topBranchesChart.series"
                         :categories="topBranchesChart.categories"
-                        :height="Math.max(220, topBranchesChart.categories.length * 44)"
+                        :height="280"
                         currency
-                        horizontal
                         distributed
                         hide-legend
                     />
+                </div>
+
+                <div class="grid gap-6 lg:grid-cols-2">
                     <ReportChart
                         v-if="topCustomersChart.categories.length"
                         type="bar"
@@ -417,21 +439,6 @@ const paymentMixChart = computed(() => {
                         :series="topCustomersChart.series"
                         :categories="topCustomersChart.categories"
                         :height="Math.max(220, topCustomersChart.categories.length * 44)"
-                        currency
-                        horizontal
-                        distributed
-                        hide-legend
-                    />
-                </div>
-
-                <div class="grid gap-6 lg:grid-cols-2">
-                    <ReportChart
-                        v-if="topStaffChart.categories.length"
-                        type="bar"
-                        :title="t('dashboard_widgets.top_staff')"
-                        :series="topStaffChart.series"
-                        :categories="topStaffChart.categories"
-                        :height="Math.max(220, topStaffChart.categories.length * 44)"
                         currency
                         horizontal
                         distributed

@@ -2641,7 +2641,20 @@
         "roundup_today": "Round-up today",
         "roundup_count": "{count} successful donations collected today.",
         "active_devices": "Active devices",
-        "devices_online": "Online now, of {total} devices in your fleet."
+        "devices_online": "Online now, of {total} devices in your fleet.",
+        "sales_by_hour": "Sales by hour",
+        "sales_by_hour_sub": "Paid sales by day & hour, last {days} days"
+    },
+    "dashboard_compare": {
+        "title": "Sales comparison",
+        "week": "Week",
+        "month": "Month",
+        "current": "This period",
+        "previous": "Previous",
+        "day": "Day {n}",
+        "so_far": "so far",
+        "older": "Earlier period",
+        "newer": "Later period"
     },
     "audit_log": {
         "section_label": "Phase 7b",

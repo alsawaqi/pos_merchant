@@ -113,6 +113,22 @@ it('returns zeros when no data exists', function (): void {
     expect($trend[13]['count'])->toBe(0);
 });
 
+it('emits a sales-by-hour heatmap matrix', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-15 12:00:00')); // Monday (weekday 1)
+    $ctx = makeMerchantActor();
+
+    Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->paid()->create([
+        'grand_total' => '20.000', 'opened_at' => Carbon::parse('2026-06-15 10:00:00'),
+    ]);
+
+    $hw = $this->getJson('/api/dashboard/summary')->assertOk()->json('data.hour_weekday');
+
+    expect($hw['window_days'])->toBe(30);
+    $cell = collect($hw['cells'])->first(fn ($c) => $c['weekday'] === 1 && $c['hour'] === 10);
+    expect($cell['gross'])->toBe('20.000');
+    expect($cell['count'])->toBe(1);
+});
+
 it('builds a 14-day zero-filled sales trend ending today', function (): void {
     Carbon::setTestNow(Carbon::parse('2026-06-15 12:00:00'));
     $ctx = makeMerchantActor();

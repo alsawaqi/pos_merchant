@@ -40,6 +40,9 @@ final readonly class DashboardSummaryAction
     /** Days of daily sales history fed to the trend chart. */
     private const TREND_DAYS = 14;
 
+    /** Days of history for the "Sales by Hour" heatmap. */
+    private const HEATMAP_DAYS = 30;
+
     /** Top-N size for the dashboard breakdown charts. */
     private const TOP_N = 5;
 
@@ -102,6 +105,8 @@ final readonly class DashboardSummaryAction
             // MTD top-N breakdowns. Windows: trend = trailing TREND_DAYS,
             // every top-N = month-to-date.
             'sales_trend' => $this->salesTrend($companyId, $branchIds, self::TREND_DAYS),
+            // Sales-by-hour (day-of-week × hour) heatmap over the trailing window.
+            'hour_weekday' => $this->hourWeekday($companyId, $branchIds),
             'top_products' => $this->topProducts($companyId, $branchIds, $monthStart, $todayEnd),
             'top_branches' => $this->topBranches($companyId, $branchIds, $monthStart, $todayEnd),
             'top_customers' => $this->topCustomers($companyId, $branchIds, $monthStart, $todayEnd),
@@ -149,6 +154,48 @@ final readonly class DashboardSummaryAction
         }
 
         return $series;
+    }
+
+    /**
+     * (Day-of-week × hour) paid-gross matrix over the trailing HEATMAP_DAYS, for
+     * the dashboard "Sales by Hour" heatmap. Sparse — only buckets with paid
+     * orders; the frontend zero-fills the 7×24 grid. Driver-aware (sqlite tests
+     * vs Postgres prod). Branch-scoped.
+     *
+     * @param  list<int>|null  $branchIds
+     * @return array{window_days: int, cells: list<array{weekday: int, hour: int, gross: string, count: int}>}
+     */
+    private function hourWeekday(int $companyId, ?array $branchIds): array
+    {
+        $now = Carbon::now();
+        $from = $now->copy()->subDays(self::HEATMAP_DAYS - 1)->startOfDay();
+        $to = $now->copy()->endOfDay();
+
+        $driver = DB::connection()->getDriverName();
+        $hourExpr = $driver === 'sqlite'
+            ? "CAST(strftime('%H', opened_at) AS INTEGER)"
+            : 'EXTRACT(HOUR FROM opened_at)::int';
+        $dowExpr = $driver === 'sqlite'
+            ? "CAST(strftime('%w', opened_at) AS INTEGER)"
+            : 'EXTRACT(DOW FROM opened_at)::int';
+
+        $cells = DB::table('pos_orders')
+            ->where('company_id', $companyId)
+            ->when($branchIds !== null, fn ($q) => $q->whereIn('branch_id', $branchIds))
+            ->where('status', OrderStatus::Paid->value)
+            ->whereBetween('opened_at', [$from, $to])
+            ->selectRaw("$dowExpr AS weekday, $hourExpr AS hour, COALESCE(SUM(grand_total), 0) AS gross, COUNT(*) AS cnt")
+            ->groupByRaw("$dowExpr, $hourExpr")
+            ->orderByRaw("$dowExpr, $hourExpr")
+            ->get()
+            ->map(static fn ($r): array => [
+                'weekday' => (int) $r->weekday,
+                'hour' => (int) $r->hour,
+                'gross' => number_format((float) $r->gross, 3, '.', ''),
+                'count' => (int) $r->cnt,
+            ])->all();
+
+        return ['window_days' => self::HEATMAP_DAYS, 'cells' => $cells];
     }
 
     /**

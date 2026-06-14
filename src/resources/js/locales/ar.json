@@ -2641,7 +2641,20 @@
         "roundup_today": "تبرعات التقريب اليوم",
         "roundup_count": "{count} تبرعًا ناجحًا تم تحصيله اليوم.",
         "active_devices": "الأجهزة النشطة",
-        "devices_online": "متصلة الآن، من أصل {total} جهازًا في أسطولك."
+        "devices_online": "متصلة الآن، من أصل {total} جهازًا في أسطولك.",
+        "sales_by_hour": "المبيعات حسب الساعة",
+        "sales_by_hour_sub": "المبيعات المدفوعة حسب اليوم والساعة، آخر {days} يومًا"
+    },
+    "dashboard_compare": {
+        "title": "مقارنة المبيعات",
+        "week": "أسبوع",
+        "month": "شهر",
+        "current": "هذه الفترة",
+        "previous": "السابقة",
+        "day": "اليوم {n}",
+        "so_far": "حتى الآن",
+        "older": "فترة أقدم",
+        "newer": "فترة أحدث"
     },
     "audit_log": {
         "section_label": "المرحلة 7ب",
