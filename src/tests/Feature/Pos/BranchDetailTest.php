@@ -17,6 +17,7 @@ use App\Models\BranchProduct;
 use App\Models\Customer;
 use App\Models\Ingredient;
 use App\Models\Order;
+use App\Models\OrderItem;
 use App\Models\PosStaff;
 use App\Models\Product;
 use App\Models\Shift;
@@ -107,6 +108,43 @@ it('returns the branch activity feed + sales snapshot', function (): void {
     expect($mon['gross'])->toBe('20.000');
     expect($wed['gross'])->toBe('30.000');
     expect($cells)->toHaveCount(2);
+});
+
+it('returns branch analytics: top products, staff activity, and a sales trend', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-15 12:00:00'));
+    $ctx = makeMerchantActor();
+    $staff = PosStaff::factory()->for($ctx['company'], 'company')->create(['branch_id' => $ctx['branch']->id, 'name' => 'Sam']);
+    $latte = Product::factory()->for($ctx['company'], 'company')->create(['name' => 'Latte']);
+
+    $order = Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->paid()->create([
+        'grand_total' => '20.000', 'opened_at' => Carbon::now()->setTime(10, 0), 'staff_id' => $staff->id,
+    ]);
+    OrderItem::factory()->for($order, 'order')->for($latte, 'product')->create([
+        'product_name_snapshot' => 'Latte', 'qty' => '3.000', 'unit_price_snapshot' => '5.000', 'line_total' => '15.000',
+    ]);
+
+    $data = $this->getJson("/api/pos/branches/{$ctx['branch']->uuid}/activity")->assertOk()->json('data');
+
+    // Top product by quantity sold; revenue is the net line_total (reconciles
+    // with the Product Performance report, which also sums line_total).
+    expect($data['top_products'])->toHaveCount(1);
+    expect($data['top_products'][0]['product_name'])->toBe('Latte');
+    expect($data['top_products'][0]['qty_sold'])->toBe('3.000');
+    expect($data['top_products'][0]['revenue'])->toBe('15.000');
+
+    // Staff activity: Sam, 1 paid order, 20 gross.
+    expect($data['staff_activity'])->toHaveCount(1);
+    expect($data['staff_activity'][0]['staff_name'])->toBe('Sam');
+    expect($data['staff_activity'][0]['orders_paid'])->toBe(1);
+    expect($data['staff_activity'][0]['revenue'])->toBe('20.000');
+
+    // Sales trend: a zero-filled 30-day series; today (last point) carries 20.
+    expect($data['window_days'])->toBe(30);
+    expect($data['sales_trend'])->toHaveCount(30);
+    $trend = $data['sales_trend'];
+    $last = end($trend);
+    expect($last['date'])->toBe('2026-06-15');
+    expect($last['gross'])->toBe('20.000');
 });
 
 it('does not leak another tenant branch (404 on every section)', function (): void {

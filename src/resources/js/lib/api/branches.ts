@@ -193,6 +193,14 @@ export interface BranchActivity {
         window_days: number;
         cells: { weekday: number; hour: number; gross: string; count: number }[];
     };
+    /** Trailing window (days) the three analytics blocks below cover. */
+    window_days: number;
+    /** Most-sold products at the branch (by qty), for the top-products donut. */
+    top_products: { product_name: string; qty_sold: string; revenue: string }[];
+    /** Most-active staff: paid orders + revenue, for the staff donut + list. */
+    staff_activity: { staff_name: string; orders_paid: number; revenue: string }[];
+    /** Zero-filled daily paid-gross series, for the trend line. */
+    sales_trend: { date: string; gross: string; count: number }[];
     recent_orders: {
         uuid: string;
         status: string | null;

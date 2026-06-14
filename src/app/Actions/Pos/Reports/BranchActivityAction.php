@@ -32,6 +32,11 @@ final readonly class BranchActivityAction
     /** Trailing window (days) for the Sales-by-Hour performance heatmap. */
     private const HEATMAP_DAYS = 30;
 
+    /** Trailing window (days) + size for the top-products / staff / trend cards. */
+    private const WINDOW_DAYS = 30;
+
+    private const TOP_N = 6;
+
     /**
      * @return array<string, mixed>
      */
@@ -40,10 +45,132 @@ final readonly class BranchActivityAction
         return [
             'sales' => $this->salesSnapshot($companyId, $branchId),
             'hour_weekday' => $this->hourWeekday($companyId, $branchId),
+            // Branch control-center analytics (trailing WINDOW_DAYS), each a
+            // single branch-scoped aggregate the frontend charts: a top-products
+            // donut, a staff revenue-share donut + most-active list, and a daily
+            // sales-trend line.
+            'top_products' => $this->topProducts($companyId, $branchId),
+            'staff_activity' => $this->staffActivity($companyId, $branchId),
+            'sales_trend' => $this->salesTrend($companyId, $branchId),
+            'window_days' => self::WINDOW_DAYS,
             'recent_orders' => $this->recentOrders($companyId, $branchId),
             'recent_shifts' => $this->recentShifts($companyId, $branchId),
             'recent_movements' => $this->recentMovements($branchId),
         ];
+    }
+
+    /**
+     * The trailing analytics window [from, to].
+     *
+     * @return array{0: Carbon, 1: Carbon}
+     */
+    private function window(): array
+    {
+        $now = Carbon::now();
+
+        return [$now->copy()->subDays(self::WINDOW_DAYS - 1)->startOfDay(), $now->copy()->endOfDay()];
+    }
+
+    /**
+     * Most-sold products at this branch over the window, by quantity (the pie).
+     *
+     * @return list<array{product_name: string, qty_sold: string, revenue: string}>
+     */
+    private function topProducts(int $companyId, int $branchId): array
+    {
+        [$from, $to] = $this->window();
+
+        return DB::table('pos_order_items')
+            ->join('pos_orders', 'pos_orders.id', '=', 'pos_order_items.order_id')
+            ->where('pos_orders.company_id', $companyId)
+            ->where('pos_orders.branch_id', $branchId)
+            ->where('pos_orders.status', OrderStatus::Paid->value)
+            ->whereBetween('pos_orders.opened_at', [$from, $to])
+            ->selectRaw('
+                pos_order_items.product_name_snapshot AS product_name,
+                COALESCE(SUM(pos_order_items.qty), 0) AS qty_sold,
+                COALESCE(SUM(pos_order_items.line_total), 0) AS revenue
+            ')
+            ->groupBy('pos_order_items.product_id', 'pos_order_items.product_name_snapshot')
+            ->orderByDesc('qty_sold')
+            ->limit(self::TOP_N)
+            ->get()
+            ->map(static fn ($r): array => [
+                'product_name' => (string) ($r->product_name ?? ''),
+                'qty_sold' => number_format((float) $r->qty_sold, 3, '.', ''),
+                'revenue' => number_format((float) $r->revenue, 3, '.', ''),
+            ])->all();
+    }
+
+    /**
+     * Most-active staff at this branch over the window: paid orders + revenue.
+     *
+     * @return list<array{staff_name: string, orders_paid: int, revenue: string}>
+     */
+    private function staffActivity(int $companyId, int $branchId): array
+    {
+        [$from, $to] = $this->window();
+
+        return DB::table('pos_orders')
+            ->join('pos_staff', 'pos_staff.id', '=', 'pos_orders.staff_id')
+            ->where('pos_orders.company_id', $companyId)
+            ->where('pos_orders.branch_id', $branchId)
+            ->where('pos_orders.status', OrderStatus::Paid->value)
+            ->whereNotNull('pos_orders.staff_id')
+            ->whereBetween('pos_orders.opened_at', [$from, $to])
+            ->selectRaw('
+                pos_staff.name AS staff_name,
+                COUNT(*) AS orders_paid,
+                COALESCE(SUM(pos_orders.grand_total), 0) AS revenue
+            ')
+            ->groupBy('pos_staff.id', 'pos_staff.name')
+            ->orderByDesc('revenue')
+            ->limit(self::TOP_N)
+            ->get()
+            ->map(static fn ($r): array => [
+                'staff_name' => (string) ($r->staff_name ?? ''),
+                'orders_paid' => (int) $r->orders_paid,
+                'revenue' => number_format((float) $r->revenue, 3, '.', ''),
+            ])->all();
+    }
+
+    /**
+     * Zero-filled daily paid-gross series for this branch (the trend line).
+     * Driver-aware date expression (sqlite tests vs Postgres prod).
+     *
+     * @return list<array{date: string, gross: string, count: int}>
+     */
+    private function salesTrend(int $companyId, int $branchId): array
+    {
+        $driver = DB::connection()->getDriverName();
+        $dayExpr = $driver === 'sqlite'
+            ? "strftime('%Y-%m-%d', opened_at)"
+            : "to_char(opened_at, 'YYYY-MM-DD')";
+
+        [$start, $to] = $this->window();
+
+        $rows = DB::table('pos_orders')
+            ->where('company_id', $companyId)
+            ->where('branch_id', $branchId)
+            ->where('status', OrderStatus::Paid->value)
+            ->whereBetween('opened_at', [$start, $to])
+            ->selectRaw("$dayExpr AS day, COALESCE(SUM(grand_total), 0) AS gross, COUNT(*) AS cnt")
+            ->groupByRaw($dayExpr)
+            ->get()
+            ->keyBy('day');
+
+        $series = [];
+        for ($i = 0; $i < self::WINDOW_DAYS; $i++) {
+            $d = $start->copy()->addDays($i)->format('Y-m-d');
+            $r = $rows->get($d);
+            $series[] = [
+                'date' => $d,
+                'gross' => number_format((float) ($r->gross ?? 0), 3, '.', ''),
+                'count' => (int) ($r->cnt ?? 0),
+            ];
+        }
+
+        return $series;
     }
 
     /**

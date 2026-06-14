@@ -13,17 +13,21 @@
  * without catalogue/pos_staff/reports view just doesn't see it.
  */
 
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRoute, RouterLink } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import {
     ArrowLeft, Package, Users, MonitorSmartphone, Receipt, Clock, Boxes, Activity,
+    Plus, UserPlus, TrendingUp,
 } from 'lucide-vue-next';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import OrderDetailDrawer from '@/Pages/Merchant/Orders/components/OrderDetailDrawer.vue';
 import SalesHeatmap from '@/Pages/Merchant/Reports/components/SalesHeatmap.vue';
+import ReportChart from '@/Pages/Merchant/Reports/components/ReportChart.vue';
 import ReceiptTemplateDialog from '@/Pages/Merchant/Branches/components/ReceiptTemplateDialog.vue';
 import DeviceLiveDialog from '@/Pages/Merchant/Branches/components/DeviceLiveDialog.vue';
+import BranchAddStockDialog from '@/Pages/Merchant/Branches/components/BranchAddStockDialog.vue';
+import BranchAssignStaffDialog from '@/Pages/Merchant/Branches/components/BranchAssignStaffDialog.vue';
 import {
     showMerchantBranch, getBranchProducts, getBranchStaff, getBranchActivity, listBranchDevices,
     type MerchantBranch, type BranchProductRow, type BranchStaffMember, type BranchActivity, type BranchDevice,
@@ -56,6 +60,40 @@ const canStaff = can(MerchantPermission.PosStaffView);
 const canReports = can(MerchantPermission.ReportsView);
 const canManageBranch = can(MerchantPermission.BranchesUpdate);
 const canDeviceLive = can(MerchantPermission.DevicesLiveView);
+const canInventoryManage = can(MerchantPermission.InventoryManage);
+const canStaffCreate = can(MerchantPermission.PosStaffCreate);
+
+// Inline control-center dialogs.
+const showAddStock = ref(false);
+const showAssignStaff = ref(false);
+
+// --- Analytics chart data, derived from the activity payload ---
+const topProductLabels = computed(() => (activity.value?.top_products ?? []).map((p) => p.product_name));
+const topProductSeries = computed(() => (activity.value?.top_products ?? []).map((p) => Number(p.qty_sold) || 0));
+const staffLabels = computed(() => (activity.value?.staff_activity ?? []).map((s) => s.staff_name));
+const staffRevenueSeries = computed(() => (activity.value?.staff_activity ?? []).map((s) => Number(s.revenue) || 0));
+const trendCategories = computed(() => (activity.value?.sales_trend ?? []).map((d) => d.date.slice(5)));
+const trendSeries = computed(() => [
+    { name: t('branches.show.sales_label'), data: (activity.value?.sales_trend ?? []).map((d) => Number(d.gross) || 0) },
+]);
+const windowDays = computed(() => activity.value?.window_days ?? 30);
+
+// A device counts as online when seen within the last 10 minutes.
+const ONLINE_WINDOW_MS = 10 * 60 * 1000;
+function isDeviceOnline(lastSeen: string | null): boolean {
+    if (!lastSeen) return false;
+    const ts = new Date(lastSeen).getTime();
+    return Number.isFinite(ts) && Date.now() - ts < ONLINE_WINDOW_MS;
+}
+
+function refreshStock(): void {
+    if (canCatalogue) void safe(() => getBranchProducts(uuid), products);
+    if (canReports) void safe(() => getBranchActivity(uuid), activity);
+}
+function refreshStaff(): void {
+    if (canStaff) void safe(() => getBranchStaff(uuid), staff);
+    if (canReports) void safe(() => getBranchActivity(uuid), activity);
+}
 
 function onReceiptSaved(updated: MerchantBranch): void {
     branch.value = updated;
@@ -166,16 +204,36 @@ onMounted(() => {
                             </dl>
                         </div>
 
-                        <button
-                            v-if="canManageBranch"
-                            type="button"
-                            class="inline-flex shrink-0 items-center gap-2 rounded-xl border border-teal-200 bg-teal-50 px-3.5 py-2 text-sm font-semibold text-teal-800 transition hover:bg-teal-100"
-                            :title="t('branches.show.receipt_template_hint')"
-                            @click="showReceiptDialog = true"
-                        >
-                            <Receipt class="size-4" />
-                            {{ t('branches.show.receipt_template') }}
-                        </button>
+                        <div class="flex shrink-0 flex-wrap items-center gap-2">
+                            <button
+                                v-if="canInventoryManage"
+                                type="button"
+                                class="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700"
+                                @click="showAddStock = true"
+                            >
+                                <Plus class="size-4" />
+                                {{ t('branches.show.add_stock') }}
+                            </button>
+                            <button
+                                v-if="canStaffCreate"
+                                type="button"
+                                class="inline-flex items-center gap-1.5 rounded-xl border border-teal-200 bg-teal-50 px-3.5 py-2 text-sm font-semibold text-teal-800 transition hover:bg-teal-100"
+                                @click="showAssignStaff = true"
+                            >
+                                <UserPlus class="size-4" />
+                                {{ t('branches.show.assign_staff') }}
+                            </button>
+                            <button
+                                v-if="canManageBranch"
+                                type="button"
+                                class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                                :title="t('branches.show.receipt_template_hint')"
+                                @click="showReceiptDialog = true"
+                            >
+                                <Receipt class="size-4" />
+                                {{ t('branches.show.receipt_template') }}
+                            </button>
+                        </div>
                     </div>
                 </header>
 
@@ -201,6 +259,63 @@ onMounted(() => {
                     :cells="activity.hour_weekday.cells"
                     :empty-text="t('branches.show.no_activity')"
                 />
+
+                <!-- Analytics: top products + staff revenue share -->
+                <div v-if="activity" class="grid gap-6 lg:grid-cols-2">
+                    <ReportChart
+                        type="donut"
+                        :title="t('branches.show.top_products')"
+                        :subtitle="t('branches.show.last_days', { days: windowDays })"
+                        :series="topProductSeries"
+                        :labels="topProductLabels"
+                        :height="280"
+                        :empty-text="t('branches.show.no_activity')"
+                    />
+                    <ReportChart
+                        type="donut"
+                        :title="t('branches.show.staff_revenue')"
+                        :subtitle="t('branches.show.last_days', { days: windowDays })"
+                        :series="staffRevenueSeries"
+                        :labels="staffLabels"
+                        :height="280"
+                        currency
+                        :empty-text="t('branches.show.no_activity')"
+                    />
+                </div>
+
+                <!-- Sales trend line -->
+                <ReportChart
+                    v-if="activity"
+                    type="line"
+                    :title="t('branches.show.sales_trend')"
+                    :subtitle="t('branches.show.last_days', { days: windowDays })"
+                    :series="trendSeries"
+                    :categories="trendCategories"
+                    :height="260"
+                    currency
+                    hide-legend
+                    :empty-text="t('branches.show.no_activity')"
+                />
+
+                <!-- Most-active staff -->
+                <section v-if="activity && activity.staff_activity.length" class="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <h2 class="flex items-center gap-2 border-b border-slate-200 px-5 py-3 text-base font-semibold text-slate-950">
+                        <TrendingUp class="size-4 text-slate-500" />{{ t('branches.show.most_active_staff') }}
+                        <span class="text-xs font-normal text-slate-400">· {{ t('branches.show.last_days', { days: windowDays }) }}</span>
+                    </h2>
+                    <ul class="divide-y divide-slate-100">
+                        <li v-for="(s, i) in activity.staff_activity" :key="s.staff_name + i" class="flex items-center justify-between gap-3 px-5 py-2.5">
+                            <div class="flex items-center gap-2.5">
+                                <span class="grid size-6 place-items-center rounded-full bg-slate-100 text-xs font-bold text-slate-500">{{ i + 1 }}</span>
+                                <span class="text-sm font-medium text-slate-900">{{ s.staff_name }}</span>
+                            </div>
+                            <div class="flex items-center gap-4 text-sm">
+                                <span class="text-slate-500">{{ s.orders_paid }} {{ t('orders.totals.count') }}</span>
+                                <span class="font-semibold tabular-nums text-slate-900">{{ s.revenue }} <span class="text-xs font-normal text-slate-400">OMR</span></span>
+                            </div>
+                        </li>
+                    </ul>
+                </section>
 
                 <!-- Products -->
                 <section v-if="products" class="rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -259,9 +374,16 @@ onMounted(() => {
                     </h2>
                     <ul class="divide-y divide-slate-100">
                         <li v-for="d in devices" :key="d.id" class="flex items-center justify-between gap-3 px-5 py-3">
-                            <div>
-                                <p class="text-sm font-semibold text-slate-900">{{ d.name ?? d.kiosk_id ?? '—' }}</p>
-                                <p class="text-xs text-slate-500">{{ humanize(d.device_type) }}<span v-if="d.last_seen_at"> · {{ t('branches.devices.last_seen') }} {{ formatDateTime(d.last_seen_at) }}</span></p>
+                            <div class="flex items-center gap-2.5">
+                                <span
+                                    class="size-2.5 shrink-0 rounded-full"
+                                    :class="isDeviceOnline(d.last_seen_at) ? 'bg-emerald-500' : 'bg-slate-300'"
+                                    :title="isDeviceOnline(d.last_seen_at) ? t('branches.show.online') : t('branches.show.offline')"
+                                ></span>
+                                <div>
+                                    <p class="text-sm font-semibold text-slate-900">{{ d.name ?? d.kiosk_id ?? '—' }}</p>
+                                    <p class="text-xs text-slate-500">{{ isDeviceOnline(d.last_seen_at) ? t('branches.show.online') : t('branches.show.offline') }} · {{ humanize(d.device_type) }}<span v-if="d.last_seen_at"> · {{ t('branches.devices.last_seen') }} {{ formatDateTime(d.last_seen_at) }}</span></p>
+                                </div>
                             </div>
                             <div class="flex items-center gap-2">
                                 <button
@@ -355,6 +477,23 @@ onMounted(() => {
             v-if="liveDevice"
             :device="liveDevice"
             @close="liveDevice = null"
+        />
+
+        <BranchAddStockDialog
+            v-if="showAddStock && branch"
+            :branch-uuid="branch.uuid"
+            :branch-name="branch.name"
+            :products="products ?? []"
+            @close="showAddStock = false"
+            @saved="refreshStock"
+        />
+
+        <BranchAssignStaffDialog
+            v-if="showAssignStaff && branch"
+            :branch-id="branch.id"
+            :branch-name="branch.name"
+            @close="showAssignStaff = false"
+            @saved="refreshStaff"
         />
     </MerchantLayout>
 </template>
