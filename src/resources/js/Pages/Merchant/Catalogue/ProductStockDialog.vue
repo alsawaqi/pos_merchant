@@ -16,6 +16,7 @@ import {
     getProductStock,
     receiveAndDistributeProductStock,
     receiveProductStock,
+    recordProductWaste,
     transferProductStock,
     type ProductStockSummary,
 } from '@/lib/api/productStock';
@@ -32,7 +33,9 @@ const props = defineProps<{
 
 const emit = defineEmits<{ (e: 'close'): void }>();
 
-type Action = 'distribute' | 'receive' | 'allocate' | 'transfer' | 'adjust';
+type Action = 'distribute' | 'receive' | 'allocate' | 'transfer' | 'adjust' | 'waste';
+
+const wasteReasons = ['expired', 'spoiled', 'broken', 'dropped', 'contamination', 'other'] as const;
 
 const loading = ref(false);
 const busy = ref(false);
@@ -48,8 +51,8 @@ const action = ref<Action>('distribute');
 const isBranchRestricted = computed(() => Array.isArray(authState.user?.branch_scope));
 const availableActions = computed<Action[]>(() =>
     isBranchRestricted.value
-        ? ['transfer', 'adjust']
-        : ['distribute', 'receive', 'allocate', 'transfer', 'adjust'],
+        ? ['transfer', 'adjust', 'waste']
+        : ['distribute', 'receive', 'allocate', 'transfer', 'adjust', 'waste'],
 );
 
 // Quantity fields are bound to type="number" inputs: Vue's v-model stores a
@@ -81,6 +84,9 @@ const transferForm = reactive<{ from_branch_uuid: string; to_branch_uuid: string
 );
 const adjustForm = reactive<{ branch_uuid: string; signed_quantity: string | number; note: string }>(
     { branch_uuid: '', signed_quantity: '', note: '' },
+);
+const wasteForm = reactive<{ branch_uuid: string; quantity: string | number; reason: string; notes: string }>(
+    { branch_uuid: '', quantity: '', reason: 'expired', notes: '' },
 );
 
 function qty(v: string | number): string {
@@ -145,6 +151,10 @@ function resetForms(): void {
     adjustForm.branch_uuid = '';
     adjustForm.signed_quantity = '';
     adjustForm.note = '';
+    wasteForm.branch_uuid = branches.value[0]?.branch_uuid ?? '';
+    wasteForm.quantity = '';
+    wasteForm.reason = 'expired';
+    wasteForm.notes = '';
 }
 
 function actionLabel(a: Action): string {
@@ -292,6 +302,30 @@ function doAdjust(): void {
     );
 }
 
+// The branch shelf balance for the product the waste form points at.
+const wasteBranchBalance = computed(() =>
+    branches.value.find((b) => b.branch_uuid === wasteForm.branch_uuid)?.stock_qty ?? '0.000',
+);
+const wasteCostPreview = computed(() => {
+    const q = parseFloat(qty(wasteForm.quantity));
+    const c = parseFloat(props.costPrice ?? '');
+    if (!isFinite(q) || q <= 0 || !isFinite(c) || c <= 0) return null;
+    return (Math.round(q * c * 1000) / 1000).toFixed(3);
+});
+
+function doWaste(): void {
+    if (!props.productUuid || !wasteForm.branch_uuid || qty(wasteForm.quantity) === '') return;
+    void run(
+        () => recordProductWaste(props.productUuid as string, {
+            branch_uuid: wasteForm.branch_uuid,
+            quantity: qty(wasteForm.quantity),
+            reason: wasteForm.reason,
+            notes: wasteForm.notes || null,
+        }),
+        'Waste recorded.',
+    );
+}
+
 function fmtType(t: string): string {
     return t.replace(/_/g, ' ');
 }
@@ -424,6 +458,26 @@ function fmtType(t: string): string {
                             </div>
                             <input v-model="transferForm.note" type="text" placeholder="Note (optional)" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
                             <button type="submit" :disabled="busy" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Transfer</button>
+                        </form>
+
+                        <!-- Waste -->
+                        <form v-else-if="action === 'waste'" class="space-y-3" @submit.prevent="doWaste">
+                            <p class="text-xs text-slate-500">Record cooked or bought-in stock thrown away at a branch. The cost is tracked as a loss (not an expense — it was already paid for).</p>
+                            <div class="flex flex-wrap items-center gap-3">
+                                <select v-model="wasteForm.branch_uuid" class="rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                                    <option v-for="b in branches" :key="b.branch_uuid" :value="b.branch_uuid">{{ b.branch_name }}</option>
+                                </select>
+                                <input v-model="wasteForm.quantity" type="number" step="0.001" min="0" placeholder="Qty wasted" class="w-32 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
+                                <select v-model="wasteForm.reason" class="rounded-lg border border-slate-200 px-3 py-2 text-sm capitalize">
+                                    <option v-for="r in wasteReasons" :key="r" :value="r">{{ r }}</option>
+                                </select>
+                            </div>
+                            <p class="text-xs text-slate-500">
+                                On shelf: <span class="font-semibold tabular-nums">{{ wasteBranchBalance }}</span>
+                                <template v-if="wasteCostPreview"> · loss ≈ <span class="font-semibold tabular-nums">{{ wasteCostPreview }}</span></template>
+                            </p>
+                            <input v-model="wasteForm.notes" type="text" :placeholder="wasteForm.reason === 'other' ? 'Note (required for “other”)' : 'Note (optional)'" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                            <button type="submit" :disabled="busy || branches.length === 0" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Record waste</button>
                         </form>
 
                         <!-- Adjust -->

@@ -22,7 +22,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'product_id',
     'branch_id',
     'movement_type',
+    'reason',
     'quantity',
+    'unit_cost',
     'reference_type',
     'reference_id',
     'recorded_by_user_id',
@@ -44,6 +46,7 @@ class ProductStockMovement extends Model
     {
         return [
             'quantity' => 'decimal:3',
+            'unit_cost' => 'decimal:3',
             'occurred_at' => 'datetime',
             'created_at' => 'datetime',
             'movement_type' => ProductStockMovementType::class,

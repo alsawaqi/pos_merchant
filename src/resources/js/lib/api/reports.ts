@@ -307,11 +307,13 @@ export interface LossWasteReportPayload {
         shortfall: string;
         variance_pct: string | null;
     }[];
-    /** P-G1.5 — day-end product waste + give-aways (pieces, cost-based value). */
+    /** Cooked/bought-in product waste + give-aways (pieces, cost-based value). */
     product_dispositions?: {
         product_id: number;
         product_name: string;
         movement_type: 'waste' | 'give_away' | string;
+        /** The WasteReason for a waste row; null for give-aways / older rows. */
+        reason: string | null;
         total_qty: string;
         value: string;
         event_count: number;

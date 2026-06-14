@@ -162,11 +162,14 @@ final readonly class LossWasteReportAction
             ->values()
             ->all();
 
-        // ---- P-G1.5 — cooked/unit PRODUCT dispositions: day-end waste and
-        // manager-approved give-aways from the product-unit ledger. Kept as
-        // its own section (pieces, not ingredient quantities); value is
-        // cost-based (product cost_price when set — the honest loss figure;
-        // retail price would overstate it).
+        // ---- Cooked/unit PRODUCT dispositions: ad-hoc + day-end waste and
+        // manager-approved give-aways from the product-unit ledger. Kept as its
+        // own section (pieces, not ingredient quantities). Value is cost-based:
+        // the unit_cost FROZEN on the waste movement when present (cost_price, or
+        // a cooked item's recipe cost at waste time — the honest loss figure),
+        // falling back to the live cost_price for older rows that predate the
+        // frozen column. Grouped by product + type + reason so a wasted cooked
+        // OR bought-in product reads with its reason like ingredient waste.
         $productDispositions = DB::table('pos_product_stock_movements')
             ->join('pos_products', 'pos_products.id', '=', 'pos_product_stock_movements.product_id')
             ->where('pos_products.company_id', $companyId)
@@ -177,17 +180,19 @@ final readonly class LossWasteReportAction
                 pos_products.id AS product_id,
                 pos_products.name AS product_name,
                 pos_product_stock_movements.movement_type AS movement_type,
+                pos_product_stock_movements.reason AS reason,
                 ABS(COALESCE(SUM(pos_product_stock_movements.quantity), 0)) AS total_qty,
-                ABS(COALESCE(SUM(pos_product_stock_movements.quantity * COALESCE(pos_products.cost_price, 0)), 0)) AS value,
+                ABS(COALESCE(SUM(pos_product_stock_movements.quantity * COALESCE(pos_product_stock_movements.unit_cost, pos_products.cost_price, 0)), 0)) AS value,
                 COUNT(*) AS event_count
             ")
-            ->groupBy('pos_products.id', 'pos_products.name', 'pos_product_stock_movements.movement_type')
+            ->groupBy('pos_products.id', 'pos_products.name', 'pos_product_stock_movements.movement_type', 'pos_product_stock_movements.reason')
             ->orderByDesc('total_qty')
             ->get()
             ->map(static fn ($r): array => [
                 'product_id' => (int) $r->product_id,
                 'product_name' => (string) $r->product_name,
                 'movement_type' => (string) $r->movement_type,
+                'reason' => $r->reason !== null ? (string) $r->reason : null,
                 'total_qty' => number_format((float) $r->total_qty, 3, '.', ''),
                 'value' => number_format((float) $r->value, 3, '.', ''),
                 'event_count' => (int) $r->event_count,

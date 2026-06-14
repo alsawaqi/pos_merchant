@@ -90,3 +90,11 @@ export function adjustProductStock(
 ): Promise<{ data: ProductStockSummary }> {
     return apiPost<{ data: ProductStockSummary }>(`/api/products/${uuid}/stock/adjust`, payload as unknown as JsonValue);
 }
+
+/** Record wastage of a cooked or bought-in product at a branch (loss-tracking). */
+export function recordProductWaste(
+    uuid: string,
+    payload: { branch_uuid: string; quantity: string | number; reason: string; notes?: string | null },
+): Promise<{ data: ProductStockSummary }> {
+    return apiPost<{ data: ProductStockSummary }>(`/api/products/${uuid}/stock/waste`, payload as unknown as JsonValue);
+}

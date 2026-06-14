@@ -43,6 +43,8 @@ final readonly class WriteProductStockMovementAction
         ?string $note = null,
         ?string $referenceType = null,
         ?int $referenceId = null,
+        ?string $reason = null,
+        ?string $unitCost = null,
     ): ProductStockMovement {
         $companyId = (int) $product->company_id;
 
@@ -59,6 +61,8 @@ final readonly class WriteProductStockMovementAction
             $note,
             $referenceType,
             $referenceId,
+            $reason,
+            $unitCost,
             $companyId,
         ): ProductStockMovement {
             $now = now();
@@ -69,7 +73,11 @@ final readonly class WriteProductStockMovementAction
                 'product_id' => $product->id,
                 'branch_id' => $branch?->id,
                 'movement_type' => $type->value,
+                // Wastage only: the reason taxonomy + the per-unit cost frozen at
+                // record time (NULL on every other movement type).
+                'reason' => $reason,
                 'quantity' => (string) $quantity,
+                'unit_cost' => $unitCost,
                 'reference_type' => $referenceType,
                 'reference_id' => $referenceId,
                 'recorded_by_user_id' => $actor?->getKey(),

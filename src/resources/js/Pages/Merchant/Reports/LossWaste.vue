@@ -194,18 +194,20 @@ type ApexSeries = { name: string; data: number[] }[];
                         <tr>
                             <th class="px-5 py-2 text-start">{{ t('reports.loss_waste.product_dispositions.product') }}</th>
                             <th class="px-5 py-2 text-start">{{ t('reports.loss_waste.product_dispositions.kind') }}</th>
+                            <th class="px-5 py-2 text-start">Reason</th>
                             <th class="px-5 py-2 text-end">{{ t('reports.shared.qty') }}</th>
                             <th class="px-5 py-2 text-end">{{ t('reports.shared.value') }}</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="r in payload.product_dispositions" :key="`${r.product_id}-${r.movement_type}`" class="border-b border-slate-100 last:border-0">
+                        <tr v-for="(r, i) in payload.product_dispositions" :key="`${r.product_id}-${r.movement_type}-${r.reason ?? ''}-${i}`" class="border-b border-slate-100 last:border-0">
                             <td class="px-5 py-2 font-medium text-slate-900">{{ r.product_name }}</td>
                             <td class="px-5 py-2">
                                 <span :class="r.movement_type === 'waste' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-700'" class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase">
                                     {{ r.movement_type === 'waste' ? t('reports.loss_waste.product_dispositions.waste') : t('reports.loss_waste.product_dispositions.give_away') }}
                                 </span>
                             </td>
+                            <td class="px-5 py-2 capitalize text-slate-600">{{ r.reason ?? '—' }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.total_qty }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.value }}</td>
                         </tr>

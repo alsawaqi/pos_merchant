@@ -8,13 +8,16 @@ use App\Actions\Pos\Inventory\AdjustProductStockAction;
 use App\Actions\Pos\Inventory\AllocateProductStockAction;
 use App\Actions\Pos\Inventory\ReceiveAndDistributeProductStockAction;
 use App\Actions\Pos\Inventory\ReceiveProductStockAction;
+use App\Actions\Pos\Inventory\RecordProductWasteAction;
 use App\Actions\Pos\Inventory\TransferProductStockAction;
 use App\Enums\MerchantPermission;
+use App\Enums\WasteReason;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Pos\Inventory\AdjustProductStockRequest;
 use App\Http\Requests\Pos\Inventory\AllocateProductStockRequest;
 use App\Http\Requests\Pos\Inventory\ReceiveAndDistributeProductStockRequest;
 use App\Http\Requests\Pos\Inventory\ReceiveProductStockRequest;
+use App\Http\Requests\Pos\Inventory\RecordProductWasteRequest;
 use App\Http\Requests\Pos\Inventory\TransferProductStockRequest;
 use App\Http\Resources\Pos\Inventory\ProductStockMovementResource;
 use App\Models\Branch;
@@ -26,6 +29,7 @@ use App\Support\MerchantTenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Carbon;
 use RuntimeException;
 
 /**
@@ -51,6 +55,7 @@ class ProductStockController extends Controller
         private readonly AllocateProductStockAction $allocate,
         private readonly TransferProductStockAction $transfer,
         private readonly AdjustProductStockAction $adjust,
+        private readonly RecordProductWasteAction $recordWaste,
     ) {}
 
     public function show(Request $request, Product $product): JsonResponse
@@ -258,6 +263,45 @@ class ProductStockController extends Controller
 
         try {
             $this->adjust->handle($product, $branch, $request->input('signed_quantity'), $request->input('note'), $request->user());
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return $this->show($request, $product);
+    }
+
+    /**
+     * Record wastage of this product at a branch (cooked or bought-in). Decrements
+     * the branch shelf as a loss-tracking 'waste' movement with a reason + frozen
+     * cost — never an expense (the cost was already booked at purchase/production).
+     */
+    public function waste(RecordProductWasteRequest $request, Product $product): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::InventoryManage);
+        $this->refuseIfNotInTenant($product);
+        $this->requireUnitProduct($product);
+
+        $branch = $this->resolveBranch($request->input('branch_uuid'));
+        if ($branch === null) {
+            return response()->json(['message' => 'Branch not found.'], 422);
+        }
+        // P-G5 — waste happens at a specific branch; the actor must hold it.
+        \App\Support\BranchScope::ensureBranch($request->user(), $branch);
+
+        $occurredAt = $request->filled('occurred_at')
+            ? Carbon::parse((string) $request->input('occurred_at'))
+            : null;
+
+        try {
+            $this->recordWaste->handle(
+                $branch,
+                $product,
+                $request->input('quantity'),
+                WasteReason::from((string) $request->input('reason')),
+                $request->user(),
+                $request->input('notes'),
+                $occurredAt,
+            );
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }

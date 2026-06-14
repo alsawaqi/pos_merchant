@@ -706,7 +706,10 @@ return new class extends Migration
             $table->foreignId('product_id')->constrained('pos_products')->cascadeOnDelete();
             $table->foreignId('branch_id')->nullable()->constrained('pos_branches')->cascadeOnDelete();
             $table->string('movement_type', 32);
+            // Product wastage (folds in 2026_07_27_010000): reason + frozen cost.
+            $table->string('reason', 32)->nullable();
             $table->decimal('quantity', 12, 3);
+            $table->decimal('unit_cost', 12, 3)->nullable();
             $table->string('reference_type')->nullable();
             $table->unsignedBigInteger('reference_id')->nullable();
             $table->foreignId('recorded_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();

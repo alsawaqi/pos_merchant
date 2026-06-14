@@ -390,6 +390,9 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('product-stock.transfer');
         Route::post('products/{product:uuid}/stock/adjust', [ProductStockController::class, 'adjust'])
             ->name('product-stock.adjust');
+        // Record wastage of a cooked or bought-in product at a branch.
+        Route::post('products/{product:uuid}/stock/waste', [ProductStockController::class, 'waste'])
+            ->name('product-stock.waste');
         Route::get('products/{product:uuid}/stock/movements', [ProductStockController::class, 'movements'])
             ->name('product-stock.movements');
 
