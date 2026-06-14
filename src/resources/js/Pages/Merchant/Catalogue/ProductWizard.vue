@@ -199,6 +199,10 @@ function markProviderPriceTouched(providerUuid: string): void {
 // call. EDIT: persisted immediately via the existing endpoints, exactly
 // like the old modal (the product id already exists).
 interface DraftOption {
+    /** Stable client-side key (NEVER the array index) so the per-option
+     * stock-usage expander binds to the right option after a sibling is
+     * removed — same reason DraftGroup carries one. */
+    key: string;
     name: string;
     name_ar: string;
     price_delta: string;
@@ -236,7 +240,7 @@ const ownedGroupForm = reactive<{
 const optionForms = ref<Record<string, DraftOption>>({});
 
 function blankOption(): DraftOption {
-    return { name: '', name_ar: '', price_delta: '0', is_default: false, linked_product_uuid: '', consumption: [] };
+    return { key: `opt-${++draftSeq}`, name: '', name_ar: '', price_delta: '0', is_default: false, linked_product_uuid: '', consumption: [] };
 }
 
 function optionFormFor(key: string): DraftOption {
@@ -317,11 +321,14 @@ async function addOwnedOption(key: string, persistedGroupUuid: string | null, dr
 
     if (draftIndex !== null) {
         ownedDrafts.value[draftIndex]?.options.push({
+            key: `opt-${++draftSeq}`,
             name: optionPayload.name,
             name_ar: formRow.name_ar.trim(),
             price_delta: String(optionPayload.price_delta),
             is_default: formRow.is_default,
             linked_product_uuid: formRow.linked_product_uuid,
+            // Only the complete lines ride onto the draft (keeps the count badge
+            // honest); the option stays fully re-editable via its stock expander.
             consumption: optionPayload.consumption ?? [],
         });
         optionForms.value[key] = blankOption();
@@ -440,18 +447,27 @@ function consumptionCount(option: AddOn | DraftOption): number {
     return ('consumption' in option ? option.consumption?.length : 0) ?? 0;
 }
 
-// Expanded stock-usage editor per PERSISTED option (edit mode) — drafts
-// bind straight to the buffered consumption array instead.
+// Per-option stock-usage expander. PERSISTED options (edit mode) buffer their
+// lines into optionStockDrafts and PATCH on save; DRAFT options (create mode)
+// edit their own consumption array live (no API) — both keyed in optionStockOpen
+// (persisted by uuid, draft by its stable key, no collision).
 const optionStockOpen = ref<Record<string, boolean>>({});
 const optionStockDrafts = ref<Record<string, ConsumptionLinePayload[]>>({});
 
-function toggleOptionStock(option: AddOn): void {
-    if (optionStockOpen.value[option.uuid]) {
-        optionStockOpen.value[option.uuid] = false;
+function toggleOptionStock(option: AddOn | DraftOption): void {
+    if (isEdit) {
+        const uuid = (option as AddOn).uuid;
+        if (optionStockOpen.value[uuid]) {
+            optionStockOpen.value[uuid] = false;
+            return;
+        }
+        optionStockDrafts.value[uuid] = consumptionToPayload((option as AddOn).consumption);
+        optionStockOpen.value[uuid] = true;
         return;
     }
-    optionStockDrafts.value[option.uuid] = consumptionToPayload(option.consumption);
-    optionStockOpen.value[option.uuid] = true;
+    // Draft option: just toggle — the editor binds straight to its lines.
+    const key = (option as DraftOption).key;
+    optionStockOpen.value[key] = !optionStockOpen.value[key];
 }
 
 async function saveOptionStock(uuid: string): Promise<void> {
@@ -960,7 +976,7 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
 
 <template>
     <MerchantLayout>
-        <div class="mx-auto max-w-4xl">
+        <div class="mx-auto max-w-7xl">
             <RouterLink
                 :to="{ path: '/catalogue', query: { tab: 'products' } }"
                 class="mb-3 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 transition hover:text-slate-900"
@@ -1275,7 +1291,7 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                     <ul v-if="(isEdit ? ((group as AddOnGroup).addons ?? []) : (group as DraftGroup).options).length > 0" class="mt-2 divide-y divide-slate-100 rounded-lg border border-slate-100 bg-slate-50/40">
                                         <li
                                             v-for="(option, oi) in (isEdit ? ((group as AddOnGroup).addons ?? []) : (group as DraftGroup).options)"
-                                            :key="oi"
+                                            :key="isEdit ? persistedUuid(option) : (option as DraftOption).key"
                                             class="px-3 py-2"
                                         >
                                             <div class="flex items-center justify-between gap-2">
@@ -1291,11 +1307,10 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                                     <span class="text-[10px] font-normal text-slate-400">OMR</span>
                                                 </span>
                                                 <button
-                                                    v-if="isEdit"
                                                     type="button"
                                                     :disabled="ownedBusy"
                                                     class="inline-flex items-center gap-1 rounded border border-slate-200 px-1.5 py-1 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                                    @click="toggleOptionStock(option as AddOn)"
+                                                    @click="toggleOptionStock(option)"
                                                 >
                                                     <Boxes class="size-3" /> {{ t('catalogue.consumption.button') }}
                                                 </button>
@@ -1320,6 +1335,21 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                                 <div class="mt-2 flex justify-end gap-2">
                                                     <button type="button" class="rounded border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50" @click="optionStockOpen[persistedUuid(option)] = false">{{ t('common.cancel') }}</button>
                                                     <button type="button" :disabled="ownedBusy" class="rounded border border-teal-200 bg-teal-50 px-2.5 py-1 text-[11px] font-semibold text-teal-700 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-50" @click="saveOptionStock(persistedUuid(option))">{{ t('common.save') }}</button>
+                                                </div>
+                                            </div>
+                                            <!-- PD3b — stock-usage editor for an already-added DRAFT option
+                                                 (create mode). Binds straight to the option's lines, so a size
+                                                 option's ingredients + physical items stay fully editable while
+                                                 still building the product — no delete-and-re-add. -->
+                                            <div v-if="!isEdit && optionStockOpen[(option as DraftOption).key]" class="mt-2 border-t border-slate-100 pt-2">
+                                                <AddonConsumptionEditor
+                                                    :model-value="(option as DraftOption).consumption"
+                                                    :ingredients="ingredients"
+                                                    :products="consumptionProductOptions"
+                                                    @update:model-value="(option as DraftOption).consumption = $event"
+                                                />
+                                                <div class="mt-2 flex justify-end">
+                                                    <button type="button" class="rounded border border-teal-200 bg-teal-50 px-2.5 py-1 text-[11px] font-semibold text-teal-700 transition hover:bg-teal-100" @click="optionStockOpen[(option as DraftOption).key] = false">{{ t('common.close') }}</button>
                                                 </div>
                                             </div>
                                         </li>
