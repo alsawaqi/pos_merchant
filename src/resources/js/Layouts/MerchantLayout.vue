@@ -17,7 +17,7 @@
 import { computed, onMounted, ref, type Component } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { RouterLink } from 'vue-router';
-import { BadgeCheck, BadgePercent, Ban, Bike, Book, Boxes, Building2, ChefHat, ChevronDown, ClipboardList, Contact, FolderTree, Gauge, Gift, Globe, Hash, KeyRound, LayoutGrid, LineChart, LogOut, Mail, Menu, Percent, Receipt, ShieldAlert, ShoppingBag, Tags, Target, Users, X } from 'lucide-vue-next';
+import { BadgeCheck, BadgePercent, Bike, Book, Boxes, Building2, ChefHat, ChevronDown, ClipboardList, Contact, FolderTree, Gauge, Gift, Globe, Hash, KeyRound, LayoutGrid, LineChart, LogOut, Mail, Menu, Percent, Receipt, Settings, ShieldAlert, ShoppingBag, Tags, Target, Users, X } from 'lucide-vue-next';
 import { authState } from '@/stores/auth';
 import { messagesState, refreshUnreadCount } from '@/stores/messages';
 import { setLocale, type SupportedLocale } from '@/lib/i18n';
@@ -78,7 +78,7 @@ const navigationCatalog: readonly NavItem[] = [
     { key: 'portal_users', to: '/portal-users', icon: Users, permission: MerchantPermission.PortalUsersView },
     { key: 'pos_staff', to: '/pos-staff', icon: BadgeCheck, permission: MerchantPermission.PosStaffView },
     { key: 'roles', to: '/roles', icon: KeyRound, permission: MerchantPermission.RolesView },
-    { key: 'order_cancellation', to: '/settings/order-cancellation', icon: Ban, permission: MerchantPermission.OrdersCancel },
+    { key: 'order_cancellation', to: '/settings/order-cancellation', icon: Settings, permission: MerchantPermission.OrdersCancel },
     { key: 'order_numbering', to: '/settings/order-numbering', icon: Hash, permission: MerchantPermission.OrdersCancel },
 ];
 

@@ -281,8 +281,10 @@ const kitchenSaving = ref(false);
 const kitchenSaveError = ref<string | null>(null);
 const kitchenSaveSuccess = ref(false);
 
+// Kitchen access is OPTIONAL — saving zero positions is valid (the kitchen role
+// always has access regardless), so there is no length requirement here.
 const canSaveKitchen = computed(
-    () => canManage.value && !kitchenSaving.value && kitchenSelected.value.length > 0,
+    () => canManage.value && !kitchenSaving.value,
 );
 
 function isKitchenChecked(position: string): boolean {
@@ -465,7 +467,13 @@ async function confirmDeleteReason(): Promise<void> {
     <MerchantLayout>
         <div class="mx-auto max-w-2xl">
             <div>
-                <h1 class="text-2xl font-bold text-slate-900">{{ t('settings.order_cancellation.title') }}</h1>
+                <h1 class="text-2xl font-bold text-slate-900">{{ t('settings.pos.title') }}</h1>
+                <p class="mt-1 max-w-2xl text-sm text-slate-500">{{ t('settings.pos.subtitle') }}</p>
+            </div>
+
+            <!-- ============ ORDER CANCELLATION POLICY ============ -->
+            <div class="mt-8">
+                <h2 class="text-base font-semibold text-slate-900">{{ t('settings.order_cancellation.title') }}</h2>
                 <p class="mt-1 max-w-2xl text-sm text-slate-500">{{ t('settings.order_cancellation.subtitle') }}</p>
             </div>
 
@@ -659,6 +667,11 @@ async function confirmDeleteReason(): Promise<void> {
                 </div>
                 <div v-else class="p-4 sm:p-6">
                     <p class="text-sm font-medium text-slate-700">{{ t('settings.kitchen_positions.positions_label') }}</p>
+                    <!-- The kitchen role always has access; ticking other roles
+                         grants them too; leaving all unticked = kitchen-only. -->
+                    <p class="mt-1 rounded-lg border border-sky-100 bg-sky-50/70 px-3 py-2 text-xs text-sky-800">
+                        {{ t('settings.kitchen_positions.always_hint') }}
+                    </p>
                     <div class="mt-4 space-y-2">
                         <label
                             v-for="position in kitchenAvailable"
@@ -677,9 +690,6 @@ async function confirmDeleteReason(): Promise<void> {
                         </label>
                     </div>
 
-                    <p v-if="canManage && kitchenSelected.length === 0" class="mt-4 text-sm text-rose-600">
-                        {{ t('settings.order_cancellation.at_least_one') }}
-                    </p>
                     <p v-if="kitchenSaveError" class="mt-4 text-sm text-rose-600">{{ kitchenSaveError }}</p>
                     <p v-if="kitchenSaveSuccess" class="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
                         {{ t('settings.kitchen_positions.save_success') }}

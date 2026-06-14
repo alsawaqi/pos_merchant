@@ -42,7 +42,7 @@ class KitchenPositionsSettingController extends Controller
         return response()->json([
             'data' => [
                 'positions' => $this->currentPositions(),
-                'available_positions' => StaffPosition::values(),
+                'available_positions' => UpdateKitchenPositionsRequest::selectablePositions(),
             ],
         ]);
     }
@@ -53,32 +53,42 @@ class KitchenPositionsSettingController extends Controller
 
         /** @var list<string> $positions */
         $positions = $request->validated('positions');
-        $saved = $this->setPositions->handle($positions, $request->user());
+        $this->setPositions->handle($positions, $request->user());
 
         return response()->json([
             'data' => [
-                'positions' => $saved,
-                'available_positions' => StaffPosition::values(),
+                'positions' => $this->currentPositions(),
+                'available_positions' => UpdateKitchenPositionsRequest::selectablePositions(),
             ],
         ]);
     }
 
     /**
+     * The OTHER positions the merchant has ticked for kitchen access. The
+     * 'kitchen' role is implicit (always allowed, enforced in pos_api) and never
+     * shown here, so it is stripped. A row that exists with an empty list reads
+     * back as [] (kitchen-role-only) — only the ABSENCE of a row falls back to a
+     * default, and that default is now also [] (no managers-only).
+     *
      * @return list<string>
      */
     private function currentPositions(): array
     {
-        $value = CompanySetting::query()
+        $setting = CompanySetting::query()
             ->where('company_id', $this->tenant->requiredId())
             ->where('key', CompanySetting::KEY_KITCHEN_POSITIONS)
-            ->value('value');
+            ->first();
 
-        $positions = is_string($value) ? json_decode($value, true) : $value;
-        if (! is_array($positions) || $positions === []) {
-            return ['manager']; // safe default, mirrors pos_api/device fallback
+        if ($setting === null) {
+            return [];
         }
 
-        return array_values(array_map('strval', $positions));
+        $positions = is_array($setting->value) ? $setting->value : [];
+
+        return array_values(array_filter(
+            array_map('strval', $positions),
+            static fn (string $p): bool => $p !== '' && $p !== StaffPosition::Kitchen->value,
+        ));
     }
 
     private function ensure(Request $request): void

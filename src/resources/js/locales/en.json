@@ -152,7 +152,7 @@
         "sign_out": "Sign out",
         "language": "Language",
         "orders": "Sales",
-        "order_cancellation": "Order Cancellation",
+        "order_cancellation": "POS Settings",
         "order_numbering": "Order Numbering",
         "profile": "My Profile"
     },
@@ -2709,6 +2709,10 @@
         }
     },
     "settings": {
+        "pos": {
+            "title": "POS Settings",
+            "subtitle": "Configure POS terminal policies — order cancellation, manager approval, device reports and kitchen access, and void/comp reasons."
+        },
         "order_cancellation": {
             "title": "Order Cancellation",
             "subtitle": "Choose which staff positions may cancel an order at the POS. Only the selected positions can void or cancel orders on the terminal.",
@@ -2736,8 +2740,9 @@
         },
         "kitchen_positions": {
             "title": "Device kitchen access",
-            "subtitle": "Choose which staff positions can open the Kitchen production screen on the POS device to start, finish, or cancel cooked-product batches.",
-            "positions_label": "Positions allowed to use the device kitchen",
+            "subtitle": "Kitchen staff always have access. Choose any OTHER positions that should also be able to open the Kitchen production screen on the POS device.",
+            "positions_label": "Other positions allowed to use the device kitchen",
+            "always_hint": "The kitchen role always has access. Tick other roles to grant them kitchen access too. Leave all unticked to keep it kitchen-only — to give a specific person access, set their position to Kitchen on the POS Staff page.",
             "save_success": "Device kitchen access updated.",
             "save_failed": "Could not save the device kitchen access policy."
         },
