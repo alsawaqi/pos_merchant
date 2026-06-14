@@ -18,13 +18,14 @@ import { useRoute, RouterLink } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import {
     ArrowLeft, Package, Users, MonitorSmartphone, Receipt, Clock, Boxes, Activity,
-    Plus, UserPlus, TrendingUp,
+    Plus, UserPlus, TrendingUp, ChefHat,
 } from 'lucide-vue-next';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import OrderDetailDrawer from '@/Pages/Merchant/Orders/components/OrderDetailDrawer.vue';
 import SalesHeatmap from '@/Pages/Merchant/Reports/components/SalesHeatmap.vue';
 import SalesComparison from '@/Pages/Merchant/Reports/components/SalesComparison.vue';
 import ReportChart from '@/Pages/Merchant/Reports/components/ReportChart.vue';
+import KitchenProductionCharts from '@/Pages/Merchant/Production/components/KitchenProductionCharts.vue';
 import ReceiptTemplateDialog from '@/Pages/Merchant/Branches/components/ReceiptTemplateDialog.vue';
 import DeviceLiveDialog from '@/Pages/Merchant/Branches/components/DeviceLiveDialog.vue';
 import BranchAddStockDialog from '@/Pages/Merchant/Branches/components/BranchAddStockDialog.vue';
@@ -78,6 +79,10 @@ const trendSeries = computed(() => [
     { name: t('branches.show.sales_label'), data: (activity.value?.sales_trend ?? []).map((d) => Number(d.gross) || 0) },
 ]);
 const windowDays = computed(() => activity.value?.window_days ?? 30);
+
+// Kitchen-production charts only show for a branch that actually cooks.
+const kitchenProduction = computed(() => activity.value?.kitchen_production ?? null);
+const hasKitchenProduction = computed(() => (kitchenProduction.value?.totals.batches ?? 0) > 0);
 
 // A device counts as online when seen within the last 10 minutes.
 const ONLINE_WINDOW_MS = 10 * 60 * 1000;
@@ -300,6 +305,18 @@ onMounted(() => {
                     hide-legend
                     :empty-text="t('branches.show.no_activity')"
                 />
+
+                <!-- Kitchen production (graphical) — only for branches that cook -->
+                <section v-if="canReports && hasKitchenProduction && kitchenProduction" class="space-y-4">
+                    <h2 class="flex items-center gap-2 text-base font-semibold text-slate-950">
+                        <ChefHat class="size-4 text-teal-600" />{{ t('branches.show.kitchen_production') }}
+                        <span class="text-xs font-normal text-slate-400">· {{ t('branches.show.last_days', { days: windowDays }) }}</span>
+                    </h2>
+                    <KitchenProductionCharts
+                        :summary="kitchenProduction"
+                        :subtitle="t('branches.show.last_days', { days: windowDays })"
+                    />
+                </section>
 
                 <!-- Most-active staff -->
                 <section v-if="activity && activity.staff_activity.length" class="rounded-2xl border border-slate-200 bg-white shadow-sm">

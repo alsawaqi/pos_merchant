@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Pos;
 
+use App\Actions\Pos\Reports\ProductionSummaryAction;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Pos\Production\ProductionResource;
@@ -31,6 +32,7 @@ class ProductionsController extends Controller
 {
     public function __construct(
         private readonly MerchantTenantContext $tenant,
+        private readonly ProductionSummaryAction $summaryAction,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -40,8 +42,12 @@ class ProductionsController extends Controller
         $request->validate([
             'branch_uuid' => ['sometimes', 'nullable', 'string', 'uuid'],
             'status' => ['sometimes', 'nullable', 'string', 'in:in_progress,finished,cancelled'],
-            'from' => ['sometimes', 'nullable', 'date'],
-            'to' => ['sometimes', 'nullable', 'date'],
+            // date_format (not `date`): the action concatenates "$d 00:00:00"
+            // into the started_at predicate, so a time-bearing value would
+            // build a malformed timestamp literal (a 500 on Postgres). The UI
+            // only ever sends Y-m-d; reject anything else at the edge.
+            'from' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
+            'to' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
             'per_page' => ['sometimes', 'integer', 'between:1,200'],
         ]);
 
@@ -101,6 +107,54 @@ class ProductionsController extends Controller
             ->through(fn (Production $p): array => (new ProductionResource($p))->resolve($request));
 
         return response()->json($page);
+    }
+
+    /**
+     * Graphical-view aggregates over the SAME filters as the list — totals,
+     * by-product / by-staff, daily trend, status mix, and a recent-batch
+     * timeline. Drives the Production page charts + Gantt timeline.
+     */
+    public function summary(Request $request): JsonResponse
+    {
+        $this->ensure($request);
+
+        $request->validate([
+            'branch_uuid' => ['sometimes', 'nullable', 'string', 'uuid'],
+            'status' => ['sometimes', 'nullable', 'string', 'in:in_progress,finished,cancelled'],
+            // See index(): date_format guards the concatenated started_at predicate.
+            'from' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
+            'to' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
+        ]);
+
+        $allowed = $request->user()?->allowedBranchIds();
+
+        // Resolve an explicit branch filter the same way the list does:
+        // an in-tenant branch outside the actor's scope is a 403; an
+        // unknown/foreign branch matches nothing (branch_id = -1).
+        $branchId = null;
+        $branchUuid = $request->query('branch_uuid');
+        if (is_string($branchUuid) && $branchUuid !== '') {
+            $branch = Branch::query()
+                ->where('company_id', $this->tenant->requiredId())
+                ->where('uuid', $branchUuid)
+                ->first();
+            if ($branch !== null) {
+                \App\Support\BranchScope::ensureBranch($request->user(), $branch);
+            }
+            $branchId = $branch?->id ?? -1;
+        }
+
+        $statusFilter = $request->query('status');
+        $payload = $this->summaryAction->handle(
+            $this->tenant->requiredId(),
+            $allowed,
+            $branchId,
+            is_string($statusFilter) ? $statusFilter : null,
+            is_string($request->query('from')) ? $request->query('from') : null,
+            is_string($request->query('to')) ? $request->query('to') : null,
+        );
+
+        return response()->json(['data' => $payload]);
     }
 
     private function ensure(Request $request): void

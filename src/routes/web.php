@@ -402,6 +402,10 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // Gated on production.view inside the controller.
         Route::get('productions', [ProductionsController::class, 'index'])
             ->name('productions.index');
+        // Graphical-view aggregates (totals + by-product/staff + daily trend +
+        // status mix + recent-batch timeline) over the same filters.
+        Route::get('productions/summary', [ProductionsController::class, 'summary'])
+            ->name('productions.summary');
 
         // -------- P-G6 — Messaging --------
         // Channel 1: staff announcements to POS devices (messages.send-

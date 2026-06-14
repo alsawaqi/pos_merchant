@@ -6,6 +6,7 @@ namespace App\Actions\Pos\Reports;
 
 use App\Enums\OrderStatus;
 use App\Models\Order;
+use App\Models\Production;
 use App\Models\Shift;
 use App\Models\StockMovement;
 use Illuminate\Support\Carbon;
@@ -53,6 +54,10 @@ final readonly class BranchActivityAction
             'staff_activity' => $this->staffActivity($companyId, $branchId),
             'sales_trend' => $this->salesTrend($companyId, $branchId),
             'window_days' => self::WINDOW_DAYS,
+            // Graphical kitchen-production snapshot for THIS branch over the same
+            // trailing window: KPIs, top cooked products, a zero-filled daily
+            // pieces trend, status mix, and a recent-batch Gantt timeline.
+            'kitchen_production' => $this->kitchenProduction($companyId, $branchId),
             'recent_orders' => $this->recentOrders($companyId, $branchId),
             'recent_shifts' => $this->recentShifts($companyId, $branchId),
             'recent_movements' => $this->recentMovements($branchId),
@@ -171,6 +176,130 @@ final readonly class BranchActivityAction
         }
 
         return $series;
+    }
+
+    /**
+     * Graphical kitchen-production snapshot for this branch over the trailing
+     * window. Production is recorded online-only by pos_api; the portal reads.
+     * Quantities are PIECES (decimal-3 strings, NOT money).
+     *
+     *   - totals    : batches, pieces, finished / in-progress / cancelled,
+     *                 average finished-batch duration (seconds)
+     *   - by_product: top cooked products by pieces (name + name_ar) — donut
+     *   - by_day    : zero-filled daily batches + pieces — the trend line
+     *   - status_mix: batches per status — the status donut
+     *   - timeline  : recent batches (start → finish) — the Gantt timeline
+     *
+     * @return array{totals: array<string, int|string>, by_product: list<array<string, mixed>>, by_day: list<array{date: string, batches: int, pieces: string}>, status_mix: list<array{status: string, count: int}>, timeline: list<array<string, mixed>>}
+     */
+    private function kitchenProduction(int $companyId, int $branchId): array
+    {
+        [$from, $to] = $this->window();
+
+        // A fresh, identically-filtered base query per aggregate (started_at
+        // window, this branch only). Columns qualified so they survive joins.
+        $base = fn () => DB::table('pos_productions')
+            ->where('pos_productions.company_id', $companyId)
+            ->where('pos_productions.branch_id', $branchId)
+            ->whereBetween('pos_productions.started_at', [$from, $to]);
+
+        $totals = $base()->selectRaw('
+            COUNT(*) AS batches,
+            COALESCE(SUM(pos_productions.quantity), 0) AS pieces,
+            SUM(CASE WHEN pos_productions.status = \'finished\' THEN 1 ELSE 0 END) AS finished,
+            SUM(CASE WHEN pos_productions.status = \'in_progress\' THEN 1 ELSE 0 END) AS in_progress,
+            SUM(CASE WHEN pos_productions.status = \'cancelled\' THEN 1 ELSE 0 END) AS cancelled,
+            COALESCE(AVG(pos_productions.duration_seconds), 0) AS avg_duration
+        ')->first();
+
+        $byProduct = $base()
+            ->join('pos_products', 'pos_products.id', '=', 'pos_productions.product_id')
+            ->selectRaw('
+                pos_products.name AS product_name,
+                pos_products.name_ar AS product_name_ar,
+                COUNT(*) AS batches,
+                COALESCE(SUM(pos_productions.quantity), 0) AS pieces
+            ')
+            ->groupBy('pos_products.id', 'pos_products.name', 'pos_products.name_ar')
+            ->orderByDesc('pieces')
+            ->limit(self::TOP_N)
+            ->get()
+            ->map(static fn ($r): array => [
+                'product_name' => (string) ($r->product_name ?? ''),
+                'product_name_ar' => $r->product_name_ar !== null ? (string) $r->product_name_ar : null,
+                'batches' => (int) $r->batches,
+                'pieces' => number_format((float) $r->pieces, 3, '.', ''),
+            ])->all();
+
+        $driver = DB::connection()->getDriverName();
+        $dayExpr = $driver === 'sqlite'
+            ? "strftime('%Y-%m-%d', started_at)"
+            : "to_char(started_at, 'YYYY-MM-DD')";
+        $byDayRows = DB::table('pos_productions')
+            ->where('company_id', $companyId)
+            ->where('branch_id', $branchId)
+            ->whereBetween('started_at', [$from, $to])
+            ->selectRaw("$dayExpr AS day, COUNT(*) AS batches, COALESCE(SUM(quantity), 0) AS pieces")
+            ->groupByRaw($dayExpr)
+            ->get()
+            ->keyBy('day');
+
+        $byDay = [];
+        for ($i = 0; $i < self::WINDOW_DAYS; $i++) {
+            $d = $from->copy()->addDays($i)->format('Y-m-d');
+            $r = $byDayRows->get($d);
+            $byDay[] = [
+                'date' => $d,
+                'batches' => (int) ($r->batches ?? 0),
+                'pieces' => number_format((float) ($r->pieces ?? 0), 3, '.', ''),
+            ];
+        }
+
+        $statusMix = $base()
+            ->selectRaw('pos_productions.status AS status, COUNT(*) AS count')
+            ->groupBy('pos_productions.status')
+            ->get()
+            ->map(static fn ($r): array => [
+                'status' => (string) $r->status,
+                'count' => (int) $r->count,
+            ])->all();
+
+        $timeline = Production::query()
+            ->with(['product:id,name,name_ar', 'startedByStaff:id,name'])
+            ->where('company_id', $companyId)
+            ->where('branch_id', $branchId)
+            ->whereBetween('started_at', [$from, $to])
+            ->orderByDesc('started_at')
+            ->orderByDesc('id')
+            ->limit(self::RECENT * 3)
+            ->get()
+            ->map(static fn (Production $p): array => [
+                'uuid' => $p->uuid,
+                'product_name' => $p->product?->name,
+                'product_name_ar' => $p->product?->name_ar,
+                'status' => $p->status,
+                'quantity' => (string) $p->quantity,
+                'started_at' => $p->started_at?->toIso8601String(),
+                'finished_at' => $p->finished_at?->toIso8601String(),
+                'expires_at' => $p->expires_at?->toIso8601String(),
+                'duration_seconds' => $p->duration_seconds,
+                'staff_name' => $p->startedByStaff?->name,
+            ])->all();
+
+        return [
+            'totals' => [
+                'batches' => (int) ($totals?->batches ?? 0),
+                'pieces' => number_format((float) ($totals?->pieces ?? 0), 3, '.', ''),
+                'finished' => (int) ($totals?->finished ?? 0),
+                'in_progress' => (int) ($totals?->in_progress ?? 0),
+                'cancelled' => (int) ($totals?->cancelled ?? 0),
+                'avg_duration_seconds' => (int) round((float) ($totals?->avg_duration ?? 0)),
+            ],
+            'by_product' => $byProduct,
+            'by_day' => $byDay,
+            'status_mix' => $statusMix,
+            'timeline' => $timeline,
+        ];
     }
 
     /**

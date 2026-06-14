@@ -147,6 +147,51 @@ it('returns branch analytics: top products, staff activity, and a sales trend', 
     expect($last['gross'])->toBe('20.000');
 });
 
+it('returns branch kitchen-production analytics', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-15 12:00:00'));
+    $ctx = makeMerchantActor();
+    $chef = PosStaff::factory()->for($ctx['company'], 'company')->create(['branch_id' => $ctx['branch']->id, 'name' => 'Chef Sami']);
+    $cake = Product::factory()->for($ctx['company'], 'company')->create(['name' => 'Cake', 'stock_mode' => 'cooked']);
+
+    // seedProduction() is the shared helper from ProductionsControllerTest.
+    seedProduction([
+        'company_id' => $ctx['company']->id,
+        'branch_id' => $ctx['branch']->id,
+        'product_id' => $cake->id,
+        'started_by_staff_id' => $chef->id,
+        'quantity' => '12.000',
+        'status' => 'finished',
+        'started_at' => Carbon::now()->setTime(9, 0),
+        'finished_at' => Carbon::now()->setTime(9, 30),
+        'duration_seconds' => 1800,
+    ]);
+
+    $data = $this->getJson("/api/pos/branches/{$ctx['branch']->uuid}/activity")->assertOk()->json('data');
+
+    $kp = $data['kitchen_production'];
+    expect($kp['totals']['batches'])->toBe(1);
+    expect($kp['totals']['pieces'])->toBe('12.000');
+    expect($kp['totals']['finished'])->toBe(1);
+    expect($kp['totals']['avg_duration_seconds'])->toBe(1800);
+
+    expect($kp['by_product'])->toHaveCount(1);
+    expect($kp['by_product'][0]['product_name'])->toBe('Cake');
+    expect($kp['by_product'][0]['pieces'])->toBe('12.000');
+
+    // Zero-filled 30-day daily pieces trend; today (last point) carries 12.
+    expect($kp['by_day'])->toHaveCount(30);
+    $byDay = $kp['by_day'];
+    $last = end($byDay);
+    expect($last['date'])->toBe('2026-06-15');
+    expect($last['pieces'])->toBe('12.000');
+    expect($last['batches'])->toBe(1);
+
+    expect(collect($kp['status_mix'])->firstWhere('status', 'finished')['count'])->toBe(1);
+    expect($kp['timeline'])->toHaveCount(1);
+    expect($kp['timeline'][0]['product_name'])->toBe('Cake');
+    expect($kp['timeline'][0]['staff_name'])->toBe('Chef Sami');
+});
+
 it('does not leak another tenant branch (404 on every section)', function (): void {
     makeMerchantActor();
     $foreign = Branch::factory()->create(); // different company

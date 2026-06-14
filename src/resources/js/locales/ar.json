@@ -565,6 +565,7 @@
             "staff_revenue": "حصة الموظفين من الإيرادات",
             "sales_trend": "اتجاه المبيعات",
             "most_active_staff": "أكثر الموظفين نشاطًا",
+            "kitchen_production": "إنتاج المطبخ",
             "last_days": "آخر {days} يومًا",
             "online": "متصل",
             "offline": "غير متصل"
@@ -1072,6 +1073,20 @@
             "good_range": "صالح",
             "cancelled": "الإلغاء",
             "approved_by": "وافق على الإلغاء"
+        },
+        "history_heading": "سجل الدفعات",
+        "charts": {
+            "all_time": "كل الفترات",
+            "no_data": "لا يوجد إنتاج في هذه الفترة",
+            "batch": "دفعة",
+            "batches": "الدفعات",
+            "pieces": "القطع",
+            "avg_time": "متوسط الوقت",
+            "timeline": "الجدول الزمني للإنتاج",
+            "by_product": "القطع حسب المنتج",
+            "status_mix": "توزيع الحالات",
+            "daily_pieces": "القطع المنتجة يوميًا",
+            "by_staff": "الدفعات حسب الطاهي"
         }
     },
     "branch_targets": {

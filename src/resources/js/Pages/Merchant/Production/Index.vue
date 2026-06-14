@@ -16,14 +16,16 @@ import { ChefHat, ChevronDown, ChevronUp } from 'lucide-vue-next';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
+import KitchenProductionCharts from '@/Pages/Merchant/Production/components/KitchenProductionCharts.vue';
 import { ApiError } from '@/lib/api';
 import { listBranches, type Branch } from '@/lib/api/branches';
-import { listProductions, type Production } from '@/lib/api/productions';
+import { listProductions, getProductionSummary, type Production, type ProductionSummary } from '@/lib/api/productions';
 
 const { t, locale } = useI18n();
 
 const branches = ref<Branch[]>([]);
 const rows = ref<Production[]>([]);
+const summary = ref<ProductionSummary | null>(null);
 const expanded = ref<Set<number>>(new Set());
 
 const loading = ref(true);
@@ -70,15 +72,32 @@ async function fetchRows(): Promise<void> {
     }
 }
 
+async function fetchSummary(): Promise<void> {
+    try {
+        const res = await getProductionSummary({
+            branch_uuid: branchUuid.value || undefined,
+            status: status.value || undefined,
+            from: from.value || undefined,
+            to: to.value || undefined,
+        });
+        summary.value = res.data;
+    } catch {
+        // The charts just hide — the table below still works.
+        summary.value = null;
+    }
+}
+
 onMounted(() => {
     void fetchBranches();
     void fetchRows();
+    void fetchSummary();
 });
 
-// Any filter change restarts from page 1.
+// Any filter change restarts from page 1 and re-aggregates the charts.
 watch([branchUuid, status, from, to], () => {
     page.value = 1;
     void fetchRows();
+    void fetchSummary();
 });
 
 watch(page, () => { void fetchRows(); });
@@ -131,6 +150,11 @@ const statusClasses: Record<Production['status'], string> = {
     finished: 'bg-emerald-50 text-emerald-700',
     cancelled: 'bg-rose-50 text-rose-600',
 };
+
+// Window label under each chart title — the active date filter, else all-time.
+const chartsSubtitle = computed(() =>
+    from.value && to.value ? `${from.value} → ${to.value}` : t('production.charts.all_time'),
+);
 </script>
 
 <template>
@@ -177,7 +201,17 @@ const statusClasses: Record<Production['status'], string> = {
                 {{ loadError }}
             </div>
 
-            <div class="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <!-- Graphical kitchen-production view (KPIs + Gantt + charts) -->
+            <div v-if="summary" class="mt-6">
+                <KitchenProductionCharts :summary="summary" :subtitle="chartsSubtitle" />
+            </div>
+
+            <!-- Audit list -->
+            <h2 class="mt-8 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+                {{ t('production.history_heading') }}
+            </h2>
+
+            <div class="mt-3 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
                 <div v-if="loading" class="px-4 py-12 text-center text-sm text-slate-400">{{ t('common.loading') }}</div>
                 <div v-else-if="rows.length === 0" class="flex flex-col items-center gap-3 px-4 py-12 text-center">
                     <ChefHat class="size-8 text-slate-300" />

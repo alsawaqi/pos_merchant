@@ -70,3 +70,91 @@ export function listProductions(filters: ProductionFilters = {}): Promise<Produc
     const qs = params.toString();
     return apiGet<ProductionPage>(`/api/productions${qs ? `?${qs}` : ''}`);
 }
+
+/* ── Graphical-view aggregates (KP) ─────────────────────────────────────── */
+
+export interface ProductionTotals {
+    batches: number;
+    /** Pieces produced across the window (decimal string). */
+    pieces: string;
+    finished: number;
+    in_progress: number;
+    cancelled: number;
+    /** Mean finished-batch duration (seconds). */
+    avg_duration_seconds: number;
+}
+
+export interface ProductionByProduct {
+    product_name: string;
+    product_name_ar: string | null;
+    batches: number;
+    pieces: string;
+}
+
+export interface ProductionByStaff {
+    staff_name: string;
+    batches: number;
+    pieces: string;
+}
+
+export interface ProductionByDay {
+    date: string;
+    batches: number;
+    pieces: string;
+}
+
+export interface ProductionStatusMix {
+    status: string;
+    count: number;
+}
+
+/** One batch on the Gantt timeline (start → finish). */
+export interface ProductionTimelineEntry {
+    uuid: string;
+    product_name: string | null;
+    product_name_ar: string | null;
+    status: 'in_progress' | 'finished' | 'cancelled';
+    quantity: string;
+    started_at: string | null;
+    finished_at: string | null;
+    expires_at: string | null;
+    duration_seconds: number | null;
+    staff_name: string | null;
+}
+
+/**
+ * The shape rendered by the shared KitchenProductionCharts component. The
+ * branch-activity payload carries this MINUS `by_staff` (hence optional).
+ */
+export interface KitchenProductionSummary {
+    totals: ProductionTotals;
+    by_product: ProductionByProduct[];
+    by_day: ProductionByDay[];
+    status_mix: ProductionStatusMix[];
+    timeline: ProductionTimelineEntry[];
+    by_staff?: ProductionByStaff[];
+}
+
+export interface ProductionSummary extends KitchenProductionSummary {
+    by_staff: ProductionByStaff[];
+}
+
+export interface ProductionSummaryFilters {
+    branch_uuid?: string;
+    status?: string;
+    /** YYYY-MM-DD (inclusive, on started_at). */
+    from?: string;
+    /** YYYY-MM-DD (inclusive, on started_at). */
+    to?: string;
+}
+
+export function getProductionSummary(filters: ProductionSummaryFilters = {}): Promise<{ data: ProductionSummary }> {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(filters)) {
+        if (value !== undefined && value !== null && value !== '') {
+            params.set(key, String(value));
+        }
+    }
+    const qs = params.toString();
+    return apiGet<{ data: ProductionSummary }>(`/api/productions/summary${qs ? `?${qs}` : ''}`);
+}

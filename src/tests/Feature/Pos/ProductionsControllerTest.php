@@ -20,6 +20,7 @@ use App\Models\Ingredient;
 use App\Models\PosStaff;
 use App\Models\Product;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -139,6 +140,15 @@ it('rejects an invalid status filter', function (): void {
     $this->getJson('/api/productions?status=exploded')->assertStatus(422);
 });
 
+it('rejects a time-bearing date filter on both endpoints (must be Y-m-d)', function (): void {
+    makeMerchantActor();
+
+    // A time component would concatenate into a malformed started_at literal
+    // (a 500 on Postgres) — reject it at the edge with a clean 422 instead.
+    $this->getJson('/api/productions?from=2026-06-15 14:30')->assertStatus(422);
+    $this->getJson('/api/productions/summary?to=2026-06-15T10:00')->assertStatus(422);
+});
+
 it('gates the page behind production.view', function (): void {
     // Viewer was never granted production.view.
     makeMerchantActor(MerchantRole::Viewer->value);
@@ -163,4 +173,91 @@ it('does not leak another company productions', function (): void {
     // A foreign branch uuid in the filter matches nothing (no 500, no leak).
     expect($this->getJson("/api/productions?branch_uuid={$foreignBranch->uuid}")->assertOk()->json('total'))
         ->toBe(0);
+});
+
+/*
+ * Graphical-view aggregates — GET /api/productions/summary (KP1).
+ */
+
+it('summarises production for the graphical view', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-15 12:00:00'));
+    $ctx = makeMerchantActor();
+    $cake = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'cooked', 'name' => 'Cake', 'name_ar' => 'كيك']);
+    $bread = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'cooked', 'name' => 'Bread']);
+    $chef = PosStaff::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->create(['name' => 'Chef Sami']);
+
+    $base = ['company_id' => $ctx['company']->id, 'branch_id' => $ctx['branch']->id, 'started_by_staff_id' => $chef->id];
+    seedProduction($base + ['product_id' => $cake->id, 'quantity' => '10.000', 'status' => 'finished', 'duration_seconds' => 1800]);
+    seedProduction($base + ['product_id' => $cake->id, 'quantity' => '5.000', 'status' => 'finished', 'duration_seconds' => 3600]);
+    seedProduction($base + ['product_id' => $bread->id, 'quantity' => '8.000', 'status' => 'in_progress', 'finished_at' => null, 'duration_seconds' => null]);
+
+    $data = $this->getJson('/api/productions/summary')->assertOk()->json('data');
+
+    expect($data['totals']['batches'])->toBe(3);
+    expect($data['totals']['pieces'])->toBe('23.000');
+    expect($data['totals']['finished'])->toBe(2);
+    expect($data['totals']['in_progress'])->toBe(1);
+    expect($data['totals']['cancelled'])->toBe(0);
+    // AVG ignores the NULL duration of the in-progress batch: (1800 + 3600) / 2.
+    expect($data['totals']['avg_duration_seconds'])->toBe(2700);
+
+    // Top product by pieces: Cake (15) before Bread (8); name_ar carried.
+    expect($data['by_product'])->toHaveCount(2);
+    expect($data['by_product'][0]['product_name'])->toBe('Cake');
+    expect($data['by_product'][0]['product_name_ar'])->toBe('كيك');
+    expect($data['by_product'][0]['pieces'])->toBe('15.000');
+    expect($data['by_product'][0]['batches'])->toBe(2);
+
+    // By staff: one chef, all three batches.
+    expect($data['by_staff'])->toHaveCount(1);
+    expect($data['by_staff'][0]['staff_name'])->toBe('Chef Sami');
+    expect($data['by_staff'][0]['batches'])->toBe(3);
+
+    // Status mix.
+    $mix = collect($data['status_mix'])->keyBy('status');
+    expect($mix['finished']['count'])->toBe(2);
+    expect($mix['in_progress']['count'])->toBe(1);
+
+    // Timeline carries each batch start (for the Gantt).
+    expect($data['timeline'])->toHaveCount(3);
+    expect($data['timeline'][0]['started_at'])->not->toBeNull();
+});
+
+it('summary honours the branch + status filters', function (): void {
+    $ctx = makeMerchantActor();
+    $branchB = Branch::factory()->for($ctx['company'], 'company')->create();
+    $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'cooked']);
+
+    $base = ['company_id' => $ctx['company']->id, 'product_id' => $product->id];
+    seedProduction($base + ['branch_id' => $ctx['branch']->id, 'quantity' => '10.000', 'status' => 'finished']);
+    seedProduction($base + ['branch_id' => $branchB->id, 'quantity' => '4.000', 'status' => 'finished']);
+
+    // Branch filter narrows the totals to branch B only.
+    $data = $this->getJson("/api/productions/summary?branch_uuid={$branchB->uuid}")->assertOk()->json('data');
+    expect($data['totals']['batches'])->toBe(1);
+    expect($data['totals']['pieces'])->toBe('4.000');
+});
+
+it('gates the summary behind production.view', function (): void {
+    makeMerchantActor(MerchantRole::Viewer->value);
+
+    $this->getJson('/api/productions/summary')->assertForbidden();
+});
+
+it('summary does not leak another company production', function (): void {
+    makeMerchantActor();
+
+    $foreignCompany = Company::factory()->create();
+    $foreignBranch = Branch::factory()->for($foreignCompany, 'company')->create();
+    $foreignProduct = Product::factory()->for($foreignCompany, 'company')->create(['stock_mode' => 'cooked']);
+    seedProduction([
+        'company_id' => $foreignCompany->id,
+        'branch_id' => $foreignBranch->id,
+        'product_id' => $foreignProduct->id,
+    ]);
+
+    $data = $this->getJson('/api/productions/summary')->assertOk()->json('data');
+    expect($data['totals']['batches'])->toBe(0);
+    expect($data['by_product'])->toBe([]);
+    expect($data['timeline'])->toBe([]);
 });

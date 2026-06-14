@@ -17,6 +17,7 @@
  */
 
 import { apiGet, apiPatch, apiPut, type JsonValue } from '@/lib/api';
+import type { KitchenProductionSummary } from '@/lib/api/productions';
 
 export type BranchStatus = 'active' | 'inactive';
 export type BranchOrderType =
@@ -201,6 +202,8 @@ export interface BranchActivity {
     staff_activity: { staff_name: string; orders_paid: number; revenue: string }[];
     /** Zero-filled daily paid-gross series, for the trend line. */
     sales_trend: { date: string; gross: string; count: number }[];
+    /** Branch kitchen-production snapshot (KP) — same charts as the Production page, minus by_staff. */
+    kitchen_production: KitchenProductionSummary;
     recent_orders: {
         uuid: string;
         status: string | null;

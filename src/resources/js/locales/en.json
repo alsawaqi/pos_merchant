@@ -565,6 +565,7 @@
             "staff_revenue": "Staff revenue share",
             "sales_trend": "Sales trend",
             "most_active_staff": "Most active staff",
+            "kitchen_production": "Kitchen production",
             "last_days": "Last {days} days",
             "online": "Online",
             "offline": "Offline"
@@ -1072,6 +1073,20 @@
             "good_range": "Good",
             "cancelled": "Cancelled",
             "approved_by": "Cancel approved by"
+        },
+        "history_heading": "Batch history",
+        "charts": {
+            "all_time": "All time",
+            "no_data": "No production in this period",
+            "batch": "Batch",
+            "batches": "Batches",
+            "pieces": "Pieces",
+            "avg_time": "Avg time",
+            "timeline": "Production timeline",
+            "by_product": "Pieces by product",
+            "status_mix": "Status mix",
+            "daily_pieces": "Pieces produced per day",
+            "by_staff": "Batches by chef"
         }
     },
     "branch_targets": {

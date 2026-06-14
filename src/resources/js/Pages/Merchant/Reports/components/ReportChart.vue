@@ -7,9 +7,13 @@
  * app. Wraps `vue3-apexcharts` and applies a slate/teal house style.
  *
  * Supported `type`s: 'bar' (vertical or horizontal), 'line', 'area',
- * 'donut'. For bar/line/area pass `series` as ApexAxisChartSeries
- * ([{ name, data:number[] }]) plus `categories` (x labels). For
- * donut pass `series` as number[] plus `labels` (slice names).
+ * 'donut', 'radialBar', 'radar', 'polarArea', and 'rangeBar' (a
+ * horizontal Gantt-style timeline). For bar/line/area pass `series`
+ * as ApexAxisChartSeries ([{ name, data:number[] }]) plus `categories`
+ * (x labels). For donut pass `series` as number[] plus `labels` (slice
+ * names). For rangeBar pass `series` as [{ name, data: [{ x: rowLabel,
+ * y: [startMillis, endMillis], fillColor? }] }] — the x-axis is a
+ * datetime track, the y-axis the row labels.
  *
  * Money series are decimal-OMR (the report actions emit decimal-3
  * strings — parse before passing). Set `currency` so tooltips/axis
@@ -23,7 +27,7 @@ import { computed } from 'vue';
 import VueApexCharts from 'vue3-apexcharts';
 import type { ApexOptions, ApexAxisChartSeries, ApexNonAxisChartSeries } from 'apexcharts';
 
-type ChartType = 'bar' | 'line' | 'area' | 'donut' | 'radialBar' | 'radar' | 'polarArea';
+type ChartType = 'bar' | 'line' | 'area' | 'donut' | 'radialBar' | 'radar' | 'polarArea' | 'rangeBar';
 
 // Chart types whose `series` is a flat number[] (not [{name, data}]).
 const FLAT_SERIES_TYPES = ['donut', 'radialBar', 'polarArea'];
@@ -44,6 +48,10 @@ const props = withDefaults(
         height?: number;
         /** Format values as OMR (thousands group + "OMR" suffix). */
         currency?: boolean;
+        /** Fraction digits for non-currency values (default 0 = whole numbers).
+         *  Set to 3 for decimal quantities (e.g. produced pieces) so tooltips
+         *  match the source figures instead of rounding. Ignored when currency. */
+        decimals?: number;
         /** Horizontal bars — best for "top N" rankings. */
         horizontal?: boolean;
         stacked?: boolean;
@@ -59,6 +67,7 @@ const props = withDefaults(
     {
         height: 300,
         currency: false,
+        decimals: 0,
         horizontal: false,
         stacked: false,
         distributed: false,
@@ -72,13 +81,14 @@ const PALETTE = [
     '#22c55e', '#ef4444', '#8b5cf6', '#14b8a6', '#eab308',
 ];
 
-// Latin grouping for chart numerals regardless of UI locale.
-const groupFmt = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 0 });
+// Latin grouping for chart numerals regardless of UI locale. The non-currency
+// formatter honours `decimals` so decimal quantities (pieces) aren't rounded.
 const moneyFmt = new Intl.NumberFormat('en-GB', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+const groupFmt = computed(() => new Intl.NumberFormat('en-GB', { maximumFractionDigits: props.decimals }));
 
 function fmtValue(n: number): string {
     if (!Number.isFinite(n)) return '0';
-    return props.currency ? moneyFmt.format(n) : groupFmt.format(n);
+    return props.currency ? moneyFmt.format(n) : groupFmt.value.format(n);
 }
 
 /** Compact axis label (e.g. 12.3K, 1.2M) to keep the y-axis readable. */
@@ -87,7 +97,7 @@ function fmtAxis(n: number): string {
     const abs = Math.abs(n);
     if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
     if (abs >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-    return props.currency ? n.toFixed(0) : groupFmt.format(n);
+    return props.currency ? n.toFixed(0) : groupFmt.value.format(n);
 }
 
 const isEmpty = computed<boolean>(() => {
@@ -218,6 +228,38 @@ const options = computed<ApexOptions>(() => {
             fill: { opacity: 0.2 },
             markers: { size: 3, hover: { size: 5 } },
             plotOptions: { radar: { polygons: { strokeColors: '#e2e8f0', connectorColors: '#e2e8f0' } } },
+        };
+    }
+
+    if (props.type === 'rangeBar') {
+        // Horizontal Gantt timeline: x is a datetime track, y the row labels.
+        // Built from `base` (NOT axisBase) so the y-axis keeps its string row
+        // labels instead of the numeric axis formatter. Per-bar colour comes
+        // from each datum's `fillColor`.
+        return {
+            ...base,
+            chart: { ...base.chart, type: 'rangeBar' },
+            plotOptions: {
+                bar: {
+                    horizontal: true,
+                    borderRadius: 3,
+                    barHeight: '55%',
+                    rangeBarGroupRows: true,
+                },
+            },
+            xaxis: {
+                type: 'datetime',
+                labels: { style: { colors: '#64748b', fontSize: '11px' }, datetimeUTC: false },
+                axisBorder: { color: '#e2e8f0' },
+                axisTicks: { color: '#e2e8f0' },
+            },
+            yaxis: {
+                labels: { style: { colors: '#475569', fontSize: '11px' } },
+            },
+            legend: { show: false },
+            tooltip: {
+                x: { format: 'dd MMM HH:mm' },
+            },
         };
     }
 
