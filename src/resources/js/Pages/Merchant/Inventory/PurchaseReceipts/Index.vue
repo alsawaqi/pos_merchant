@@ -16,7 +16,7 @@ import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { MerchantPermission } from '@/lib/permissions';
 import { ApiError } from '@/lib/api';
-import { listPurchaseReceipts, type PurchaseReceipt } from '@/lib/api/purchaseReceipts';
+import { listPurchaseReceipts, type PurchaseReceipt, type ReceiptPaymentStatus } from '@/lib/api/purchaseReceipts';
 
 const { t, locale } = useI18n();
 const router = useRouter();
@@ -33,11 +33,23 @@ const page = ref(1);
 const lastPage = ref(1);
 const total = ref(0);
 
+// AP — 'all' shows every receipt; 'outstanding' shows only what's not fully paid.
+const filter = ref<'all' | 'outstanding'>('all');
+
+const STATUS_META: Record<ReceiptPaymentStatus, { key: string; cls: string }> = {
+    paid: { key: 'purchase_receipts.payment.paid', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
+    partial: { key: 'purchase_receipts.payment.partial', cls: 'bg-amber-50 text-amber-700 ring-amber-200' },
+    unpaid: { key: 'purchase_receipts.payment.unpaid', cls: 'bg-rose-50 text-rose-700 ring-rose-200' },
+};
+
 async function fetchRows(): Promise<void> {
     loading.value = true;
     loadError.value = null;
     try {
-        const res = await listPurchaseReceipts({ page: page.value });
+        const res = await listPurchaseReceipts({
+            page: page.value,
+            payment_status: filter.value === 'outstanding' ? 'outstanding' : undefined,
+        });
         rows.value = res.data;
         lastPage.value = res.meta.last_page;
         total.value = res.meta.total;
@@ -45,6 +57,20 @@ async function fetchRows(): Promise<void> {
         loadError.value = e instanceof ApiError ? (e.message || t('purchase_receipts.load_failed')) : t('purchase_receipts.load_failed');
     } finally {
         loading.value = false;
+    }
+}
+
+function setFilter(next: 'all' | 'outstanding'): void {
+    if (filter.value === next) {
+        return;
+    }
+    filter.value = next;
+    // Resetting page to 1 fires the page watcher (which fetches); only fetch
+    // explicitly when we were already on page 1 so we don't double-request.
+    const wasFirstPage = page.value === 1;
+    page.value = 1;
+    if (wasFirstPage) {
+        void fetchRows();
     }
 }
 
@@ -93,7 +119,27 @@ function formatDate(iso: string | null): string {
                 {{ loadError }}
             </div>
 
-            <div class="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <!-- AP — All vs Outstanding (unpaid + partial) filter. -->
+            <div class="mt-6 inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-sm shadow-sm">
+                <button
+                    type="button"
+                    class="rounded-md px-3 py-1.5 font-medium transition"
+                    :class="filter === 'all' ? 'bg-teal-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'"
+                    @click="setFilter('all')"
+                >
+                    {{ t('purchase_receipts.payment.filter_all') }}
+                </button>
+                <button
+                    type="button"
+                    class="rounded-md px-3 py-1.5 font-medium transition"
+                    :class="filter === 'outstanding' ? 'bg-teal-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'"
+                    @click="setFilter('outstanding')"
+                >
+                    {{ t('purchase_receipts.payment.filter_outstanding') }}
+                </button>
+            </div>
+
+            <div class="mt-3 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
                 <div v-if="loading" class="px-4 py-12 text-center text-sm text-slate-400">{{ t('common.loading') }}</div>
                 <div v-else-if="rows.length === 0" class="flex flex-col items-center gap-3 px-4 py-12 text-center">
                     <ClipboardList class="size-8 text-slate-300" />
@@ -114,9 +160,9 @@ function formatDate(iso: string | null): string {
                             <th class="px-4 py-2.5 text-start font-semibold">{{ t('purchase_receipts.columns.reference') }}</th>
                             <th class="px-4 py-2.5 text-start font-semibold">{{ t('purchase_receipts.columns.supplier') }}</th>
                             <th class="px-4 py-2.5 text-end font-semibold">{{ t('purchase_receipts.columns.items') }}</th>
-                            <th class="px-4 py-2.5 text-end font-semibold">{{ t('purchase_receipts.columns.items_total') }}</th>
-                            <th class="px-4 py-2.5 text-end font-semibold">{{ t('purchase_receipts.columns.charges_total') }}</th>
                             <th class="px-4 py-2.5 text-end font-semibold">{{ t('purchase_receipts.columns.grand_total') }}</th>
+                            <th class="px-4 py-2.5 text-end font-semibold">{{ t('purchase_receipts.columns.balance_due') }}</th>
+                            <th class="px-4 py-2.5 text-start font-semibold">{{ t('purchase_receipts.columns.payment_status') }}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
@@ -130,9 +176,16 @@ function formatDate(iso: string | null): string {
                             <td class="px-4 py-2.5 font-medium text-slate-900">{{ row.reference || '—' }}</td>
                             <td class="px-4 py-2.5 text-slate-600">{{ row.supplier?.name ?? '—' }}</td>
                             <td class="px-4 py-2.5 text-end tabular-nums text-slate-600">{{ row.lines_count ?? 0 }}</td>
-                            <td class="px-4 py-2.5 text-end tabular-nums text-slate-600">{{ money(row.items_total) }}</td>
-                            <td class="px-4 py-2.5 text-end tabular-nums text-slate-600">{{ money(row.charges_total) }}</td>
                             <td class="px-4 py-2.5 text-end tabular-nums font-semibold text-slate-900">{{ money(row.grand_total) }}</td>
+                            <td class="px-4 py-2.5 text-end tabular-nums" :class="row.payment_status === 'paid' ? 'text-slate-400' : 'font-semibold text-rose-600'">
+                                {{ row.payment_status === 'paid' ? '—' : money(row.balance_due) }}
+                            </td>
+                            <td class="px-4 py-2.5">
+                                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset" :class="STATUS_META[row.payment_status].cls">
+                                    {{ t(STATUS_META[row.payment_status].key) }}
+                                </span>
+                                <span v-if="row.is_credit" class="ms-1 text-[11px] text-slate-400">{{ t('purchase_receipts.payment.credit_tag') }}</span>
+                            </td>
                         </tr>
                     </tbody>
                 </table>

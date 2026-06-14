@@ -7,6 +7,7 @@ namespace App\Http\Resources\Pos\Inventory;
 use App\Models\PurchaseReceipt;
 use App\Models\PurchaseReceiptCharge;
 use App\Models\PurchaseReceiptLine;
+use App\Models\PurchaseReceiptPayment;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -33,6 +34,13 @@ class PurchaseReceiptResource extends JsonResource
             'charges_total' => (string) $this->charges_total,
             'tax_total' => (string) $this->tax_total,
             'grand_total' => (string) $this->grand_total,
+            // AP — supplier credit + settlement. balance_due is what's still
+            // owed (grand_total − amount_paid, never negative).
+            'is_credit' => (bool) $this->is_credit,
+            'payment_status' => $this->payment_status,
+            'amount_paid' => (string) $this->amount_paid,
+            'balance_due' => $this->balanceDue(),
+            'due_date' => $this->due_date?->toDateString(),
             'received_at' => $this->received_at?->toIso8601String(),
             'supplier' => $this->whenLoaded('supplier', fn (): ?array => $this->supplier !== null ? [
                 'uuid' => $this->supplier->uuid,
@@ -59,6 +67,16 @@ class PurchaseReceiptResource extends JsonResource
                     'amount' => (string) $charge->amount,
                     'tax_amount' => (string) $charge->tax_amount,
                     'tax_rate' => $charge->tax_rate !== null ? (string) $charge->tax_rate : null,
+                ])->all()),
+            'payments' => $this->whenLoaded('payments', fn (): array => $this->payments
+                ->map(fn (PurchaseReceiptPayment $payment): array => [
+                    'uuid' => $payment->uuid,
+                    'amount' => (string) $payment->amount,
+                    'balance_after' => (string) $payment->balance_after,
+                    'method' => $payment->method,
+                    'note' => $payment->note,
+                    'recorded_by' => $payment->relationLoaded('recordedByUser') ? $payment->recordedByUser?->name : null,
+                    'paid_at' => $payment->paid_at?->toIso8601String(),
                 ])->all()),
             'created_at' => $this->created_at?->toIso8601String(),
         ];

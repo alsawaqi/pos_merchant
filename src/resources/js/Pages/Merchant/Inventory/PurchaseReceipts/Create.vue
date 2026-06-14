@@ -63,6 +63,9 @@ const header = reactive({
     reference: '',
     received_at: new Date().toISOString().slice(0, 10),
     note: '',
+    // AP — was this delivery bought on credit (pay later)? + optional due date.
+    is_credit: false,
+    due_date: '',
 });
 
 const lines = ref<LineRow[]>([]);
@@ -205,6 +208,8 @@ async function submit(): Promise<void> {
         reference: header.reference || null,
         received_at: header.received_at || null,
         note: header.note || null,
+        is_credit: header.is_credit,
+        due_date: header.is_credit ? (header.due_date || null) : null,
         lines: validLines.value.map((l) => {
             const [kind, uuid] = l.itemKey.split(':');
             const allocations = l.allocations
@@ -318,6 +323,34 @@ onMounted(async () => {
                     <span class="text-xs font-medium text-slate-600">{{ t('purchase_receipts.form.note') }}</span>
                     <input v-model="header.note" type="text" maxlength="2000" :placeholder="t('purchase_receipts.form.note_ph')" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
                 </label>
+            </div>
+
+            <!-- AP — payment terms: paid now vs bought on credit (pay later). -->
+            <div class="mt-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                <span class="text-xs font-medium text-slate-600">{{ t('purchase_receipts.payment.terms') }}</span>
+                <div class="mt-2 flex flex-wrap gap-2">
+                    <button
+                        type="button"
+                        class="rounded-lg border px-3 py-2 text-sm font-medium transition"
+                        :class="!header.is_credit ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'"
+                        @click="header.is_credit = false"
+                    >
+                        {{ t('purchase_receipts.payment.paid_in_full') }}
+                    </button>
+                    <button
+                        type="button"
+                        class="rounded-lg border px-3 py-2 text-sm font-medium transition"
+                        :class="header.is_credit ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'"
+                        @click="header.is_credit = true"
+                    >
+                        {{ t('purchase_receipts.payment.on_credit') }}
+                    </button>
+                </div>
+                <label v-if="header.is_credit" class="mt-3 block max-w-xs">
+                    <span class="text-xs font-medium text-slate-600">{{ t('purchase_receipts.payment.due_date_optional') }}</span>
+                    <input v-model="header.due_date" type="date" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                </label>
+                <p v-if="header.is_credit" class="mt-2 text-xs text-slate-400">{{ t('purchase_receipts.payment.credit_hint') }}</p>
             </div>
 
             <!-- Lines -->

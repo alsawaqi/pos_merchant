@@ -30,6 +30,10 @@ class StorePurchaseReceiptRequest extends FormRequest
             'reference' => ['nullable', 'string', 'max:100'],
             'received_at' => ['nullable', 'date'],
             'note' => ['nullable', 'string', 'max:2000'],
+            // AP — was this delivery bought on credit (pay the supplier later)?
+            // A due date is an optional reminder of when payment is expected.
+            'is_credit' => ['nullable', 'boolean'],
+            'due_date' => ['nullable', 'date'],
 
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.item_type' => ['required', 'string', 'in:ingredient,product'],

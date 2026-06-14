@@ -72,11 +72,13 @@ final readonly class CreatePurchaseReceiptAction
         array $lines,
         array $charges,
         User $actor,
+        bool $isCredit = false,
+        ?Carbon $dueDate = null,
     ): PurchaseReceipt {
         $at = $receivedAt ?? now();
 
         return DB::transaction(function () use (
-            $companyId, $supplier, $reference, $at, $note, $lines, $charges, $actor
+            $companyId, $supplier, $reference, $at, $note, $lines, $charges, $actor, $isCredit, $dueDate
         ): PurchaseReceipt {
             $receipt = PurchaseReceipt::query()->create([
                 'company_id' => $companyId,
@@ -86,6 +88,12 @@ final readonly class CreatePurchaseReceiptAction
                 'charges_total' => '0.000',
                 'grand_total' => '0.000',
                 'status' => 'received',
+                // AP — bought on credit means nothing is paid yet; a cash buy is
+                // settled in full at receive. amount_paid + payment_status are
+                // finalised below once grand_total is known. The cost still books
+                // its expense at receive regardless — credit only defers CASH.
+                'is_credit' => $isCredit,
+                'due_date' => $isCredit ? $dueDate : null,
                 'note' => $note,
                 'recorded_by_user_id' => (int) $actor->getKey(),
                 'received_at' => $at,
@@ -110,11 +118,22 @@ final readonly class CreatePurchaseReceiptAction
                 $taxTotal += $r['tax'];
             }
 
+            $grandTotal = $itemsTotal + $chargesTotal + $taxTotal;
+            // AP — a cash buy is fully paid at receive; a credit buy starts at 0
+            // owed-but-paid. A zero-total credit buy (all free lines) owes
+            // nothing, so it is already 'paid'.
+            $amountPaid = $isCredit ? 0.0 : $grandTotal;
+            $paymentStatus = $amountPaid >= $grandTotal - 1e-9
+                ? 'paid'
+                : ($amountPaid > 1e-9 ? 'partial' : 'unpaid');
+
             $receipt->update([
                 'items_total' => number_format($itemsTotal, 3, '.', ''),
                 'charges_total' => number_format($chargesTotal, 3, '.', ''),
                 'tax_total' => number_format($taxTotal, 3, '.', ''),
-                'grand_total' => number_format($itemsTotal + $chargesTotal + $taxTotal, 3, '.', ''),
+                'grand_total' => number_format($grandTotal, 3, '.', ''),
+                'amount_paid' => number_format($amountPaid, 3, '.', ''),
+                'payment_status' => $paymentStatus,
             ]);
 
             return $receipt->fresh(['lines', 'charges', 'supplier', 'recordedByUser']);

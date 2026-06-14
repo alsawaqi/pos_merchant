@@ -31,6 +31,10 @@ use Illuminate\Support\Str;
     'tax_total',
     'grand_total',
     'status',
+    'is_credit',
+    'amount_paid',
+    'payment_status',
+    'due_date',
     'note',
     'recorded_by_user_id',
     'received_at',
@@ -48,11 +52,25 @@ class PurchaseReceipt extends Model
     {
         return [
             'received_at' => 'datetime',
+            'due_date' => 'date',
             'items_total' => 'decimal:3',
             'charges_total' => 'decimal:3',
             'tax_total' => 'decimal:3',
             'grand_total' => 'decimal:3',
+            'is_credit' => 'boolean',
+            'amount_paid' => 'decimal:3',
         ];
+    }
+
+    /**
+     * The still-owed balance (frozen grand total minus what has been paid),
+     * never negative. AP works in OMR 3-decimal baisas like every other total.
+     */
+    public function balanceDue(): string
+    {
+        $balance = (float) $this->grand_total - (float) $this->amount_paid;
+
+        return number_format($balance > 0 ? $balance : 0, 3, '.', '');
     }
 
     protected static function booted(): void
@@ -107,5 +125,15 @@ class PurchaseReceipt extends Model
     public function charges(): HasMany
     {
         return $this->hasMany(PurchaseReceiptCharge::class)->orderBy('display_order');
+    }
+
+    /**
+     * AP — the supplier-credit payment history, newest first.
+     *
+     * @return HasMany<PurchaseReceiptPayment, $this>
+     */
+    public function payments(): HasMany
+    {
+        return $this->hasMany(PurchaseReceiptPayment::class)->orderByDesc('paid_at')->orderByDesc('id');
     }
 }

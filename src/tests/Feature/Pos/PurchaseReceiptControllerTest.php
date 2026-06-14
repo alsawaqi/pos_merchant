@@ -293,3 +293,141 @@ it('refuses cooked + made-to-order + untracked products — only ready/bought-in
     // Only the bought-in/physical receipt persisted; the 3 refused booked nothing.
     expect(PurchaseReceipt::query()->count())->toBe(1);
 });
+
+// ===================== AP — supplier credit / accounts payable =====================
+
+it('records a cash receipt as fully paid by default', function (): void {
+    $ctx = makeMerchantActor();
+    $tomato = grnIngredient($ctx);
+
+    $res = $this->postJson('/api/purchase-receipts', [
+        'lines' => [['item_type' => 'ingredient', 'item_uuid' => $tomato->uuid, 'quantity' => '10', 'line_cost' => '30']],
+    ])->assertCreated();
+
+    expect($res->json('data.is_credit'))->toBeFalse();
+    expect($res->json('data.payment_status'))->toBe('paid');
+    expect($res->json('data.amount_paid'))->toBe('30.000');
+    expect($res->json('data.balance_due'))->toBe('0.000');
+});
+
+it('records a credit receipt as unpaid with the whole balance outstanding', function (): void {
+    $ctx = makeMerchantActor();
+    $tomato = grnIngredient($ctx);
+
+    $res = $this->postJson('/api/purchase-receipts', [
+        'is_credit' => true,
+        'due_date' => '2026-09-01',
+        'lines' => [['item_type' => 'ingredient', 'item_uuid' => $tomato->uuid, 'quantity' => '10', 'line_cost' => '30']],
+    ])->assertCreated();
+
+    expect($res->json('data.is_credit'))->toBeTrue();
+    expect($res->json('data.payment_status'))->toBe('unpaid');
+    expect($res->json('data.amount_paid'))->toBe('0.000');
+    expect($res->json('data.balance_due'))->toBe('30.000');
+    expect($res->json('data.due_date'))->toBe('2026-09-01');
+
+    // The cost STILL booked its expense at receive (credit defers cash, not P&L).
+    expect((float) Expense::query()->where('category', 'ingredients')->sum('amount'))->toBe(30.0);
+});
+
+it('records a partial payment, stays partial, and books no new expense', function (): void {
+    $ctx = makeMerchantActor();
+    $tomato = grnIngredient($ctx);
+    $created = $this->postJson('/api/purchase-receipts', [
+        'is_credit' => true,
+        'lines' => [['item_type' => 'ingredient', 'item_uuid' => $tomato->uuid, 'quantity' => '10', 'line_cost' => '30']],
+    ])->assertCreated();
+    $uuid = $created->json('data.uuid');
+
+    $expensesBefore = Expense::query()->count();
+
+    $res = $this->postJson("/api/purchase-receipts/{$uuid}/payments", [
+        'amount' => '10', 'method' => 'cash', 'note' => 'first installment',
+    ])->assertOk();
+
+    expect($res->json('data.payment_status'))->toBe('partial');
+    expect($res->json('data.amount_paid'))->toBe('10.000');
+    expect($res->json('data.balance_due'))->toBe('20.000');
+    expect($res->json('data.payments'))->toHaveCount(1);
+    expect($res->json('data.payments.0.amount'))->toBe('10.000');
+    expect($res->json('data.payments.0.balance_after'))->toBe('20.000');
+    expect($res->json('data.payments.0.method'))->toBe('cash');
+
+    // A payment is a settlement, not a P&L event — no expense was booked.
+    expect(Expense::query()->count())->toBe($expensesBefore);
+});
+
+it('settles a credit receipt through successive partial payments', function (): void {
+    $ctx = makeMerchantActor();
+    $tomato = grnIngredient($ctx);
+    $uuid = $this->postJson('/api/purchase-receipts', [
+        'is_credit' => true,
+        'lines' => [['item_type' => 'ingredient', 'item_uuid' => $tomato->uuid, 'quantity' => '10', 'line_cost' => '30']],
+    ])->assertCreated()->json('data.uuid');
+
+    $this->postJson("/api/purchase-receipts/{$uuid}/payments", ['amount' => '10'])->assertOk();
+    $res = $this->postJson("/api/purchase-receipts/{$uuid}/payments", ['amount' => '20'])->assertOk();
+
+    expect($res->json('data.payment_status'))->toBe('paid');
+    expect($res->json('data.amount_paid'))->toBe('30.000');
+    expect($res->json('data.balance_due'))->toBe('0.000');
+    expect($res->json('data.payments'))->toHaveCount(2);
+});
+
+it('rejects a payment exceeding the outstanding balance and records nothing', function (): void {
+    $ctx = makeMerchantActor();
+    $tomato = grnIngredient($ctx);
+    $uuid = $this->postJson('/api/purchase-receipts', [
+        'is_credit' => true,
+        'lines' => [['item_type' => 'ingredient', 'item_uuid' => $tomato->uuid, 'quantity' => '10', 'line_cost' => '30']],
+    ])->assertCreated()->json('data.uuid');
+
+    $this->postJson("/api/purchase-receipts/{$uuid}/payments", ['amount' => '40'])->assertStatus(422);
+
+    $receipt = PurchaseReceipt::query()->where('uuid', $uuid)->firstOrFail();
+    expect((string) $receipt->amount_paid)->toBe('0.000');
+    expect($receipt->payments()->count())->toBe(0);
+});
+
+it('rejects a payment against an already fully-paid receipt', function (): void {
+    $ctx = makeMerchantActor();
+    $tomato = grnIngredient($ctx);
+    // A cash receipt is settled in full at receive — nothing left to pay.
+    $uuid = $this->postJson('/api/purchase-receipts', [
+        'lines' => [['item_type' => 'ingredient', 'item_uuid' => $tomato->uuid, 'quantity' => '10', 'line_cost' => '30']],
+    ])->assertCreated()->json('data.uuid');
+
+    $this->postJson("/api/purchase-receipts/{$uuid}/payments", ['amount' => '5'])->assertStatus(422);
+});
+
+it('lists only outstanding receipts when filtered', function (): void {
+    $ctx = makeMerchantActor();
+    $tomato = grnIngredient($ctx);
+    // One cash (paid) + one credit (unpaid).
+    $this->postJson('/api/purchase-receipts', [
+        'lines' => [['item_type' => 'ingredient', 'item_uuid' => $tomato->uuid, 'quantity' => '10', 'line_cost' => '30']],
+    ])->assertCreated();
+    $creditUuid = $this->postJson('/api/purchase-receipts', [
+        'is_credit' => true,
+        'lines' => [['item_type' => 'ingredient', 'item_uuid' => $tomato->uuid, 'quantity' => '10', 'line_cost' => '30']],
+    ])->assertCreated()->json('data.uuid');
+
+    expect($this->getJson('/api/purchase-receipts')->json('data'))->toHaveCount(2);
+
+    $outstanding = $this->getJson('/api/purchase-receipts?payment_status=outstanding')->assertOk();
+    expect($outstanding->json('data'))->toHaveCount(1);
+    expect($outstanding->json('data.0.uuid'))->toBe($creditUuid);
+});
+
+it('refuses recording a payment against another company receipt', function (): void {
+    makeMerchantActor();
+    $other = Company::factory()->create();
+    $foreign = PurchaseReceipt::query()->create([
+        'company_id' => $other->id, 'items_total' => '30.000', 'charges_total' => '0.000',
+        'grand_total' => '30.000', 'status' => 'received', 'is_credit' => true,
+        'amount_paid' => '0.000', 'payment_status' => 'unpaid', 'received_at' => now(),
+    ]);
+
+    $this->postJson("/api/purchase-receipts/{$foreign->uuid}/payments", ['amount' => '5'])->assertStatus(404);
+    expect($foreign->payments()->count())->toBe(0);
+});

@@ -41,6 +41,20 @@ export interface PurchaseReceiptCharge {
     tax_rate: string | null;
 }
 
+/** AP — 'paid' (settled at/after receive) | 'partial' | 'unpaid'. */
+export type ReceiptPaymentStatus = 'paid' | 'partial' | 'unpaid';
+
+export interface PurchaseReceiptPayment {
+    uuid: string;
+    amount: string;
+    /** The outstanding balance LEFT after this payment. */
+    balance_after: string;
+    method: string | null;
+    note: string | null;
+    recorded_by: string | null;
+    paid_at: string | null;
+}
+
 export interface PurchaseReceipt {
     uuid: string;
     reference: string | null;
@@ -51,6 +65,13 @@ export interface PurchaseReceipt {
     /** PT — Σ line + charge tax. */
     tax_total: string;
     grand_total: string;
+    /** AP — supplier credit + settlement. */
+    is_credit: boolean;
+    payment_status: ReceiptPaymentStatus;
+    amount_paid: string;
+    /** grand_total − amount_paid, never negative. */
+    balance_due: string;
+    due_date: string | null;
     received_at: string | null;
     supplier: { uuid: string; name: string } | null;
     recorded_by: string | null;
@@ -59,6 +80,8 @@ export interface PurchaseReceipt {
     /** Present in the detail view. */
     lines?: PurchaseReceiptLine[];
     charges?: PurchaseReceiptCharge[];
+    /** AP — payment history, newest first (detail view). */
+    payments?: PurchaseReceiptPayment[];
     created_at: string | null;
 }
 
@@ -98,17 +121,27 @@ export interface CreatePurchaseReceiptPayload {
     reference?: string | null;
     received_at?: string | null;
     note?: string | null;
+    /** AP — was this delivery bought on credit (pay the supplier later)? */
+    is_credit?: boolean;
+    due_date?: string | null;
     lines: PurchaseReceiptLinePayload[];
     charges?: PurchaseReceiptChargePayload[];
+}
+
+export interface RecordReceiptPaymentPayload {
+    amount: string | number;
+    method?: string | null;
+    note?: string | null;
+    paid_at?: string | null;
 }
 
 // ---- Endpoints --------------------------------------------------
 
 export function listPurchaseReceipts(
-    params: { page?: number; per_page?: number } = {},
+    params: { page?: number; per_page?: number; payment_status?: string } = {},
 ): Promise<PaginatedPurchaseReceipts> {
     return apiGet<PaginatedPurchaseReceipts>('/api/purchase-receipts', {
-        query: { page: params.page, per_page: params.per_page },
+        query: { page: params.page, per_page: params.per_page, payment_status: params.payment_status },
     });
 }
 
@@ -121,6 +154,17 @@ export function createPurchaseReceipt(
 ): Promise<{ data: PurchaseReceipt }> {
     return apiPost<{ data: PurchaseReceipt }>(
         '/api/purchase-receipts',
+        payload as unknown as JsonValue,
+    );
+}
+
+/** AP — record a (full or partial) payment against a credit receipt. */
+export function recordReceiptPayment(
+    uuid: string,
+    payload: RecordReceiptPaymentPayload,
+): Promise<{ data: PurchaseReceipt }> {
+    return apiPost<{ data: PurchaseReceipt }>(
+        `/api/purchase-receipts/${uuid}/payments`,
         payload as unknown as JsonValue,
     );
 }

@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Pos;
 
 use App\Actions\Pos\Inventory\CreatePurchaseReceiptAction;
+use App\Actions\Pos\Inventory\WriteReceiptPaymentAction;
 use App\Enums\ExpenseCategory;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Pos\Inventory\RecordReceiptPaymentRequest;
 use App\Http\Requests\Pos\Inventory\StorePurchaseReceiptRequest;
 use App\Http\Resources\Pos\Inventory\PurchaseReceiptResource;
 use App\Models\Branch;
@@ -40,6 +42,7 @@ class PurchaseReceiptController extends Controller
     public function __construct(
         private readonly MerchantTenantContext $tenant,
         private readonly CreatePurchaseReceiptAction $create,
+        private readonly WriteReceiptPaymentAction $writePayment,
     ) {}
 
     public function index(Request $request): AnonymousResourceCollection
@@ -48,10 +51,21 @@ class PurchaseReceiptController extends Controller
 
         $perPage = min((int) $request->query('per_page', 20), 100);
 
-        $receipts = PurchaseReceipt::query()
+        $query = PurchaseReceipt::query()
             ->where('company_id', $this->tenant->requiredId())
             ->with('supplier')
-            ->withCount('lines')
+            ->withCount('lines');
+
+        // AP — filter the payables: ?payment_status=outstanding shows everything
+        // not fully paid (the unpaid-receipts list), or a specific status.
+        $status = (string) $request->query('payment_status', '');
+        if ($status === 'outstanding') {
+            $query->where('payment_status', '!=', 'paid');
+        } elseif (in_array($status, ['paid', 'partial', 'unpaid'], true)) {
+            $query->where('payment_status', $status);
+        }
+
+        $receipts = $query
             ->orderByDesc('received_at')
             ->orderByDesc('id')
             ->paginate($perPage);
@@ -104,6 +118,11 @@ class PurchaseReceiptController extends Controller
         $receivedAt = $request->filled('received_at')
             ? Carbon::parse((string) $request->input('received_at'))
             : null;
+        // AP — a credit buy defers the cash; a due date is an optional reminder.
+        $isCredit = $request->boolean('is_credit');
+        $dueDate = $request->filled('due_date')
+            ? Carbon::parse((string) $request->input('due_date'))
+            : null;
 
         try {
             $receipt = $this->create->handle(
@@ -115,6 +134,8 @@ class PurchaseReceiptController extends Controller
                 $lines,
                 $charges,
                 $request->user(),
+                $isCredit,
+                $dueDate,
             );
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
@@ -132,9 +153,44 @@ class PurchaseReceiptController extends Controller
         $this->ensure($request, MerchantPermission::InventoryView);
         $this->refuseIfNotInTenant($receipt);
 
-        $receipt->load(['lines', 'charges', 'supplier', 'recordedByUser']);
+        $receipt->load(['lines', 'charges', 'supplier', 'recordedByUser', 'payments.recordedByUser']);
 
         return PurchaseReceiptResource::make($receipt);
+    }
+
+    /**
+     * AP — record a payment (full or partial) against a credit receipt and
+     * return the refreshed document with its updated balance + history. A
+     * payment settles the supplier, NOT the books: the cost was already
+     * expensed at receive, so no new expense is booked here.
+     */
+    public function recordPayment(RecordReceiptPaymentRequest $request, PurchaseReceipt $receipt): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::InventoryManage);
+        $this->refuseIfNotInTenant($receipt);
+
+        $paidAt = $request->filled('paid_at')
+            ? Carbon::parse((string) $request->input('paid_at'))
+            : null;
+
+        try {
+            $this->writePayment->handle(
+                $receipt,
+                $request->input('amount'),
+                $request->user(),
+                $request->input('method'),
+                $request->input('note'),
+                $paidAt,
+            );
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        $receipt->refresh()->load(['lines', 'charges', 'supplier', 'recordedByUser', 'payments.recordedByUser']);
+
+        return response()->json([
+            'data' => (new PurchaseReceiptResource($receipt))->resolve($request),
+        ]);
     }
 
     // ---- helpers ----------------------------------------------

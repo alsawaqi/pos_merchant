@@ -552,6 +552,9 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('purchase-receipts.store');
         Route::get('purchase-receipts/{receipt:uuid}', [PurchaseReceiptController::class, 'show'])
             ->name('purchase-receipts.show');
+        // AP — record a (full or partial) payment against a credit receipt.
+        Route::post('purchase-receipts/{receipt:uuid}/payments', [PurchaseReceiptController::class, 'recordPayment'])
+            ->name('purchase-receipts.payments.store');
 
         // Per-branch stock: current balances, adjust, restock,
         // and paginated movement ledger.

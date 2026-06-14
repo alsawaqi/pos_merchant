@@ -1480,6 +1480,11 @@ return new class extends Migration
             $table->decimal('tax_total', 12, 3)->default(0);
             $table->decimal('grand_total', 12, 3)->default(0);
             $table->string('status', 32)->default('received');
+            // AP — supplier credit + accounts payable (folds in 2026_07_26_010000).
+            $table->boolean('is_credit')->default(false);
+            $table->decimal('amount_paid', 12, 3)->default(0);
+            $table->string('payment_status', 16)->default('paid');
+            $table->date('due_date')->nullable();
             $table->text('note')->nullable();
             $table->foreignId('recorded_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
             $table->timestamp('received_at')->useCurrent();
@@ -1520,6 +1525,23 @@ return new class extends Migration
             $table->unsignedSmallInteger('display_order')->default(0);
             $table->timestamps();
             $table->index(['purchase_receipt_id'], 'pos_purchase_receipt_charges_receipt_idx');
+        });
+
+        // AP — supplier-credit payment history (mirrors 2026_07_26_010000).
+        // Append-only ledger: one row per payment against a credit receipt.
+        Schema::create('pos_purchase_receipt_payments', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('purchase_receipt_id')->constrained('pos_purchase_receipts')->cascadeOnDelete();
+            $table->decimal('amount', 12, 3);
+            $table->decimal('balance_after', 12, 3);
+            $table->string('method', 32)->nullable();
+            $table->string('note', 255)->nullable();
+            $table->foreignId('recorded_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->timestamp('paid_at')->useCurrent();
+            $table->timestamps();
+            $table->index(['purchase_receipt_id'], 'pos_purchase_receipt_payments_receipt_idx');
         });
 
         // ---- Sessions (used by some auth integration tests) -------
