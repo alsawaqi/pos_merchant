@@ -37,6 +37,7 @@ import ReportsIndex from '@/Pages/Merchant/Reports/Index.vue';
 import ReportsSales from '@/Pages/Merchant/Reports/Sales.vue';
 import ReportsCustomers from '@/Pages/Merchant/Reports/Customers.vue';
 import ReportsDiscounts from '@/Pages/Merchant/Reports/Discounts.vue';
+import ReportsDiscountedCompedProducts from '@/Pages/Merchant/Reports/DiscountedCompedProducts.vue';
 import ReportsComps from '@/Pages/Merchant/Reports/Comps.vue';
 import ReportsShifts from '@/Pages/Merchant/Reports/Shifts.vue';
 import ReportsPayouts from '@/Pages/Merchant/Reports/Payouts.vue';
@@ -321,6 +322,7 @@ const routes: RouteRecordRaw[] = [
     { path: '/reports/sales', name: 'merchant.reports.sales', component: ReportsSales, meta: { requiresAuth: true } },
     { path: '/reports/customers', name: 'merchant.reports.customers', component: ReportsCustomers, meta: { requiresAuth: true } },
     { path: '/reports/discounts', name: 'merchant.reports.discounts', component: ReportsDiscounts, meta: { requiresAuth: true } },
+    { path: '/reports/discounted-comped-products', name: 'merchant.reports.discounted-comped-products', component: ReportsDiscountedCompedProducts, meta: { requiresAuth: true } },
     { path: '/reports/comps', name: 'merchant.reports.comps', component: ReportsComps, meta: { requiresAuth: true } },
     { path: '/reports/shifts', name: 'merchant.reports.shifts', component: ReportsShifts, meta: { requiresAuth: true } },
     { path: '/reports/payouts', name: 'merchant.reports.payouts', component: ReportsPayouts, meta: { requiresAuth: true } },

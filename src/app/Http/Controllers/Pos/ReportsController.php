@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Pos;
 use App\Actions\Pos\Reports\AuditLogReportAction;
 use App\Actions\Pos\Reports\CompReportAction;
 use App\Actions\Pos\Reports\CustomerReportAction;
+use App\Actions\Pos\Reports\DiscountedCompedProductsReportAction;
 use App\Actions\Pos\Reports\DiscountReportAction;
 use App\Actions\Pos\Reports\InventoryConsumptionReportAction;
 use App\Actions\Pos\Reports\LossWasteReportAction;
@@ -63,7 +64,18 @@ class ReportsController extends Controller
         private readonly PayoutBreakdownReportAction $payoutBreakdownReport,
         private readonly CompReportAction $compReport,
         private readonly ShiftReportAction $shiftReport,
+        private readonly DiscountedCompedProductsReportAction $discountedCompedProductsReport,
     ) {}
+
+    /** Discounted & comped products — which exact product was reduced, by what type. */
+    public function discountedCompedProducts(ReportFilterRequest $request): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::ReportsView);
+
+        $filter = ReportFilter::fromArray($request->validated(), $request->user()?->allowedBranchIds());
+
+        return response()->json(['data' => $this->discountedCompedProductsReport->handle($filter)]);
+    }
 
     /** Phase B — Comp Report (Additions §1.2). */
     public function comps(ReportFilterRequest $request): JsonResponse
@@ -253,6 +265,7 @@ class ReportsController extends Controller
             'loss-waste' => $this->lossWasteReport,
             'restock-purchasing' => $this->restockPurchasingReport,
             'round-up-donation' => $this->roundUpDonationReport,
+            'discounted-comped-products' => $this->discountedCompedProductsReport,
         ];
 
         if (! array_key_exists($report, $reports)) {

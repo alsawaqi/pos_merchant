@@ -350,6 +350,42 @@ export function fetchCompReport(filter: ReportFilter): Promise<{ data: CompRepor
 }
 
 // ============================================================
+// Discounted & Comped Products — which exact product was reduced
+// (offers / discounts / loyalty / comps / gifts), and by how much
+// ============================================================
+
+/** 'offer' | 'discount' (incl. loyalty) | 'comp' | 'gift'. */
+export type ReductionType = 'offer' | 'discount' | 'comp' | 'gift';
+
+export interface DiscountedCompedProductsPayload {
+    window: { from: string; to: string; consolidated: boolean; branch_ids: number[] | null };
+    headline: {
+        total_taken_off: string;
+        product_level_total: string;
+        whole_order_total: string;
+        distinct_products: number;
+        application_count: number;
+    };
+    by_product: { product_id: number | null; product_name: string; units: string; total_off: string; times: number }[];
+    by_product_and_type: { product_id: number | null; product_name: string; type: ReductionType; units: string; total_off: string; times: number }[];
+    by_type: { type: ReductionType; total_off: string; times: number }[];
+    whole_order: { type: ReductionType; total_off: string; times: number }[];
+    recent: {
+        product_name: string | null;
+        type: ReductionType;
+        name: string;
+        units: string | null;
+        amount: string;
+        applied_at: string | null;
+        order_uuid: string;
+    }[];
+}
+
+export function fetchDiscountedCompedProductsReport(filter: ReportFilter): Promise<{ data: DiscountedCompedProductsPayload }> {
+    return apiGet<{ data: DiscountedCompedProductsPayload }>(reportPath('discounted-comped-products', filter));
+}
+
+// ============================================================
 // Phase B — Shift Report (cash variance per shift)
 // ============================================================
 

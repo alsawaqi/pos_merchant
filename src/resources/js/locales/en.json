@@ -2290,6 +2290,10 @@
                     "title": "Discounts",
                     "desc": "Total discount value, share of gross, by branch (rule + staff land in Phase 8)."
                 },
+                "discounted_comped_products": {
+                    "title": "Discounted & comped products",
+                    "desc": "Exactly which product was discounted or comped, by type (offer, discount, comp, gift), how many, and the money off."
+                },
                 "comps": {
                     "title": "Comps",
                     "desc": "Manager write-offs: total comp value, by reason, by approving manager, recent comps."
@@ -2391,6 +2395,39 @@
             },
             "by_rule": "By rule",
             "by_staff": "By staff"
+        },
+        "discounted_comped_products": {
+            "page_title": "Discounted & Comped Products",
+            "types_hint": "Every price reduction, by the exact product. Loyalty redemptions are counted under \"Discount\" (they aren't separable from other discounts in the data).",
+            "headline_labels": {
+                "total_taken_off": "Total taken off",
+                "distinct_products": "Products affected",
+                "applications": "Reductions",
+                "product_level": "On specific products",
+                "whole_order": "On whole orders"
+            },
+            "by_type": "By type",
+            "by_product": "By product",
+            "by_product_and_type": "By product & type",
+            "whole_order": "Whole-order reductions",
+            "whole_order_hint": "Applied to the whole order, not a single product.",
+            "whole_order_product": "— (whole order)",
+            "recent": "Recent reductions",
+            "types": {
+                "offer": "Offer",
+                "discount": "Discount",
+                "comp": "Comp",
+                "gift": "Gift"
+            },
+            "cols": {
+                "product": "Product",
+                "type": "Type",
+                "units": "Units",
+                "times": "Times",
+                "amount": "Amount off",
+                "name": "Discount / reason",
+                "when": "When"
+            }
         },
         "comps": {
             "page_title": "Comp Report",

@@ -812,6 +812,9 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('reports.customers');
         Route::get('reports/discounts', [ReportsController::class, 'discounts'])
             ->name('reports.discounts');
+        // Product-level view of every discount/offer/comp/gift — which exact item.
+        Route::get('reports/discounted-comped-products', [ReportsController::class, 'discountedCompedProducts'])
+            ->name('reports.discounted-comped-products');
         // Phase B — comp write-offs + per-shift cash variance.
         Route::get('reports/comps', [ReportsController::class, 'comps'])
             ->name('reports.comps');

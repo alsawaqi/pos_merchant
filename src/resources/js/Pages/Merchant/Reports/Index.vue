@@ -13,6 +13,7 @@
 
 import {
     BarChart3,
+    BadgePercent,
     Clock4,
     Gift,
     Users,
@@ -45,6 +46,7 @@ const tiles: Tile[] = [
     { key: 'sales', to: '/reports/sales', icon: BarChart3 },
     { key: 'customers', to: '/reports/customers', icon: Users },
     { key: 'discounts', to: '/reports/discounts', icon: Percent },
+    { key: 'discounted_comped_products', to: '/reports/discounted-comped-products', icon: BadgePercent },
     { key: 'comps', to: '/reports/comps', icon: Gift },
     { key: 'shifts', to: '/reports/shifts', icon: Clock4 },
     { key: 'payouts', to: '/reports/payouts', icon: Wallet },
