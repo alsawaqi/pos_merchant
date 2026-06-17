@@ -1378,6 +1378,11 @@ return new class extends Migration
             $table->timestamp('occurred_at')->nullable();
             $table->timestamps();
             $table->unsignedBigInteger('payout_id')->nullable();
+            // Commission settlement (estimate → settled).
+            $table->decimal('settled_amount', 12, 3)->nullable();
+            $table->boolean('is_settled')->default(false);
+            $table->timestamp('settled_at')->nullable();
+            $table->unsignedBigInteger('settlement_id')->nullable();
             $table->unique(['order_id', 'sort_order'], 'pos_sale_commissions_order_sort_unique');
             $table->index(['company_id', 'occurred_at'], 'pos_sale_commissions_company_occurred_idx');
         });
@@ -1419,6 +1424,32 @@ return new class extends Migration
             $table->unsignedBigInteger('created_by_user_id')->nullable();
             $table->unsignedBigInteger('paid_by_user_id')->nullable();
             $table->timestamp('paid_at')->nullable();
+            $table->timestamps();
+        });
+
+        // Commission settlement events (estimate → settled vs the bank's actual fee).
+        Schema::create('pos_commission_settlements', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->unsignedBigInteger('company_id')->index();
+            $table->unsignedBigInteger('branch_id')->nullable()->index();
+            $table->string('source', 20)->default('manual');
+            $table->unsignedBigInteger('bank_id')->nullable();
+            $table->date('statement_date')->nullable();
+            $table->timestamp('period_from')->nullable();
+            $table->timestamp('period_to')->nullable();
+            $table->decimal('card_gross', 12, 3)->default(0);
+            $table->decimal('estimated_bank', 12, 3)->default(0);
+            $table->decimal('actual_bank', 12, 3)->default(0);
+            $table->decimal('platform_total', 12, 3)->default(0);
+            $table->decimal('merchant_net', 12, 3)->default(0);
+            $table->decimal('variance', 12, 3)->default(0);
+            $table->unsignedInteger('orders_count')->default(0);
+            $table->string('status', 20)->default('applied');
+            $table->text('note')->nullable();
+            $table->unsignedBigInteger('created_by_user_id')->nullable();
+            $table->unsignedBigInteger('reversed_by_user_id')->nullable();
+            $table->timestamp('reversed_at')->nullable();
             $table->timestamps();
         });
 
