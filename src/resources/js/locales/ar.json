@@ -2496,7 +2496,8 @@
                 "platform": "رسوم المنصة",
                 "bank": "رسوم البنك",
                 "other": "أخرى",
-                "num_sales": "المبيعات"
+                "num_sales": "المبيعات",
+                "reconciled": "مُسوّاة"
             },
             "parties": {
                 "platform": "المنصة",
@@ -2506,6 +2507,11 @@
             },
             "charts": {
                 "commission_split": "توزيع العمولة"
+            },
+            "reconciliation": {
+                "partial": "تمّت تسوية {settled} من {total} من مبيعات البطاقات مقابل رسوم البنك الفعلية — والباقي تقديري حتى تُسوّيه البنك.",
+                "full": "تمّت تسوية كل المبيعات ({total}) — هذه مبالغك النهائية.",
+                "estimated_net": "الصافي التقديري: {amount}"
             },
             "history": {
                 "section_title": "سجل المستحقات",

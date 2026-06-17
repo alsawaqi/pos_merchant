@@ -50,19 +50,29 @@ final readonly class PayoutBreakdownReportAction
         }
 
         // ---- Totals per party ----
+        // `total` is settled-aware (the bank's ACTUAL fee where a card sale has
+        // been reconciled, the estimate otherwise); `est_total` is the pure
+        // estimate, so the merchant sees both their live estimate and the final
+        // figure as reconciliation lands.
         $byParty = (clone $base)
-            ->selectRaw('party_type, COALESCE(SUM(commission_amount), 0) AS total')
+            ->selectRaw('party_type, COALESCE(SUM(COALESCE(settled_amount, commission_amount)), 0) AS total, COALESCE(SUM(commission_amount), 0) AS est_total')
             ->groupBy('party_type')
-            ->pluck('total', 'party_type');
+            ->get()
+            ->keyBy('party_type');
 
-        $amount = static fn (string $party): float => (float) ($byParty[$party] ?? 0);
+        $amount = static fn (string $party): float => (float) (optional($byParty->get($party))->total ?? 0);
+        $estimate = static fn (string $party): float => (float) (optional($byParty->get($party))->est_total ?? 0);
         $platform = $amount('platform');
         $bank = $amount('bank');
         $other = $amount('other');
         $merchantNet = $amount('merchant');
         $gross = $platform + $bank + $other + $merchantNet;
+        $bankEstimated = $estimate('bank');
+        $merchantNetEstimated = $estimate('merchant');
 
         $numSales = (int) (clone $base)->distinct()->count('order_id');
+        // Sales whose commission has been reconciled against the bank's fee.
+        $numSettled = (int) (clone $base)->where('is_settled', true)->distinct()->count('order_id');
 
         // ---- Per-party array (for the donut) ----
         $parties = array_map(static fn (string $p): array => [
@@ -70,15 +80,20 @@ final readonly class PayoutBreakdownReportAction
             'total' => number_format($p === 'merchant' ? $merchantNet : ($p === 'platform' ? $platform : ($p === 'bank' ? $bank : $other)), 3, '.', ''),
         ], self::PARTIES);
 
-        // ---- By branch ----
+        // ---- By branch ---- (settled-aware, like the headline)
         $byBranchRows = (clone $base)
-            ->selectRaw('branch_id, party_type, COALESCE(SUM(commission_amount), 0) AS total')
+            ->selectRaw('branch_id, party_type, COALESCE(SUM(COALESCE(settled_amount, commission_amount)), 0) AS total')
             ->groupBy('branch_id', 'party_type')
             ->get();
 
         /** @var array<int, array<string, float>> $branchAgg */
         $branchAgg = [];
         $branchOrders = (clone $base)
+            ->selectRaw('branch_id, COUNT(DISTINCT order_id) AS sales')
+            ->groupBy('branch_id')
+            ->pluck('sales', 'branch_id');
+        $branchSettled = (clone $base)
+            ->where('is_settled', true)
             ->selectRaw('branch_id, COUNT(DISTINCT order_id) AS sales')
             ->groupBy('branch_id')
             ->pluck('sales', 'branch_id');
@@ -100,6 +115,7 @@ final readonly class PayoutBreakdownReportAction
                 'other' => number_format($a['other'], 3, '.', ''),
                 'merchant_net' => number_format($a['merchant'], 3, '.', ''),
                 'num_sales' => (int) ($branchOrders[$bid] ?? 0),
+                'num_settled' => (int) ($branchSettled[$bid] ?? 0),
             ];
         }
         usort($byBranch, static fn (array $x, array $y): int => (float) $y['merchant_net'] <=> (float) $x['merchant_net']);
@@ -117,7 +133,12 @@ final readonly class PayoutBreakdownReportAction
                 'bank' => number_format($bank, 3, '.', ''),
                 'other' => number_format($other, 3, '.', ''),
                 'merchant_net' => number_format($merchantNet, 3, '.', ''),
+                // Pure estimate, so the merchant can compare against the
+                // settled-aware figures above as reconciliation lands.
+                'bank_estimated' => number_format($bankEstimated, 3, '.', ''),
+                'merchant_net_estimated' => number_format($merchantNetEstimated, 3, '.', ''),
                 'num_sales' => $numSales,
+                'num_settled' => $numSettled,
             ],
             'parties' => $parties,
             'by_branch' => $byBranch,

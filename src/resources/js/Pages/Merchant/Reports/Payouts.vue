@@ -121,6 +121,24 @@ const partyChart = computed(() => {
 <template>
     <ReportShell :title="t('reports.payouts.page_title')" v-model="filter" :loading="loading" :error="error" @run="run">
         <div v-if="payload" class="space-y-6">
+            <!-- Estimate → settled: card sales show estimated figures until the
+                 platform reconciles them against the bank's actual fee. -->
+            <div
+                v-if="payload.headline.num_sales > 0"
+                class="flex flex-col gap-1 rounded-xl border px-4 py-3 text-sm"
+                :class="payload.headline.num_settled >= payload.headline.num_sales
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                    : 'border-amber-200 bg-amber-50 text-amber-800'"
+            >
+                <span v-if="payload.headline.num_settled >= payload.headline.num_sales">
+                    {{ t('reports.payouts.reconciliation.full', { total: payload.headline.num_sales }) }}
+                </span>
+                <template v-else>
+                    <span>{{ t('reports.payouts.reconciliation.partial', { settled: payload.headline.num_settled, total: payload.headline.num_sales }) }}</span>
+                    <span class="text-xs opacity-80">{{ t('reports.payouts.reconciliation.estimated_net', { amount: payload.headline.merchant_net_estimated }) }}</span>
+                </template>
+            </div>
+
             <HeadlineGrid
                 :items="[
                     { label: t('reports.payouts.headline_labels.gross'), value: payload.headline.gross },
@@ -151,6 +169,7 @@ const partyChart = computed(() => {
                             <th class="px-5 py-2 text-end">{{ t('reports.payouts.headline_labels.bank') }}</th>
                             <th class="px-5 py-2 text-end">{{ t('reports.payouts.headline_labels.merchant_net') }}</th>
                             <th class="px-5 py-2 text-end">{{ t('reports.payouts.headline_labels.num_sales') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.payouts.headline_labels.reconciled') }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -161,6 +180,7 @@ const partyChart = computed(() => {
                             <td class="px-5 py-2 text-end tabular-nums">{{ row.bank }}</td>
                             <td class="px-5 py-2 text-end font-semibold tabular-nums text-slate-900">{{ row.merchant_net }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ row.num_sales }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums text-slate-600">{{ row.num_settled }}/{{ row.num_sales }}</td>
                         </tr>
                     </tbody>
                 </table>

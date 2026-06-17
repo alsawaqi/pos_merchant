@@ -91,6 +91,33 @@ it('does not leak another company commissions', function (): void {
     expect($h['merchant_net'])->toBe('2.850');
 });
 
+it('shows the SETTLED net + estimate alongside, once a sale is reconciled', function (): void {
+    $ctx = makeMerchantActor();
+    $cid = $ctx['company']->id;
+    seedSale($cid, 1, 10, '0.060', '0.090', '2.850'); // estimate: gross 3.000
+
+    // Reconciled: actual bank 0.150 (> est 0.090) → merchant absorbs the
+    // 0.060 variance (2.790). All party rows of the order get is_settled.
+    DB::table('pos_sale_commissions')->where('order_id', 1)->update(['is_settled' => true]);
+    DB::table('pos_sale_commissions')->where('order_id', 1)->where('party_type', 'bank')->update(['settled_amount' => '0.150']);
+    DB::table('pos_sale_commissions')->where('order_id', 1)->where('party_type', 'merchant')->update(['settled_amount' => '2.790']);
+    DB::table('pos_sale_commissions')->where('order_id', 1)->where('party_type', 'platform')->update(['settled_amount' => '0.060']);
+
+    $res = $this->getJson('/api/reports/payouts?date_from=2026-06-01&date_to=2026-06-30')->assertOk();
+    $h = $res->json('data.headline');
+
+    expect($h['merchant_net'])->toBe('2.790')              // settled
+        ->and($h['merchant_net_estimated'])->toBe('2.850') // estimate, for comparison
+        ->and($h['bank'])->toBe('0.150')                   // actual fee
+        ->and($h['bank_estimated'])->toBe('0.090')
+        ->and($h['gross'])->toBe('3.000')                  // Σ preserved
+        ->and($h['num_sales'])->toBe(1)
+        ->and($h['num_settled'])->toBe(1);
+
+    expect($res->json('data.by_branch.0.merchant_net'))->toBe('2.790');
+    expect($res->json('data.by_branch.0.num_settled'))->toBe(1);
+});
+
 it('breaks the payout down per branch', function (): void {
     $ctx = makeMerchantActor();
     $cid = $ctx['company']->id;

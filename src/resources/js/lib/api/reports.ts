@@ -457,7 +457,12 @@ export interface PayoutBreakdownPayload {
         bank: string;
         other: string;
         merchant_net: string;
+        // Pure estimate (vs the settled-aware figures above), so the merchant
+        // sees their live estimate alongside the reconciled final amount.
+        bank_estimated: string;
+        merchant_net_estimated: string;
         num_sales: number;
+        num_settled: number;
     };
     parties: { party_type: PayoutPartyType; total: string }[];
     by_branch: {
@@ -468,6 +473,7 @@ export interface PayoutBreakdownPayload {
         other: string;
         merchant_net: string;
         num_sales: number;
+        num_settled: number;
     }[];
 }
 

@@ -2496,7 +2496,8 @@
                 "platform": "Platform fee",
                 "bank": "Bank fee",
                 "other": "Other",
-                "num_sales": "Sales"
+                "num_sales": "Sales",
+                "reconciled": "Reconciled"
             },
             "parties": {
                 "platform": "Platform",
@@ -2506,6 +2507,11 @@
             },
             "charts": {
                 "commission_split": "Commission split"
+            },
+            "reconciliation": {
+                "partial": "{settled} of {total} card sales reconciled against the bank's actual fee — the rest are estimated until the bank settles.",
+                "full": "All {total} sales reconciled — these are your final amounts.",
+                "estimated_net": "Estimated net: {amount}"
             },
             "history": {
                 "section_title": "Payout history",
