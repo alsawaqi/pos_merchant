@@ -511,6 +511,23 @@ export function fetchMyPayouts(opts?: { status?: MerchantPayoutStatus }): Promis
     return apiGet<{ data: MerchantPayoutRow[]; meta?: Record<string, unknown> }>(url);
 }
 
+// A payout's per-branch breakdown — the statement detail the merchant receives.
+export interface MerchantPayoutLine {
+    branch_id: number;
+    branch_name: string;
+    /** All decimal-3 OMR strings (settled-aware). */
+    gross: string;
+    platform: string;
+    bank: string;
+    other: string;
+    merchant_net: string;
+    num_sales: number;
+}
+
+export function fetchMyPayoutLines(uuid: string): Promise<{ data: MerchantPayoutLine[] }> {
+    return apiGet<{ data: MerchantPayoutLine[] }>(`/api/payouts/${uuid}/lines`);
+}
+
 // ============================================================
 // Round-Up Donation Report (§5.11.9)
 // ============================================================

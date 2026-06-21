@@ -17,11 +17,14 @@ import { useI18n } from 'vue-i18n';
 import {
     fetchPayoutBreakdown,
     fetchMyPayouts,
+    fetchMyPayoutLines,
     type PayoutBreakdownPayload,
     type PayoutPartyType,
     type MerchantPayoutRow,
     type MerchantPayoutStatus,
+    type MerchantPayoutLine,
 } from '@/lib/api/reports';
+import { ChevronDown, ChevronRight } from 'lucide-vue-next';
 import { listBranches, type Branch } from '@/lib/api/branches';
 import { ApiError } from '@/lib/api';
 import ReportShell from './components/ReportShell.vue';
@@ -50,6 +53,36 @@ const branchNames = ref<Map<number, string>>(new Map());
 
 const payouts = ref<MerchantPayoutRow[]>([]);
 const payoutsLoading = ref(false);
+
+// Per-branch breakdown of a payout (the statement detail), lazy-loaded on expand.
+const expandedPayouts = ref<Set<string>>(new Set());
+const payoutLines = ref<Map<string, MerchantPayoutLine[]>>(new Map());
+const payoutLinesLoading = ref<Set<string>>(new Set());
+
+async function togglePayout(uuid: string): Promise<void> {
+    const next = new Set(expandedPayouts.value);
+    if (next.has(uuid)) {
+        next.delete(uuid);
+        expandedPayouts.value = next;
+        return;
+    }
+    next.add(uuid);
+    expandedPayouts.value = next;
+    if (!payoutLines.value.has(uuid)) {
+        payoutLinesLoading.value = new Set(payoutLinesLoading.value).add(uuid);
+        try {
+            const r = await fetchMyPayoutLines(uuid);
+            payoutLines.value = new Map(payoutLines.value).set(uuid, r.data);
+        } catch (err) {
+            payoutLines.value = new Map(payoutLines.value).set(uuid, []);
+            if (!(err instanceof ApiError)) throw err;
+        } finally {
+            const done = new Set(payoutLinesLoading.value);
+            done.delete(uuid);
+            payoutLinesLoading.value = done;
+        }
+    }
+}
 
 onMounted(async () => {
     try {
@@ -208,16 +241,61 @@ const partyChart = computed(() => {
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="row in payouts" :key="row.uuid" class="border-b border-slate-100 last:border-0">
-                            <td class="px-5 py-2 text-slate-700 tabular-nums">{{ payoutPeriod(row) }}</td>
-                            <td class="px-5 py-2 text-end font-semibold tabular-nums text-slate-900">{{ row.net_amount }}</td>
-                            <td class="px-5 py-2">
-                                <span class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold" :class="payoutStatusClass(row.status)">{{ t(`reports.payouts.history.statuses.${row.status}`) }}</span>
-                            </td>
-                            <td class="px-5 py-2 text-end tabular-nums text-slate-600">{{ row.sales_count }}</td>
-                            <td class="px-5 py-2 text-slate-700 tabular-nums">{{ paidOnLabel(row) }}</td>
-                            <td class="px-5 py-2 text-slate-600">{{ row.reference ?? '—' }}</td>
-                        </tr>
+                        <template v-for="row in payouts" :key="row.uuid">
+                            <tr class="border-b border-slate-100">
+                                <td class="px-5 py-2 text-slate-700 tabular-nums">
+                                    <div class="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            class="text-slate-400 transition hover:text-slate-700"
+                                            :title="t('reports.payouts.history.toggle')"
+                                            @click="togglePayout(row.uuid)"
+                                        >
+                                            <ChevronDown v-if="expandedPayouts.has(row.uuid)" class="size-4" />
+                                            <ChevronRight v-else class="size-4" />
+                                        </button>
+                                        {{ payoutPeriod(row) }}
+                                    </div>
+                                </td>
+                                <td class="px-5 py-2 text-end font-semibold tabular-nums text-slate-900">{{ row.net_amount }}</td>
+                                <td class="px-5 py-2">
+                                    <span class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold" :class="payoutStatusClass(row.status)">{{ t(`reports.payouts.history.statuses.${row.status}`) }}</span>
+                                </td>
+                                <td class="px-5 py-2 text-end tabular-nums text-slate-600">{{ row.sales_count }}</td>
+                                <td class="px-5 py-2 text-slate-700 tabular-nums">{{ paidOnLabel(row) }}</td>
+                                <td class="px-5 py-2 text-slate-600">{{ row.reference ?? '—' }}</td>
+                            </tr>
+
+                            <!-- Per-branch breakdown of this payout (your statement detail). -->
+                            <tr v-if="expandedPayouts.has(row.uuid)" class="border-b border-slate-100 bg-slate-50">
+                                <td colspan="6" class="px-5 py-3">
+                                    <div v-if="payoutLinesLoading.has(row.uuid)" class="text-sm text-slate-500">{{ t('reports.payouts.history.lines.loading') }}</div>
+                                    <table v-else-if="(payoutLines.get(row.uuid) ?? []).length" class="w-full text-xs">
+                                        <thead class="text-slate-400">
+                                            <tr>
+                                                <th class="py-1 text-start font-medium">{{ t('reports.payouts.history.lines.branch') }}</th>
+                                                <th class="py-1 text-end font-medium">{{ t('reports.payouts.history.lines.sales') }}</th>
+                                                <th class="py-1 text-end font-medium">{{ t('reports.payouts.history.lines.gross') }}</th>
+                                                <th class="py-1 text-end font-medium">{{ t('reports.payouts.history.lines.platform') }}</th>
+                                                <th class="py-1 text-end font-medium">{{ t('reports.payouts.history.lines.bank') }}</th>
+                                                <th class="py-1 text-end font-medium">{{ t('reports.payouts.history.lines.merchant_net') }}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="ln in (payoutLines.get(row.uuid) ?? [])" :key="ln.branch_id">
+                                                <td class="py-1 text-slate-700">{{ ln.branch_name }}</td>
+                                                <td class="py-1 text-end tabular-nums text-slate-600">{{ ln.num_sales }}</td>
+                                                <td class="py-1 text-end tabular-nums text-slate-600">{{ ln.gross }}</td>
+                                                <td class="py-1 text-end tabular-nums text-slate-600">{{ ln.platform }}</td>
+                                                <td class="py-1 text-end tabular-nums text-slate-600">{{ ln.bank }}</td>
+                                                <td class="py-1 text-end font-semibold tabular-nums text-slate-900">{{ ln.merchant_net }}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    <div v-else class="text-sm text-slate-500">{{ t('reports.payouts.history.lines.empty') }}</div>
+                                </td>
+                            </tr>
+                        </template>
                     </tbody>
                 </table>
 

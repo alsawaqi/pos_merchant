@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Pos;
 
+use App\Actions\Pos\Reports\PayoutBranchLinesAction;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
 use App\Models\Payout;
 use App\Support\MerchantTenantContext;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -56,5 +58,20 @@ class PayoutsController extends Controller
             'paid_at' => $p->paid_at?->toIso8601String(),
             'created_at' => $p->created_at?->toIso8601String(),
         ]));
+    }
+
+    /** This payout's per-branch breakdown (the statement detail). Own company only. */
+    public function lines(Request $request, Payout $payout, PayoutBranchLinesAction $branchLines): JsonResponse
+    {
+        $user = $request->user();
+        if ($user === null || ! $user->can(MerchantPermission::ReportsView->value)) {
+            abort(403);
+        }
+        // Tenant guard — a merchant may only see their own payout.
+        if ((int) $payout->company_id !== $this->tenant->requiredId()) {
+            abort(404);
+        }
+
+        return response()->json(['data' => $branchLines->handle($payout)]);
     }
 }

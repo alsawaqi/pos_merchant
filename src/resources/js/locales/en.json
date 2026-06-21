@@ -2529,7 +2529,18 @@
                     "cancelled": "Cancelled"
                 },
                 "empty": "No payouts yet.",
-                "paid_on_none": "—"
+                "paid_on_none": "—",
+                "toggle": "Per-branch breakdown",
+                "lines": {
+                    "loading": "Loading branch detail…",
+                    "branch": "Branch",
+                    "sales": "Sales",
+                    "gross": "Gross",
+                    "platform": "Platform fee",
+                    "bank": "Bank fee",
+                    "merchant_net": "Your net",
+                    "empty": "No branch detail for this payout."
+                }
             }
         },
         "product_performance": {

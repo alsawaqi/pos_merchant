@@ -2529,7 +2529,18 @@
                     "cancelled": "ملغي"
                 },
                 "empty": "لا توجد مستحقات بعد.",
-                "paid_on_none": "—"
+                "paid_on_none": "—",
+                "toggle": "تفصيل لكل فرع",
+                "lines": {
+                    "loading": "جارٍ تحميل تفصيل الفروع…",
+                    "branch": "الفرع",
+                    "sales": "المبيعات",
+                    "gross": "الإجمالي",
+                    "platform": "رسوم المنصة",
+                    "bank": "رسوم البنك",
+                    "merchant_net": "صافي حصتك",
+                    "empty": "لا يوجد تفصيل فروع لهذه الدفعة."
+                }
             }
         },
         "product_performance": {

@@ -62,3 +62,61 @@ it('filters payouts by status', function (): void {
     expect($rows)->toHaveCount(1);
     expect($rows[0]['status'])->toBe('paid');
 });
+
+/** A payout with claimed sales (merchant rows carry payout_id) across branches. */
+function seedClaimedSale(int $companyId, int $orderId, int $branchId, string $platform, string $bank, string $merchant, int $payoutId): void
+{
+    $gross = number_format((float) $platform + (float) $bank + (float) $merchant, 3, '.', '');
+    $sort = 0;
+    foreach (['platform' => $platform, 'bank' => $bank, 'merchant' => $merchant] as $party => $amount) {
+        DB::table('pos_sale_commissions')->insert([
+            'uuid' => (string) Str::uuid(), 'company_id' => $companyId, 'branch_id' => $branchId, 'device_id' => 1,
+            'order_id' => $orderId, 'party_type' => $party, 'party_label' => ucfirst($party), 'percent' => 0,
+            'gross_amount' => $gross, 'commission_amount' => $amount, 'sort_order' => $sort++,
+            'payout_id' => $party === 'merchant' ? $payoutId : null,
+            'occurred_at' => '2026-06-12 10:00:00', 'created_at' => '2026-06-12 10:00:00', 'updated_at' => '2026-06-12 10:00:00',
+        ]);
+    }
+}
+
+it('returns this company payout per-branch breakdown', function (): void {
+    $ctx = makeMerchantActor();
+    $main = $ctx['branch'];
+    $mall = \App\Models\Branch::factory()->for($ctx['company'], 'company')->create(['name' => 'Mall']);
+
+    $uuid = (string) Str::uuid();
+    $payoutId = DB::table('pos_payouts')->insertGetId([
+        'uuid' => $uuid, 'company_id' => $ctx['company']->id,
+        'period_from' => '2026-06-01 00:00:00', 'period_to' => '2026-06-30 23:59:59', 'status' => 'pending',
+        'gross_amount' => '5.000', 'platform_amount' => '0.100', 'bank_amount' => '0.090',
+        'other_amount' => '0.000', 'net_amount' => '4.810', 'sales_count' => 2,
+        'created_at' => '2026-06-30 10:00:00', 'updated_at' => '2026-06-30 10:00:00',
+    ]);
+    seedClaimedSale($ctx['company']->id, 1, $main->id, '0.060', '0.090', '2.850', $payoutId);
+    seedClaimedSale($ctx['company']->id, 2, $mall->id, '0.040', '0.000', '1.960', $payoutId);
+
+    $lines = $this->getJson("/api/payouts/{$uuid}/lines")->assertOk()->json('data');
+
+    expect($lines)->toHaveCount(2)
+        ->and($lines[0]['branch_name'])->toBe($main->name)  // sorted by net desc → 2.850 first
+        ->and($lines[0]['merchant_net'])->toBe('2.850')
+        ->and($lines[0]['bank'])->toBe('0.090')
+        ->and($lines[0]['num_sales'])->toBe(1)
+        ->and($lines[1]['branch_name'])->toBe('Mall')
+        ->and($lines[1]['merchant_net'])->toBe('1.960');
+});
+
+it('404s on another company payout lines (tenant scope)', function (): void {
+    makeMerchantActor();
+    $other = Company::factory()->create();
+    $uuid = (string) Str::uuid();
+    DB::table('pos_payouts')->insert([
+        'uuid' => $uuid, 'company_id' => $other->id,
+        'period_from' => '2026-06-01 00:00:00', 'period_to' => '2026-06-30 23:59:59', 'status' => 'pending',
+        'gross_amount' => '5.000', 'platform_amount' => '0.100', 'bank_amount' => '0.000',
+        'other_amount' => '0.000', 'net_amount' => '4.900', 'sales_count' => 1,
+        'created_at' => '2026-06-30 10:00:00', 'updated_at' => '2026-06-30 10:00:00',
+    ]);
+
+    $this->getJson("/api/payouts/{$uuid}/lines")->assertNotFound();
+});

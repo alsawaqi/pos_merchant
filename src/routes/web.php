@@ -838,6 +838,8 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // platform creates + settles them). reports.view gated.
         Route::get('payouts', [PayoutsController::class, 'index'])
             ->name('payouts.index');
+        Route::get('payouts/{payout:uuid}/lines', [PayoutsController::class, 'lines'])
+            ->name('payouts.lines');
         Route::get('reports/product-performance', [ReportsController::class, 'productPerformance'])
             ->name('reports.product-performance');
         Route::get('reports/recipe-cost', [ReportsController::class, 'recipeCost'])
