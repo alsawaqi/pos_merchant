@@ -66,6 +66,16 @@ final class SeedMerchantRolesAction
                 ]);
             }
 
+            // Drop the cached permission list before syncing any role below.
+            // syncPermissions() resolves permission names → ids through the
+            // registrar cache; if that cache is stale vs the DB — because we
+            // just firstOrCreate'd new permissions, OR because the cache (often
+            // a shared/persistent store) outlived a DB change — it would attach
+            // ids that no longer exist (FK violation; "works on a refresh"
+            // because the next request rebuilds the cache from the DB). Forget
+            // unconditionally so the sync always uses live ids.
+            $registrar->forgetCachedPermissions();
+
             foreach ($this->roleCatalogue() as $roleName => $meta) {
                 $existing = Role::query()
                     ->where('name', $roleName)

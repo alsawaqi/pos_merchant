@@ -17,6 +17,8 @@ use App\Models\Company;
 use App\Models\User;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
@@ -54,6 +56,51 @@ it('force-syncs the empty owner role to the full permission set on login', funct
     $registrar->forgetCachedPermissions();
     expect($role->fresh()->permissions()->count())
         ->toBe(count(MerchantPermission::values()));
+});
+
+it('syncs against live permission ids when the cache is stale (the refresh-to-fix bug)', function (): void {
+    $registrar = app(PermissionRegistrar::class);
+
+    $company = Company::factory()->create();
+    $user = User::factory()->create([
+        'company_id' => $company->id,
+        'user_type' => 'merchant',
+        'status' => 'active',
+    ]);
+    $registrar->setPermissionsTeamId($company->id);
+    $role = Role::create([
+        'name' => MerchantRole::SuperAdmin->value,
+        'guard_name' => 'web',
+        'team_id' => $company->id,
+    ]);
+    $user->assignRole($role);
+
+    // Create the merchant permissions and warm the registrar cache so it holds
+    // their CURRENT ids. Then shift the ids in the DB via RAW SQL — this mimics
+    // a DB restore that left pos_permissions on different ids while the cache
+    // (a shared/persistent store) stayed stale. Raw SQL bypasses spatie's model
+    // events, so the cache is NOT auto-forgotten, and the login seeder's
+    // firstOrCreate finds the rows by name (no create → no auto-forget either) —
+    // reproducing exactly the state where the bug bit (no permissions created).
+    foreach (MerchantPermission::values() as $name) {
+        Permission::query()->firstOrCreate(['name' => $name, 'guard_name' => 'web']);
+    }
+    $registrar->getPermissions();
+    DB::statement('UPDATE pos_permissions SET id = id + 100000 WHERE guard_name = ?', ['web']);
+
+    // Act: the login listener force-syncs the owner role. Without the cache
+    // forget it resolves names through the stale cache → attaches the old ids
+    // that no longer exist (FK violation); with the forget it uses live ids.
+    event(new Login('web', $user, false));
+
+    // Assert: full set, and every attached id actually exists (no orphans).
+    $registrar->forgetCachedPermissions();
+    $attached = $role->fresh()->permissions;
+    $liveIds = Permission::query()->pluck('id')->all();
+    expect($attached)->toHaveCount(count(MerchantPermission::values()));
+    foreach ($attached as $perm) {
+        expect($liveIds)->toContain($perm->id);
+    }
 });
 
 it('does not seed roles for a non-merchant user', function (): void {
