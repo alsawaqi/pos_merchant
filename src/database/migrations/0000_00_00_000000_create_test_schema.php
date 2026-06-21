@@ -1410,6 +1410,7 @@ return new class extends Migration
             $table->id();
             $table->uuid('uuid')->unique();
             $table->unsignedBigInteger('company_id')->index();
+            $table->unsignedBigInteger('branch_id')->nullable();
             $table->timestamp('period_from');
             $table->timestamp('period_to');
             $table->string('status', 20)->default('pending');
