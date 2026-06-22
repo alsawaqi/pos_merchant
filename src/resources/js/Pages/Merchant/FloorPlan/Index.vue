@@ -19,6 +19,7 @@
  */
 
 import {
+    BarChart3,
     Building2,
     Copy,
     LayoutGrid,
@@ -31,6 +32,7 @@ import {
 } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { RouterLink } from 'vue-router';
 import BaseModal from '@/Components/BaseModal.vue';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import FloorPlanner from '@/Pages/Merchant/FloorPlan/FloorPlanner.vue';
@@ -58,6 +60,8 @@ const { can } = usePermissions();
 
 const isArabic = computed(() => locale.value === 'ar');
 const canManage = computed(() => can(MerchantPermission.FloorPlanManage));
+// Reports.view unlocks the per-table insights drill-down (separate gate).
+const canViewInsights = computed(() => can(MerchantPermission.ReportsView));
 
 // ---- Branch selector + data ------------------------------------
 const branches = ref<Branch[]>([]);
@@ -553,31 +557,41 @@ function statusBadgeClass(status: string | null): string {
                                         max: table.max_party ?? '–',
                                     }) }}
                                 </p>
-                                <div v-if="canManage" class="mt-auto flex flex-wrap gap-1.5 pt-2">
-                                    <button
-                                        type="button"
-                                        class="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-white"
-                                        @click="openEditTable(floor, table)"
+                                <div v-if="canManage || canViewInsights" class="mt-auto flex flex-wrap items-center gap-1.5 pt-2">
+                                    <RouterLink
+                                        v-if="canViewInsights"
+                                        :to="`/tables/${table.uuid}`"
+                                        class="inline-flex items-center gap-1 rounded border border-teal-200 bg-teal-50 px-2 py-1 text-[11px] font-semibold text-teal-700 transition hover:bg-teal-100"
                                     >
-                                        <Pencil class="size-3" />
-                                        {{ t('floor_plan.actions.edit') }}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        class="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-white"
-                                        @click="openQrModal(table)"
-                                    >
-                                        <QrCode class="size-3" />
-                                        {{ t('floor_plan.actions.qr') }}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        class="inline-flex items-center gap-1 rounded border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-50"
-                                        @click="tableDeleteTarget = table"
-                                    >
-                                        <Trash2 class="size-3" />
-                                        {{ t('floor_plan.actions.delete') }}
-                                    </button>
+                                        <BarChart3 class="size-3" />
+                                        {{ t('tables.view_insights') }}
+                                    </RouterLink>
+                                    <template v-if="canManage">
+                                        <button
+                                            type="button"
+                                            class="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-white"
+                                            @click="openEditTable(floor, table)"
+                                        >
+                                            <Pencil class="size-3" />
+                                            {{ t('floor_plan.actions.edit') }}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-white"
+                                            @click="openQrModal(table)"
+                                        >
+                                            <QrCode class="size-3" />
+                                            {{ t('floor_plan.actions.qr') }}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="inline-flex items-center gap-1 rounded border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-50"
+                                            @click="tableDeleteTarget = table"
+                                        >
+                                            <Trash2 class="size-3" />
+                                            {{ t('floor_plan.actions.delete') }}
+                                        </button>
+                                    </template>
                                 </div>
                             </article>
                         </div>

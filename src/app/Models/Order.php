@@ -142,6 +142,18 @@ class Order extends Model
     }
 
     /**
+     * The dine-in table this order was rung up on (dine_in only; null
+     * otherwise). Soft-deleted tables still resolve so historical
+     * sittings keep their table in the per-table insights report.
+     *
+     * @return BelongsTo<Table, $this>
+     */
+    public function table(): BelongsTo
+    {
+        return $this->belongsTo(Table::class)->withTrashed();
+    }
+
+    /**
      * P-G7 — the delivery provider this order was punched under
      * (delivery orders only; soft-deleted providers still resolve).
      *

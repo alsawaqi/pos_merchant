@@ -22,6 +22,8 @@ import OffersIndex from '@/Pages/Merchant/Offers/Index.vue';
 import ExpensesIndex from '@/Pages/Merchant/Expenses/Index.vue';
 import LoyaltyIndex from '@/Pages/Merchant/Loyalty/Index.vue';
 import FloorPlanIndex from '@/Pages/Merchant/FloorPlan/Index.vue';
+import TablesIndex from '@/Pages/Merchant/Tables/Index.vue';
+import TablesShow from '@/Pages/Merchant/Tables/Show.vue';
 import InventoryIndex from '@/Pages/Merchant/Inventory/Index.vue';
 import PurchaseReceiptsIndex from '@/Pages/Merchant/Inventory/PurchaseReceipts/Index.vue';
 import PurchaseReceiptsCreate from '@/Pages/Merchant/Inventory/PurchaseReceipts/Create.vue';
@@ -152,6 +154,21 @@ const routes: RouteRecordRaw[] = [
         path: '/floor-plan',
         name: 'merchant.floor-plan',
         component: FloorPlanIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        // Tables (v2) — the per-table dine-in record: sittings, duration,
+        // spend, customers. Overview lists a branch's tables; the detail
+        // drills into one. Server gates by reports.view (analytics data).
+        path: '/tables',
+        name: 'merchant.tables',
+        component: TablesIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        path: '/tables/:uuid',
+        name: 'merchant.tables.show',
+        component: TablesShow,
         meta: { requiresAuth: true },
     },
     {

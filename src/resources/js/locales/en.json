@@ -131,6 +131,7 @@
         "dashboard": "Dashboard",
         "branches": "Branches",
         "floor_plan": "Floor Plan",
+        "tables": "Tables",
         "catalogue": "Catalogue",
         "inventory": "Inventory",
         "purchase_receipts": "Purchase Receipts",
@@ -659,6 +660,75 @@
             "name": "Role name",
             "description": "Description",
             "permissions": "Permissions"
+        }
+    },
+    "tables": {
+        "section_label": "Dine-in",
+        "title": "Tables",
+        "subtitle": "Every dine-in table's record — how often it was used, for how long, what was spent, and who sat there.",
+        "branch": "Branch",
+        "date_from": "From",
+        "date_to": "To",
+        "apply": "Apply",
+        "no_branches": "No branches yet. Add a branch to start tracking tables.",
+        "no_data": "No data for this period.",
+        "no_tables": "This branch has no tables yet.",
+        "list_title": "Tables",
+        "sort_by": "Sort by",
+        "occupied": "Occupied",
+        "view_insights": "Insights",
+        "seats_n": "{count} seats",
+        "totals": {
+            "tables": "Tables",
+            "occupied_now": "{n} occupied now",
+            "sittings": "Sittings",
+            "revenue": "Revenue"
+        },
+        "metrics": {
+            "label": "Table",
+            "floor": "Floor",
+            "sittings": "Sittings",
+            "revenue": "Revenue",
+            "avg_spend": "Avg spend",
+            "avg_duration": "Avg duration",
+            "total_duration": "Total time",
+            "customers": "Customers",
+            "last_used": "Last used",
+            "busiest_hour": "Busiest hour",
+            "busiest_day": "Busiest day"
+        },
+        "charts": {
+            "top_revenue": "Top tables by revenue",
+            "revenue_trend": "Revenue over time",
+            "by_hour": "Sittings by hour of day"
+        },
+        "statuses": {
+            "active": "Active",
+            "inactive": "Inactive"
+        },
+        "shapes": {
+            "round": "Round",
+            "square": "Square",
+            "rectangle": "Rectangle",
+            "oval": "Oval",
+            "counter": "Counter"
+        },
+        "detail": {
+            "back": "Back to tables",
+            "title": "Table {label}",
+            "first_used": "First used {date}",
+            "not_found": "Table not found.",
+            "top_customers": "Top customers",
+            "visits": "{n} visits",
+            "sittings_title": "Sittings",
+            "cols": {
+                "when": "When",
+                "duration": "Duration",
+                "customer": "Customer",
+                "staff": "Staff",
+                "items": "Items",
+                "amount": "Amount"
+            }
         }
     },
     "floor_plan": {

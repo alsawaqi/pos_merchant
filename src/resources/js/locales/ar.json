@@ -131,6 +131,7 @@
         "dashboard": "لوحة التحكم",
         "branches": "الفروع",
         "floor_plan": "مخطط القاعة",
+        "tables": "الطاولات",
         "catalogue": "الكتالوج",
         "inventory": "المخزون",
         "purchase_receipts": "سندات الشراء",
@@ -659,6 +660,75 @@
             "name": "اسم الدور",
             "description": "الوصف",
             "permissions": "الصلاحيات"
+        }
+    },
+    "tables": {
+        "section_label": "تناول الطعام",
+        "title": "الطاولات",
+        "subtitle": "سجل كل طاولة لتناول الطعام — كم مرة استُخدمت، ولأي مدة، وكم أُنفق عليها، ومن جلس عليها.",
+        "branch": "الفرع",
+        "date_from": "من",
+        "date_to": "إلى",
+        "apply": "تطبيق",
+        "no_branches": "لا توجد فروع بعد. أضف فرعًا لبدء تتبّع الطاولات.",
+        "no_data": "لا توجد بيانات لهذه الفترة.",
+        "no_tables": "لا توجد طاولات في هذا الفرع بعد.",
+        "list_title": "الطاولات",
+        "sort_by": "ترتيب حسب",
+        "occupied": "مشغولة",
+        "view_insights": "التحليلات",
+        "seats_n": "{count} مقاعد",
+        "totals": {
+            "tables": "الطاولات",
+            "occupied_now": "{n} مشغولة الآن",
+            "sittings": "الجلسات",
+            "revenue": "الإيراد"
+        },
+        "metrics": {
+            "label": "الطاولة",
+            "floor": "الطابق",
+            "sittings": "الجلسات",
+            "revenue": "الإيراد",
+            "avg_spend": "متوسط الإنفاق",
+            "avg_duration": "متوسط المدة",
+            "total_duration": "إجمالي الوقت",
+            "customers": "العملاء",
+            "last_used": "آخر استخدام",
+            "busiest_hour": "أكثر الساعات ازدحامًا",
+            "busiest_day": "أكثر الأيام ازدحامًا"
+        },
+        "charts": {
+            "top_revenue": "أعلى الطاولات إيرادًا",
+            "revenue_trend": "الإيراد عبر الوقت",
+            "by_hour": "الجلسات حسب ساعة اليوم"
+        },
+        "statuses": {
+            "active": "نشطة",
+            "inactive": "غير نشطة"
+        },
+        "shapes": {
+            "round": "دائرية",
+            "square": "مربعة",
+            "rectangle": "مستطيلة",
+            "oval": "بيضاوية",
+            "counter": "كاونتر"
+        },
+        "detail": {
+            "back": "العودة إلى الطاولات",
+            "title": "طاولة {label}",
+            "first_used": "أول استخدام {date}",
+            "not_found": "الطاولة غير موجودة.",
+            "top_customers": "أفضل العملاء",
+            "visits": "{n} زيارات",
+            "sittings_title": "الجلسات",
+            "cols": {
+                "when": "الوقت",
+                "duration": "المدة",
+                "customer": "العميل",
+                "staff": "الموظف",
+                "items": "الأصناف",
+                "amount": "المبلغ"
+            }
         }
     },
     "floor_plan": {

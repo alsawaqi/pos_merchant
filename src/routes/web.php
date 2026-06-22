@@ -58,6 +58,7 @@ use App\Http\Controllers\Pos\StaffMessagesController;
 use App\Http\Controllers\Pos\StockController;
 use App\Http\Controllers\Pos\StockCountsController;
 use App\Http\Controllers\Pos\SuppliersController;
+use App\Http\Controllers\Pos\TableInsightsController;
 use App\Http\Controllers\Pos\TablesController;
 use App\Http\Controllers\Pos\WasteController;
 use App\Http\Controllers\SpaController;
@@ -281,6 +282,17 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('tables.destroy');
         Route::post('tables/{table:uuid}/regenerate-qr', [TablesController::class, 'regenerateQr'])
             ->name('tables.regenerate-qr');
+
+        // -------- Dine-in table insights (v2) — per-table record -----
+        // Read-only analytics over pos_orders.table_id: sittings, duration,
+        // spend, customers. reports.view gated (distinct from the floor-plan
+        // CRUD above, which is floor_plan.{view,manage}). The literal
+        // `overview` path sits ABOVE the {table:uuid} binding so it isn't
+        // swallowed as a uuid.
+        Route::get('table-insights', [TableInsightsController::class, 'overview'])
+            ->name('table-insights.overview');
+        Route::get('table-insights/{table:uuid}', [TableInsightsController::class, 'show'])
+            ->name('table-insights.show');
 
         // -------- Phase 6 — Catalogue (Categories + Products) ----
         // Both gated by catalogue.{view,manage}. Categories
