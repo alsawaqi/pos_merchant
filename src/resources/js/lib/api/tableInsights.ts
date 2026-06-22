@@ -77,6 +77,9 @@ export interface TableSitting {
     customer_name: string | null;
     customer_phone: string | null;
     staff_name: string | null;
+    /** Joined tables (v2) — the OTHER tables this one shared order covered. */
+    joined_tables: string[];
+    joined: boolean;
 }
 
 export interface TableTopCustomer {
@@ -115,6 +118,8 @@ export interface TableDetailPayload {
         busiest_hour: number | null;
         busiest_weekday: number | null;
         active_now: boolean;
+        /** Joined tables (v2) — how many of this table's sittings were shared with others. */
+        joined_sittings: number;
     };
     sittings: TableSitting[];
     top_customers: TableTopCustomer[];

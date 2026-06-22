@@ -90,22 +90,57 @@ final readonly class TableInsightsAction
             ->where('status', self::PAID->value)
             ->whereNotNull('table_id')
             ->whereBetween('opened_at', [$from, $to])
-            ->get(['table_id', 'customer_id', 'grand_total', 'opened_at', 'closed_at']);
+            ->get(['id', 'table_id', 'customer_id', 'grand_total', 'opened_at', 'closed_at']);
 
-        $byTable = $paid->groupBy('table_id');
+        // Joined tables (v2): an order that covered several tables appears under
+        // EVERY one of them. Fan each order out across {primary table_id} ∪
+        // {pos_order_tables extras}; the branch TOTALS still come from $paid
+        // (one row per order) so each sale is counted exactly once.
+        $extraByOrder = $paid->isEmpty() ? collect() : DB::table('pos_order_tables')
+            ->whereIn('order_id', $paid->pluck('id')->all())
+            ->get(['order_id', 'table_id'])
+            ->groupBy('order_id');
 
-        // Currently-occupied tables (open / held / kitchen) — NOT windowed,
-        // it's a live-state flag for the overview.
-        $activeCounts = $tableIds === [] ? collect() : DB::table('pos_orders')
-            ->where('company_id', $companyId)
-            ->whereIn('status', self::ACTIVE_STATUSES)
-            ->whereIn('table_id', $tableIds)
-            ->selectRaw('table_id, COUNT(*) AS c')
-            ->groupBy('table_id')
-            ->pluck('c', 'table_id');
+        $byTable = [];
+        foreach ($paid as $o) {
+            $targets = [(int) $o->table_id];
+            foreach ($extraByOrder->get($o->id, collect()) as $row) {
+                if ($row->table_id !== null) {
+                    $targets[] = (int) $row->table_id;
+                }
+            }
+            foreach (array_unique($targets) as $tid) {
+                $byTable[$tid][] = $o;
+            }
+        }
 
-        $rows = $tables->map(function (Table $t) use ($byTable, $activeCounts): array {
-            $stats = $this->aggregate($byTable->get($t->id, collect()));
+        // Tables occupied RIGHT NOW (open / held / kitchen) — a live-state flag,
+        // NOT windowed. Includes the primary table_id of any active order PLUS
+        // every joined seat of an active order (a live joined party lights up
+        // all its tables), matching the per-table detail's occupancy predicate.
+        $activeSet = [];
+        if ($tableIds !== []) {
+            $activeOrders = DB::table('pos_orders')
+                ->where('company_id', $companyId)
+                ->where('branch_id', $branch->id)
+                ->whereIn('status', self::ACTIVE_STATUSES)
+                ->whereNotNull('table_id')
+                ->get(['id', 'table_id']);
+            foreach ($activeOrders as $o) {
+                $activeSet[(int) $o->table_id] = true;
+            }
+            $activeOrderIds = $activeOrders->pluck('id')->all();
+            if ($activeOrderIds !== []) {
+                foreach (DB::table('pos_order_tables')->whereIn('order_id', $activeOrderIds)->pluck('table_id') as $tid) {
+                    if ($tid !== null) {
+                        $activeSet[(int) $tid] = true;
+                    }
+                }
+            }
+        }
+
+        $rows = $tables->map(function (Table $t) use ($byTable, $activeSet): array {
+            $stats = $this->aggregate(collect($byTable[(int) $t->id] ?? []));
 
             return [
                 'id' => (int) $t->id,
@@ -123,7 +158,7 @@ final readonly class TableInsightsAction
                 'total_duration_seconds' => $stats['total_duration_seconds'],
                 'unique_customers' => $stats['unique_customers'],
                 'last_used_at' => $stats['last_used_at'],
-                'active_now' => (int) ($activeCounts[$t->id] ?? 0) > 0,
+                'active_now' => isset($activeSet[(int) $t->id]),
             ];
         })->all();
 
@@ -153,14 +188,26 @@ final readonly class TableInsightsAction
     {
         $table->loadMissing(['floor:id,name,name_ar,branch_id', 'floor.branch:id,name']);
 
+        // Joined tables (v2): this table's record includes every order it
+        // covered — whether it was the PRIMARY (pos_orders.table_id) or a
+        // JOINED seat (pos_order_tables). One predicate, reused below.
+        $coversTable = function ($q) use ($table): void {
+            $q->where('table_id', $table->id)
+                ->orWhereIn('id', function ($sub) use ($table): void {
+                    $sub->select('order_id')
+                        ->from('pos_order_tables')
+                        ->where('table_id', $table->id);
+                });
+        };
+
         // Lightweight set over ALL paid sittings in the window (drives the
         // KPIs, trend, by-hour, top customers).
         $stats = DB::table('pos_orders')
             ->where('company_id', $companyId)
-            ->where('table_id', $table->id)
+            ->where($coversTable)
             ->where('status', self::PAID->value)
             ->whereBetween('opened_at', [$from, $to])
-            ->get(['customer_id', 'grand_total', 'opened_at', 'closed_at']);
+            ->get(['id', 'customer_id', 'grand_total', 'opened_at', 'closed_at']);
 
         $summary = $this->aggregate($stats);
         $summary['first_used_at'] = $this->firstUsedAt($stats);
@@ -168,22 +215,32 @@ final readonly class TableInsightsAction
         [$summary['busiest_weekday'], $byWeekday] = $this->byWeekday($stats);
         $summary['active_now'] = DB::table('pos_orders')
             ->where('company_id', $companyId)
-            ->where('table_id', $table->id)
+            ->where($coversTable)
             ->whereIn('status', self::ACTIVE_STATUSES)
             ->exists();
+        // How many of this table's sittings were JOINED orders (covered >1 table).
+        $summary['joined_sittings'] = $stats->isEmpty() ? 0 : DB::table('pos_order_tables')
+            ->whereIn('order_id', $stats->pluck('id')->all())
+            ->distinct()
+            ->count('order_id');
 
         // The display list (most-recent sittings, capped) — full relations.
         $orders = Order::query()
             ->with(['customer:id,name,phone', 'staff:id,name'])
             ->withCount('items')
             ->where('company_id', $companyId)
-            ->where('table_id', $table->id)
+            ->where($coversTable)
             ->where('status', self::PAID->value)
             ->whereBetween('opened_at', [$from, $to])
             ->orderByDesc('opened_at')
             ->orderByDesc('id')
             ->limit(self::SITTINGS_LIMIT)
             ->get();
+
+        // Per displayed sitting: the OTHER tables its order covered (primary ∪
+        // joined, minus this one) → the "joined with …" labels. Batched (one
+        // pivot read + one label read for the page; no N+1).
+        $joinedLabelsByOrder = $this->joinedLabelsForSittings($orders, (int) $table->id);
 
         return [
             'table' => [
@@ -202,7 +259,7 @@ final readonly class TableInsightsAction
             ],
             'window' => ['from' => $from->format('Y-m-d\TH:i:s'), 'to' => $to->format('Y-m-d\TH:i:s')],
             'summary' => $summary,
-            'sittings' => $orders->map(fn (Order $o): array => $this->sittingRow($o))->all(),
+            'sittings' => $orders->map(fn (Order $o): array => $this->sittingRow($o, $joinedLabelsByOrder[(int) $o->id] ?? []))->all(),
             'top_customers' => $this->topCustomers($stats),
             'revenue_trend' => $this->dailyTrend($stats, $from, $to),
             'by_hour' => $byHour,
@@ -454,8 +511,64 @@ final readonly class TableInsightsAction
         return $series;
     }
 
-    /** @return array<string, mixed> */
-    private function sittingRow(Order $o): array
+    /**
+     * For each displayed sitting, the labels of the OTHER tables its order
+     * covered (primary ∪ joined, minus the table being viewed) — the "joined
+     * with …" tag. One pivot query + one label query for the whole page (no
+     * N+1). withTrashed so a sitting on a since-removed joined table still
+     * resolves a label.
+     *
+     * @param  \Illuminate\Support\Collection<int, Order>  $orders
+     * @return array<int, list<string>>  order id => other-table labels
+     */
+    private function joinedLabelsForSittings($orders, int $viewedTableId): array
+    {
+        $orderIds = $orders->pluck('id')->all();
+        if ($orderIds === []) {
+            return [];
+        }
+
+        $coverByOrder = DB::table('pos_order_tables')
+            ->whereIn('order_id', $orderIds)
+            ->get(['order_id', 'table_id'])
+            ->groupBy('order_id');
+
+        $otherIdsByOrder = [];
+        $allOtherIds = [];
+        foreach ($orders as $o) {
+            $covered = $o->table_id !== null ? [(int) $o->table_id] : [];
+            foreach ($coverByOrder->get($o->id, collect()) as $row) {
+                if ($row->table_id !== null) {
+                    $covered[] = (int) $row->table_id;
+                }
+            }
+            $others = array_values(array_unique(array_diff($covered, [$viewedTableId])));
+            $otherIdsByOrder[(int) $o->id] = $others;
+            foreach ($others as $id) {
+                $allOtherIds[$id] = true;
+            }
+        }
+
+        $labels = $allOtherIds === [] ? collect() : Table::withTrashed()
+            ->whereIn('id', array_keys($allOtherIds))
+            ->pluck('label', 'id');
+
+        $out = [];
+        foreach ($otherIdsByOrder as $orderId => $ids) {
+            $out[$orderId] = array_values(array_filter(array_map(
+                static fn (int $id): ?string => $labels->get($id) !== null ? (string) $labels->get($id) : null,
+                $ids,
+            )));
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  list<string>  $joinedTables  other tables this order covered
+     * @return array<string, mixed>
+     */
+    private function sittingRow(Order $o, array $joinedTables = []): array
     {
         $duration = $this->durationSeconds($o);
 
@@ -470,6 +583,9 @@ final readonly class TableInsightsAction
             'customer_name' => $o->customer?->name,
             'customer_phone' => $this->safePhone($o->customer),
             'staff_name' => $o->staff?->name,
+            // Joined tables (v2) — the OTHER tables this one shared order covered.
+            'joined_tables' => $joinedTables,
+            'joined' => $joinedTables !== [],
         ];
     }
 }

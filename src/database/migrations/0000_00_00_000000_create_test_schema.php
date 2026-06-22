@@ -1168,6 +1168,18 @@ return new class extends Migration
             $table->timestamps();
         });
 
+        // Joined dine-in tables (v2) — the EXTRA tables a shared order covered
+        // (primary stays on pos_orders.table_id). Mirrors pos_admin
+        // 2026_07_30_010000_create_pos_order_tables.
+        Schema::create('pos_order_tables', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('order_id')->constrained('pos_orders')->cascadeOnDelete();
+            $table->foreignId('table_id')->nullable()->constrained('pos_tables')->nullOnDelete();
+            $table->timestamps();
+            $table->unique(['order_id', 'table_id'], 'pos_order_tables_order_table_unique');
+            $table->index(['table_id'], 'pos_order_tables_table_idx');
+        });
+
         // ---- pos_discounts + pos_discount_targets (Phase 6d) ---
         // Per-merchant discount rules. The 6-axis applicability
         // predicate (status / validity / day-of-week / time /

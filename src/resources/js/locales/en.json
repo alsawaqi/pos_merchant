@@ -721,6 +721,8 @@
             "top_customers": "Top customers",
             "visits": "{n} visits",
             "sittings_title": "Sittings",
+            "joined_with": "joined with {tables}",
+            "joined_count": "{n} joined",
             "cols": {
                 "when": "When",
                 "duration": "Duration",

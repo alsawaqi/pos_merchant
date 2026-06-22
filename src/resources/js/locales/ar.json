@@ -721,6 +721,8 @@
             "top_customers": "أفضل العملاء",
             "visits": "{n} زيارات",
             "sittings_title": "الجلسات",
+            "joined_with": "مضمومة مع {tables}",
+            "joined_count": "{n} مضمومة",
             "cols": {
                 "when": "الوقت",
                 "duration": "المدة",

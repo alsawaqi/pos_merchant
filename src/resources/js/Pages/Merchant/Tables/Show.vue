@@ -15,7 +15,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRoute, RouterLink } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import {
-    Armchair, ArrowLeft, CalendarRange, Clock, Crown, Receipt, Users, CircleDot, Hourglass,
+    Armchair, ArrowLeft, CalendarRange, Clock, Crown, Receipt, Users, CircleDot, Hourglass, Link2,
 } from 'lucide-vue-next';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import ReportChart from '@/Pages/Merchant/Reports/components/ReportChart.vue';
@@ -250,8 +250,11 @@ onMounted(load);
 
                 <!-- Sittings list -->
                 <section class="rounded-2xl border border-slate-200 bg-white shadow-sm">
-                    <h2 class="flex items-center gap-2 border-b border-slate-200 px-5 py-3 text-base font-semibold text-slate-950">
+                    <h2 class="flex flex-wrap items-center gap-2 border-b border-slate-200 px-5 py-3 text-base font-semibold text-slate-950">
                         <Receipt class="size-4 text-slate-500" />{{ t('tables.detail.sittings_title') }}
+                        <span v-if="summary.joined_sittings > 0" class="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-700">
+                            <Link2 class="size-3" />{{ t('tables.detail.joined_count', { n: summary.joined_sittings }) }}
+                        </span>
                     </h2>
                     <div v-if="payload.sittings.length === 0" class="p-8 text-center text-sm text-slate-400">{{ t('tables.no_data') }}</div>
                     <div v-else class="overflow-x-auto">
@@ -273,7 +276,12 @@ onMounted(load);
                                     class="cursor-pointer border-b border-slate-100 transition last:border-0 hover:bg-teal-50/40"
                                     @click="detailUuid = s.order_uuid"
                                 >
-                                    <td class="px-5 py-2.5 text-slate-700">{{ formatDateTime(s.opened_at) }}</td>
+                                    <td class="px-5 py-2.5 text-slate-700">
+                                        <div>{{ formatDateTime(s.opened_at) }}</div>
+                                        <div v-if="s.joined" class="mt-0.5 inline-flex items-center gap-1 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700">
+                                            <Link2 class="size-2.5" />{{ t('tables.detail.joined_with', { tables: s.joined_tables.join(', ') }) }}
+                                        </div>
+                                    </td>
                                     <td class="px-5 py-2.5 tabular-nums text-slate-600">{{ fmtDuration(s.duration_seconds) }}</td>
                                     <td class="px-5 py-2.5 text-slate-700">{{ s.customer_name ?? '—' }}</td>
                                     <td class="px-5 py-2.5 text-slate-600">{{ s.staff_name ?? '—' }}</td>

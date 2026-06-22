@@ -21,6 +21,7 @@ use App\Models\PosStaff;
 use App\Models\Table;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -199,4 +200,79 @@ it('gates both endpoints behind reports.view', function (): void {
 
     $this->getJson("/api/table-insights?branch_id={$ctx['branch']->id}")->assertForbidden();
     $this->getJson("/api/table-insights/{$table->uuid}")->assertForbidden();
+});
+
+it('shows a joined order under every table it covered, counting branch totals once', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-15 12:00:00'));
+    $ctx = makeMerchantActor();
+    $floor = Floor::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->create();
+    $a = Table::factory()->for($ctx['company'], 'company')->for($floor, 'floor')->create(['label' => 'A1']);
+    $b = Table::factory()->for($ctx['company'], 'company')->for($floor, 'floor')->create(['label' => 'B2']);
+
+    // One shared order billed on A1 (primary), covering B2 (a joined party).
+    $order = Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->paid()->create([
+        'table_id' => $a->id, 'grand_total' => '40.000',
+        'opened_at' => Carbon::parse('2026-06-15 13:00:00'), 'closed_at' => Carbon::parse('2026-06-15 14:00:00'),
+    ]);
+    DB::table('pos_order_tables')->insert(['order_id' => $order->id, 'table_id' => $b->id, 'created_at' => now(), 'updated_at' => now()]);
+
+    $data = $this->getJson("/api/table-insights?branch_id={$ctx['branch']->id}")->assertOk()->json('data');
+
+    $byLabel = collect($data['tables'])->keyBy('label');
+    // The order shows in FULL under BOTH tables (the user's chosen attribution).
+    expect($byLabel['A1']['sittings'])->toBe(1);
+    expect($byLabel['A1']['revenue'])->toBe('40.000');
+    expect($byLabel['B2']['sittings'])->toBe(1);
+    expect($byLabel['B2']['revenue'])->toBe('40.000');
+    // ...but the branch totals count the single sale ONCE (no double-count).
+    expect($data['totals']['sittings'])->toBe(1);
+    expect($data['totals']['revenue'])->toBe('40.000');
+});
+
+it('tags a joined sitting with the other covered tables in the detail', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-15 12:00:00'));
+    $ctx = makeMerchantActor();
+    $floor = Floor::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->create();
+    $a = Table::factory()->for($ctx['company'], 'company')->for($floor, 'floor')->create(['label' => 'A1']);
+    $b = Table::factory()->for($ctx['company'], 'company')->for($floor, 'floor')->create(['label' => 'B2']);
+
+    $order = Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->paid()->create([
+        'table_id' => $a->id, 'grand_total' => '40.000',
+        'opened_at' => Carbon::parse('2026-06-15 13:00:00'), 'closed_at' => Carbon::parse('2026-06-15 14:00:00'),
+    ]);
+    DB::table('pos_order_tables')->insert(['order_id' => $order->id, 'table_id' => $b->id, 'created_at' => now(), 'updated_at' => now()]);
+
+    // Viewing B2 (a JOINED, non-primary table): the sitting appears, tagged
+    // "joined with A1" (the OTHER covered table — here the primary).
+    $data = $this->getJson("/api/table-insights/{$b->uuid}")->assertOk()->json('data');
+    expect($data['summary']['sittings'])->toBe(1);
+    expect($data['summary']['joined_sittings'])->toBe(1);
+    expect($data['sittings'])->toHaveCount(1);
+    expect($data['sittings'][0]['joined'])->toBeTrue();
+    expect($data['sittings'][0]['joined_tables'])->toBe(['A1']);
+    expect($data['sittings'][0]['grand_total'])->toBe('40.000');
+
+    // Viewing the PRIMARY A1: same sitting, tagged "joined with B2".
+    $dataA = $this->getJson("/api/table-insights/{$a->uuid}")->assertOk()->json('data');
+    expect($dataA['sittings'][0]['joined_tables'])->toBe(['B2']);
+});
+
+it('lights up a joined seat as occupied in the overview during a live joined order', function (): void {
+    $ctx = makeMerchantActor();
+    $floor = Floor::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->create();
+    $a = Table::factory()->for($ctx['company'], 'company')->for($floor, 'floor')->create(['label' => 'A1']);
+    $b = Table::factory()->for($ctx['company'], 'company')->for($floor, 'floor')->create(['label' => 'B2']);
+
+    // A LIVE (held) joined order: primary A1, covering B2.
+    $order = Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->create([
+        'status' => 'held', 'table_id' => $a->id, 'grand_total' => '15.000', 'opened_at' => now(),
+    ]);
+    DB::table('pos_order_tables')->insert(['order_id' => $order->id, 'table_id' => $b->id, 'created_at' => now(), 'updated_at' => now()]);
+
+    $data = $this->getJson("/api/table-insights?branch_id={$ctx['branch']->id}")->assertOk()->json('data');
+
+    $byLabel = collect($data['tables'])->keyBy('label');
+    expect($byLabel['A1']['active_now'])->toBeTrue(); // primary occupied
+    expect($byLabel['B2']['active_now'])->toBeTrue(); // the joined seat lights up too
+    expect($data['totals']['occupied_now'])->toBe(2);
 });
