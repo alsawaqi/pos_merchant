@@ -20,6 +20,13 @@ use Illuminate\Support\Str;
 class BranchFactory extends Factory
 {
     /**
+     * Monotonic so two branches under the same company never collide on the
+     * unique (company_id, code) — `bothify('BR-###')` had only 1000 values and
+     * flaked the suite (~1/1000 per branch pair, compounding) and blocked CI.
+     */
+    private static int $codeSequence = 0;
+
+    /**
      * @return array<string, mixed>
      */
     public function definition(): array
@@ -28,7 +35,7 @@ class BranchFactory extends Factory
             'uuid' => (string) Str::uuid(),
             'company_id' => Company::factory(),
             'name' => fake()->city().' Branch',
-            'code' => strtoupper(fake()->bothify('BR-###')),
+            'code' => sprintf('BR-%06d', ++self::$codeSequence),
             'status' => 'active',
             'settings' => [],
         ];
