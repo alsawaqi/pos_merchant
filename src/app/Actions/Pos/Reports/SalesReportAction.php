@@ -8,6 +8,7 @@ use App\Actions\Pos\Reports\Support\RecipeSnapshotCost;
 use App\Data\Reports\ReportFilter;
 use App\Enums\ExpenseStatus;
 use App\Enums\OrderStatus;
+use App\Enums\PaymentMethod;
 use App\Support\MerchantTenantContext;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
@@ -513,16 +514,26 @@ final readonly class SalesReportAction
         $merchTotal = (float) ($merch?->total ?? 0);
         $merchFinalized = (float) ($merch?->finalized ?? 0);
 
-        // No-profile sales — no commission rows at all; the merchant keeps the
-        // full grand_total and the cash is already in hand (finalised).
-        $noneTotal = (float) (clone $paidQuery)
+        // No-commission sales — no rows in the ledger at all. Two cases: a
+        // merchant with NO commission profile (keeps 100%), or a FULLY GIFTED
+        // order (pos_api records nothing when collected == 0). Either way the
+        // merchant keeps only what was COLLECTED, so subtract any gifted
+        // (never-collected) portion — else a comped/gifted bill would show up as
+        // cash in hand. Mirrors pos_api's collected = grand_total − gift tenders.
+        $noneOrders = (clone $paidQuery)
             ->whereNotExists(function ($q) use ($companyId): void {
                 $q->select(DB::raw(1))
                     ->from('pos_sale_commissions')
                     ->whereColumn('pos_sale_commissions.order_id', 'pos_orders.id')
                     ->where('pos_sale_commissions.company_id', $companyId);
-            })
-            ->sum('grand_total');
+            });
+        $noneGross = (float) (clone $noneOrders)->sum('grand_total');
+        $noneGifted = (float) DB::table('pos_payments')
+            ->whereIn('order_id', (clone $noneOrders)->select('pos_orders.id'))
+            ->where('method', PaymentMethod::Gift->value)
+            ->where('status', 'success')
+            ->sum('amount');
+        $noneTotal = $noneGross - $noneGifted;
 
         return [
             'admin_commission' => $admin,

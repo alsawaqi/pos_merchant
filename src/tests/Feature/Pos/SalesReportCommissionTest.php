@@ -140,6 +140,32 @@ it('splits the merchant take into finalized (paid out) vs pending', function ():
     expect($h['pending_net'])->toBe('1.960');
 });
 
+it('does not count a fully gifted order as merchant cash', function (): void {
+    $ctx = makeMerchantActor();
+
+    // A normal cash sale with no commission profile — merchant keeps it.
+    srcOrder($ctx, '3.000');
+
+    // A fully gifted order: status Paid, grand_total 5.000, but collected
+    // nothing (pos_api records no commission rows when collected == 0).
+    $gift = srcOrder($ctx, '5.000');
+    DB::table('pos_payments')->insert([
+        'uuid' => (string) Str::uuid(),
+        'order_id' => $gift->id,
+        'method' => 'gift',
+        'amount' => '5.000',
+        'status' => 'success',
+        'created_at' => '2026-06-15 10:00:00',
+        'updated_at' => '2026-06-15 10:00:00',
+    ]);
+
+    $h = srcHeadline($this);
+
+    // The gifted 5.000 is never-collected → excluded from realised cash.
+    expect($h['merchant_net'])->toBe('3.000');
+    expect($h['finalized_net'])->toBe('3.000');
+});
+
 it('counts a no-commission cash sale as finalized income', function (): void {
     $ctx = makeMerchantActor();
     $cid = $ctx['company']->id;
