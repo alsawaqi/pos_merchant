@@ -266,6 +266,7 @@ class ReportsController extends Controller
             'restock-purchasing' => $this->restockPurchasingReport,
             'round-up-donation' => $this->roundUpDonationReport,
             'discounted-comped-products' => $this->discountedCompedProductsReport,
+            'payouts' => $this->payoutBreakdownReport,
         ];
 
         if (! array_key_exists($report, $reports)) {

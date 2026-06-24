@@ -160,7 +160,7 @@ const partyChart = computed(() => {
 </script>
 
 <template>
-    <ReportShell :title="t('reports.payouts.page_title')" v-model="filter" :loading="loading" :error="error" @run="run">
+    <ReportShell export-key="payouts" :title="t('reports.payouts.page_title')" v-model="filter" :loading="loading" :error="error" @run="run">
         <div v-if="payload" class="space-y-6">
             <!-- Estimate → settled: card sales show estimated figures until the
                  platform reconciles them against the bank's actual fee. -->

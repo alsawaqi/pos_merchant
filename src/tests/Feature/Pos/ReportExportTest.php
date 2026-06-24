@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Enums\MerchantRole;
 use App\Models\Order;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -151,5 +153,27 @@ it('exports every report key in every format', function (string $key): void {
 })->with([
     'sales', 'customers', 'discounts', 'comps', 'shifts', 'product-performance',
     'recipe-cost', 'staff-activity', 'inventory-consumption', 'loss-waste',
-    'restock-purchasing', 'round-up-donation',
+    'restock-purchasing', 'round-up-donation', 'payouts',
 ]);
+
+it('includes the monthly commission roll-up in the payouts export', function (): void {
+    $ctx = makeMerchantActor();
+    // One commissioned June sale → a by_month row.
+    foreach ([['platform', '0.100', 0], ['bank', '0.090', 1], ['merchant', '2.810', 2]] as [$party, $amt, $sort]) {
+        DB::table('pos_sale_commissions')->insert([
+            'uuid' => (string) Str::uuid(),
+            'company_id' => $ctx['company']->id, 'branch_id' => 10, 'device_id' => 1,
+            'order_id' => 1, 'party_type' => $party, 'party_label' => ucfirst($party),
+            'percent' => 0, 'gross_amount' => '3.000', 'commission_amount' => $amt,
+            'sort_order' => $sort, 'occurred_at' => '2026-06-15 10:00:00',
+            'created_at' => '2026-06-15 10:00:00', 'updated_at' => '2026-06-15 10:00:00',
+        ]);
+    }
+
+    $csv = $this->get('/api/reports/payouts/export?'.EXPORT_WINDOW, ['Accept' => 'application/json'])
+        ->assertOk()->getContent();
+
+    expect($csv)->toContain('# by_month')   // the monthly section rendered
+        ->and($csv)->toContain('2026-06')   // the month bucket
+        ->and($csv)->toContain('2.810');    // merchant_net / finalized for the month
+});

@@ -145,9 +145,13 @@ final readonly class OrderDetailAction
             ])->all(),
             'loyalty' => $this->loyalty($companyId, (int) $order->id),
             // Commission split + reconciliation/payout status for this sale
-            // (settled-aware; final only once the payout is paid).
+            // (settled-aware; final only once the payout is paid). A no-commission
+            // order is valued at the COLLECTED amount (grand_total − gift tenders).
             'commission' => SaleCommissionStatus::forOrders($companyId, [(int) $order->id])[(int) $order->id]
-                ?? SaleCommissionStatus::none((string) $order->grand_total),
+                ?? SaleCommissionStatus::none(
+                    (string) $order->grand_total,
+                    SaleCommissionStatus::giftTotals([(int) $order->id])[(int) $order->id] ?? 0.0,
+                ),
         ];
     }
 

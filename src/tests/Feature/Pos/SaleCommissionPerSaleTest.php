@@ -144,6 +144,27 @@ it('treats a sale with no commission profile as the merchant keeping 100%', func
     expect($row['commission_status'])->toBe('none');
 });
 
+it('values a fully gifted no-commission sale at the collected amount (zero)', function (): void {
+    $ctx = makeMerchantActor();
+    $o = slcOrder($ctx, '5.000'); // no commission rows (fully gifted → collected 0)
+    DB::table('pos_payments')->insert([
+        'uuid' => (string) Str::uuid(),
+        'order_id' => $o->id,
+        'method' => 'gift',
+        'amount' => '5.000',
+        'status' => 'success',
+        'created_at' => '2026-06-15 10:00:00',
+        'updated_at' => '2026-06-15 10:00:00',
+    ]);
+
+    $row = slcFirstRow($this);
+    expect($row['commission_status'])->toBe('none');
+    expect($row['merchant_net'])->toBe('0.000'); // gifted, never collected
+
+    $c = $this->getJson("/api/orders/{$o->uuid}")->assertOk()->json('data.commission');
+    expect($c['merchant_net'])->toBe('0.000');
+});
+
 it('includes the commission block in the order detail', function (): void {
     $ctx = makeMerchantActor();
     $o = slcOrder($ctx, '3.000');

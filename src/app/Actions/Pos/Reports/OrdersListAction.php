@@ -71,17 +71,17 @@ final readonly class OrdersListAction
         $paginator = $query->paginate(perPage: $perPage, page: $page);
 
         $orders = collect($paginator->items());
+        $orderIds = $orders->pluck('id')->map(static fn ($id): int => (int) $id)->all();
         // Per-sale commission breakdown + reconciliation/payout status
         // (settled-aware; final only once the payout is paid). Batched — one
-        // ledger read for the whole page.
-        $commissionByOrder = SaleCommissionStatus::forOrders(
-            $companyId,
-            $orders->pluck('id')->map(static fn ($id): int => (int) $id)->all(),
-        );
+        // ledger read for the whole page. Gift totals value no-commission orders
+        // at the collected amount (a fully gifted order keeps nothing).
+        $commissionByOrder = SaleCommissionStatus::forOrders($companyId, $orderIds);
+        $giftByOrder = SaleCommissionStatus::giftTotals($orderIds);
 
-        $rows = $orders->map(static function (Order $o) use ($commissionByOrder): array {
+        $rows = $orders->map(static function (Order $o) use ($commissionByOrder, $giftByOrder): array {
             $commission = $commissionByOrder[(int) $o->id]
-                ?? SaleCommissionStatus::none((string) $o->grand_total);
+                ?? SaleCommissionStatus::none((string) $o->grand_total, $giftByOrder[(int) $o->id] ?? 0.0);
 
             return [
                 'id' => (int) $o->id,

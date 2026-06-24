@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Pos\Reports\Support;
 
+use App\Enums\PaymentMethod;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -122,23 +123,54 @@ final class SaleCommissionStatus
     }
 
     /**
-     * Default breakdown for an order with NO commission rows (no profile) — the
-     * merchant keeps the full gross; nothing is owed, settled, or paid out.
+     * Default breakdown for an order with NO commission rows — either a merchant
+     * with no commission profile, or a FULLY GIFTED order (pos_api records no
+     * rows when collected == 0). The merchant keeps what was COLLECTED, so the
+     * net is grand_total minus the never-collected gifted portion (mirrors
+     * pos_api + the Sales-report aggregate). $gifted defaults to 0 (a normal
+     * no-profile cash sale keeps the full gross).
      *
      * @return array<string, mixed>
      */
-    public static function none(string $grandTotal): array
+    public static function none(string $grandTotal, float $gifted = 0.0): array
     {
+        $net = max(0.0, (float) $grandTotal - $gifted);
+
         return [
             'admin_commission' => '0.000',
             'bank_commission' => '0.000',
             'other_commission' => '0.000',
             'total_commission' => '0.000',
-            'merchant_net' => $grandTotal,
+            'merchant_net' => number_format($net, 3, '.', ''),
             'is_settled' => false,
             'commission_status' => self::NONE,
             'is_finalized' => false,
             'payout_date' => null,
         ];
+    }
+
+    /**
+     * Gifted (never-collected) OMR per order — Σ successful 'gift' tenders. Used
+     * to value no-commission orders at the collected amount. Batched; returns
+     * only orders that have a gift tender (callers default the rest to 0).
+     *
+     * @param  list<int>  $orderIds
+     * @return array<int, float>  order_id => gifted OMR
+     */
+    public static function giftTotals(array $orderIds): array
+    {
+        if ($orderIds === []) {
+            return [];
+        }
+
+        return DB::table('pos_payments')
+            ->whereIn('order_id', $orderIds)
+            ->where('method', PaymentMethod::Gift->value)
+            ->where('status', 'success')
+            ->selectRaw('order_id, COALESCE(SUM(amount), 0) AS gifted')
+            ->groupBy('order_id')
+            ->pluck('gifted', 'order_id')
+            ->map(static fn ($v): float => (float) $v)
+            ->all();
     }
 }
