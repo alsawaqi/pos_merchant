@@ -847,10 +847,22 @@
             "type_label": "Stock tracking",
             "type_hint": "Pick this first — it decides which sections the rest of the form shows.",
             "types": {
-                "untracked": { "label": "No stock tracking", "desc": "Sold freely — nothing is counted." },
-                "ingredient": { "label": "Made to order", "desc": "The recipe is consumed at sale; availability comes from branch ingredient stock." },
-                "cooked": { "label": "Cooked", "desc": "The kitchen produces batches ahead of sale (recipe consumed at production); pieces sell from shelf stock and start sold out until produced." },
-                "unit": { "label": "Ready / bought-in", "desc": "Finished goods counted by piece — manage counts from the Stock button on the product row." }
+                "untracked": {
+                    "label": "No stock tracking",
+                    "desc": "Sold freely — nothing is counted."
+                },
+                "ingredient": {
+                    "label": "Made to order",
+                    "desc": "The recipe is consumed at sale; availability comes from branch ingredient stock."
+                },
+                "cooked": {
+                    "label": "Cooked",
+                    "desc": "The kitchen produces batches ahead of sale (recipe consumed at production); pieces sell from shelf stock and start sold out until produced."
+                },
+                "unit": {
+                    "label": "Ready / bought-in",
+                    "desc": "Finished goods counted by piece — manage counts from the Stock button on the product row."
+                }
             },
             "identity_title": "Name & identity",
             "pricing_title": "Pricing",
@@ -2879,7 +2891,9 @@
             "status": "Status",
             "items": "Items",
             "customer": "Customer",
-            "total": "Total"
+            "total": "Total",
+            "net": "Net",
+            "payout": "Payout"
         },
         "types": {
             "quick": "Quick",
@@ -2933,7 +2947,29 @@
             "qty": "Qty",
             "loading": "Loading order…",
             "load_failed": "Could not load this order.",
-            "close": "Close"
+            "close": "Close",
+            "commission": "Commission & payout",
+            "gross": "Gross",
+            "admin_commission": "Admin commission",
+            "bank_commission": "Bank fee (card)",
+            "total_deducted": "Total deducted",
+            "merchant_net": "Your net"
+        },
+        "commission": {
+            "status": {
+                "none": "—",
+                "pending": "Pending",
+                "reconciled": "Reconciled",
+                "in_payout": "In payout",
+                "paid": "Paid"
+            },
+            "note": {
+                "none": "No commission — you keep the full amount.",
+                "pending": "Estimated. Final once reconciled and paid out.",
+                "reconciled": "Reconciled with the bank. Awaiting payout.",
+                "in_payout": "Queued in a payout. Final once it is marked paid."
+            },
+            "paid_on": "Paid on {date}"
         }
     },
     "settings": {

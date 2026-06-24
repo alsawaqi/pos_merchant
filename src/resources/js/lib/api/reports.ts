@@ -620,13 +620,33 @@ export function fetchAuditLog(filter: AuditLogFilter): Promise<{ data: AuditLogP
 
 // ---- Sales / Orders list (not an aggregate report) -------------
 
+/** Reconciliation/payout lifecycle of a sale's commission. */
+export type CommissionStatus = 'none' | 'pending' | 'reconciled' | 'in_payout' | 'paid';
+
+/**
+ * Per-sale commission split + status (settled-aware; a sale is finalized only
+ * once its payout is PAID). Shared by the orders list row + order detail.
+ */
+export interface SaleCommissionInfo {
+    admin_commission: string;
+    bank_commission: string;
+    total_commission: string;
+    /** Merchant residual — the bank's ACTUAL fee where reconciled, else estimate. */
+    merchant_net: string;
+    commission_status: CommissionStatus;
+    /** True only when the payout is paid (income is then final). */
+    is_finalized: boolean;
+    /** ISO datetime the payout was paid, else null. */
+    payout_date: string | null;
+}
+
 export interface OrderListFilter extends ReportFilter {
     status?: string | null;
     page?: number;
     per_page?: number;
 }
 
-export interface OrderListRow {
+export interface OrderListRow extends SaleCommissionInfo {
     id: number;
     uuid: string;
     /** P-F8 — printed receipt number; null falls back to the short uuid. */
@@ -724,6 +744,8 @@ export interface OrderDetailPayload {
         stamps_redeemed: number;
         transactions: { type: string; points_delta: number; stamps_delta: number; occurred_at: string | null }[];
     };
+    /** Commission split + reconciliation/payout status for this sale. */
+    commission: SaleCommissionInfo;
 }
 
 export function fetchOrderDetail(uuid: string): Promise<{ data: OrderDetailPayload }> {

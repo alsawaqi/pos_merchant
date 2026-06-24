@@ -98,6 +98,17 @@ function statusClass(status: string | null): string {
         default: return 'bg-slate-100 text-slate-600';
     }
 }
+
+// Commission/payout lifecycle chip: pending → reconciled → in_payout → paid.
+function commissionStatusClass(status: string): string {
+    switch (status) {
+        case 'paid': return 'bg-emerald-100 text-emerald-700';
+        case 'in_payout': return 'bg-indigo-100 text-indigo-700';
+        case 'reconciled': return 'bg-sky-100 text-sky-700';
+        case 'pending': return 'bg-amber-100 text-amber-700';
+        default: return 'bg-slate-100 text-slate-500'; // none
+    }
+}
 </script>
 
 <template>
@@ -168,6 +179,8 @@ function statusClass(status: string | null): string {
                             <th class="px-5 py-2 text-end">{{ t('orders.columns.items') }}</th>
                             <th class="px-5 py-2 text-start">{{ t('orders.columns.customer') }}</th>
                             <th class="px-5 py-2 text-end">{{ t('orders.columns.total') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('orders.columns.net') }}</th>
+                            <th class="px-5 py-2 text-start">{{ t('orders.columns.payout') }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -188,6 +201,15 @@ function statusClass(status: string | null): string {
                             <td class="px-5 py-2 text-end tabular-nums text-slate-600">{{ row.items_count }}</td>
                             <td class="px-5 py-2 text-slate-700">{{ row.customer_name ?? (row.plate_number ?? '—') }}</td>
                             <td class="px-5 py-2 text-end font-semibold tabular-nums text-slate-900">{{ row.grand_total }}</td>
+                            <!-- Merchant net after commission (settled-aware). -->
+                            <td class="px-5 py-2 text-end font-semibold tabular-nums" :class="row.commission_status === 'none' ? 'text-slate-400' : 'text-teal-700'">{{ row.merchant_net }}</td>
+                            <td class="px-5 py-2">
+                                <span
+                                    class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold"
+                                    :class="commissionStatusClass(row.commission_status)"
+                                    :title="row.payout_date ? t('orders.commission.paid_on', { date: formatDateTime(row.payout_date) }) : ''"
+                                >{{ t(`orders.commission.status.${row.commission_status}`) }}</span>
+                            </td>
                         </tr>
                     </tbody>
                 </table>

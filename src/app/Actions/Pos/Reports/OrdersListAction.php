@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Pos\Reports;
 
+use App\Actions\Pos\Reports\Support\SaleCommissionStatus;
 use App\Data\Reports\ReportFilter;
 use App\Enums\OrderStatus;
 use App\Models\Order;
@@ -69,27 +70,49 @@ final readonly class OrdersListAction
         /** @var LengthAwarePaginator $paginator */
         $paginator = $query->paginate(perPage: $perPage, page: $page);
 
-        $rows = collect($paginator->items())->map(static fn (Order $o): array => [
-            'id' => (int) $o->id,
-            'uuid' => $o->uuid,
-            // P-F8 — the printed receipt number; null for unnumbered
-            // orders (the UI falls back to the short uuid).
-            'receipt_number' => $o->receipt_number,
-            'branch_id' => (int) $o->branch_id,
-            'branch_name' => $o->branch?->name,
-            'order_type' => $o->order_type?->value,
-            'status' => $o->status?->value,
-            'source' => $o->source?->value,
-            'customer_name' => $o->customer?->name,
-            'plate_number' => $o->plate_number,
-            'items_count' => (int) $o->items_count,
-            'subtotal' => (string) $o->subtotal,
-            'discount_total' => (string) $o->discount_total,
-            'tax_total' => (string) $o->tax_total,
-            'grand_total' => (string) $o->grand_total,
-            'opened_at' => $o->opened_at?->format('Y-m-d\TH:i:s'),
-            'closed_at' => $o->closed_at?->format('Y-m-d\TH:i:s'),
-        ])->all();
+        $orders = collect($paginator->items());
+        // Per-sale commission breakdown + reconciliation/payout status
+        // (settled-aware; final only once the payout is paid). Batched — one
+        // ledger read for the whole page.
+        $commissionByOrder = SaleCommissionStatus::forOrders(
+            $companyId,
+            $orders->pluck('id')->map(static fn ($id): int => (int) $id)->all(),
+        );
+
+        $rows = $orders->map(static function (Order $o) use ($commissionByOrder): array {
+            $commission = $commissionByOrder[(int) $o->id]
+                ?? SaleCommissionStatus::none((string) $o->grand_total);
+
+            return [
+                'id' => (int) $o->id,
+                'uuid' => $o->uuid,
+                // P-F8 — the printed receipt number; null for unnumbered
+                // orders (the UI falls back to the short uuid).
+                'receipt_number' => $o->receipt_number,
+                'branch_id' => (int) $o->branch_id,
+                'branch_name' => $o->branch?->name,
+                'order_type' => $o->order_type?->value,
+                'status' => $o->status?->value,
+                'source' => $o->source?->value,
+                'customer_name' => $o->customer?->name,
+                'plate_number' => $o->plate_number,
+                'items_count' => (int) $o->items_count,
+                'subtotal' => (string) $o->subtotal,
+                'discount_total' => (string) $o->discount_total,
+                'tax_total' => (string) $o->tax_total,
+                'grand_total' => (string) $o->grand_total,
+                'opened_at' => $o->opened_at?->format('Y-m-d\TH:i:s'),
+                'closed_at' => $o->closed_at?->format('Y-m-d\TH:i:s'),
+                // Commission + payout status (settled-aware; final once paid).
+                'admin_commission' => $commission['admin_commission'],
+                'bank_commission' => $commission['bank_commission'],
+                'total_commission' => $commission['total_commission'],
+                'merchant_net' => $commission['merchant_net'],
+                'commission_status' => $commission['commission_status'],
+                'is_finalized' => $commission['is_finalized'],
+                'payout_date' => $commission['payout_date'],
+            ];
+        })->all();
 
         return [
             'window' => [

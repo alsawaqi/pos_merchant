@@ -86,6 +86,17 @@ function statusLabel(status: string | null): string {
     const label = t(key);
     return label !== key ? label : status;
 }
+
+// Commission/payout lifecycle chip: pending → reconciled → in_payout → paid.
+function commissionStatusClass(status: string): string {
+    switch (status) {
+        case 'paid': return 'bg-emerald-100 text-emerald-700';
+        case 'in_payout': return 'bg-indigo-100 text-indigo-700';
+        case 'reconciled': return 'bg-sky-100 text-sky-700';
+        case 'pending': return 'bg-amber-100 text-amber-700';
+        default: return 'bg-slate-100 text-slate-500'; // none
+    }
+}
 </script>
 
 <template>
@@ -190,6 +201,31 @@ function statusLabel(status: string | null): string {
                             <dd class="tabular-nums text-slate-950">{{ detail.order.totals.grand_total }} <span class="text-xs font-medium text-slate-400">OMR</span></dd>
                         </div>
                     </dl>
+                </section>
+
+                <!-- Commission / payout (settled-aware; final once paid) -->
+                <section class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div class="mb-2 flex items-center justify-between">
+                        <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('orders.detail.commission') }}</h3>
+                        <span class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold" :class="commissionStatusClass(detail.commission.commission_status)">
+                            {{ t(`orders.commission.status.${detail.commission.commission_status}`) }}
+                        </span>
+                    </div>
+                    <dl v-if="detail.commission.commission_status !== 'none'" class="space-y-1.5 text-sm">
+                        <div class="flex justify-between"><dt class="text-slate-500">{{ t('orders.detail.gross') }}</dt><dd class="tabular-nums text-slate-900">{{ detail.order.totals.grand_total }}</dd></div>
+                        <div class="flex justify-between"><dt class="text-slate-500">{{ t('orders.detail.admin_commission') }}</dt><dd class="tabular-nums text-rose-600">−{{ detail.commission.admin_commission }}</dd></div>
+                        <div class="flex justify-between"><dt class="text-slate-500">{{ t('orders.detail.bank_commission') }}</dt><dd class="tabular-nums text-rose-600">−{{ detail.commission.bank_commission }}</dd></div>
+                        <div class="flex justify-between border-t border-slate-100 pt-1.5"><dt class="text-slate-500">{{ t('orders.detail.total_deducted') }}</dt><dd class="tabular-nums text-rose-700">−{{ detail.commission.total_commission }}</dd></div>
+                        <div class="flex justify-between border-t border-slate-200 pt-1.5 text-base font-bold">
+                            <dt class="text-slate-900">{{ t('orders.detail.merchant_net') }}</dt>
+                            <dd class="tabular-nums text-teal-700">{{ detail.commission.merchant_net }} <span class="text-xs font-medium text-slate-400">OMR</span></dd>
+                        </div>
+                        <p v-if="detail.commission.payout_date" class="pt-1 text-xs text-emerald-700">
+                            {{ t('orders.commission.paid_on', { date: formatDateTime(detail.commission.payout_date) }) }}
+                        </p>
+                        <p v-else class="pt-1 text-xs text-slate-400">{{ t(`orders.commission.note.${detail.commission.commission_status}`) }}</p>
+                    </dl>
+                    <p v-else class="text-sm text-slate-400">{{ t('orders.commission.note.none') }}</p>
                 </section>
 
                 <!-- Payments -->

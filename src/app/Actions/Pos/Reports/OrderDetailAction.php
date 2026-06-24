@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Pos\Reports;
 
+use App\Actions\Pos\Reports\Support\SaleCommissionStatus;
 use App\Models\Order;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
@@ -143,6 +144,10 @@ final readonly class OrderDetailAction
                 'captured_at' => $p->captured_at?->format('Y-m-d\TH:i:s'),
             ])->all(),
             'loyalty' => $this->loyalty($companyId, (int) $order->id),
+            // Commission split + reconciliation/payout status for this sale
+            // (settled-aware; final only once the payout is paid).
+            'commission' => SaleCommissionStatus::forOrders($companyId, [(int) $order->id])[(int) $order->id]
+                ?? SaleCommissionStatus::none((string) $order->grand_total),
         ];
     }
 
