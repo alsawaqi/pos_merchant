@@ -2631,6 +2631,19 @@
                     "merchant_net": "Your net",
                     "empty": "No branch detail for this payout."
                 }
+            },
+            "monthly": {
+                "title": "Monthly summary",
+                "columns": {
+                    "month": "Month",
+                    "sales": "Sales",
+                    "gross": "Gross",
+                    "admin": "Admin",
+                    "bank": "Bank",
+                    "net": "Net",
+                    "finalized": "Finalized",
+                    "pending": "Pending"
+                }
             }
         },
         "product_performance": {

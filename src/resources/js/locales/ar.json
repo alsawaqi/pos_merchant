@@ -2631,6 +2631,19 @@
                     "merchant_net": "صافي حصتك",
                     "empty": "لا يوجد تفصيل فروع لهذه الدفعة."
                 }
+            },
+            "monthly": {
+                "title": "الملخص الشهري",
+                "columns": {
+                    "month": "الشهر",
+                    "sales": "المبيعات",
+                    "gross": "الإجمالي",
+                    "admin": "الإدارة",
+                    "bank": "البنك",
+                    "net": "الصافي",
+                    "finalized": "نهائي",
+                    "pending": "معلّق"
+                }
             }
         },
         "product_performance": {

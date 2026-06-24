@@ -118,6 +118,48 @@ it('shows the SETTLED net + estimate alongside, once a sale is reconciled', func
     expect($res->json('data.by_branch.0.num_settled'))->toBe(1);
 });
 
+it('rolls the commission up per month with a finalized vs pending split', function (): void {
+    $ctx = makeMerchantActor();
+    $cid = $ctx['company']->id;
+
+    // June: one sale, claimed into a PAID payout → finalized.
+    $payoutId = (int) DB::table('pos_payouts')->insertGetId([
+        'uuid' => (string) Str::uuid(),
+        'company_id' => $cid,
+        'period_from' => '2026-06-01 00:00:00',
+        'period_to' => '2026-06-30 23:59:59',
+        'status' => 'paid',
+        'paid_at' => '2026-06-25 12:00:00',
+        'created_at' => '2026-06-20 10:00:00',
+        'updated_at' => '2026-06-20 10:00:00',
+    ]);
+    seedSale($cid, 1, 10, '0.100', '0.090', '2.810', '2026-06-10 10:00:00'); // gross 3.000
+    DB::table('pos_sale_commissions')->where('order_id', 1)->where('party_type', 'merchant')->update(['payout_id' => $payoutId]);
+
+    // July: one sale, no payout → pending.
+    seedSale($cid, 2, 10, '0.040', '0.000', '1.960', '2026-07-05 10:00:00'); // gross 2.000
+
+    $rows = $this->getJson('/api/reports/payouts?date_from=2026-06-01&date_to=2026-07-31')
+        ->assertOk()->json('data.by_month');
+
+    expect($rows)->toHaveCount(2);
+
+    expect($rows[0]['month'])->toBe('2026-06');       // chronological
+    expect($rows[0]['gross'])->toBe('3.000');
+    expect($rows[0]['admin_commission'])->toBe('0.100');
+    expect($rows[0]['bank_commission'])->toBe('0.090');
+    expect($rows[0]['commission_total'])->toBe('0.190');
+    expect($rows[0]['merchant_net'])->toBe('2.810');
+    expect($rows[0]['finalized_net'])->toBe('2.810'); // payout paid
+    expect($rows[0]['pending_net'])->toBe('0.000');
+    expect($rows[0]['num_sales'])->toBe(1);
+
+    expect($rows[1]['month'])->toBe('2026-07');
+    expect($rows[1]['merchant_net'])->toBe('1.960');
+    expect($rows[1]['finalized_net'])->toBe('0.000');
+    expect($rows[1]['pending_net'])->toBe('1.960'); // not paid out
+});
+
 it('breaks the payout down per branch', function (): void {
     $ctx = makeMerchantActor();
     $cid = $ctx['company']->id;

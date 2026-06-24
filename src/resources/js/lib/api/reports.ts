@@ -486,6 +486,19 @@ export interface PayoutBreakdownPayload {
         num_sales: number;
         num_settled: number;
     }[];
+    /** Monthly commission roll-up (chronological), with finalized vs pending. */
+    by_month: {
+        month: string;
+        num_sales: number;
+        gross: string;
+        admin_commission: string;
+        bank_commission: string;
+        other_commission: string;
+        commission_total: string;
+        merchant_net: string;
+        finalized_net: string;
+        pending_net: string;
+    }[];
 }
 
 export function fetchPayoutBreakdown(filter: ReportFilter): Promise<{ data: PayoutBreakdownPayload }> {

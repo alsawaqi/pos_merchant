@@ -134,6 +134,14 @@ function branchLabel(id: number): string {
     return branchNames.value.get(id) ?? `${t('reports.shared.branch')} #${id}`;
 }
 
+/** 'YYYY-MM' → a short localized month label (e.g. "Jun 2026"). */
+function monthLabel(m: string): string {
+    const [y, mo] = m.split('-').map(Number);
+    if (!y || !mo) return m;
+    const d = new Date(y, mo - 1, 1);
+    return Number.isNaN(d.getTime()) ? m : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short' });
+}
+
 // ---- Localized party labels ----
 
 function partyLabel(party: PayoutPartyType): string {
@@ -214,6 +222,37 @@ const partyChart = computed(() => {
                             <td class="px-5 py-2 text-end font-semibold tabular-nums text-slate-900">{{ row.merchant_net }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ row.num_sales }}</td>
                             <td class="px-5 py-2 text-end tabular-nums text-slate-600">{{ row.num_settled }}/{{ row.num_sales }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Monthly roll-up: gross, the cut, and realised vs held income -->
+            <div v-if="payload.by_month && payload.by_month.length" class="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+                <h2 class="border-b border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700">{{ t('reports.payouts.monthly.title') }}</h2>
+                <table class="w-full text-sm">
+                    <thead class="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                            <th class="px-5 py-2 text-start">{{ t('reports.payouts.monthly.columns.month') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.payouts.monthly.columns.sales') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.payouts.monthly.columns.gross') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.payouts.monthly.columns.admin') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.payouts.monthly.columns.bank') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.payouts.monthly.columns.net') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.payouts.monthly.columns.finalized') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.payouts.monthly.columns.pending') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="row in payload.by_month" :key="row.month" class="border-b border-slate-100 last:border-0">
+                            <td class="px-5 py-2 font-medium text-slate-900">{{ monthLabel(row.month) }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums text-slate-600">{{ row.num_sales }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ row.gross }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums text-rose-600">{{ row.admin_commission }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums text-rose-600">{{ row.bank_commission }}</td>
+                            <td class="px-5 py-2 text-end font-semibold tabular-nums text-slate-900">{{ row.merchant_net }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums text-emerald-700">{{ row.finalized_net }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums text-amber-600">{{ row.pending_net }}</td>
                         </tr>
                     </tbody>
                 </table>

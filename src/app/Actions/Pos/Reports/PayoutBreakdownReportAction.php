@@ -120,6 +120,8 @@ final readonly class PayoutBreakdownReportAction
         }
         usort($byBranch, static fn (array $x, array $y): int => (float) $y['merchant_net'] <=> (float) $x['merchant_net']);
 
+        $byMonth = $this->byMonth($companyId, $filter, $branchScope);
+
         return [
             'window' => [
                 'from' => $filter->dateFrom->format('Y-m-d\TH:i:s'),
@@ -142,6 +144,94 @@ final readonly class PayoutBreakdownReportAction
             ],
             'parties' => $parties,
             'by_branch' => $byBranch,
+            'by_month' => $byMonth,
         ];
+    }
+
+    /**
+     * Monthly commission roll-up over the window (chronological). Per month:
+     * gross + the admin/bank/other commission + commission_total, plus the
+     * merchant's net take split into FINALIZED (its payout is PAID) vs PENDING
+     * (still held until paid out). Settled-aware, mirroring the headline; the
+     * payout-paid bucket is the same rule as the per-sale status + the Sales
+     * report. Driver-aware month key (sqlite strftime / Postgres to_char).
+     *
+     * @param  list<int>|null  $branchScope
+     * @return list<array{month: string, num_sales: int, gross: string, admin_commission: string, bank_commission: string, other_commission: string, commission_total: string, merchant_net: string, finalized_net: string, pending_net: string}>
+     */
+    private function byMonth(int $companyId, ReportFilter $filter, ?array $branchScope): array
+    {
+        $driver = DB::connection()->getDriverName();
+        $monthExpr = $driver === 'sqlite'
+            ? "strftime('%Y-%m', pos_sale_commissions.occurred_at)"
+            : "to_char(pos_sale_commissions.occurred_at, 'YYYY-MM')";
+
+        // Qualified scope — once pos_payouts is joined, company_id is ambiguous
+        // (pos_payouts has one too), so every predicate names its table.
+        $scoped = static function ($q) use ($companyId, $filter, $branchScope) {
+            $q->where('pos_sale_commissions.company_id', $companyId)
+                ->whereBetween('pos_sale_commissions.occurred_at', [$filter->dateFrom, $filter->dateTo]);
+            if ($branchScope !== null) {
+                $q->whereIn('pos_sale_commissions.branch_id', $branchScope);
+            }
+
+            return $q;
+        };
+
+        $rows = $scoped(
+            DB::table('pos_sale_commissions')
+                ->leftJoin('pos_payouts', 'pos_payouts.id', '=', 'pos_sale_commissions.payout_id'),
+        )
+            ->selectRaw("$monthExpr AS month, pos_sale_commissions.party_type AS party,
+                COALESCE(SUM(COALESCE(pos_sale_commissions.settled_amount, pos_sale_commissions.commission_amount)), 0) AS amount,
+                COALESCE(SUM(CASE WHEN pos_payouts.status = 'paid' THEN COALESCE(pos_sale_commissions.settled_amount, pos_sale_commissions.commission_amount) ELSE 0 END), 0) AS paid_amount")
+            ->groupByRaw("$monthExpr, pos_sale_commissions.party_type")
+            ->get();
+
+        $salesByMonth = $scoped(DB::table('pos_sale_commissions'))
+            ->selectRaw("$monthExpr AS month, COUNT(DISTINCT pos_sale_commissions.order_id) AS cnt")
+            ->groupByRaw($monthExpr)
+            ->pluck('cnt', 'month');
+
+        /** @var array<string, array<string, float>> $agg */
+        $agg = [];
+        foreach ($rows as $r) {
+            $m = (string) $r->month;
+            $agg[$m] ??= ['platform' => 0.0, 'bank' => 0.0, 'other' => 0.0, 'merchant' => 0.0, 'merchant_paid' => 0.0];
+            $party = (string) $r->party;
+            if (array_key_exists($party, $agg[$m])) {
+                $agg[$m][$party] = (float) $r->amount;
+            }
+            if ($party === 'merchant') {
+                $agg[$m]['merchant_paid'] = (float) $r->paid_amount;
+            }
+        }
+
+        ksort($agg); // YYYY-MM strings sort chronologically
+
+        $out = [];
+        foreach ($agg as $m => $a) {
+            $commission = $a['platform'] + $a['bank'] + $a['other'];
+            $merch = $a['merchant'];
+            $out[] = [
+                'month' => $m,
+                'num_sales' => (int) ($salesByMonth[$m] ?? 0),
+                'gross' => self::money($commission + $merch),
+                'admin_commission' => self::money($a['platform']),
+                'bank_commission' => self::money($a['bank']),
+                'other_commission' => self::money($a['other']),
+                'commission_total' => self::money($commission),
+                'merchant_net' => self::money($merch),
+                'finalized_net' => self::money($a['merchant_paid']),
+                'pending_net' => self::money($merch - $a['merchant_paid']),
+            ];
+        }
+
+        return $out;
+    }
+
+    private static function money(float $omr): string
+    {
+        return number_format($omr, 3, '.', '');
     }
 }
