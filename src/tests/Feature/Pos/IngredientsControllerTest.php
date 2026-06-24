@@ -149,6 +149,35 @@ it('refuses to change the unit of an ingredient that already has stock or moveme
     expect($response->json('message'))->toContain('unit');
 });
 
+it('refuses to change the unit of a recipe-referenced ingredient even with no stock', function (): void {
+    $ctx = makeMerchantActor();
+    // No stock, no movements — the old guard would have ALLOWED this flip, but a
+    // recipe line stores 0.250 in the CURRENT base unit (kg); flipping to g would
+    // make the next sale deduct 0.250 g instead of 250 g (1000x under-deduction).
+    $ingredient = Ingredient::factory()->for($ctx['company'], 'company')->create(['unit' => 'kg']);
+    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    ProductRecipe::factory()
+        ->for($product, 'product')
+        ->for($ingredient, 'ingredient')
+        ->create(['quantity' => '0.250']);
+
+    $response = $this->patchJson("/api/ingredients/{$ingredient->uuid}", ['unit' => 'g'])
+        ->assertStatus(422);
+    expect($response->json('message'))->toContain('recipe');
+});
+
+it('refuses to change the unit of an ingredient referenced by a legacy add-on', function (): void {
+    $ctx = makeMerchantActor();
+    // Legacy single-ingredient add-on (pos_addons.ingredient_id/ingredient_qty)
+    // — still read by the sale-time deduction pipeline; no stock/movement/recipe.
+    $ingredient = Ingredient::factory()->for($ctx['company'], 'company')->create(['unit' => 'kg']);
+    \App\Models\AddOn::factory()->create(['ingredient_id' => $ingredient->id, 'ingredient_qty' => '1.000']);
+
+    $response = $this->patchJson("/api/ingredients/{$ingredient->uuid}", ['unit' => 'g'])
+        ->assertStatus(422);
+    expect($response->json('message'))->toContain('add-on');
+});
+
 // =================== DELETE ===================
 
 it('refuses to delete an ingredient with non-zero stock at any branch', function (): void {

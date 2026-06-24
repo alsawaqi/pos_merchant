@@ -6,8 +6,11 @@ namespace App\Actions\Pos\Inventory;
 
 use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
+use App\Models\AddOn;
+use App\Models\AddOnConsumption;
 use App\Models\BranchStock;
 use App\Models\Ingredient;
+use App\Models\ProductRecipe;
 use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Models\User;
@@ -20,11 +23,13 @@ use RuntimeException;
  *
  * Diff-aware audit (inventory.ingredient.updated). One
  * critical restriction: the `unit` column CANNOT change once
- * any movement exists for this ingredient, because every
- * historical movement was recorded in the original unit and
- * "1.000" of kg means something completely different than
- * "1.000" of g. Forcing the merchant to delete and recreate
- * (which they can't if stock exists) keeps the math honest.
+ * any movement, stock, or recipe/add-on line exists for this
+ * ingredient, because every historical movement AND every
+ * recipe/consumption quantity is denominated in the original
+ * base unit — "1.000" of kg means something completely
+ * different than "1.000" of g. Forcing the merchant to remove
+ * those references first (or create a new ingredient with the
+ * new unit) keeps the deduction math honest.
  */
 final readonly class UpdateIngredientAction
 {
@@ -80,10 +85,28 @@ final readonly class UpdateIngredientAction
                 || BranchStock::query()
                     ->where('ingredient_id', $ingredient->id)
                     ->where('quantity', '!=', '0.000')
+                    ->exists()
+                // A recipe / add-on consumption line stores its quantity in the
+                // ingredient's CURRENT base unit (the portal converts at entry).
+                // Flipping the unit without rescaling those lines would silently
+                // mis-deduct them at sale — e.g. 0.250 authored as kg, then read
+                // as grams, deducts 1000x too little. Block the flip while any
+                // recipe/add-on still references the ingredient.
+                || ProductRecipe::query()
+                    ->where('ingredient_id', $ingredient->id)
+                    ->exists()
+                || AddOnConsumption::query()
+                    ->where('ingredient_id', $ingredient->id)
+                    ->exists()
+                // Legacy single-ingredient add-on (pos_addons.ingredient_id /
+                // ingredient_qty) — still read by the sale-time deduction
+                // pipeline, so its base-unit qty must be protected too.
+                || AddOn::query()
+                    ->where('ingredient_id', $ingredient->id)
                     ->exists();
             if ($hasHistory) {
                 throw new RuntimeException(
-                    'Cannot change the unit of an ingredient that already has stock or movements. Delete the existing stock first, then create a new ingredient with the new unit.',
+                    'Cannot change the unit of an ingredient that already has stock, movements, or recipe/add-on usage. Remove those references first, then create a new ingredient with the new unit.',
                 );
             }
         }
