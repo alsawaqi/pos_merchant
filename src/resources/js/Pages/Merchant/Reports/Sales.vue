@@ -125,7 +125,13 @@ type ApexSeries = { name: string; data: number[] }[];
                     { label: t('reports.sales.headline_labels.gross_profit'), value: payload.headline.gross_profit },
                     { label: t('reports.sales.headline_labels.operating_expenses'), value: payload.headline.operating_expenses },
                     { label: payload.headline.purchase_tax_recoverable ? t('reports.sales.headline_labels.purchase_tax_recoverable') : t('reports.sales.headline_labels.purchase_tax_paid'), value: payload.headline.purchase_tax_paid },
+                    { label: t('reports.sales.headline_labels.admin_commission'), value: payload.headline.admin_commission },
+                    { label: t('reports.sales.headline_labels.bank_commission'), value: payload.headline.bank_commission },
+                    { label: t('reports.sales.headline_labels.commission_total'), value: payload.headline.commission_total },
                     { label: t('reports.sales.headline_labels.net_profit'), value: payload.headline.net_profit },
+                    { label: t('reports.sales.headline_labels.merchant_net'), value: payload.headline.merchant_net },
+                    { label: t('reports.sales.headline_labels.finalized_net'), value: payload.headline.finalized_net },
+                    { label: t('reports.sales.headline_labels.pending_net'), value: payload.headline.pending_net },
                     { label: t('reports.sales.headline_labels.order_count'), value: payload.headline.order_count },
                     { label: t('reports.sales.headline_labels.average_ticket'), value: payload.headline.avg_ticket },
                 ]"

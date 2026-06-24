@@ -116,6 +116,17 @@ export interface SalesReportPayload {
         purchase_tax_paid: string;
         /** PT — whether that tax was credited back into net profit. */
         purchase_tax_recoverable: boolean;
+        /** Commission folded into net_profit (settled-aware). */
+        admin_commission: string;
+        bank_commission: string;
+        other_commission: string;
+        commission_total: string;
+        /** Merchant's total take after commission (all paid sales in scope). */
+        merchant_net: string;
+        /** Realised income — payouts paid + no-commission cash in hand. */
+        finalized_net: string;
+        /** Income still held until a payout is paid. */
+        pending_net: string;
         net_profit: string;
         order_count: number;
         refund_count: number;

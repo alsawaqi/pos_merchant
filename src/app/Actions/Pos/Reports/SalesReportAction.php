@@ -146,7 +146,16 @@ final readonly class SalesReportAction
         // expenses still reconcile.
         $purchaseTaxPaid = (float) $expenseQuery->sum('tax_amount');
         $purchaseTaxRecoverable = $this->purchaseTaxRecoverable($companyId);
-        $netProfit = $netSales - $operatingExpenses
+        // Commission is folded into net profit (the user's chosen presentation):
+        // the admin/bank/other cut is a real cost, so net_profit nets it out
+        // alongside expenses. Settled-aware — the bank's ACTUAL fee where the
+        // sale is reconciled, the estimate otherwise. The same read also splits
+        // the merchant's take into FINALIZED (payout paid, or no-commission cash
+        // in hand) vs PENDING (still held until paid out) so the report can show
+        // what is realised income vs not.
+        $settlement = $this->commissionSettlement($paidQuery, $companyId);
+        $commissionTotal = $settlement['commission_total'];
+        $netProfit = $netSales - $commissionTotal - $operatingExpenses
             + ($purchaseTaxRecoverable ? $purchaseTaxPaid : 0.0);
         $byExpenseCategory = $this->byExpenseCategory($companyId, $filter, $branchScope);
 
@@ -182,6 +191,16 @@ final readonly class SalesReportAction
                 // + whether it was credited back into net profit (the setting).
                 'purchase_tax_paid' => self::fmt($purchaseTaxPaid),
                 'purchase_tax_recoverable' => $purchaseTaxRecoverable,
+                // Commission folded into net_profit (settled-aware). The split
+                // lets the merchant see the platform/bank cut + what is realised
+                // (finalized) vs still held (pending) income.
+                'admin_commission' => self::fmt($settlement['admin_commission']),
+                'bank_commission' => self::fmt($settlement['bank_commission']),
+                'other_commission' => self::fmt($settlement['other_commission']),
+                'commission_total' => self::fmt($commissionTotal),
+                'merchant_net' => self::fmt($settlement['merchant_net']),
+                'finalized_net' => self::fmt($settlement['finalized_net']),
+                'pending_net' => self::fmt($settlement['pending_net']),
                 'net_profit' => self::fmt($netProfit),
                 'order_count' => (int) ($headline?->order_count ?? 0),
                 'refund_count' => (int) ($refundsRow?->refund_count ?? 0),
@@ -432,6 +451,88 @@ final readonly class SalesReportAction
             'gross' => self::fmt((float) $r->gross),
             'count' => (int) $r->cnt,
         ])->all();
+    }
+
+    /**
+     * Commission settlement totals for the paid orders in scope, from the
+     * append-only pos_sale_commissions ledger + the stateful pos_payouts.
+     * Settled-aware throughout (COALESCE(settled_amount, commission_amount) —
+     * the bank's actual fee where reconciled, the estimate otherwise), mirroring
+     * PayoutBreakdownReportAction + the per-sale SaleCommissionStatus.
+     *
+     *   admin/bank/other_commission, commission_total — the deductions (every
+     *     party EXCEPT the merchant residual); commission_total folds into
+     *     net_profit.
+     *   merchant_net  — the merchant's total take: the residual party where a
+     *     sale has a commission profile, PLUS the full grand_total of sales with
+     *     NO profile (the merchant keeps 100%; cash already in hand).
+     *   finalized_net — the slice of merchant_net that is REALISED: a sale whose
+     *     payout is PAID, plus the no-profile cash sales.
+     *   pending_net   — merchant_net still HELD until a payout is paid (the
+     *     residual of profiled sales not yet in a paid payout).
+     *
+     * @param  Builder  $paidQuery
+     * @return array{admin_commission: float, bank_commission: float, other_commission: float, commission_total: float, merchant_net: float, finalized_net: float, pending_net: float}
+     */
+    private function commissionSettlement($paidQuery, int $companyId): array
+    {
+        // Deductions — every party but the merchant residual, grouped.
+        $deductRows = DB::table('pos_sale_commissions')
+            ->joinSub((clone $paidQuery)->select('id'), 'scoped', 'scoped.id', '=', 'pos_sale_commissions.order_id')
+            ->where('pos_sale_commissions.company_id', $companyId)
+            ->where('pos_sale_commissions.party_type', '!=', 'merchant')
+            ->selectRaw('pos_sale_commissions.party_type AS party, COALESCE(SUM(COALESCE(pos_sale_commissions.settled_amount, pos_sale_commissions.commission_amount)), 0) AS amount')
+            ->groupBy('pos_sale_commissions.party_type')
+            ->get();
+
+        $admin = 0.0;
+        $bank = 0.0;
+        $other = 0.0;
+        foreach ($deductRows as $r) {
+            $amt = (float) $r->amount;
+            if ($r->party === 'platform') {
+                $admin += $amt;
+            } elseif ($r->party === 'bank') {
+                $bank += $amt;
+            } else {
+                $other += $amt; // 'other' + any future non-merchant party
+            }
+        }
+
+        // Merchant residual, bucketed by whether its payout is PAID.
+        $merch = DB::table('pos_sale_commissions')
+            ->joinSub((clone $paidQuery)->select('id'), 'scoped', 'scoped.id', '=', 'pos_sale_commissions.order_id')
+            ->leftJoin('pos_payouts', 'pos_payouts.id', '=', 'pos_sale_commissions.payout_id')
+            ->where('pos_sale_commissions.company_id', $companyId)
+            ->where('pos_sale_commissions.party_type', 'merchant')
+            ->selectRaw("
+                COALESCE(SUM(COALESCE(pos_sale_commissions.settled_amount, pos_sale_commissions.commission_amount)), 0) AS total,
+                COALESCE(SUM(CASE WHEN pos_payouts.status = 'paid' THEN COALESCE(pos_sale_commissions.settled_amount, pos_sale_commissions.commission_amount) ELSE 0 END), 0) AS finalized
+            ")
+            ->first();
+        $merchTotal = (float) ($merch?->total ?? 0);
+        $merchFinalized = (float) ($merch?->finalized ?? 0);
+
+        // No-profile sales — no commission rows at all; the merchant keeps the
+        // full grand_total and the cash is already in hand (finalised).
+        $noneTotal = (float) (clone $paidQuery)
+            ->whereNotExists(function ($q) use ($companyId): void {
+                $q->select(DB::raw(1))
+                    ->from('pos_sale_commissions')
+                    ->whereColumn('pos_sale_commissions.order_id', 'pos_orders.id')
+                    ->where('pos_sale_commissions.company_id', $companyId);
+            })
+            ->sum('grand_total');
+
+        return [
+            'admin_commission' => $admin,
+            'bank_commission' => $bank,
+            'other_commission' => $other,
+            'commission_total' => $admin + $bank + $other,
+            'merchant_net' => $merchTotal + $noneTotal,
+            'finalized_net' => $merchFinalized + $noneTotal,
+            'pending_net' => $merchTotal - $merchFinalized,
+        ];
     }
 
     /**

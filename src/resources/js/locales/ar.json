@@ -2450,7 +2450,13 @@
                 "operating_expenses": "المصروفات التشغيلية",
                 "purchase_tax_paid": "ضريبة المشتريات المدفوعة",
                 "purchase_tax_recoverable": "ضريبة المشتريات (قابلة للاسترداد)",
-                "net_profit": "صافي الربح"
+                "net_profit": "صافي الربح",
+                "admin_commission": "عمولة الإدارة",
+                "bank_commission": "رسوم البنك (البطاقة)",
+                "commission_total": "إجمالي العمولة",
+                "merchant_net": "الصافي بعد العمولة",
+                "finalized_net": "الدخل النهائي",
+                "pending_net": "الدخل المعلّق"
             },
             "by_hour": "المبيعات حسب الساعة",
             "by_hour_sub": "يوم الأسبوع × الساعة",

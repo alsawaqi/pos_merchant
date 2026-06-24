@@ -2450,7 +2450,13 @@
                 "operating_expenses": "Operating expenses",
                 "purchase_tax_paid": "Purchase tax paid",
                 "purchase_tax_recoverable": "Purchase tax (recoverable)",
-                "net_profit": "Net profit"
+                "net_profit": "Net profit",
+                "admin_commission": "Admin commission",
+                "bank_commission": "Bank fee (card)",
+                "commission_total": "Total commission",
+                "merchant_net": "Net after commission",
+                "finalized_net": "Finalized income",
+                "pending_net": "Pending income"
             },
             "by_hour": "Sales by hour",
             "by_hour_sub": "Day of week × hour",
