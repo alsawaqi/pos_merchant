@@ -150,7 +150,7 @@ final readonly class OrderDetailAction
             'commission' => SaleCommissionStatus::forOrders($companyId, [(int) $order->id])[(int) $order->id]
                 ?? SaleCommissionStatus::none(
                     (string) $order->grand_total,
-                    SaleCommissionStatus::giftTotals([(int) $order->id])[(int) $order->id] ?? 0.0,
+                    SaleCommissionStatus::giftTotals($companyId, [(int) $order->id])[(int) $order->id] ?? 0.0,
                 ),
         ];
     }

@@ -157,18 +157,24 @@ final class SaleCommissionStatus
      * @param  list<int>  $orderIds
      * @return array<int, float>  order_id => gifted OMR
      */
-    public static function giftTotals(array $orderIds): array
+    public static function giftTotals(int $companyId, array $orderIds): array
     {
         if ($orderIds === []) {
             return [];
         }
 
+        // pos_payments has no company_id (it is tenant-owned transitively via
+        // order_id). Join through pos_orders and anchor on company_id so the
+        // totals can never include another tenant's gift tenders even if a
+        // caller ever passes un-scoped order ids — mirrors forOrders() above.
         return DB::table('pos_payments')
-            ->whereIn('order_id', $orderIds)
-            ->where('method', PaymentMethod::Gift->value)
-            ->where('status', 'success')
-            ->selectRaw('order_id, COALESCE(SUM(amount), 0) AS gifted')
-            ->groupBy('order_id')
+            ->join('pos_orders', 'pos_orders.id', '=', 'pos_payments.order_id')
+            ->where('pos_orders.company_id', $companyId)
+            ->whereIn('pos_payments.order_id', $orderIds)
+            ->where('pos_payments.method', PaymentMethod::Gift->value)
+            ->where('pos_payments.status', 'success')
+            ->selectRaw('pos_payments.order_id AS order_id, COALESCE(SUM(pos_payments.amount), 0) AS gifted')
+            ->groupBy('pos_payments.order_id')
             ->pluck('gifted', 'order_id')
             ->map(static fn ($v): float => (float) $v)
             ->all();

@@ -77,7 +77,7 @@ final readonly class OrdersListAction
         // ledger read for the whole page. Gift totals value no-commission orders
         // at the collected amount (a fully gifted order keeps nothing).
         $commissionByOrder = SaleCommissionStatus::forOrders($companyId, $orderIds);
-        $giftByOrder = SaleCommissionStatus::giftTotals($orderIds);
+        $giftByOrder = SaleCommissionStatus::giftTotals($companyId, $orderIds);
 
         $rows = $orders->map(static function (Order $o) use ($commissionByOrder, $giftByOrder): array {
             $commission = $commissionByOrder[(int) $o->id]
