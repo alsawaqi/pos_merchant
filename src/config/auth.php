@@ -39,7 +39,12 @@ return [
 
     'guards' => [
         'web' => [
-            'driver' => 'session',
+            // Custom session driver (registered in AppServiceProvider) — identical
+            // to the stock 'session' driver except it uses a per-app remember-me
+            // cookie name, so a shared APP_KEY + pos_users table can never let this
+            // app's recaller cookie authenticate into the sibling admin app. Guard
+            // KEY stays 'web' so Spatie + Auth::guard('web') are untouched.
+            'driver' => 'pos_merchant_session',
             'provider' => 'users',
         ],
     ],
