@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToCompany;
 use App\Enums\BranchOrderType;
 use App\Enums\BranchStatus;
 use Database\Factories\BranchFactory;
@@ -32,7 +33,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class Branch extends Model
 {
     /** @use HasFactory<BranchFactory> */
-    use HasFactory, SoftDeletes;
+    use BelongsToCompany, HasFactory, SoftDeletes;
 
     protected $table = 'pos_branches';
 

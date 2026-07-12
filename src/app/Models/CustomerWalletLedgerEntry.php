@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToCompany;
 use App\Enums\WalletLedgerEntryType;
 use Database\Factories\CustomerWalletLedgerEntryFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -40,7 +41,7 @@ use Illuminate\Support\Str;
 class CustomerWalletLedgerEntry extends Model
 {
     /** @use HasFactory<CustomerWalletLedgerEntryFactory> */
-    use HasFactory;
+    use BelongsToCompany, HasFactory;
 
     protected $table = 'pos_customer_wallet_ledger';
 

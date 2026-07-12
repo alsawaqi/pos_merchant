@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToCompany;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -32,6 +33,8 @@ use Illuminate\Support\Str;
 ])]
 class PurchaseReceiptPayment extends Model
 {
+    use BelongsToCompany;
+
     protected $table = 'pos_purchase_receipt_payments';
 
     /**

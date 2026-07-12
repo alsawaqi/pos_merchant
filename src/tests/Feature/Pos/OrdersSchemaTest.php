@@ -179,8 +179,17 @@ it('isolates orders per company (no cross-tenant leakage on the Order query buil
     $otherBranch = Branch::factory()->for($otherCompany, 'company')->create();
     Order::factory()->for($otherCompany, 'company')->for($otherBranch, 'branch')->count(5)->create();
 
+    // The tenant global scope (context pinned to our company by makeMerchantActor)
+    // hides company B entirely — even an explicit where(company_id = B) returns nothing.
+    expect(Order::query()->count())->toBe(3);
     expect(Order::query()->where('company_id', $ctx['company']->id)->count())->toBe(3);
-    expect(Order::query()->where('company_id', $otherCompany->id)->count())->toBe(5);
+    expect(Order::query()->where('company_id', $otherCompany->id)->count())->toBe(0);
+
+    // The rows really exist; only the cross-tenant escape hatch can see across tenants.
+    expect(
+        Order::withoutGlobalScope(\App\Models\Scopes\BelongsToCompanyScope::class)
+            ->where('company_id', $otherCompany->id)->count()
+    )->toBe(5);
 });
 
 // =================== SEEDER ===================

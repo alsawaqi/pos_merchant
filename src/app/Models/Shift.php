@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToCompany;
 use App\Enums\ShiftStatus;
 use Database\Factories\ShiftFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -45,7 +46,7 @@ use Illuminate\Support\Str;
 class Shift extends Model
 {
     /** @use HasFactory<ShiftFactory> */
-    use HasFactory;
+    use BelongsToCompany, HasFactory;
 
     protected $table = 'pos_shifts';
 

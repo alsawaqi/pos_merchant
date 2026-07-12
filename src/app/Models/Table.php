@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToCompany;
 use App\Enums\TableShape;
 use App\Enums\TableStatus;
 use Database\Factories\TableFactory;
@@ -49,7 +50,7 @@ use Illuminate\Support\Str;
 class Table extends Model
 {
     /** @use HasFactory<TableFactory> */
-    use HasFactory, SoftDeletes;
+    use BelongsToCompany, HasFactory, SoftDeletes;
 
     /**
      * `tables` clashes with Eloquent's $table property name in

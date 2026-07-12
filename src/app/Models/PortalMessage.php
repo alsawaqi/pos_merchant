@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToCompany;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -37,6 +38,8 @@ use Illuminate\Support\Str;
 ])]
 class PortalMessage extends Model
 {
+    use BelongsToCompany;
+
     public const TARGET_USER = 'user';
 
     public const TARGET_ROLE = 'role';

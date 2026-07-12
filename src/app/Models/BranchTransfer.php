@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToCompany;
 use App\Actions\Pos\Inventory\TransferStockAction;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
@@ -32,6 +33,8 @@ use Illuminate\Support\Str;
 ])]
 class BranchTransfer extends Model
 {
+    use BelongsToCompany;
+
     protected $table = 'pos_branch_transfers';
 
     /**

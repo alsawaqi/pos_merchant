@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToCompany;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -18,6 +19,8 @@ use Illuminate\Database\Eloquent\Model;
  */
 class CompanySetting extends Model
 {
+    use BelongsToCompany;
+
     protected $table = 'pos_company_settings';
 
     protected $guarded = [];

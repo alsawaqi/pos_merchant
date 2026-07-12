@@ -280,17 +280,19 @@ it('PUT returns 404 when targeting a foreign-tenant product', function (): void 
     )->assertNotFound();
 });
 
-it('PUT returns 422 when targeting a foreign-tenant provider', function (): void {
+it('PUT returns 404 when targeting a foreign-tenant provider', function (): void {
     $ctx = makeMerchantActor();
     $product = Product::factory()->for($ctx['company'], 'company')->create();
     $otherCompany = Company::factory()->create();
     $foreignProvider = DeliveryProvider::factory()->for($otherCompany, 'company')->create();
 
-    $response = $this->putJson(
+    // The tenant global scope hides the foreign provider entirely, so it resolves
+    // as not-found (404) rather than reaching the "does not belong" validation —
+    // the same, more-secure outcome as the sibling provider-update test above.
+    $this->putJson(
         "/api/products/{$product->uuid}/delivery-prices/{$foreignProvider->uuid}",
         ['price' => '5.000'],
-    )->assertStatus(422);
-    expect($response->json('message'))->toContain('does not belong');
+    )->assertNotFound();
 });
 
 // =================== PER-PRODUCT PRICES — REMOVE ===================

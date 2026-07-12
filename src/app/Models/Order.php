@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToCompany;
 use App\Enums\OrderSource;
 use App\Enums\OrderStatus;
 use App\Enums\OrderType;
@@ -74,7 +75,7 @@ use Illuminate\Support\Str;
 class Order extends Model
 {
     /** @use HasFactory<OrderFactory> */
-    use HasFactory;
+    use BelongsToCompany, HasFactory;
 
     protected $table = 'pos_orders';
 

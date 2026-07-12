@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToCompany;
 use Database\Factories\ProductDeliveryPriceFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -38,7 +39,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class ProductDeliveryPrice extends Model
 {
     /** @use HasFactory<ProductDeliveryPriceFactory> */
-    use HasFactory;
+    use BelongsToCompany, HasFactory;
 
     protected $table = 'pos_product_delivery_prices';
 

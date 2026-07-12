@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToCompany;
 use App\Enums\LoyaltyRuleStatus;
 use App\Enums\LoyaltyRuleType;
 use Database\Factories\LoyaltyRuleFactory;
@@ -44,7 +45,7 @@ use Illuminate\Support\Str;
 class LoyaltyRule extends Model
 {
     /** @use HasFactory<LoyaltyRuleFactory> */
-    use HasFactory, SoftDeletes;
+    use BelongsToCompany, HasFactory, SoftDeletes;
 
     protected $table = 'pos_loyalty_rules';
 

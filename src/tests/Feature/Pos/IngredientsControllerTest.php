@@ -171,7 +171,13 @@ it('refuses to change the unit of an ingredient referenced by a legacy add-on', 
     // Legacy single-ingredient add-on (pos_addons.ingredient_id/ingredient_qty)
     // — still read by the sale-time deduction pipeline; no stock/movement/recipe.
     $ingredient = Ingredient::factory()->for($ctx['company'], 'company')->create(['unit' => 'kg']);
-    \App\Models\AddOn::factory()->create(['ingredient_id' => $ingredient->id, 'ingredient_qty' => '1.000']);
+    // The add-on must belong to the actor's company (an add-on can only reference a
+    // same-company ingredient); otherwise the tenant-scoped reference check can't see it.
+    \App\Models\AddOn::factory()->create([
+        'company_id' => $ctx['company']->id,
+        'ingredient_id' => $ingredient->id,
+        'ingredient_qty' => '1.000',
+    ]);
 
     $response = $this->patchJson("/api/ingredients/{$ingredient->uuid}", ['unit' => 'g'])
         ->assertStatus(422);

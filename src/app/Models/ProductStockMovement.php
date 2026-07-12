@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToCompany;
 use App\Enums\ProductStockMovementType;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
@@ -35,6 +36,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 ])]
 class ProductStockMovement extends Model
 {
+    use BelongsToCompany;
+
     protected $table = 'pos_product_stock_movements';
 
     public $timestamps = false;

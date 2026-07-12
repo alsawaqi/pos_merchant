@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToCompany;
 use App\Enums\RestockRequestStatus;
 use Database\Factories\RestockRequestFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -43,7 +44,7 @@ use Illuminate\Support\Str;
 class RestockRequest extends Model
 {
     /** @use HasFactory<RestockRequestFactory> */
-    use HasFactory;
+    use BelongsToCompany, HasFactory;
 
     protected $table = 'pos_restock_requests';
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToCompany;
 use App\Enums\DiscountAmountType;
 use App\Enums\DiscountScope;
 use App\Enums\DiscountStatus;
@@ -58,7 +59,7 @@ use Illuminate\Support\Str;
 class Discount extends Model
 {
     /** @use HasFactory<DiscountFactory> */
-    use HasFactory, SoftDeletes;
+    use BelongsToCompany, HasFactory, SoftDeletes;
 
     protected $table = 'pos_discounts';
 

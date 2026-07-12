@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToCompany;
 use App\Enums\LoyaltyTransactionType;
 use Database\Factories\LoyaltyTransactionFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -40,7 +41,7 @@ use Illuminate\Support\Str;
 class LoyaltyTransaction extends Model
 {
     /** @use HasFactory<LoyaltyTransactionFactory> */
-    use HasFactory;
+    use BelongsToCompany, HasFactory;
 
     protected $table = 'pos_loyalty_transactions';
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToCompany;
 use App\Enums\AddOnSelectionMode;
 use Database\Factories\AddOnGroupFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -46,7 +47,7 @@ use Illuminate\Support\Str;
 class AddOnGroup extends Model
 {
     /** @use HasFactory<AddOnGroupFactory> */
-    use HasFactory, SoftDeletes;
+    use BelongsToCompany, HasFactory, SoftDeletes;
 
     protected $table = 'pos_addon_groups';
 

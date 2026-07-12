@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToCompany;
 use App\Enums\OfferStatus;
 use App\Enums\OfferType;
 use Database\Factories\OfferFactory;
@@ -60,7 +61,7 @@ use Illuminate\Support\Str;
 class Offer extends Model
 {
     /** @use HasFactory<OfferFactory> */
-    use HasFactory, SoftDeletes;
+    use BelongsToCompany, HasFactory, SoftDeletes;
 
     protected $table = 'pos_offers';
 
