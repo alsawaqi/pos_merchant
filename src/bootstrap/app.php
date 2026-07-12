@@ -9,6 +9,7 @@ use App\Http\Middleware\SetMerchantTenantContext;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -42,6 +43,20 @@ return Application::configure(basePath: dirname(__DIR__))
             SetMerchantTenantContext::class,
             EnsureBranchScope::class,
         ]);
+
+        // Phase 2b — pin the tenant BEFORE route-model binding so the
+        // BelongsToCompany global scope also constrains implicit {model:uuid}
+        // resolution: a cross-tenant uuid now resolves to 404 through the ORM,
+        // not only via the manual refuseIfNotInTenant() guard. This is safe
+        // because SetMerchantTenantContext needs only $request->user() (resolved
+        // once StartSession has run, which is earlier in the priority list), not
+        // any bound model. EnsureBranchScope deliberately stays at the appended
+        // tail — it inspects already-hydrated bound models, so it must run AFTER
+        // SubstituteBindings.
+        $middleware->prependToPriorityList(
+            before: SubstituteBindings::class,
+            prepend: SetMerchantTenantContext::class,
+        );
 
         // The merchant `web` guard redirects guests to /login —
         // matches the route name registered in routes/web.php.

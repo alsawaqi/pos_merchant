@@ -61,3 +61,25 @@ it('stamps company_id from the pinned tenant on create when left empty', functio
     expect($product->company_id)->toBe($actor['company']->id)
         ->and($product->fresh()->company_id)->toBe($actor['company']->id);
 });
+
+it('pins the merchant tenant BEFORE route-model binding so binding is auto-scoped (Phase 2b)', function (): void {
+    // A uuid-bound merchant route; branches/{branch} is representative.
+    $route = collect(app('router')->getRoutes()->getRoutes())
+        ->first(fn ($r) => str_contains((string) $r->uri(), 'branches/{branch'));
+    expect($route)->not->toBeNull();
+
+    $mw = app('router')->gatherRouteMiddleware($route);
+    $tenantIdx = array_search(\App\Http\Middleware\SetMerchantTenantContext::class, $mw, true);
+    $bindingIdx = array_search(\Illuminate\Routing\Middleware\SubstituteBindings::class, $mw, true);
+    $branchScopeIdx = array_search(\App\Http\Middleware\EnsureBranchScope::class, $mw, true);
+
+    expect($tenantIdx)->not->toBeFalse('tenant middleware missing from the route')
+        ->and($bindingIdx)->not->toBeFalse('SubstituteBindings missing from the route')
+        ->and($branchScopeIdx)->not->toBeFalse('branch-scope middleware missing from the route');
+
+    // The tenant must be pinned BEFORE binding (so the global scope filters the
+    // binding query), and branch scope must stay AFTER binding (it reads the
+    // already-hydrated bound model).
+    expect($tenantIdx)->toBeLessThan($bindingIdx)
+        ->and($branchScopeIdx)->toBeGreaterThan($bindingIdx);
+});
