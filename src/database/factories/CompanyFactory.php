@@ -31,7 +31,7 @@ class CompanyFactory extends Factory
             'uuid' => (string) Str::uuid(),
             'name' => fake()->company(),
             'legal_name' => fake()->company().' LLC',
-            'commercial_registration_number' => (string) fake()->unique()->numerify('1#######'),
+            'cr_number' => (string) fake()->unique()->numerify('1#######'),
             'tax_number' => (string) fake()->numerify('OM##########'),
             'contact_name' => fake()->name(),
             'contact_phone' => '+968'.fake()->numerify('########'),

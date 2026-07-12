@@ -57,7 +57,9 @@ return new class extends Migration
             $table->uuid('uuid')->unique();
             $table->string('name');
             $table->string('legal_name')->nullable();
-            $table->string('commercial_registration_number')->nullable();
+            // Real schema renamed this commercial_registration_number -> cr_number
+            // (pos_admin 2026_05_17_120000). Mirror the production column name.
+            $table->string('cr_number')->nullable();
             $table->string('tax_number')->nullable();
             $table->string('contact_name')->nullable();
             $table->string('contact_phone')->nullable();
