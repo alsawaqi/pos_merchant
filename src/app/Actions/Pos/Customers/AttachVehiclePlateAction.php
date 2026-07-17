@@ -72,6 +72,13 @@ final readonly class AttachVehiclePlateAction
                 'plate_number' => $normalised,
             ]);
 
+            // Delta-freshness: the device config delta filters CUSTOMERS by
+            // updated_at — without this touch a portal-attached plate never
+            // reaches the POS devices' offline customer cache until the
+            // customer row is next edited. (pos_api's own device attach path
+            // does the same touch.)
+            $customer->touch();
+
             $this->writeAuditLog->handle(new AuditLogData(
                 event: 'customers.plate.attached',
                 actorUserId: $actor->getKey(),

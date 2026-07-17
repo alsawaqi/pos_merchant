@@ -6,6 +6,7 @@ namespace App\Actions\Pos\Customers;
 
 use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
+use App\Models\Customer;
 use App\Models\CustomerVehiclePlate;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
@@ -37,12 +38,18 @@ final readonly class DetachVehiclePlateAction
 
         DB::transaction(function () use ($plate, $actor, $companyId): void {
             $plateId = $plate->id;
+            $customerId = $plate->customer_id;
             $snapshot = [
-                'customer_id' => $plate->customer_id,
+                'customer_id' => $customerId,
                 'plate_number' => $plate->plate_number,
             ];
 
             $plate->delete();
+
+            // Delta-freshness: touch the parent so the device config delta
+            // (filtered by customer updated_at) propagates the removal to the
+            // POS devices' offline customer cache.
+            Customer::query()->whereKey($customerId)->first()?->touch();
 
             $this->writeAuditLog->handle(new AuditLogData(
                 event: 'customers.plate.detached',
