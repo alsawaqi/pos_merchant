@@ -42,7 +42,7 @@ final class CommissionInvoiceBranchLinesAction
                 sc.branch_id AS branch_id,
                 pos_branches.name AS branch_name,
                 sc.party_type AS party_type,
-                COALESCE(SUM(sc.commission_amount), 0) AS total
+                COALESCE(SUM(COALESCE(sc.settled_amount, sc.commission_amount)), 0) AS total
             ')
             ->groupBy('sc.branch_id', 'pos_branches.name', 'sc.party_type')
             ->get();
