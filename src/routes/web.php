@@ -41,6 +41,7 @@ use App\Http\Controllers\Pos\VoidReasonsController;
 use App\Http\Controllers\Pos\OffersController;
 use App\Http\Controllers\Pos\OrdersController;
 use App\Http\Controllers\Pos\PayoutsController;
+use App\Http\Controllers\Pos\CommissionInvoicesController;
 use App\Http\Controllers\Pos\PhysicalItemsController;
 use App\Http\Controllers\Pos\BranchTargetsController;
 use App\Http\Controllers\Pos\DeliveriesController;
@@ -852,6 +853,12 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('payouts.index');
         Route::get('payouts/{payout:uuid}/lines', [PayoutsController::class, 'lines'])
             ->name('payouts.lines');
+        // Phase B — the merchant's own commission invoices (what they OWE the
+        // platform on cash/bank_pos sales; read-only, issued by the platform).
+        Route::get('commission-invoices', [CommissionInvoicesController::class, 'index'])
+            ->name('commission-invoices.index');
+        Route::get('commission-invoices/{invoice:uuid}/lines', [CommissionInvoicesController::class, 'lines'])
+            ->name('commission-invoices.lines');
         Route::get('reports/product-performance', [ReportsController::class, 'productPerformance'])
             ->name('reports.product-performance');
         Route::get('reports/recipe-cost', [ReportsController::class, 'recipeCost'])

@@ -552,6 +552,52 @@ export function fetchMyPayoutLines(uuid: string): Promise<{ data: MerchantPayout
     return apiGet<{ data: MerchantPayoutLine[] }>(`/api/payouts/${uuid}/lines`);
 }
 
+// ---- Commission invoices (Phase B — what the merchant OWES the platform) ----
+//
+// The reverse of payouts: for cash / bank-POS sales the money went straight to
+// the merchant, so the platform bills them its commission cut. Read-only (the
+// platform issues + collects them). Money values are decimal-3 strings.
+
+export type MerchantInvoiceStatus = 'issued' | 'paid' | 'void';
+
+export interface MerchantInvoiceRow {
+    uuid: string;
+    period_from: string;        // ISO date
+    period_to: string;          // ISO date
+    status: MerchantInvoiceStatus;
+    gross_amount: string;       // decimal-3 — collected on the billed sales
+    platform_amount: string;    // decimal-3 — platform cut owed
+    other_amount: string;       // decimal-3 — other cut owed
+    merchant_amount: string;    // decimal-3 — what the merchant kept
+    total_owed: string;         // decimal-3 — what the merchant owes the platform
+    sales_count: number;
+    reference: string | null;
+    paid_at: string | null;     // ISO datetime
+    created_at: string | null;  // ISO datetime
+}
+
+export function fetchMyCommissionInvoices(opts?: { status?: MerchantInvoiceStatus }): Promise<{ data: MerchantInvoiceRow[]; meta?: Record<string, unknown> }> {
+    const url = opts?.status ? `/api/commission-invoices?status=${opts.status}` : '/api/commission-invoices';
+    return apiGet<{ data: MerchantInvoiceRow[]; meta?: Record<string, unknown> }>(url);
+}
+
+// An invoice's per-branch breakdown — the statement detail the merchant receives.
+export interface MerchantInvoiceLine {
+    branch_id: number;
+    branch_name: string;
+    /** All decimal-3 OMR strings. */
+    gross: string;
+    platform: string;
+    other: string;
+    merchant_kept: string;
+    total_owed: string;
+    num_sales: number;
+}
+
+export function fetchMyCommissionInvoiceLines(uuid: string): Promise<{ data: MerchantInvoiceLine[] }> {
+    return apiGet<{ data: MerchantInvoiceLine[] }>(`/api/commission-invoices/${uuid}/lines`);
+}
+
 // ============================================================
 // Round-Up Donation Report (§5.11.9)
 // ============================================================
@@ -644,8 +690,9 @@ export function fetchAuditLog(filter: AuditLogFilter): Promise<{ data: AuditLogP
 
 // ---- Sales / Orders list (not an aggregate report) -------------
 
-/** Reconciliation/payout lifecycle of a sale's commission. */
-export type CommissionStatus = 'none' | 'pending' | 'reconciled' | 'in_payout' | 'paid';
+/** Reconciliation/payout lifecycle of a sale's commission. 'direct' = a pure
+ *  cash/bank-POS sale the merchant collected in hand (Phase B). */
+export type CommissionStatus = 'none' | 'direct' | 'pending' | 'reconciled' | 'in_payout' | 'paid';
 
 /**
  * Per-sale commission split + status (settled-aware; a sale is finalized only

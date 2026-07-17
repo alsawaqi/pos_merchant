@@ -2646,6 +2646,35 @@
                 }
             }
         },
+        "invoices": {
+            "section_title": "Commission owed",
+            "section_subtitle": "What you owe the platform on cash and bank-POS sales — money you collected directly, so the platform invoices its commission cut. Card sales settle via payouts above.",
+            "columns": {
+                "period": "Period",
+                "owed": "Owed",
+                "status": "Status",
+                "sales": "Sales",
+                "paid_on": "Paid on",
+                "reference": "Reference"
+            },
+            "statuses": {
+                "issued": "Issued",
+                "paid": "Paid",
+                "void": "Void"
+            },
+            "empty": "No commission invoices yet.",
+            "toggle": "Per-branch breakdown",
+            "lines": {
+                "loading": "Loading branch detail…",
+                "branch": "Branch",
+                "sales": "Sales",
+                "platform": "Platform",
+                "other": "Other",
+                "merchant_kept": "You kept",
+                "owed": "Owed",
+                "empty": "No branch detail for this invoice."
+            }
+        },
         "product_performance": {
             "page_title": "Product Performance Report",
             "top_by_revenue": "Top by revenue",
@@ -2977,6 +3006,7 @@
         "commission": {
             "status": {
                 "none": "—",
+                "direct": "In hand",
                 "pending": "Pending",
                 "reconciled": "Reconciled",
                 "in_payout": "In payout",
@@ -2984,6 +3014,7 @@
             },
             "note": {
                 "none": "No commission — you keep the full amount.",
+                "direct": "Cash / bank-POS you collected directly — already in hand. The platform bills its commission separately.",
                 "pending": "Estimated. Final once reconciled and paid out.",
                 "reconciled": "Reconciled with the bank. Awaiting payout.",
                 "in_payout": "Queued in a payout. Final once it is marked paid."

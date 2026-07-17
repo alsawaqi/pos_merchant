@@ -151,10 +151,15 @@ final readonly class PayoutBreakdownReportAction
     /**
      * Monthly commission roll-up over the window (chronological). Per month:
      * gross + the admin/bank/other commission + commission_total, plus the
-     * merchant's net take split into FINALIZED (its payout is PAID) vs PENDING
-     * (still held until paid out). Settled-aware, mirroring the headline; the
-     * payout-paid bucket is the same rule as the per-sale status + the Sales
-     * report. Driver-aware month key (sqlite strftime / Postgres to_char).
+     * merchant's net take split into FINALIZED (realised) vs PENDING (still
+     * awaiting a payout). Realised = the money is no longer waiting on the
+     * platform, which is EITHER of:
+     *   - card money in a PAID payout, OR
+     *   - a pure CASH/BANK_POS sale (the merchant collected it directly — Phase B;
+     *     it's never swept into a payout, so it must NOT sit in "pending" forever).
+     * Only card money genuinely awaiting a payout stays in pending_net. Settled-
+     * aware, mirroring the headline + the per-sale DIRECT/PAID status. Driver-aware
+     * month key (sqlite strftime / Postgres to_char).
      *
      * @param  list<int>|null  $branchScope
      * @return list<array{month: string, num_sales: int, gross: string, admin_commission: string, bank_commission: string, other_commission: string, commission_total: string, merchant_net: string, finalized_net: string, pending_net: string}>
@@ -178,13 +183,21 @@ final readonly class PayoutBreakdownReportAction
             return $q;
         };
 
+        // Realised = paid out (card) OR a pure cash/bank_pos sale (collected
+        // directly). Correlated EXISTS on pos_payments — portable across sqlite +
+        // Postgres. Only the merchant party's realised amount is read below.
+        $realisedCase = "CASE WHEN pos_payouts.status = 'paid' OR ("
+            ."EXISTS (SELECT 1 FROM pos_payments hp WHERE hp.order_id = pos_sale_commissions.order_id AND hp.method IN ('cash','bank_pos') AND hp.status <> 'failed') "
+            ."AND NOT EXISTS (SELECT 1 FROM pos_payments cp WHERE cp.order_id = pos_sale_commissions.order_id AND cp.method = 'card' AND cp.status <> 'failed')"
+            .") THEN COALESCE(pos_sale_commissions.settled_amount, pos_sale_commissions.commission_amount) ELSE 0 END";
+
         $rows = $scoped(
             DB::table('pos_sale_commissions')
                 ->leftJoin('pos_payouts', 'pos_payouts.id', '=', 'pos_sale_commissions.payout_id'),
         )
             ->selectRaw("$monthExpr AS month, pos_sale_commissions.party_type AS party,
                 COALESCE(SUM(COALESCE(pos_sale_commissions.settled_amount, pos_sale_commissions.commission_amount)), 0) AS amount,
-                COALESCE(SUM(CASE WHEN pos_payouts.status = 'paid' THEN COALESCE(pos_sale_commissions.settled_amount, pos_sale_commissions.commission_amount) ELSE 0 END), 0) AS paid_amount")
+                COALESCE(SUM($realisedCase), 0) AS realised_amount")
             ->groupByRaw("$monthExpr, pos_sale_commissions.party_type")
             ->get();
 
@@ -197,13 +210,13 @@ final readonly class PayoutBreakdownReportAction
         $agg = [];
         foreach ($rows as $r) {
             $m = (string) $r->month;
-            $agg[$m] ??= ['platform' => 0.0, 'bank' => 0.0, 'other' => 0.0, 'merchant' => 0.0, 'merchant_paid' => 0.0];
+            $agg[$m] ??= ['platform' => 0.0, 'bank' => 0.0, 'other' => 0.0, 'merchant' => 0.0, 'merchant_realised' => 0.0];
             $party = (string) $r->party;
             if (array_key_exists($party, $agg[$m])) {
                 $agg[$m][$party] = (float) $r->amount;
             }
             if ($party === 'merchant') {
-                $agg[$m]['merchant_paid'] = (float) $r->paid_amount;
+                $agg[$m]['merchant_realised'] = (float) $r->realised_amount;
             }
         }
 
@@ -222,8 +235,8 @@ final readonly class PayoutBreakdownReportAction
                 'other_commission' => self::money($a['other']),
                 'commission_total' => self::money($commission),
                 'merchant_net' => self::money($merch),
-                'finalized_net' => self::money($a['merchant_paid']),
-                'pending_net' => self::money($merch - $a['merchant_paid']),
+                'finalized_net' => self::money($a['merchant_realised']),
+                'pending_net' => self::money($merch - $a['merchant_realised']),
             ];
         }
 

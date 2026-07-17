@@ -18,11 +18,16 @@ import {
     fetchPayoutBreakdown,
     fetchMyPayouts,
     fetchMyPayoutLines,
+    fetchMyCommissionInvoices,
+    fetchMyCommissionInvoiceLines,
     type PayoutBreakdownPayload,
     type PayoutPartyType,
     type MerchantPayoutRow,
     type MerchantPayoutStatus,
     type MerchantPayoutLine,
+    type MerchantInvoiceRow,
+    type MerchantInvoiceStatus,
+    type MerchantInvoiceLine,
 } from '@/lib/api/reports';
 import { ChevronDown, ChevronRight } from 'lucide-vue-next';
 import { listBranches, type Branch } from '@/lib/api/branches';
@@ -84,6 +89,39 @@ async function togglePayout(uuid: string): Promise<void> {
     }
 }
 
+// ---- Commission invoices (Phase B — what the merchant OWES the platform) ----
+
+const invoices = ref<MerchantInvoiceRow[]>([]);
+const invoicesLoading = ref(false);
+const expandedInvoices = ref<Set<string>>(new Set());
+const invoiceLines = ref<Map<string, MerchantInvoiceLine[]>>(new Map());
+const invoiceLinesLoading = ref<Set<string>>(new Set());
+
+async function toggleInvoice(uuid: string): Promise<void> {
+    const next = new Set(expandedInvoices.value);
+    if (next.has(uuid)) {
+        next.delete(uuid);
+        expandedInvoices.value = next;
+        return;
+    }
+    next.add(uuid);
+    expandedInvoices.value = next;
+    if (!invoiceLines.value.has(uuid)) {
+        invoiceLinesLoading.value = new Set(invoiceLinesLoading.value).add(uuid);
+        try {
+            const r = await fetchMyCommissionInvoiceLines(uuid);
+            invoiceLines.value = new Map(invoiceLines.value).set(uuid, r.data);
+        } catch (err) {
+            invoiceLines.value = new Map(invoiceLines.value).set(uuid, []);
+            if (!(err instanceof ApiError)) throw err;
+        } finally {
+            const done = new Set(invoiceLinesLoading.value);
+            done.delete(uuid);
+            invoiceLinesLoading.value = done;
+        }
+    }
+}
+
 onMounted(async () => {
     try {
         const r = await listBranches();
@@ -103,7 +141,31 @@ onMounted(async () => {
     } finally {
         payoutsLoading.value = false;
     }
+
+    invoicesLoading.value = true;
+    try {
+        const r = await fetchMyCommissionInvoices();
+        invoices.value = r.data;
+    } catch (err) {
+        // Non-fatal: leave the list empty.
+        if (!(err instanceof ApiError)) throw err;
+    } finally {
+        invoicesLoading.value = false;
+    }
 });
+
+function invoicePeriod(row: MerchantInvoiceRow): string {
+    return `${formatDate(row.period_from)} – ${formatDate(row.period_to)}`;
+}
+
+function invoiceStatusClass(status: MerchantInvoiceStatus): string {
+    switch (status) {
+        case 'paid': return 'bg-emerald-100 text-emerald-700';
+        case 'issued': return 'bg-amber-100 text-amber-700';
+        case 'void': return 'bg-slate-100 text-slate-600';
+        default: return 'bg-slate-100 text-slate-600';
+    }
+}
 
 // ---- Payout history helpers ----
 
@@ -339,6 +401,86 @@ const partyChart = computed(() => {
                 </table>
 
                 <div v-else-if="!payoutsLoading" class="p-8 text-center text-sm text-slate-500">{{ t('reports.payouts.history.empty') }}</div>
+            </div>
+        </section>
+
+        <!-- Commission owed: what you owe the platform on cash / bank-POS sales -->
+        <section class="mt-8">
+            <h2 class="mb-1 text-lg font-semibold text-slate-900">{{ t('reports.invoices.section_title') }}</h2>
+            <p class="mb-3 max-w-3xl text-sm text-slate-500">{{ t('reports.invoices.section_subtitle') }}</p>
+
+            <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+                <table v-if="invoices.length" class="w-full text-sm">
+                    <thead class="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                            <th class="px-5 py-2 text-start">{{ t('reports.invoices.columns.period') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.invoices.columns.owed') }}</th>
+                            <th class="px-5 py-2 text-start">{{ t('reports.invoices.columns.status') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.invoices.columns.sales') }}</th>
+                            <th class="px-5 py-2 text-start">{{ t('reports.invoices.columns.paid_on') }}</th>
+                            <th class="px-5 py-2 text-start">{{ t('reports.invoices.columns.reference') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template v-for="row in invoices" :key="row.uuid">
+                            <tr class="border-b border-slate-100">
+                                <td class="px-5 py-2 text-slate-700 tabular-nums">
+                                    <div class="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            class="text-slate-400 transition hover:text-slate-700"
+                                            :title="t('reports.invoices.toggle')"
+                                            @click="toggleInvoice(row.uuid)"
+                                        >
+                                            <ChevronDown v-if="expandedInvoices.has(row.uuid)" class="size-4" />
+                                            <ChevronRight v-else class="size-4" />
+                                        </button>
+                                        {{ invoicePeriod(row) }}
+                                    </div>
+                                </td>
+                                <td class="px-5 py-2 text-end font-semibold tabular-nums text-rose-700">{{ row.total_owed }}</td>
+                                <td class="px-5 py-2">
+                                    <span class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold" :class="invoiceStatusClass(row.status)">{{ t(`reports.invoices.statuses.${row.status}`) }}</span>
+                                </td>
+                                <td class="px-5 py-2 text-end tabular-nums text-slate-600">{{ row.sales_count }}</td>
+                                <td class="px-5 py-2 text-slate-700 tabular-nums">{{ row.paid_at ? formatDate(row.paid_at) : '—' }}</td>
+                                <td class="px-5 py-2 text-slate-600">{{ row.reference ?? '—' }}</td>
+                            </tr>
+
+                            <!-- Per-branch breakdown of this invoice (your statement detail). -->
+                            <tr v-if="expandedInvoices.has(row.uuid)" class="border-b border-slate-100 bg-slate-50">
+                                <td colspan="6" class="px-5 py-3">
+                                    <div v-if="invoiceLinesLoading.has(row.uuid)" class="text-sm text-slate-500">{{ t('reports.invoices.lines.loading') }}</div>
+                                    <table v-else-if="(invoiceLines.get(row.uuid) ?? []).length" class="w-full text-xs">
+                                        <thead class="text-slate-400">
+                                            <tr>
+                                                <th class="py-1 text-start font-medium">{{ t('reports.invoices.lines.branch') }}</th>
+                                                <th class="py-1 text-end font-medium">{{ t('reports.invoices.lines.sales') }}</th>
+                                                <th class="py-1 text-end font-medium">{{ t('reports.invoices.lines.platform') }}</th>
+                                                <th class="py-1 text-end font-medium">{{ t('reports.invoices.lines.other') }}</th>
+                                                <th class="py-1 text-end font-medium">{{ t('reports.invoices.lines.merchant_kept') }}</th>
+                                                <th class="py-1 text-end font-medium">{{ t('reports.invoices.lines.owed') }}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="ln in (invoiceLines.get(row.uuid) ?? [])" :key="ln.branch_id">
+                                                <td class="py-1 text-slate-700">{{ ln.branch_name }}</td>
+                                                <td class="py-1 text-end tabular-nums text-slate-600">{{ ln.num_sales }}</td>
+                                                <td class="py-1 text-end tabular-nums text-slate-600">{{ ln.platform }}</td>
+                                                <td class="py-1 text-end tabular-nums text-slate-600">{{ ln.other }}</td>
+                                                <td class="py-1 text-end tabular-nums text-slate-400">{{ ln.merchant_kept }}</td>
+                                                <td class="py-1 text-end font-semibold tabular-nums text-rose-700">{{ ln.total_owed }}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    <div v-else class="text-sm text-slate-500">{{ t('reports.invoices.lines.empty') }}</div>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+
+                <div v-else-if="!invoicesLoading" class="p-8 text-center text-sm text-slate-500">{{ t('reports.invoices.empty') }}</div>
             </div>
         </section>
     </ReportShell>

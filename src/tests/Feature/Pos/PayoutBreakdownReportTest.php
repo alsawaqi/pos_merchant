@@ -160,6 +160,37 @@ it('rolls the commission up per month with a finalized vs pending split', functi
     expect($rows[1]['pending_net'])->toBe('1.960'); // not paid out
 });
 
+it('counts a pure cash sale as realised income (in hand), never pending forever (Phase B)', function (): void {
+    $ctx = makeMerchantActor();
+    $cid = $ctx['company']->id;
+    $bid = $ctx['branch']->id;
+
+    // A real CASH sale — the merchant collected the money directly. It is NEVER
+    // swept into a payout (leak fix), so it must land in realised (finalized),
+    // not accumulate in pending forever.
+    $orderId = (int) DB::table('pos_orders')->insertGetId([
+        'uuid' => (string) Str::uuid(), 'company_id' => $cid, 'branch_id' => $bid,
+        'order_type' => 'quick', 'status' => 'paid', 'source' => 'main_pos',
+        'subtotal' => '2.000', 'discount_total' => 0, 'tax_total' => 0, 'grand_total' => '2.000',
+        'opened_at' => '2026-07-05 10:00:00', 'closed_at' => '2026-07-05 10:00:00',
+        'created_at' => '2026-07-05 10:00:00', 'updated_at' => '2026-07-05 10:00:00',
+    ]);
+    DB::table('pos_payments')->insert([
+        'uuid' => (string) Str::uuid(), 'order_id' => $orderId, 'method' => 'cash',
+        'amount' => '2.000', 'status' => 'success', 'pending_reconciliation' => false,
+        'captured_at' => '2026-07-05 10:00:00', 'created_at' => '2026-07-05 10:00:00', 'updated_at' => '2026-07-05 10:00:00',
+    ]);
+    seedSale($cid, $orderId, $bid, '0.040', '0.000', '1.960', '2026-07-05 10:00:00');
+
+    $rows = $this->getJson('/api/reports/payouts?date_from=2026-07-01&date_to=2026-07-31')
+        ->assertOk()->json('data.by_month');
+
+    expect($rows)->toHaveCount(1);
+    expect($rows[0]['merchant_net'])->toBe('1.960');
+    expect($rows[0]['finalized_net'])->toBe('1.960'); // realised in hand
+    expect($rows[0]['pending_net'])->toBe('0.000');    // NOT pending
+});
+
 it('breaks the payout down per branch', function (): void {
     $ctx = makeMerchantActor();
     $cid = $ctx['company']->id;

@@ -1397,6 +1397,8 @@ return new class extends Migration
             $table->boolean('is_settled')->default(false);
             $table->timestamp('settled_at')->nullable();
             $table->unsignedBigInteger('settlement_id')->nullable();
+            // Phase B — claim into a commission invoice (cash/bank_pos platform+other rows).
+            $table->unsignedBigInteger('invoice_id')->nullable();
             $table->unique(['order_id', 'sort_order'], 'pos_sale_commissions_order_sort_unique');
             $table->index(['company_id', 'occurred_at'], 'pos_sale_commissions_company_occurred_idx');
         });
@@ -1439,6 +1441,33 @@ return new class extends Migration
             $table->unsignedBigInteger('created_by_user_id')->nullable();
             $table->unsignedBigInteger('paid_by_user_id')->nullable();
             $table->timestamp('paid_at')->nullable();
+            $table->timestamps();
+        });
+
+        // Phase B — commission invoices (merchant owes the platform on cash/
+        // bank_pos sales; issued + collected by pos_admin, the merchant reads its
+        // own). Schema owned by pos_admin.
+        Schema::create('pos_commission_invoices', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->unsignedBigInteger('company_id')->index();
+            $table->unsignedBigInteger('branch_id')->nullable();
+            $table->timestamp('period_from');
+            $table->timestamp('period_to');
+            $table->string('status', 20)->default('issued');
+            $table->decimal('gross_amount', 12, 3)->default(0);
+            $table->decimal('platform_amount', 12, 3)->default(0);
+            $table->decimal('other_amount', 12, 3)->default(0);
+            $table->decimal('merchant_amount', 12, 3)->default(0);
+            $table->decimal('total_owed', 12, 3)->default(0);
+            $table->unsignedInteger('sales_count')->default(0);
+            $table->string('reference', 120)->nullable();
+            $table->text('note')->nullable();
+            $table->unsignedBigInteger('created_by_user_id')->nullable();
+            $table->unsignedBigInteger('paid_by_user_id')->nullable();
+            $table->timestamp('paid_at')->nullable();
+            $table->unsignedBigInteger('voided_by_user_id')->nullable();
+            $table->timestamp('voided_at')->nullable();
             $table->timestamps();
         });
 
