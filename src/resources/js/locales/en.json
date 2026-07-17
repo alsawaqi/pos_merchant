@@ -2960,6 +2960,7 @@
             "delivery": "Delivery",
             "car": "Car"
         },
+        "split_badge": "Split",
         "payment_methods": {
             "cash": "Cash",
             "card": "Card",

@@ -738,6 +738,8 @@ export interface OrderListRow extends SaleCommissionInfo {
     grand_total: string;
     opened_at: string | null;
     closed_at: string | null;
+    /** One entry per tender leg — a split shows several (method + decimal-3 amount). */
+    tenders: { method: string; amount: string }[];
 }
 
 export interface OrderListPayload {

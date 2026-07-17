@@ -24,6 +24,26 @@ it('lists the company orders in the date window, tenant-scoped, with totals', fu
     expect($res->json('data.totals.grand_total'))->toBe('8.000'); // 5 + 3
 });
 
+it('carries the per-leg tender summary so a split reads off the list', function (): void {
+    $ctx = makeMerchantActor();
+    $order = Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->paid()->create(['opened_at' => '2026-06-15 10:00:00', 'grand_total' => '10.000']);
+    // Half cash / half card split + a failed attempt that must not appear.
+    foreach ([['cash', '5.000', 'success'], ['card', '5.000', 'success'], ['card', '5.000', 'failed']] as [$method, $amount, $status]) {
+        \Illuminate\Support\Facades\DB::table('pos_payments')->insert([
+            'uuid' => (string) \Illuminate\Support\Str::uuid(), 'order_id' => $order->id, 'method' => $method,
+            'amount' => $amount, 'status' => $status, 'pending_reconciliation' => false,
+            'captured_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+        ]);
+    }
+
+    $row = $this->getJson('/api/orders?date_from=2026-06-01&date_to=2026-06-30')->assertOk()->json('data.rows.0');
+
+    expect($row['tenders'])->toHaveCount(2)
+        ->and($row['tenders'][0]['method'])->toBe('cash')
+        ->and($row['tenders'][1]['method'])->toBe('card')
+        ->and($row['tenders'][1]['amount'])->toBe('5.000');
+});
+
 it('filters orders by branch', function (): void {
     $ctx = makeMerchantActor();
     $b1 = $ctx['branch'];

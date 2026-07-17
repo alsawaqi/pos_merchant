@@ -2960,6 +2960,7 @@
             "delivery": "توصيل",
             "car": "سيارة"
         },
+        "split_badge": "مقسّم",
         "payment_methods": {
             "cash": "نقدًا",
             "card": "بطاقة",

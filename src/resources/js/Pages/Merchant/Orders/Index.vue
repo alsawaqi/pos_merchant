@@ -145,6 +145,17 @@ function sourceLabel(source: string | null): string {
     return label !== key ? label : source.replace(/_/g, ' ');
 }
 
+// Tender-method chip colours (matches the admin workspace's method colours).
+function tenderChipClass(method: string): string {
+    switch (method) {
+        case 'cash': return 'bg-emerald-50 text-emerald-700';
+        case 'card': return 'bg-indigo-50 text-indigo-700';
+        case 'bank_pos': return 'bg-sky-50 text-sky-700';
+        case 'gift': return 'bg-amber-50 text-amber-700';
+        default: return 'bg-slate-100 text-slate-600';
+    }
+}
+
 // Commission/payout lifecycle chip: direct (cash in hand) | pending → reconciled → in_payout → paid.
 function commissionStatusClass(status: string): string {
     switch (status) {
@@ -253,7 +264,24 @@ function commissionStatusClass(status: string): string {
                             </td>
                             <td class="px-5 py-2 text-end tabular-nums text-slate-600">{{ row.items_count }}</td>
                             <td class="px-5 py-2 text-slate-700">{{ row.customer_name ?? (row.plate_number ?? '—') }}</td>
-                            <td class="px-5 py-2 text-end font-semibold tabular-nums text-slate-900">{{ row.grand_total }}</td>
+                            <td class="px-5 py-2 text-end font-semibold tabular-nums text-slate-900">
+                                {{ row.grand_total }}
+                                <!-- How it was PAID: one chip per tender leg. A split
+                                     (several legs) shows each leg's method + amount,
+                                     so "half cash / half card" reads off the list. -->
+                                <div v-if="(row.tenders ?? []).length" class="mt-0.5 flex flex-wrap justify-end gap-1">
+                                    <span
+                                        v-if="row.tenders.length > 1"
+                                        class="inline-flex rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700"
+                                    >{{ t('orders.split_badge') }}</span>
+                                    <span
+                                        v-for="(tn, i) in row.tenders"
+                                        :key="i"
+                                        class="inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+                                        :class="tenderChipClass(tn.method)"
+                                    >{{ t(`orders.payment_methods.${tn.method}`) }}<template v-if="row.tenders.length > 1">&nbsp;{{ tn.amount }}</template></span>
+                                </div>
+                            </td>
                             <!-- Merchant net after commission (settled-aware). -->
                             <td class="px-5 py-2 text-end font-semibold tabular-nums" :class="row.commission_status === 'none' ? 'text-slate-400' : 'text-teal-700'">{{ row.merchant_net }}</td>
                             <td class="px-5 py-2">

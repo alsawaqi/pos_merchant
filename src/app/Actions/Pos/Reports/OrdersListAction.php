@@ -10,6 +10,7 @@ use App\Enums\OrderStatus;
 use App\Models\Order;
 use App\Support\MerchantTenantContext;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Merchant "Sales / Orders" list -- a paginated, date-filterable feed of
@@ -79,7 +80,17 @@ final readonly class OrdersListAction
         $commissionByOrder = SaleCommissionStatus::forOrders($companyId, $orderIds);
         $giftByOrder = SaleCommissionStatus::giftTotals($companyId, $orderIds);
 
-        $rows = $orders->map(static function (Order $o) use ($commissionByOrder, $giftByOrder): array {
+        // Per-order tender summary — how each sale was PAID, one batched read.
+        // A >1-leg order is a split; the UI shows one chip per leg (method +
+        // amount) so "half cash / half card" is visible right on the list.
+        $tendersByOrder = $orderIds === [] ? collect() : DB::table('pos_payments')
+            ->whereIn('order_id', $orderIds)
+            ->where('status', '<>', 'failed')
+            ->orderBy('id')
+            ->get(['order_id', 'method', 'amount'])
+            ->groupBy('order_id');
+
+        $rows = $orders->map(static function (Order $o) use ($commissionByOrder, $giftByOrder, $tendersByOrder): array {
             $commission = $commissionByOrder[(int) $o->id]
                 ?? SaleCommissionStatus::none((string) $o->grand_total, $giftByOrder[(int) $o->id] ?? 0.0);
 
@@ -111,6 +122,13 @@ final readonly class OrdersListAction
                 'commission_status' => $commission['commission_status'],
                 'is_finalized' => $commission['is_finalized'],
                 'payout_date' => $commission['payout_date'],
+                // One entry per tender leg (split = several) — method + amount.
+                // number_format: raw reads drop trailing zeros on SQLite.
+                'tenders' => collect($tendersByOrder->get($o->id, collect()))
+                    ->map(static fn ($t): array => [
+                        'method' => (string) $t->method,
+                        'amount' => number_format((float) $t->amount, 3, '.', ''),
+                    ])->values()->all(),
             ];
         })->all();
 
