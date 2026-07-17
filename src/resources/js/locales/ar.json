@@ -2928,7 +2928,8 @@
         "pagination": "صفحة {page} من {last} · {total} إجمالاً",
         "filters": {
             "status": "الحالة",
-            "status_all": "كل الحالات"
+            "status_all": "كل الحالات",
+            "auto_refresh": "تحديث تلقائي (30 ث)"
         },
         "totals": {
             "count": "الطلبات",
@@ -2939,12 +2940,18 @@
             "order": "رقم الطلب",
             "branch": "الفرع",
             "type": "النوع",
+            "source": "المصدر",
             "status": "الحالة",
             "items": "الأصناف",
             "customer": "العميل",
             "total": "الإجمالي",
             "net": "الصافي",
             "payout": "الدفع"
+        },
+        "sources": {
+            "main_pos": "نقطة البيع الرئيسية",
+            "handheld": "الجهاز المحمول",
+            "customer_tablet": "جهاز العميل اللوحي"
         },
         "types": {
             "quick": "سريع",
@@ -2993,6 +3000,19 @@
             "no_loyalty": "لا يوجد نشاط ولاء على هذا الطلب.",
             "subtotal": "المجموع الفرعي",
             "discount": "الخصم",
+            "comp": "ضيافة",
+            "comps": "الضيافات والهدايا",
+            "gift": "هدية",
+            "offer": "عرض",
+            "tables": "الطاولة/الطاولات",
+            "delivery": "التوصيل",
+            "delivery_provider": "مزوّد التوصيل",
+            "delivery_reference": "المرجع",
+            "delivery_phone": "هاتف العميل",
+            "expected_payout": "المستحق المتوقع",
+            "delivery_confirmed": "تأكد في",
+            "void_reason": "سبب الإلغاء",
+            "roundup": "تبرع التقريب",
             "tax": "الضريبة",
             "grand_total": "الإجمالي",
             "qty": "الكمية",

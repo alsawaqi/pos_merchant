@@ -45,6 +45,9 @@ use Illuminate\Support\Str;
     'reconciled_by_admin_id',
     'reconciled_at',
     'captured_at',
+    // Charity round-up riding this tender (device round-up feature).
+    'roundup_amount',
+    'charity_transaction_id',
 ])]
 class Payment extends Model
 {
@@ -62,6 +65,7 @@ class Payment extends Model
             'method' => PaymentMethod::class,
             'amount' => 'decimal:3',
             'change_given' => 'decimal:3',
+            'roundup_amount' => 'decimal:3',
             'status' => PaymentStatus::class,
             'pending_reconciliation' => 'boolean',
             'reconciled_at' => 'datetime',

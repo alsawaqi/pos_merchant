@@ -3,9 +3,12 @@
  * Order detail slide-over (v2 #2).
  *
  * Given an order uuid, fetches GET /api/orders/{uuid} and renders the
- * full order: header (branch/staff/customer/plate/note), line items
- * with add-ons + per-line discounts, order-level discounts in effect
- * (#4), payments (incl. card auth code) and loyalty points moved.
+ * full order: header (branch/staff/customer/device/plate/table(s)/
+ * delivery/void-reason/note), line items with add-ons + per-line
+ * discounts and comps, order-level discounts (#4, offers badged) and
+ * comps, totals incl. the comp line so the arithmetic reconciles,
+ * payments (incl. card auth code + charity round-up) and loyalty
+ * points moved.
  *
  * v-model:uuid contract — parent sets the uuid to open, the drawer
  * clears it (emits null) on close.
@@ -87,10 +90,25 @@ function statusLabel(status: string | null): string {
     return label !== key ? label : status;
 }
 
-// Commission/payout lifecycle chip: pending → reconciled → in_payout → paid.
+/** main_pos / handheld / customer_tablet → translated label. */
+function sourceLabel(source: string | null): string {
+    if (!source) return '—';
+    const key = `orders.sources.${source}`;
+    const label = t(key);
+    return label !== key ? label : source.replace(/_/g, ' ');
+}
+
+/** Comp row label: the reason snapshot, or Gift for is_gift rows. */
+function compLabel(c: { reason: string | null; is_gift: boolean }): string {
+    if (c.is_gift) return t('orders.detail.gift');
+    return c.reason ?? t('orders.detail.comp');
+}
+
+// Commission/payout lifecycle chip: direct (cash in hand) | pending → reconciled → in_payout → paid.
 function commissionStatusClass(status: string): string {
     switch (status) {
         case 'paid': return 'bg-emerald-100 text-emerald-700';
+        case 'direct': return 'bg-teal-100 text-teal-700';
         case 'in_payout': return 'bg-indigo-100 text-indigo-700';
         case 'reconciled': return 'bg-sky-100 text-sky-700';
         case 'pending': return 'bg-amber-100 text-amber-700';
@@ -132,6 +150,11 @@ function commissionStatusClass(status: string): string {
                         <dd class="text-end text-slate-900">{{ orderTypeLabel(detail.order.order_type) }}</dd>
                         <dt class="text-slate-500">{{ t('orders.detail.served_by') }}</dt>
                         <dd class="text-end text-slate-900">{{ detail.order.staff?.name ?? '—' }}</dd>
+                        <dt class="text-slate-500">{{ t('orders.detail.source') }}</dt>
+                        <dd class="text-end text-slate-900">
+                            {{ sourceLabel(detail.order.source) }}
+                            <span v-if="detail.order.device" class="block text-xs text-slate-400">{{ detail.order.device.name }}</span>
+                        </dd>
                         <dt class="text-slate-500">{{ t('orders.detail.customer') }}</dt>
                         <dd class="text-end text-slate-900">
                             {{ detail.order.customer?.name ?? '—' }}
@@ -141,11 +164,44 @@ function commissionStatusClass(status: string): string {
                             <dt class="text-slate-500">{{ t('orders.detail.vehicle') }}</dt>
                             <dd class="text-end font-mono text-slate-900">{{ detail.order.plate_number }}</dd>
                         </template>
+                        <template v-if="detail.order.tables.length">
+                            <dt class="text-slate-500">{{ t('orders.detail.tables') }}</dt>
+                            <dd class="text-end text-slate-900">{{ detail.order.tables.map((tb) => tb.label).join(' + ') }}</dd>
+                        </template>
+                        <template v-if="detail.order.void_reason">
+                            <dt class="text-slate-500">{{ t('orders.detail.void_reason') }}</dt>
+                            <dd class="text-end font-medium text-rose-700">{{ detail.order.void_reason }}</dd>
+                        </template>
                         <dt class="text-slate-500">{{ t('orders.columns.time') }}</dt>
                         <dd class="text-end text-xs tabular-nums text-slate-600">{{ formatDateTime(detail.order.opened_at) }}</dd>
                         <template v-if="detail.order.note">
                             <dt class="text-slate-500">{{ t('orders.detail.note') }}</dt>
                             <dd class="text-end text-slate-700">{{ detail.order.note }}</dd>
+                        </template>
+                    </dl>
+                </section>
+
+                <!-- Delivery provider (P-G7; provider orders only) -->
+                <section v-if="detail.order.delivery" class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('orders.detail.delivery') }}</h3>
+                    <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                        <dt class="text-slate-500">{{ t('orders.detail.delivery_provider') }}</dt>
+                        <dd class="text-end font-semibold text-slate-900">{{ detail.order.delivery.provider_name ?? '—' }}</dd>
+                        <template v-if="detail.order.delivery.reference">
+                            <dt class="text-slate-500">{{ t('orders.detail.delivery_reference') }}</dt>
+                            <dd class="text-end font-mono text-xs text-slate-900">{{ detail.order.delivery.reference }}</dd>
+                        </template>
+                        <template v-if="detail.order.delivery.customer_phone">
+                            <dt class="text-slate-500">{{ t('orders.detail.delivery_phone') }}</dt>
+                            <dd class="text-end text-slate-900">{{ detail.order.delivery.customer_phone }}</dd>
+                        </template>
+                        <template v-if="detail.order.delivery.expected_payout">
+                            <dt class="text-slate-500">{{ t('orders.detail.expected_payout') }}</dt>
+                            <dd class="text-end tabular-nums text-slate-900">{{ detail.order.delivery.expected_payout }}</dd>
+                        </template>
+                        <template v-if="detail.order.delivery.confirmed_at">
+                            <dt class="text-slate-500">{{ t('orders.detail.delivery_confirmed') }}</dt>
+                            <dd class="text-end text-xs tabular-nums text-slate-600">{{ formatDateTime(detail.order.delivery.confirmed_at) }}</dd>
                         </template>
                     </dl>
                 </section>
@@ -165,6 +221,11 @@ function commissionStatusClass(status: string): string {
                                     </ul>
                                     <p v-for="(d, i) in item.discounts" :key="i" class="mt-0.5 text-xs font-medium text-rose-600">
                                         − {{ d.name }} <span class="tabular-nums">({{ d.amount }})</span>
+                                        <span v-if="d.is_offer" class="ms-1 inline-flex rounded-full bg-violet-100 px-1.5 py-px text-[10px] font-semibold uppercase text-violet-700">{{ t('orders.detail.offer') }}</span>
+                                    </p>
+                                    <p v-for="(c, i) in item.comps" :key="`c${i}`" class="mt-0.5 text-xs font-medium text-emerald-700">
+                                        − {{ compLabel(c) }} <span class="tabular-nums">({{ c.amount }})</span>
+                                        <span class="ms-1 inline-flex rounded-full bg-emerald-100 px-1.5 py-px text-[10px] font-semibold uppercase text-emerald-700">{{ c.is_gift ? t('orders.detail.gift') : t('orders.detail.comp') }}</span>
                                     </p>
                                     <p v-if="item.notes" class="mt-0.5 text-xs italic text-slate-400">{{ item.notes }}</p>
                                 </div>
@@ -179,22 +240,42 @@ function commissionStatusClass(status: string): string {
                     </ul>
                 </section>
 
-                <!-- Order-level discounts (#4) -->
+                <!-- Order-level discounts (#4; offer-engine rows badged) -->
                 <section v-if="detail.order_discounts.length" class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                     <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('orders.detail.order_discounts') }}</h3>
                     <ul class="space-y-1.5 text-sm">
                         <li v-for="(d, i) in detail.order_discounts" :key="i" class="flex items-center justify-between">
-                            <span class="text-slate-700">{{ d.name }}</span>
+                            <span class="text-slate-700">
+                                {{ d.name }}
+                                <span v-if="d.is_offer" class="ms-1 inline-flex rounded-full bg-violet-100 px-1.5 py-px text-[10px] font-semibold uppercase text-violet-700">{{ t('orders.detail.offer') }}</span>
+                            </span>
                             <span class="font-semibold tabular-nums text-rose-600">−{{ d.amount }}</span>
                         </li>
                     </ul>
                 </section>
 
-                <!-- Totals -->
+                <!-- Order-level comps / gifts -->
+                <section v-if="detail.order_comps.length" class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('orders.detail.comps') }}</h3>
+                    <ul class="space-y-1.5 text-sm">
+                        <li v-for="(c, i) in detail.order_comps" :key="i" class="flex items-center justify-between">
+                            <span class="text-slate-700">
+                                {{ compLabel(c) }}
+                                <span class="ms-1 inline-flex rounded-full bg-emerald-100 px-1.5 py-px text-[10px] font-semibold uppercase text-emerald-700">{{ c.is_gift ? t('orders.detail.gift') : t('orders.detail.comp') }}</span>
+                                <span v-if="c.note" class="block text-xs italic text-slate-400">{{ c.note }}</span>
+                            </span>
+                            <span class="font-semibold tabular-nums text-emerald-700">−{{ c.amount }}</span>
+                        </li>
+                    </ul>
+                </section>
+
+                <!-- Totals (comp line included so the arithmetic reconciles:
+                     grand = subtotal − discount − comp + tax) -->
                 <section class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                     <dl class="space-y-1.5 text-sm">
                         <div class="flex justify-between"><dt class="text-slate-500">{{ t('orders.detail.subtotal') }}</dt><dd class="tabular-nums text-slate-900">{{ detail.order.totals.subtotal }}</dd></div>
                         <div class="flex justify-between"><dt class="text-slate-500">{{ t('orders.detail.discount') }}</dt><dd class="tabular-nums text-rose-600">−{{ detail.order.totals.discount_total }}</dd></div>
+                        <div v-if="Number(detail.order.totals.comp_total) > 0" class="flex justify-between"><dt class="text-slate-500">{{ t('orders.detail.comp') }}</dt><dd class="tabular-nums text-emerald-700">−{{ detail.order.totals.comp_total }}</dd></div>
                         <div class="flex justify-between"><dt class="text-slate-500">{{ t('orders.detail.tax') }}</dt><dd class="tabular-nums text-slate-900">{{ detail.order.totals.tax_total }}</dd></div>
                         <div class="flex justify-between border-t border-slate-200 pt-1.5 text-base font-bold">
                             <dt class="text-slate-900">{{ t('orders.detail.grand_total') }}</dt>
@@ -236,6 +317,7 @@ function commissionStatusClass(status: string): string {
                             <div>
                                 <span class="font-medium text-slate-900">{{ methodLabel(p.method) }}</span>
                                 <span v-if="p.softpos_auth_code" class="block text-xs text-slate-400">{{ t('orders.detail.auth_code') }}: {{ p.softpos_auth_code }}</span>
+                                <span v-if="p.roundup_amount && Number(p.roundup_amount) > 0" class="block text-xs font-medium text-teal-700">{{ t('orders.detail.roundup') }}: {{ p.roundup_amount }}</span>
                             </div>
                             <span class="font-semibold tabular-nums text-slate-900">{{ p.amount }}</span>
                         </li>

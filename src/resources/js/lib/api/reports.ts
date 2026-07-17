@@ -764,7 +764,17 @@ export interface OrderDetailDiscount {
     name: string;
     amount_type: string | null;
     amount: string;
+    /** True when the row was applied by the offer engine (vs a manual discount). */
+    is_offer: boolean;
     applied_at: string | null;
+}
+
+/** A comp (manager-comped amount) or gift row on the order/line. */
+export interface OrderDetailComp {
+    reason: string | null;
+    amount: string;
+    is_gift: boolean;
+    note: string | null;
 }
 
 export interface OrderDetailItem {
@@ -777,6 +787,7 @@ export interface OrderDetailItem {
     notes: string | null;
     addons: { name: string; price_delta: string }[];
     discounts: OrderDetailDiscount[];
+    comps: OrderDetailComp[];
 }
 
 export interface OrderDetailPayment {
@@ -786,7 +797,19 @@ export interface OrderDetailPayment {
     status: string | null;
     softpos_auth_code: string | null;
     softpos_reference: string | null;
+    /** Charity round-up riding this tender (null when none). */
+    roundup_amount: string | null;
     captured_at: string | null;
+}
+
+/** P-G7 delivery-provider block (null for non-provider orders). */
+export interface OrderDetailDelivery {
+    provider_name: string | null;
+    reference: string | null;
+    customer_phone: string | null;
+    commission_percent: string | null;
+    expected_payout: string | null;
+    confirmed_at: string | null;
 }
 
 export interface OrderDetailPayload {
@@ -805,10 +828,18 @@ export interface OrderDetailPayload {
         branch: { id: number; name: string } | null;
         customer: { id: number; name: string; phone: string | null } | null;
         staff: { id: number; name: string } | null;
-        totals: { subtotal: string; discount_total: string; tax_total: string; grand_total: string };
+        /** Which terminal rang it up (main POS / handheld / tablet unit). */
+        device: { id: number; name: string } | null;
+        /** Primary + joined dine-in tables (empty for non-dine-in). */
+        tables: { id: number; label: string }[];
+        delivery: OrderDetailDelivery | null;
+        /** Why a void order was voided (label snapshot; null otherwise). */
+        void_reason: string | null;
+        totals: { subtotal: string; discount_total: string; comp_total: string; tax_total: string; grand_total: string };
     };
     items: OrderDetailItem[];
     order_discounts: OrderDetailDiscount[];
+    order_comps: OrderDetailComp[];
     payments: OrderDetailPayment[];
     loyalty: {
         points_earned: number;

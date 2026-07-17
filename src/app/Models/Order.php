@@ -174,6 +174,18 @@ class Order extends Model
     }
 
     /**
+     * The POS terminal that rang this order up (main POS, handheld, or
+     * customer tablet). Soft-deleted devices still resolve so historical
+     * orders keep their attribution.
+     *
+     * @return BelongsTo<Device, $this>
+     */
+    public function device(): BelongsTo
+    {
+        return $this->belongsTo(Device::class)->withTrashed();
+    }
+
+    /**
      * Line items, ordered by id so receipts + KDS render in the
      * order the cashier rang them up.
      *

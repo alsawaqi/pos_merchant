@@ -1345,6 +1345,10 @@ return new class extends Migration
             $table->foreignId('reconciled_by_admin_id')->nullable()->constrained('pos_users')->nullOnDelete();
             $table->timestamp('reconciled_at')->nullable();
             $table->timestamp('captured_at')->useCurrent();
+            // Charity round-up riding this tender (live schema: pos_admin
+            // migration 2026_06_17_010000).
+            $table->decimal('roundup_amount', 12, 3)->nullable();
+            $table->unsignedBigInteger('charity_transaction_id')->nullable();
             $table->timestamps();
         });
 

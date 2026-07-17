@@ -5,7 +5,7 @@
  * shows the period's order count + total sales.
  */
 import { ChevronLeft, ChevronRight, Search } from 'lucide-vue-next';
-import { onMounted, reactive, ref } from 'vue';
+import { onMounted, onUnmounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { listBranches, type Branch } from '@/lib/api/branches';
 import { fetchOrders, type OrderListFilter, type OrderListPayload } from '@/lib/api/reports';
@@ -37,24 +37,55 @@ const branches = ref<Branch[]>([]);
 
 // P-G7 — pending_verification: no-tender delivery orders awaiting the
 // provider's statement (visible here, outside the revenue banner).
-const statusOptions = ['open', 'paid', 'pending_verification', 'void'] as const;
+// held/kitchen/refunded included so device-parked orders are filterable.
+const statusOptions = ['open', 'held', 'kitchen', 'paid', 'pending_verification', 'void', 'refunded'] as const;
 
-async function run(): Promise<void> {
-    loading.value = true;
-    error.value = null;
+// Auto-refresh: the devices push sales continuously; without this the
+// merchant only sees new orders after clicking Run. Polls with the
+// LAST-RAN filter (never with half-edited, un-run filter fields) and
+// skips hidden tabs and in-flight loads.
+const AUTO_REFRESH_MS = 30_000;
+const autoRefresh = ref(true);
+const appliedFilter = ref<OrderListFilter | null>(null);
+let refreshTimer: number | undefined;
+// Monotonic request token: a resolved fetch only applies its result if no
+// newer fetch started meanwhile — a slow background poll must never
+// overwrite a newer Run/pagination response (last-write-wins race).
+let fetchSeq = 0;
+
+async function fetchInto(f: OrderListFilter, silent = false): Promise<void> {
+    const seq = ++fetchSeq;
+    if (!silent) {
+        loading.value = true;
+        error.value = null;
+    }
     try {
-        const r = await fetchOrders(filter);
+        const r = await fetchOrders(f);
+        if (seq !== fetchSeq) return; // superseded by a newer fetch
         payload.value = r.data;
+        error.value = null;
     } catch (err) {
+        // Background polls fail quietly (the table just stays stale until
+        // the next tick) — only user-initiated fetches surface the banner.
+        if (seq !== fetchSeq || silent) return;
         error.value = err instanceof ApiError
             ? (err.status === 403 ? t('orders.forbidden') : `HTTP ${err.status}`)
             : t('orders.load_failed');
     } finally {
-        loading.value = false;
+        if (!silent) loading.value = false;
     }
 }
 
+async function run(): Promise<void> {
+    appliedFilter.value = { ...filter, branch_ids: filter.branch_ids ? [...filter.branch_ids] : null };
+    await fetchInto(appliedFilter.value);
+}
+
 onMounted(async () => {
+    refreshTimer = window.setInterval(() => {
+        if (!autoRefresh.value || document.hidden || loading.value || !appliedFilter.value) return;
+        void fetchInto(appliedFilter.value, true);
+    }, AUTO_REFRESH_MS);
     try {
         const r = await listBranches();
         branches.value = r.data;
@@ -62,6 +93,10 @@ onMounted(async () => {
         if (!(err instanceof ApiError)) throw err;
     }
     void run();
+});
+
+onUnmounted(() => {
+    if (refreshTimer !== undefined) window.clearInterval(refreshTimer);
 });
 
 function goPage(page: number): void {
@@ -93,16 +128,28 @@ function statusClass(status: string | null): string {
     switch (status) {
         case 'paid': return 'bg-emerald-100 text-emerald-700';
         case 'open': return 'bg-amber-100 text-amber-700';
+        case 'held': return 'bg-orange-100 text-orange-700';
+        case 'kitchen': return 'bg-cyan-100 text-cyan-700';
         case 'pending_verification': return 'bg-sky-100 text-sky-700';
         case 'void': return 'bg-rose-100 text-rose-700';
+        case 'refunded': return 'bg-fuchsia-100 text-fuchsia-700';
         default: return 'bg-slate-100 text-slate-600';
     }
 }
 
-// Commission/payout lifecycle chip: pending → reconciled → in_payout → paid.
+/** main_pos / handheld / customer_tablet → translated label. */
+function sourceLabel(source: string | null): string {
+    if (!source) return '—';
+    const key = `orders.sources.${source}`;
+    const label = t(key);
+    return label !== key ? label : source.replace(/_/g, ' ');
+}
+
+// Commission/payout lifecycle chip: direct (cash in hand) | pending → reconciled → in_payout → paid.
 function commissionStatusClass(status: string): string {
     switch (status) {
         case 'paid': return 'bg-emerald-100 text-emerald-700';
+        case 'direct': return 'bg-teal-100 text-teal-700';
         case 'in_payout': return 'bg-indigo-100 text-indigo-700';
         case 'reconciled': return 'bg-sky-100 text-sky-700';
         case 'pending': return 'bg-amber-100 text-amber-700';
@@ -143,6 +190,10 @@ function commissionStatusClass(status: string): string {
                         <option v-for="s in statusOptions" :key="s" :value="s">{{ t(`orders.statuses.${s}`) }}</option>
                     </select>
                 </label>
+                <label class="flex items-center gap-2 pb-2 text-xs font-semibold text-slate-600">
+                    <input v-model="autoRefresh" type="checkbox" class="size-4 rounded border-slate-300 text-teal-600" />
+                    {{ t('orders.filters.auto_refresh') }}
+                </label>
                 <button
                     type="button"
                     class="ms-auto inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-50"
@@ -175,6 +226,7 @@ function commissionStatusClass(status: string): string {
                             <th class="px-5 py-2 text-start">{{ t('orders.columns.order') }}</th>
                             <th class="px-5 py-2 text-start">{{ t('orders.columns.branch') }}</th>
                             <th class="px-5 py-2 text-start">{{ t('orders.columns.type') }}</th>
+                            <th class="px-5 py-2 text-start">{{ t('orders.columns.source') }}</th>
                             <th class="px-5 py-2 text-start">{{ t('orders.columns.status') }}</th>
                             <th class="px-5 py-2 text-end">{{ t('orders.columns.items') }}</th>
                             <th class="px-5 py-2 text-start">{{ t('orders.columns.customer') }}</th>
@@ -195,6 +247,7 @@ function commissionStatusClass(status: string): string {
                             <td class="px-5 py-2 font-mono text-xs font-semibold text-teal-700">{{ row.receipt_number ?? shortId(row.uuid) }}</td>
                             <td class="px-5 py-2 text-slate-700">{{ row.branch_name ?? '—' }}</td>
                             <td class="px-5 py-2 text-slate-700">{{ row.order_type ? t(`orders.types.${row.order_type}`) : '—' }}</td>
+                            <td class="px-5 py-2 text-xs text-slate-600">{{ sourceLabel(row.source) }}</td>
                             <td class="px-5 py-2">
                                 <span class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold" :class="statusClass(row.status)">{{ row.status ? t(`orders.statuses.${row.status}`) : '—' }}</span>
                             </td>

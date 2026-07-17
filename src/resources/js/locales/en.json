@@ -2928,7 +2928,8 @@
         "pagination": "Page {page} of {last} · {total} total",
         "filters": {
             "status": "Status",
-            "status_all": "All statuses"
+            "status_all": "All statuses",
+            "auto_refresh": "Auto-refresh (30s)"
         },
         "totals": {
             "count": "Orders",
@@ -2939,12 +2940,18 @@
             "order": "Order #",
             "branch": "Branch",
             "type": "Type",
+            "source": "Source",
             "status": "Status",
             "items": "Items",
             "customer": "Customer",
             "total": "Total",
             "net": "Net",
             "payout": "Payout"
+        },
+        "sources": {
+            "main_pos": "Main POS",
+            "handheld": "Handheld",
+            "customer_tablet": "Tablet"
         },
         "types": {
             "quick": "Quick",
@@ -2993,6 +3000,19 @@
             "no_loyalty": "No loyalty activity on this order.",
             "subtotal": "Subtotal",
             "discount": "Discount",
+            "comp": "Comp",
+            "comps": "Comps & gifts",
+            "gift": "Gift",
+            "offer": "Offer",
+            "tables": "Table(s)",
+            "delivery": "Delivery",
+            "delivery_provider": "Provider",
+            "delivery_reference": "Reference",
+            "delivery_phone": "Customer phone",
+            "expected_payout": "Expected payout",
+            "delivery_confirmed": "Confirmed",
+            "void_reason": "Void reason",
+            "roundup": "Round-up donation",
             "tax": "Tax",
             "grand_total": "Grand total",
             "qty": "Qty",
