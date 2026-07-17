@@ -82,8 +82,15 @@ final readonly class RecordDeliveryCommissionAction
 
         foreach ($shares as $share) {
             $percent = (float) $share->percent;
-            // No card money on a delivery order — the bank line gets 0.
-            $base = $share->party_type === self::PARTY_BANK ? 0 : $collectedBaisas;
+            // No card money on a delivery order — the bank line AND any
+            // card-scoped line get 0. Delivery money is merchant-held (the
+            // provider settles with the merchant), so it is the CASH/BANK-POS
+            // channel: 'all' and 'cash_bank' lines bite the collected amount.
+            // Null-safe: pre-migration rows read 'all' (prior behaviour).
+            $appliesTo = (string) ($share->applies_to ?? 'all');
+            $base = ($share->party_type === self::PARTY_BANK || $appliesTo === 'card')
+                ? 0
+                : $collectedBaisas;
             $amountBaisas = (int) round($base * $percent / 100);
             $allocatedBaisas += $amountBaisas;
 

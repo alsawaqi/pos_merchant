@@ -450,6 +450,12 @@ const partyChart = computed(() => {
                             <!-- Per-branch breakdown of this invoice (your statement detail). -->
                             <tr v-if="expandedInvoices.has(row.uuid)" class="border-b border-slate-100 bg-slate-50">
                                 <td colspan="6" class="px-5 py-3">
+                                    <!-- How the billed money was received: what YOU took in cash vs on the bank's POS. -->
+                                    <p class="mb-2 text-xs text-slate-600">
+                                        {{ t('reports.invoices.received_split') }}:
+                                        <span class="font-semibold tabular-nums text-emerald-700">{{ t('reports.invoices.lines.cash') }} {{ row.cash_gross }}</span> ·
+                                        <span class="font-semibold tabular-nums text-sky-700">{{ t('reports.invoices.lines.bank_pos') }} {{ row.bank_pos_gross }}</span>
+                                    </p>
                                     <div v-if="invoiceLinesLoading.has(row.uuid)" class="text-sm text-slate-500">{{ t('reports.invoices.lines.loading') }}</div>
                                     <table v-else-if="(invoiceLines.get(row.uuid) ?? []).length" class="w-full text-xs">
                                         <thead class="text-slate-400">

@@ -34,6 +34,8 @@ class CommissionInvoice extends Model
             'paid_at' => 'datetime',
             'voided_at' => 'datetime',
             'gross_amount' => 'decimal:3',
+            'cash_gross' => 'decimal:3',
+            'bank_pos_gross' => 'decimal:3',
             'platform_amount' => 'decimal:3',
             'other_amount' => 'decimal:3',
             'merchant_amount' => 'decimal:3',

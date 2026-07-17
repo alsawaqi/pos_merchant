@@ -51,6 +51,8 @@ class CommissionInvoicesController extends Controller
             'period_to' => $i->period_to?->toIso8601String(),
             'status' => $i->status,
             'gross_amount' => (string) $i->gross_amount,
+            'cash_gross' => (string) $i->cash_gross,
+            'bank_pos_gross' => (string) $i->bank_pos_gross,
             'platform_amount' => (string) $i->platform_amount,
             'other_amount' => (string) $i->other_amount,
             'merchant_amount' => (string) $i->merchant_amount,

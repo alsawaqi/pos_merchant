@@ -2664,6 +2664,7 @@
             },
             "empty": "No commission invoices yet.",
             "toggle": "Per-branch breakdown",
+            "received_split": "You received",
             "lines": {
                 "loading": "Loading branch detail…",
                 "branch": "Branch",
@@ -2672,7 +2673,9 @@
                 "other": "Other",
                 "merchant_kept": "You kept",
                 "owed": "Owed",
-                "empty": "No branch detail for this invoice."
+                "empty": "No branch detail for this invoice.",
+                "cash": "Cash",
+                "bank_pos": "Bank POS"
             }
         },
         "product_performance": {

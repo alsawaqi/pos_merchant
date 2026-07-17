@@ -1369,6 +1369,8 @@ return new class extends Migration
             $table->string('party_type', 20);
             $table->string('label', 120);
             $table->decimal('percent', 5, 2);
+            // Channel scope: all | card | cash_bank (admin-written).
+            $table->string('applies_to', 20)->default('all');
             $table->unsignedInteger('sort_order')->default(0);
             $table->timestamps();
         });
@@ -1456,6 +1458,9 @@ return new class extends Migration
             $table->timestamp('period_to');
             $table->string('status', 20)->default('issued');
             $table->decimal('gross_amount', 12, 3)->default(0);
+            // Step 4 — how the billed money was received (cash vs bank POS).
+            $table->decimal('cash_gross', 12, 3)->default(0);
+            $table->decimal('bank_pos_gross', 12, 3)->default(0);
             $table->decimal('platform_amount', 12, 3)->default(0);
             $table->decimal('other_amount', 12, 3)->default(0);
             $table->decimal('merchant_amount', 12, 3)->default(0);

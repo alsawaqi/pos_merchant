@@ -566,6 +566,8 @@ export interface MerchantInvoiceRow {
     period_to: string;          // ISO date
     status: MerchantInvoiceStatus;
     gross_amount: string;       // decimal-3 — collected on the billed sales
+    cash_gross: string;         // decimal-3 — of which received in cash
+    bank_pos_gross: string;     // decimal-3 — of which received on the bank's POS
     platform_amount: string;    // decimal-3 — platform cut owed
     other_amount: string;       // decimal-3 — other cut owed
     merchant_amount: string;    // decimal-3 — what the merchant kept
