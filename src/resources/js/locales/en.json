@@ -1061,6 +1061,7 @@
             "price_delta": "Price +/-",
             "remove": "Remove",
             "delete_group": "Delete group",
+            "edit_group": "Edit",
             "save_failed": "Could not save. Try again."
         },
         "cat_modal": {

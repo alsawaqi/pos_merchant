@@ -1061,6 +1061,7 @@
             "price_delta": "السعر +/-",
             "remove": "إزالة",
             "delete_group": "حذف المجموعة",
+            "edit_group": "تعديل",
             "save_failed": "تعذّر الحفظ. حاول مرة أخرى."
         },
         "cat_modal": {

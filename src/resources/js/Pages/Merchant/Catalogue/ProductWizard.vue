@@ -25,7 +25,7 @@
 
 import {
     ArrowLeft, Beaker, Boxes, Building2, Check, Image, Minus, Package,
-    Plus, Sparkles, Tag, Trash2, Truck,
+    Pencil, Plus, Sparkles, Tag, Trash2, Truck,
 } from 'lucide-vue-next';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { onBeforeRouteLeave, useRoute, useRouter, RouterLink } from 'vue-router';
@@ -49,6 +49,7 @@ import {
     syncProductAddOnGroups,
     syncProductBranches,
     updateAddOn,
+    updateAddOnGroup,
     updateProduct,
     updateProductComponents,
     updateProductRecipe,
@@ -362,6 +363,72 @@ function removeDraftGroup(groupIndex: number): void {
 /** The optionForms key for a card: persisted uuid (edit) / stable draft key. */
 function groupFormKey(group: AddOnGroup | DraftGroup): string {
     return isEdit ? (group as AddOnGroup).uuid : (group as DraftGroup).key;
+}
+
+// ---- Inline group-header edit ---------------------------------------
+// A group whose min/max (or name) was mistyped shouldn't force
+// delete-and-retype: the options underneath survive an in-place header
+// fix. CREATE: rewrites the local draft. EDIT: PATCHes the persisted
+// group and reloads.
+const editingGroupKey = ref<string | null>(null);
+const groupEditForm = reactive<{
+    name: string;
+    name_ar: string;
+    selection_mode: AddOnSelectionMode;
+    min_selections: string;
+    max_selections: string;
+}>({ name: '', name_ar: '', selection_mode: 'single', min_selections: '', max_selections: '' });
+
+function startGroupEdit(group: AddOnGroup | DraftGroup): void {
+    editingGroupKey.value = groupFormKey(group);
+    groupEditForm.name = group.name;
+    groupEditForm.name_ar = group.name_ar ?? '';
+    groupEditForm.selection_mode = (group.selection_mode ?? 'single') as AddOnSelectionMode;
+    groupEditForm.min_selections = group.min_selections == null ? '' : String(group.min_selections);
+    groupEditForm.max_selections = group.max_selections == null ? '' : String(group.max_selections);
+}
+
+function cancelGroupEdit(): void {
+    editingGroupKey.value = null;
+}
+
+async function saveGroupEdit(group: AddOnGroup | DraftGroup, draftIndex: number | null): Promise<void> {
+    if (groupEditForm.name.trim() === '') return;
+    // Same number-input coercion as addOwnedGroup: type="number" makes Vue
+    // hand back a NUMBER despite the string declaration.
+    const minRaw = String(groupEditForm.min_selections ?? '').trim();
+    const maxRaw = String(groupEditForm.max_selections ?? '').trim();
+
+    if (!isEdit) {
+        const draft = draftIndex === null ? undefined : ownedDrafts.value[draftIndex];
+        if (draft) {
+            draft.name = groupEditForm.name.trim();
+            draft.name_ar = groupEditForm.name_ar.trim();
+            draft.selection_mode = groupEditForm.selection_mode;
+            draft.min_selections = minRaw;
+            draft.max_selections = maxRaw;
+        }
+        editingGroupKey.value = null;
+        return;
+    }
+
+    ownedBusy.value = true;
+    ownedError.value = null;
+    try {
+        await updateAddOnGroup((group as AddOnGroup).uuid, {
+            name: groupEditForm.name.trim(),
+            name_ar: groupEditForm.name_ar.trim() || null,
+            selection_mode: groupEditForm.selection_mode,
+            min_selections: minRaw === '' ? null : Number(minRaw),
+            max_selections: maxRaw === '' ? null : Number(maxRaw),
+        });
+        editingGroupKey.value = null;
+        await loadOwnedAddonGroups();
+    } catch (err) {
+        ownedError.value = apiMessage(err, t('catalogue.product_addons.save_failed'));
+    } finally {
+        ownedBusy.value = false;
+    }
 }
 
 async function removePersistedOption(addonUuid: string): Promise<void> {
@@ -1266,7 +1333,7 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                     :key="groupFormKey(group)"
                                     class="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
                                 >
-                                    <header class="flex items-start justify-between gap-3">
+                                    <header v-if="editingGroupKey !== groupFormKey(group)" class="flex items-start justify-between gap-3">
                                         <div class="min-w-0">
                                             <h3 class="truncate text-sm font-semibold text-slate-950">{{ group.name }}</h3>
                                             <p class="mt-0.5 text-[11px] text-slate-500">
@@ -1277,15 +1344,69 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                                 </template>
                                             </p>
                                         </div>
-                                        <button
-                                            type="button"
-                                            :disabled="ownedBusy"
-                                            class="inline-flex items-center gap-1 rounded border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                            @click="isEdit ? removePersistedGroup((group as AddOnGroup).uuid) : removeDraftGroup(gi)"
-                                        >
-                                            <Trash2 class="size-3" /> {{ t('catalogue.product_addons.delete_group') }}
-                                        </button>
+                                        <div class="flex shrink-0 items-center gap-1.5">
+                                            <button
+                                                type="button"
+                                                :disabled="ownedBusy"
+                                                class="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                                @click="startGroupEdit(group)"
+                                            >
+                                                <Pencil class="size-3" /> {{ t('catalogue.product_addons.edit_group') }}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                :disabled="ownedBusy"
+                                                class="inline-flex items-center gap-1 rounded border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                                @click="isEdit ? removePersistedGroup((group as AddOnGroup).uuid) : removeDraftGroup(gi)"
+                                            >
+                                                <Trash2 class="size-3" /> {{ t('catalogue.product_addons.delete_group') }}
+                                            </button>
+                                        </div>
                                     </header>
+                                    <!-- In-place header edit: the options below stay untouched. -->
+                                    <div v-else class="grid gap-2 rounded-lg border border-dashed border-teal-200 bg-teal-50/30 p-3 sm:grid-cols-[1fr_1fr_8rem_5rem_5rem]">
+                                        <label class="block">
+                                            <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.product_addons.group_name') }}</span>
+                                            <input v-model="groupEditForm.name" type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                                        </label>
+                                        <label class="block">
+                                            <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.fields.name_ar') }}</span>
+                                            <input v-model="groupEditForm.name_ar" type="text" dir="rtl" class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                                        </label>
+                                        <label class="block">
+                                            <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.wizard.selection_mode') }}</span>
+                                            <select v-model="groupEditForm.selection_mode" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                                                <option value="single">{{ t('catalogue.selection_modes.single') }}</option>
+                                                <option value="multi">{{ t('catalogue.selection_modes.multi') }}</option>
+                                            </select>
+                                        </label>
+                                        <label class="block">
+                                            <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.wizard.group_min') }}</span>
+                                            <input v-model="groupEditForm.min_selections" type="number" min="0" max="99" class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                                        </label>
+                                        <label class="block">
+                                            <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.wizard.group_max') }}</span>
+                                            <input v-model="groupEditForm.max_selections" type="number" min="1" max="99" class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                                        </label>
+                                        <div class="flex items-center gap-1.5 sm:col-span-full">
+                                            <button
+                                                type="button"
+                                                :disabled="ownedBusy || groupEditForm.name.trim() === ''"
+                                                class="inline-flex items-center gap-1 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                                @click="saveGroupEdit(group, isEdit ? null : gi)"
+                                            >
+                                                <Check class="size-3.5" /> {{ t('common.save') }}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                :disabled="ownedBusy"
+                                                class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                                @click="cancelGroupEdit"
+                                            >
+                                                {{ t('common.cancel') }}
+                                            </button>
+                                        </div>
+                                    </div>
 
                                     <!-- Options -->
                                     <ul v-if="(isEdit ? ((group as AddOnGroup).addons ?? []) : (group as DraftGroup).options).length > 0" class="mt-2 divide-y divide-slate-100 rounded-lg border border-slate-100 bg-slate-50/40">
