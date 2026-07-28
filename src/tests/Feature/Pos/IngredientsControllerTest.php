@@ -247,6 +247,44 @@ it('refuses to delete an ingredient that is referenced by a product recipe', fun
     expect(Ingredient::query()->find($ingredient->id))->not->toBeNull();
 });
 
+// Add-on stock-usage lines block deletion the same way recipe
+// references do — the sale pipeline deducts them identically, a
+// soft delete fires no cascade, and the lines would keep consuming
+// under a trashed ingredient invisibly.
+it('refuses to delete an ingredient consumed by an add-on option line', function (): void {
+    $ctx = makeMerchantActor();
+    $ingredient = Ingredient::factory()->for($ctx['company'], 'company')->create();
+    $group = App\Models\AddOnGroup::factory()->for($ctx['company'], 'company')->create();
+    $addon = App\Models\AddOn::factory()->for($ctx['company'], 'company')->for($group, 'group')->create();
+    App\Models\AddOnConsumption::query()->create([
+        'add_on_id' => $addon->id,
+        'ingredient_id' => $ingredient->id,
+        'direction' => 'add',
+        'quantity' => '0.030',
+        'display_order' => 0,
+    ]);
+
+    $response = $this->deleteJson("/api/ingredients/{$ingredient->uuid}")
+        ->assertStatus(422);
+    expect($response->json('message'))->toContain('add-on option');
+    expect(Ingredient::query()->find($ingredient->id))->not->toBeNull();
+});
+
+it('refuses to delete an ingredient consumed by a legacy single-ingredient add-on', function (): void {
+    $ctx = makeMerchantActor();
+    $ingredient = Ingredient::factory()->for($ctx['company'], 'company')->create();
+    $group = App\Models\AddOnGroup::factory()->for($ctx['company'], 'company')->create();
+    App\Models\AddOn::factory()->for($ctx['company'], 'company')->for($group, 'group')->create([
+        'ingredient_id' => $ingredient->id,
+        'ingredient_qty' => '1.000',
+    ]);
+
+    $response = $this->deleteJson("/api/ingredients/{$ingredient->uuid}")
+        ->assertStatus(422);
+    expect($response->json('message'))->toContain('add-on option');
+    expect(Ingredient::query()->find($ingredient->id))->not->toBeNull();
+});
+
 // Phase 5c — open restock requests block deletion the same
 // way recipe references do. The merchant must cancel or fulfil
 // the requests first so a soft-deleted ingredient can't leave

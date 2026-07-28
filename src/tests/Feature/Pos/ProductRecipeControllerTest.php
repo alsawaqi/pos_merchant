@@ -47,9 +47,36 @@ uses(RefreshDatabase::class);
 
 // =================== HAPPY PATH ===================
 
+// The wizard already rejects recipes on non-consuming types at create;
+// this endpoint (edit mode) must agree, or an 'untracked' product can
+// acquire a recipe that pos_api silently deducts at every sale (its
+// order-time freeze skips only cooked|unit). Clearing stays allowed —
+// that's how a converted product sheds a stale recipe.
+it('rejects recipe lines on an untracked product but allows clearing', function (): void {
+    $ctx = makeMerchantActor();
+    $product = Product::factory()->for($ctx['company'], 'company')->create([
+        'stock_mode' => 'untracked',
+    ]);
+    $milk = Ingredient::factory()->for($ctx['company'], 'company')->create([
+        'unit' => IngredientUnit::Litre->value,
+    ]);
+
+    $response = $this->putJson("/api/products/{$product->uuid}/recipe", [
+        'lines' => [['ingredient_uuid' => $milk->uuid, 'quantity' => '0.200']],
+    ])->assertStatus(422);
+    expect($response->json('message'))->toContain('made-to-order');
+    expect(ProductRecipe::query()->where('product_id', $product->id)->count())->toBe(0);
+
+    // Clearing an (illegitimately acquired) recipe still works.
+    ProductRecipe::factory()->for($product, 'product')->for($milk, 'ingredient')
+        ->create(['quantity' => '0.200']);
+    $this->putJson("/api/products/{$product->uuid}/recipe", ['lines' => []])->assertOk();
+    expect(ProductRecipe::query()->where('product_id', $product->id)->count())->toBe(0);
+});
+
 it('touches the product on a recipe edit so the device config delta re-emits it', function (): void {
     $ctx = makeMerchantActor();
-    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'ingredient']);
     $milk = Ingredient::factory()->for($ctx['company'], 'company')->create([
         'unit' => IngredientUnit::Litre->value,
     ]);
@@ -77,6 +104,7 @@ it('replaces a product\'s recipe with two ingredient lines + writes a version sn
     $ctx = makeMerchantActor();
     $product = Product::factory()->for($ctx['company'], 'company')->create([
         'base_price' => '3.000',
+        'stock_mode' => 'ingredient',
     ]);
     $milk = Ingredient::factory()->for($ctx['company'], 'company')->create([
         'name' => 'Milk',
@@ -123,7 +151,7 @@ it('replaces a product\'s recipe with two ingredient lines + writes a version sn
 
 it('preserves ingredient_id keys + line_count in the audit row\'s new_values', function (): void {
     $ctx = makeMerchantActor();
-    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'ingredient']);
     $milk = Ingredient::factory()->for($ctx['company'], 'company')->create();
 
     $this->putJson("/api/products/{$product->uuid}/recipe", [
@@ -148,7 +176,7 @@ it('preserves ingredient_id keys + line_count in the audit row\'s new_values', f
 
 it('writes ZERO version rows + ZERO audit rows on a no-op PUT (same shape)', function (): void {
     $ctx = makeMerchantActor();
-    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'ingredient']);
     $milk = Ingredient::factory()->for($ctx['company'], 'company')->create();
 
     // Seed the existing recipe directly.
@@ -181,7 +209,7 @@ it('writes ZERO version rows + ZERO audit rows on a no-op PUT (same shape)', fun
 
 it('detects a quantity change as a real edit (not a no-op)', function (): void {
     $ctx = makeMerchantActor();
-    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'ingredient']);
     $milk = Ingredient::factory()->for($ctx['company'], 'company')->create();
 
     ProductRecipe::factory()
@@ -211,7 +239,7 @@ it('detects a quantity change as a real edit (not a no-op)', function (): void {
 
 it('clears the entire recipe when PUT sends an empty lines array', function (): void {
     $ctx = makeMerchantActor();
-    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'ingredient']);
     $milk = Ingredient::factory()->for($ctx['company'], 'company')->create();
     $sugar = Ingredient::factory()->for($ctx['company'], 'company')->create();
 
@@ -244,7 +272,7 @@ it('clears the entire recipe when PUT sends an empty lines array', function (): 
 
 it('returns 422 when the payload contains a duplicate ingredient_uuid', function (): void {
     $ctx = makeMerchantActor();
-    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'ingredient']);
     $milk = Ingredient::factory()->for($ctx['company'], 'company')->create();
 
     $response = $this->putJson("/api/products/{$product->uuid}/recipe", [
@@ -263,7 +291,7 @@ it('returns 422 when the payload contains a duplicate ingredient_uuid', function
 
 it('returns 422 when an ingredient_uuid does not exist or belongs to another company', function (): void {
     $ctx = makeMerchantActor();
-    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'ingredient']);
     $mine = Ingredient::factory()->for($ctx['company'], 'company')->create();
 
     // Foreign-tenant ingredient — uuid leaks through the URL
@@ -288,7 +316,7 @@ it('returns 422 when an ingredient_uuid does not exist or belongs to another com
 
 it('returns 422 when quantity is zero or negative', function (): void {
     $ctx = makeMerchantActor();
-    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'ingredient']);
     $milk = Ingredient::factory()->for($ctx['company'], 'company')->create();
 
     $this->putJson("/api/products/{$product->uuid}/recipe", [
@@ -306,7 +334,7 @@ it('returns 422 when quantity is zero or negative', function (): void {
 
 it('returns 422 when more than 50 recipe lines are submitted', function (): void {
     $ctx = makeMerchantActor();
-    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'ingredient']);
 
     // 51 distinct ingredients — over the cap.
     $lines = [];
@@ -322,7 +350,7 @@ it('returns 422 when more than 50 recipe lines are submitted', function (): void
 
 it('returns 422 when the lines key is missing entirely', function (): void {
     $ctx = makeMerchantActor();
-    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'ingredient']);
 
     // No 'lines' key at all — Request rule is `present`.
     $this->putJson("/api/products/{$product->uuid}/recipe", ['note' => 'oops'])
@@ -346,7 +374,7 @@ it('returns 404 when targeting a product owned by another company', function ():
 
 it('captures denormalised ingredient name + unit_cost_at_time in the version snapshot', function (): void {
     $ctx = makeMerchantActor();
-    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'ingredient']);
     $milk = Ingredient::factory()->for($ctx['company'], 'company')->create([
         'name' => 'Whole Milk',
         'unit' => IngredientUnit::Litre->value,
@@ -392,7 +420,7 @@ it('captures denormalised ingredient name + unit_cost_at_time in the version sna
 
 it('writes a new version row on every edit (append-only ledger)', function (): void {
     $ctx = makeMerchantActor();
-    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'ingredient']);
     $milk = Ingredient::factory()->for($ctx['company'], 'company')->create();
 
     // Edit #1: empty → 1 line.
@@ -421,6 +449,7 @@ it('exposes has_recipe + theoretical_cost + recipe_lines on the product list end
     $with = Product::factory()->for($ctx['company'], 'company')->create([
         'name' => 'Latte',
         'base_price' => '2.000',
+        'stock_mode' => 'ingredient',
     ]);
     $without = Product::factory()->for($ctx['company'], 'company')->create([
         'name' => 'Bottled Water',
@@ -454,7 +483,7 @@ it('exposes has_recipe + theoretical_cost + recipe_lines on the product list end
 
 it('forbids a Viewer from updating a product recipe', function (): void {
     $ctx = makeMerchantActor(MerchantRole::Viewer->value);
-    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'ingredient']);
 
     $this->putJson("/api/products/{$product->uuid}/recipe", ['lines' => []])
         ->assertForbidden();
@@ -462,7 +491,7 @@ it('forbids a Viewer from updating a product recipe', function (): void {
 
 it('forbids a CashierSupervisor from updating a product recipe', function (): void {
     $ctx = makeMerchantActor(MerchantRole::CashierSupervisor->value);
-    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'ingredient']);
 
     $this->putJson("/api/products/{$product->uuid}/recipe", ['lines' => []])
         ->assertForbidden();
@@ -470,7 +499,7 @@ it('forbids a CashierSupervisor from updating a product recipe', function (): vo
 
 it('lets an InventoryManager update a product recipe (catalogue.manage in their grant)', function (): void {
     $ctx = makeMerchantActor(MerchantRole::InventoryManager->value);
-    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'ingredient']);
     $ing = Ingredient::factory()->for($ctx['company'], 'company')->create();
 
     $this->putJson("/api/products/{$product->uuid}/recipe", [

@@ -130,7 +130,7 @@ it('restock request stores the requested amount in base', function (): void {
 it('recipe stores consumption in base grams (device contract stays base)', function (): void {
     $ctx = makeMerchantActor();
     $ing = gramIngredientWithKg($ctx['company']);
-    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'ingredient']);
 
     $this->putJson("/api/products/{$product->uuid}/recipe", [
         'lines' => [['ingredient_uuid' => $ing->uuid, 'quantity' => '0.25', 'unit' => 'kg']],

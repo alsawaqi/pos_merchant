@@ -7,6 +7,8 @@ namespace App\Actions\Pos\Inventory;
 use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
 use App\Enums\RestockRequestStatus;
+use App\Models\AddOn;
+use App\Models\AddOnConsumption;
 use App\Models\BranchStock;
 use App\Models\Ingredient;
 use App\Models\IngredientStock;
@@ -95,6 +97,32 @@ final readonly class DeleteIngredientAction
             throw new RuntimeException(sprintf(
                 'Cannot delete ingredient — %d product recipe(s) still reference it. Edit those recipes first.',
                 $recipeCount,
+            ));
+        }
+
+        // Add-on-usage guard — the sale pipeline deducts option stock-usage
+        // lines (pos_addon_consumptions) and legacy single-ingredient
+        // add-ons exactly like recipe lines, and a soft delete fires no DB
+        // cascade: the rows would keep consuming under a trashed ingredient,
+        // invisibly (stock pages hide trashed rows). Mirrors the sibling
+        // unit-change guard in UpdateIngredientAction.
+        $optionLineCount = AddOnConsumption::query()
+            ->where('ingredient_id', $ingredient->id)
+            ->count();
+        if ($optionLineCount > 0) {
+            throw new RuntimeException(sprintf(
+                'Cannot delete ingredient — %d add-on option line(s) still consume it. Edit those options first.',
+                $optionLineCount,
+            ));
+        }
+
+        $legacyAddOnCount = AddOn::query()
+            ->where('ingredient_id', $ingredient->id)
+            ->count();
+        if ($legacyAddOnCount > 0) {
+            throw new RuntimeException(sprintf(
+                'Cannot delete ingredient — %d add-on option(s) still consume it. Edit those options first.',
+                $legacyAddOnCount,
             ));
         }
 

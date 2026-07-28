@@ -392,11 +392,15 @@ class ProductsController extends Controller
         // PD2 — a ready / bought-in product is PURCHASED, never made: its
         // cost reaches net profit through the stock-purchase expense, so a
         // recipe here would double-count it (and consume ingredients that
-        // were never used). Clearing (empty lines) stays allowed — that's
-        // how a converted product sheds its stale recipe.
+        // were never used). The same rule now covers 'untracked' — the
+        // wizard already enforced it at create, but this endpoint let an
+        // untracked product acquire a recipe that pos_api's snapshot would
+        // then silently DEDUCT at every sale (its freeze skips only
+        // cooked|unit). Clearing (empty lines) stays allowed — that's how
+        // a converted product sheds its stale recipe.
         $lines = $request->validated()['lines'] ?? [];
-        if ($lines !== [] && $product->stock_mode === 'unit') {
-            return response()->json(['message' => 'A ready / bought-in product cannot carry a recipe — its cost is booked when stock is received.'], 422);
+        if ($lines !== [] && ! in_array($product->stock_mode, ['ingredient', 'cooked'], true)) {
+            return response()->json(['message' => 'Only made-to-order and cooked products can have a recipe.'], 422);
         }
 
         try {
