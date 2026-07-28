@@ -271,6 +271,36 @@ it('persists min/max selections, default option, and category bindings', functio
     $this->assertDatabaseCount('pos_addon_group_categories', 0);
 });
 
+it('touches bound categories on a binding change so the device config delta re-emits them', function (): void {
+    $ctx = makeMerchantActor();
+    $drinks = App\Models\ProductCategory::factory()->for($ctx['company'], 'company')->create(['name' => 'Drinks']);
+    $food = App\Models\ProductCategory::factory()->for($ctx['company'], 'company')->create(['name' => 'Food']);
+
+    // CREATE with a binding bumps the bound category.
+    $drinksBefore = $drinks->fresh()->updated_at;
+    $this->travel(2)->minutes();
+    $group = $this->postJson('/api/addon-groups', [
+        'name' => 'Milk Choice',
+        'selection_mode' => 'single',
+        'category_ids' => [$drinks->id],
+    ])->assertCreated()->json('data');
+    expect($drinks->fresh()->updated_at->gt($drinksBefore))->toBeTrue();
+
+    // REBIND drinks→food bumps BOTH (the removed and the added category).
+    $drinksBefore = $drinks->fresh()->updated_at;
+    $foodBefore = $food->fresh()->updated_at;
+    $this->travel(2)->minutes();
+    $this->patchJson("/api/addon-groups/{$group['uuid']}", ['category_ids' => [$food->id]])->assertOk();
+    expect($drinks->fresh()->updated_at->gt($drinksBefore))->toBeTrue()
+        ->and($food->fresh()->updated_at->gt($foodBefore))->toBeTrue();
+
+    // No-op PATCH (same binding) leaves the categories untouched.
+    $foodBefore = $food->fresh()->updated_at;
+    $this->travel(2)->minutes();
+    $this->patchJson("/api/addon-groups/{$group['uuid']}", ['category_ids' => [$food->id]])->assertOk();
+    expect($food->fresh()->updated_at->eq($foodBefore))->toBeTrue();
+});
+
 it('refuses an unsatisfiable minimum on a single-choice group', function (): void {
     $ctx = makeMerchantActor();
 

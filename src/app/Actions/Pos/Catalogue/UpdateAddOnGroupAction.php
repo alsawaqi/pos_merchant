@@ -7,6 +7,7 @@ namespace App\Actions\Pos\Catalogue;
 use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
 use App\Models\AddOnGroup;
+use App\Models\ProductCategory;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
@@ -79,6 +80,13 @@ final readonly class UpdateAddOnGroupAction
                 $after = collect($attributes['category_ids'] ?? [])->map(fn ($id): int => (int) $id)->sort()->values()->all();
                 if ($before !== $after) {
                     $group->categories()->sync($after);
+                    // Delta visibility: category-level bindings ride the
+                    // CATEGORY rows in the device config (each category's
+                    // addon_group_ids) — bump every affected category so
+                    // delta devices refresh their customize sheets.
+                    ProductCategory::query()
+                        ->whereIn('id', array_unique(array_merge($before, $after)))
+                        ->update(['updated_at' => now()]);
                     $changes['category_ids'] = ['old' => $before, 'new' => $after];
                 }
             }

@@ -8,6 +8,8 @@ use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
 use App\Enums\AddOnSelectionMode;
 use App\Models\AddOnGroup;
+use App\Models\Product;
+use App\Models\ProductCategory;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
@@ -60,14 +62,21 @@ final readonly class CreateAddOnGroupAction
 
             if ($ownerProductId !== null) {
                 $group->products()->attach($ownerProductId);
+                // Delta visibility: the owner product's addon_group_ids ride
+                // the product row in the device config — bump it so delta
+                // devices pick up the new private group (the wizard's fresh
+                // products are new anyway; the standalone v2 #6 path is not).
+                Product::query()->whereKey($ownerProductId)->update(['updated_at' => now()]);
             }
 
             // Phase B — category-level bindings (validated tenant-owned
             // by the request layer).
             if (! empty($attributes['category_ids'])) {
-                $group->categories()->sync(
-                    collect($attributes['category_ids'])->map(fn ($id): int => (int) $id)->all(),
-                );
+                $categoryIds = collect($attributes['category_ids'])->map(fn ($id): int => (int) $id)->all();
+                $group->categories()->sync($categoryIds);
+                // Delta visibility: category bindings ride the CATEGORY rows
+                // in the device config — bump them so delta devices refresh.
+                ProductCategory::query()->whereIn('id', $categoryIds)->update(['updated_at' => now()]);
             }
 
             $this->writeAuditLog->handle(new AuditLogData(

@@ -93,6 +93,12 @@ final readonly class SyncProductAddOnGroupsAction
             sort($before);
             sort($after);
             if ($before !== $after) {
+                // Delta visibility: a product's addon_group_ids ride the
+                // product row in the device config — the pivot sync alone
+                // never bumps pos_products.updated_at, so delta devices
+                // would keep the stale group list until their next full sync.
+                $product->touch();
+
                 $this->writeAuditLog->handle(new AuditLogData(
                     event: 'catalogue.product.addons_synced',
                     actorUserId: $actor->getKey(),

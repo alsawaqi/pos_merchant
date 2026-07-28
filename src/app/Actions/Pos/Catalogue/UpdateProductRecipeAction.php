@@ -155,6 +155,14 @@ final readonly class UpdateProductRecipeAction
                 ]);
             }
 
+            // Delta visibility: the device config re-emits a product (and its
+            // embedded recipe + recomputed low_stock) only when
+            // pos_products.updated_at moves — recipe rows have no delta gate
+            // of their own, so an untouched product would leave delta devices
+            // gating availability on the stale recipe until their next full
+            // sync.
+            $product->touch();
+
             // Step 3: audit row summarising the change.
             $oldIds = $currentShape->keys()->all();
             $newIds = $newShape->keys()->all();

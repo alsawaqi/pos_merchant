@@ -192,6 +192,29 @@ it('detaches removed groups when the sync set shrinks', function (): void {
     expect($product->addOnGroups()->pluck('pos_addon_groups.id')->all())->toBe([$milk->id]);
 });
 
+it('touches the product on an attachment change so the device config delta re-emits it', function (): void {
+    $ctx = makeMerchantActor();
+    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    $group = AddOnGroup::factory()->for($ctx['company'], 'company')->create();
+
+    $before = $product->fresh()->updated_at;
+    $this->travel(2)->minutes();
+
+    $this->putJson("/api/products/{$product->uuid}/addon-groups", [
+        'group_uuids' => [$group->uuid],
+    ])->assertOk();
+
+    expect($product->fresh()->updated_at->gt($before))->toBeTrue();
+
+    // No-op sync (same set) leaves the product untouched.
+    $noopBefore = $product->fresh()->updated_at;
+    $this->travel(2)->minutes();
+    $this->putJson("/api/products/{$product->uuid}/addon-groups", [
+        'group_uuids' => [$group->uuid],
+    ])->assertOk();
+    expect($product->fresh()->updated_at->eq($noopBefore))->toBeTrue();
+});
+
 it('writes ZERO audit rows on a no-op sync (same set)', function (): void {
     $ctx = makeMerchantActor();
     $product = Product::factory()->for($ctx['company'], 'company')->create();

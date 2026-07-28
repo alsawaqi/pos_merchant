@@ -47,6 +47,32 @@ uses(RefreshDatabase::class);
 
 // =================== HAPPY PATH ===================
 
+it('touches the product on a recipe edit so the device config delta re-emits it', function (): void {
+    $ctx = makeMerchantActor();
+    $product = Product::factory()->for($ctx['company'], 'company')->create();
+    $milk = Ingredient::factory()->for($ctx['company'], 'company')->create([
+        'unit' => IngredientUnit::Litre->value,
+    ]);
+
+    $before = $product->fresh()->updated_at;
+    $this->travel(2)->minutes();
+
+    $this->putJson("/api/products/{$product->uuid}/recipe", [
+        'lines' => [['ingredient_uuid' => $milk->uuid, 'quantity' => '0.200']],
+    ])->assertOk();
+
+    expect($product->fresh()->updated_at->gt($before))->toBeTrue();
+
+    // No-op PUT (same shape) stays a no-op — no product bump, no
+    // delta churn for the devices.
+    $noopBefore = $product->fresh()->updated_at;
+    $this->travel(2)->minutes();
+    $this->putJson("/api/products/{$product->uuid}/recipe", [
+        'lines' => [['ingredient_uuid' => $milk->uuid, 'quantity' => '0.200']],
+    ])->assertOk();
+    expect($product->fresh()->updated_at->eq($noopBefore))->toBeTrue();
+});
+
 it('replaces a product\'s recipe with two ingredient lines + writes a version snapshot + audit row', function (): void {
     $ctx = makeMerchantActor();
     $product = Product::factory()->for($ctx['company'], 'company')->create([
