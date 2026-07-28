@@ -809,6 +809,11 @@ return new class extends Migration
             $table->timestamp('reviewed_at')->nullable();
             $table->text('review_note')->nullable();
             $table->timestamp('fulfilled_at')->nullable();
+            // Phase A: how the request was resolved — 'warehouse' (central
+            // debit + branch credit) or 'purchase' (no movement; stock came
+            // in via a purchase record). Mirrors pos_admin 2026_08_05_010100.
+            $table->string('resolution', 16)->nullable();
+            $table->string('resolution_note', 255)->nullable();
             $table->text('note')->nullable();
             $table->timestamps();
         });

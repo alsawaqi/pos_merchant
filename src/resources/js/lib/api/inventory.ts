@@ -540,6 +540,8 @@ export interface RestockRequestLine {
         name_ar: string | null;
         unit: IngredientUnit;
         default_unit_cost: string;
+        /** Phase A — central-warehouse on-hand (what HQ can send). */
+        central_quantity?: string | null;
     } | null;
 }
 
@@ -555,6 +557,13 @@ export interface RestockRequest {
     reviewed_at: string | null;
     review_note: string | null;
     fulfilled_at: string | null;
+    /**
+     * Phase A — how a Fulfilled request was resolved: 'warehouse' (goods
+     * sent from the central pool) or 'purchase' (goods entered via a
+     * purchase record; no movement). null = pre-Phase-A fulfilment.
+     */
+    resolution: 'warehouse' | 'purchase' | null;
+    resolution_note: string | null;
     note: string | null;
     created_at: string | null;
     updated_at: string | null;
@@ -804,6 +813,21 @@ export function allocateRestockRequest(
 ): Promise<{ data: RestockRequest }> {
     return apiPost<{ data: RestockRequest }>(
         `/api/restock-requests/${uuid}/allocate`,
+        payload as unknown as JsonValue,
+    );
+}
+
+/**
+ * Phase A — close an Approved request whose shortage was resolved by a
+ * purchase (branch bought outside / supplier delivered directly). No
+ * stock movement: the goods entered via the purchase record.
+ */
+export function resolvePurchasedRestockRequest(
+    uuid: string,
+    payload: { note?: string | null } = {},
+): Promise<{ data: RestockRequest }> {
+    return apiPost<{ data: RestockRequest }>(
+        `/api/restock-requests/${uuid}/resolve-purchased`,
         payload as unknown as JsonValue,
     );
 }

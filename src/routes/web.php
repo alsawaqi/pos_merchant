@@ -649,6 +649,10 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('restock-requests.cancel');
         Route::post('restock-requests/{restockRequest:uuid}/allocate', [RestockRequestsController::class, 'allocate'])
             ->name('restock-requests.allocate');
+        // Phase A — Approved → Fulfilled with resolution='purchase':
+        // NO stock movement (the goods entered via a purchase record).
+        Route::post('restock-requests/{restockRequest:uuid}/resolve-purchased', [RestockRequestsController::class, 'resolvePurchased'])
+            ->name('restock-requests.resolve-purchased');
 
         // -------- Phase 6a — Customers + vehicle plates --
         // Customer book lookup endpoints. UUID-bound for stable

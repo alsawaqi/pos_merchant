@@ -39,6 +39,12 @@ class RestockRequestLineResource extends JsonResource
                 'name_ar' => $this->ingredient->name_ar,
                 'unit' => $this->ingredient->unit?->value,
                 'default_unit_cost' => (string) $this->ingredient->default_unit_cost,
+                // Phase A — central-warehouse on-hand, so the fulfil dialog
+                // shows what HQ can actually send. NULL when the caller
+                // didn't eager-load centralStock (older payload shapes).
+                'central_quantity' => $this->ingredient->relationLoaded('centralStock')
+                    ? number_format((float) ($this->ingredient->centralStock?->quantity ?? 0), 3, '.', '')
+                    : null,
             ]),
         ];
     }

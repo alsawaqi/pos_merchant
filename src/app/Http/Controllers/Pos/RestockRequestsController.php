@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Pos;
 use App\Actions\Pos\Inventory\AllocateRestockRequestAction;
 use App\Actions\Pos\Inventory\CancelRestockRequestAction;
 use App\Actions\Pos\Inventory\CreateRestockRequestAction;
+use App\Actions\Pos\Inventory\ResolvePurchasedRestockRequestAction;
 use App\Actions\Pos\Inventory\ReviewRestockRequestAction;
 use App\Actions\Pos\Inventory\SubmitRestockRequestAction;
 use App\Actions\Pos\Inventory\SuggestRestockAction;
@@ -66,6 +67,7 @@ class RestockRequestsController extends Controller
         private readonly ReviewRestockRequestAction $review,
         private readonly CancelRestockRequestAction $cancel,
         private readonly AllocateRestockRequestAction $allocate,
+        private readonly ResolvePurchasedRestockRequestAction $resolvePurchased,
         private readonly SuggestRestockAction $suggest,
     ) {}
 
@@ -81,7 +83,7 @@ class RestockRequestsController extends Controller
         $query = RestockRequest::query()
             ->where('company_id', $companyId)
             ->when($allowed !== null, fn ($q) => $q->whereIn('branch_id', $allowed))
-            ->with(['lines.ingredient', 'branch', 'requestedBy', 'reviewedBy']);
+            ->with(['lines.ingredient.centralStock', 'branch', 'requestedBy', 'reviewedBy']);
 
         if ($request->filled('status')) {
             $status = (string) $request->query('status');
@@ -118,7 +120,7 @@ class RestockRequestsController extends Controller
         $this->ensure($request, MerchantPermission::InventoryView);
         $this->refuseIfNotInTenant($restockRequest);
 
-        $restockRequest->load(['lines.ingredient', 'branch', 'requestedBy', 'reviewedBy']);
+        $restockRequest->load(['lines.ingredient.centralStock', 'branch', 'requestedBy', 'reviewedBy']);
 
         return RestockRequestResource::make($restockRequest);
     }
@@ -284,6 +286,35 @@ class RestockRequestsController extends Controller
             $updated = $this->allocate->handle(
                 $restockRequest,
                 $allocations,
+                $request->user(),
+            );
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return RestockRequestResource::make($updated);
+    }
+
+    /**
+     * Phase A — close an Approved request whose shortage was resolved by a
+     * PURCHASE (branch bought outside / supplier delivered directly): no
+     * stock movement is written here — the goods entered via the purchase
+     * record, and crediting them again would double-count. HQ-side gate,
+     * same as allocate.
+     */
+    public function resolvePurchased(Request $request, RestockRequest $restockRequest): RestockRequestResource|JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::RestockRequestReview);
+        $this->refuseIfNotInTenant($restockRequest);
+
+        $validated = $request->validate([
+            'note' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        try {
+            $updated = $this->resolvePurchased->handle(
+                $restockRequest,
+                $validated['note'] ?? null,
                 $request->user(),
             );
         } catch (RuntimeException $e) {

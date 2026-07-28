@@ -88,6 +88,18 @@ class Ingredient extends Model
     }
 
     /**
+     * P-G4 central warehouse pool row (one per ingredient — the table is
+     * unique on company+ingredient and an ingredient belongs to exactly
+     * one company). Absent row = never received centrally = 0 on hand.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasOne<IngredientStock, $this>
+     */
+    public function centralStock(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(IngredientStock::class);
+    }
+
+    /**
      * @return BelongsTo<Supplier, $this>
      */
     public function primarySupplier(): BelongsTo

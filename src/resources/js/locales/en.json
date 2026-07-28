@@ -1440,7 +1440,8 @@
             "cancel_request": "Cancel",
             "allocate": "Allocate",
             "view": "View",
-            "new_transfer": "New transfer"
+            "new_transfer": "New transfer",
+            "resolve_purchased": "Purchased"
         },
         "table": {
             "name": "Name",
@@ -1777,11 +1778,25 @@
                 "submit": "Allocate + fulfill",
                 "submitting": "Allocating…",
                 "cancel": "Cancel",
-                "over_warning": "Cannot allocate more than requested."
+                "over_warning": "Cannot allocate more than requested.",
+                "central": "Central"
             },
             "row": {
                 "open": "Open",
                 "no_lines": "No lines"
+            },
+            "resolution": {
+                "warehouse": "from warehouse",
+                "purchase": "purchased"
+            },
+            "purchased_modal": {
+                "title": "Close as purchased",
+                "hint": "Use this when the shortage was resolved by a purchase (branch bought outside, or a supplier delivered directly). No warehouse stock moves — the goods enter through the purchase record itself.",
+                "note_label": "Reference (optional)",
+                "note_placeholder": "e.g. GRN #123, bought at the supermarket",
+                "submit": "Close request",
+                "submitting": "Closing…",
+                "cancel": "Cancel"
             }
         },
         "transfers": {

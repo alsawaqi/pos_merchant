@@ -48,10 +48,23 @@ use App\Models\Branch;
 use App\Models\BranchStock;
 use App\Models\Company;
 use App\Models\Ingredient;
+use App\Models\IngredientStock;
 use App\Models\RestockRequest;
 use App\Models\RestockRequestLine;
 use App\Models\StockMovement;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+
+// Phase A — warehouse-path fulfilment debits the central pool (overdraw
+// refused), so allocation tests must seed it first. Uniquely named per
+// Pest's global-function redeclare rule.
+function seedRestockCentralPool(int $companyId, int $ingredientId, string $qty): void
+{
+    IngredientStock::query()->forceCreate([
+        'company_id' => $companyId,
+        'ingredient_id' => $ingredientId,
+        'quantity' => $qty,
+    ]);
+}
 
 uses(RefreshDatabase::class);
 
@@ -183,11 +196,16 @@ it('allocates an approved request which writes one positive type=restock stock_m
     $beansLine = RestockRequestLine::factory()->for($req, 'request')->for($beans, 'ingredient')
         ->create(['quantity_requested' => '2.000']);
 
+    // Phase A — the warehouse is the source: seed the central pool.
+    seedRestockCentralPool($ctx['company']->id, $milk->id, '10.000');
+    seedRestockCentralPool($ctx['company']->id, $beans->id, '2.000');
+
     // No allocations override → full requested quantities.
     $response = $this->postJson("/api/restock-requests/{$req->uuid}/allocate", [])->assertOk();
 
     expect($response->json('data.status'))->toBe('fulfilled');
     expect($response->json('data.fulfilled_at'))->not->toBeNull();
+    expect($response->json('data.resolution'))->toBe('warehouse');
 
     $req->refresh();
     expect($req->status)->toBe(RestockRequestStatus::Fulfilled);
@@ -232,6 +250,20 @@ it('allocates an approved request which writes one positive type=restock stock_m
         ->where('ingredient_id', $beans->id)
         ->firstOrFail();
     expect((string) $beansBalance->quantity)->toBe('2.000');
+
+    // Phase A — conservation: the goods LEFT the central pool
+    // (10−5=5, 2−2=0) via signed-NEGATIVE allocation_out legs
+    // referencing the same lines.
+    expect((string) IngredientStock::query()->where('ingredient_id', $milk->id)->firstOrFail()->quantity)->toBe('5.000');
+    expect((string) IngredientStock::query()->where('ingredient_id', $beans->id)->firstOrFail()->quantity)->toBe('0.000');
+
+    $milkOut = StockMovement::query()
+        ->whereNull('branch_id')
+        ->where('ingredient_id', $milk->id)
+        ->where('movement_type', StockMovementType::AllocationOut->value)
+        ->firstOrFail();
+    expect((string) $milkOut->quantity)->toBe('-5.000');
+    expect((int) $milkOut->reference_id)->toBe($milkLine->id);
 
     // Audit row for the allocation event.
     $this->assertDatabaseHas('pos_audit_logs', [
@@ -316,6 +348,7 @@ it('supports a partial allocation via per-line override (less than requested)', 
     $ing = Ingredient::factory()->for($ctx['company'], 'company')->create();
     $line = RestockRequestLine::factory()->for($req, 'request')->for($ing, 'ingredient')
         ->create(['quantity_requested' => '10.000']);
+    seedRestockCentralPool($ctx['company']->id, $ing->id, '10.000');
 
     $this->postJson("/api/restock-requests/{$req->uuid}/allocate", [
         // String key is intentional — JSON body always sends
@@ -344,6 +377,9 @@ it('skips writing a stock_movement for a line allocated 0 but still saves quanti
         ->create(['quantity_requested' => '5.000']);
     $beansLine = RestockRequestLine::factory()->for($req, 'request')->for($beans, 'ingredient')
         ->create(['quantity_requested' => '2.000']);
+    // Central pool covers ONLY milk — the zero-allocated beans line
+    // must not need (or touch) central stock.
+    seedRestockCentralPool($ctx['company']->id, $milk->id, '5.000');
 
     $this->postJson("/api/restock-requests/{$req->uuid}/allocate", [
         'allocations' => [
@@ -362,8 +398,16 @@ it('skips writing a stock_movement for a line allocated 0 but still saves quanti
 
     // But NO movement for the zero-allocated line.
     expect(StockMovement::query()->where('ingredient_id', $beans->id)->count())->toBe(0);
-    // One movement for the full-allocated line.
-    expect(StockMovement::query()->where('ingredient_id', $milk->id)->count())->toBe(1);
+    // The full-allocated line writes the PAIRED legs: central
+    // allocation_out + branch restock (Phase A conservation).
+    expect(StockMovement::query()->where('ingredient_id', $milk->id)->count())->toBe(2);
+    expect(
+        StockMovement::query()
+            ->where('ingredient_id', $milk->id)
+            ->where('movement_type', StockMovementType::Restock->value)
+            ->whereNotNull('branch_id')
+            ->count(),
+    )->toBe(1);
 });
 
 it('returns 422 when an allocation override exceeds quantity_requested', function (): void {
@@ -396,6 +440,78 @@ it('returns 422 when allocations contain a line id not belonging to this request
         'allocations' => [(string) $lineB->id => '1.000'],
     ])->assertStatus(422);
     expect($response->json('message'))->toContain('does not belong');
+});
+
+it('refuses to allocate more than the central warehouse holds — atomic, nothing written', function (): void {
+    $ctx = makeMerchantActor();
+    $req = RestockRequest::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->approved()->create();
+    $ing = Ingredient::factory()->for($ctx['company'], 'company')->create(['name' => 'Flour']);
+    $line = RestockRequestLine::factory()->for($req, 'request')->for($ing, 'ingredient')
+        ->create(['quantity_requested' => '5.000']);
+    seedRestockCentralPool($ctx['company']->id, $ing->id, '2.000');
+
+    $response = $this->postJson("/api/restock-requests/{$req->uuid}/allocate", [])->assertStatus(422);
+    expect($response->json('message'))->toContain('Not enough central stock of Flour');
+
+    // Whole request rolled back: still Approved, no movements anywhere,
+    // central pool untouched, line untouched.
+    $req->refresh();
+    expect($req->status)->toBe(RestockRequestStatus::Approved);
+    expect(StockMovement::query()->count())->toBe(0);
+    expect((string) IngredientStock::query()->where('ingredient_id', $ing->id)->firstOrFail()->quantity)->toBe('2.000');
+    $line->refresh();
+    expect((string) $line->quantity_allocated)->toBe('0.000');
+});
+
+it('an ingredient never received centrally reads as zero available (missing pool row)', function (): void {
+    $ctx = makeMerchantActor();
+    $req = RestockRequest::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->approved()->create();
+    $ing = Ingredient::factory()->for($ctx['company'], 'company')->create();
+    RestockRequestLine::factory()->for($req, 'request')->for($ing, 'ingredient')
+        ->create(['quantity_requested' => '1.000']);
+    // NO central pool row at all.
+
+    $response = $this->postJson("/api/restock-requests/{$req->uuid}/allocate", [])->assertStatus(422);
+    expect($response->json('message'))->toContain('0.000 available');
+});
+
+// =================== PHASE A — RESOLVED BY PURCHASE ===================
+
+it('closes an Approved request as purchased: fulfilled + resolution=purchase + NO stock movements', function (): void {
+    $ctx = makeMerchantActor();
+    $req = RestockRequest::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->approved()->create();
+    $ing = Ingredient::factory()->for($ctx['company'], 'company')->create();
+    $line = RestockRequestLine::factory()->for($req, 'request')->for($ing, 'ingredient')
+        ->create(['quantity_requested' => '5.000']);
+
+    $response = $this->postJson("/api/restock-requests/{$req->uuid}/resolve-purchased", [
+        'note' => 'Bought at the supermarket, GRN #77',
+    ])->assertOk();
+
+    expect($response->json('data.status'))->toBe('fulfilled');
+    expect($response->json('data.resolution'))->toBe('purchase');
+    expect($response->json('data.resolution_note'))->toBe('Bought at the supermarket, GRN #77');
+
+    // THE point of the closure: the goods entered via the purchase
+    // record, so the request itself must move NOTHING — no ledger
+    // rows, no branch credit, allocated stays 0 (double-count guard).
+    expect(StockMovement::query()->count())->toBe(0);
+    expect(BranchStock::query()->where('ingredient_id', $ing->id)->exists())->toBeFalse();
+    $line->refresh();
+    expect((string) $line->quantity_allocated)->toBe('0.000');
+
+    $this->assertDatabaseHas('pos_audit_logs', [
+        'event' => 'inventory.restock_request.resolved_purchased',
+        'auditable_id' => $req->id,
+    ]);
+});
+
+it('returns 422 when closing a non-Approved request as purchased', function (): void {
+    $ctx = makeMerchantActor();
+    $req = RestockRequest::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->submitted()->create();
+
+    $response = $this->postJson("/api/restock-requests/{$req->uuid}/resolve-purchased")->assertStatus(422);
+    expect($response->json('message'))->toContain('Approved');
 });
 
 // =================== STATUS GUARDS ===================
@@ -616,6 +732,7 @@ it('forbids a Viewer from approving + rejecting + allocating (no inventory.resto
     $this->postJson("/api/restock-requests/{$submitted->uuid}/approve")->assertForbidden();
     $this->postJson("/api/restock-requests/{$submitted->uuid}/reject", ['note' => 'no'])->assertForbidden();
     $this->postJson("/api/restock-requests/{$approved->uuid}/allocate", [])->assertForbidden();
+    $this->postJson("/api/restock-requests/{$approved->uuid}/resolve-purchased")->assertForbidden();
 });
 
 it('lets an InventoryManager run the full lifecycle end-to-end', function (): void {
@@ -634,12 +751,14 @@ it('lets an InventoryManager run the full lifecycle end-to-end', function (): vo
     // approve
     $this->postJson("/api/restock-requests/{$uuid}/approve")->assertOk();
 
-    // allocate (full requested amount)
+    // allocate (full requested amount, sent from the central pool)
+    seedRestockCentralPool($ctx['company']->id, $ing->id, '5.000');
     $this->postJson("/api/restock-requests/{$uuid}/allocate", [])->assertOk();
 
     $req = RestockRequest::query()->where('uuid', $uuid)->firstOrFail();
     expect($req->status)->toBe(RestockRequestStatus::Fulfilled);
-    expect(StockMovement::query()->where('ingredient_id', $ing->id)->count())->toBe(1);
+    // Paired legs: central allocation_out + branch restock.
+    expect(StockMovement::query()->where('ingredient_id', $ing->id)->count())->toBe(2);
 });
 
 it('lets the SuperAdmin do everything via the auto-full permission grant', function (): void {

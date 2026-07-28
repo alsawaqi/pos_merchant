@@ -55,6 +55,7 @@ import { listBranches, type Branch } from '@/lib/api/branches';
 import {
     adjustStock,
     allocateRestockRequest,
+    resolvePurchasedRestockRequest,
     approveRestockRequest,
     cancelRestockRequest,
     createBranchTransfer,
@@ -1819,6 +1820,39 @@ async function submitAllocate(): Promise<void> {
     }
 }
 
+// Phase A — resolved-by-purchase closure (no stock movement; the
+// goods entered via a purchase record).
+const purchasedOpen = ref(false);
+const purchasedBusy = ref(false);
+const purchasedError = ref<string | null>(null);
+const purchasedTarget = ref<RestockRequest | null>(null);
+const purchasedNote = ref('');
+
+function openPurchased(req: RestockRequest): void {
+    purchasedTarget.value = req;
+    purchasedNote.value = '';
+    purchasedError.value = null;
+    purchasedOpen.value = true;
+}
+
+async function submitPurchased(): Promise<void> {
+    if (!purchasedTarget.value) return;
+    purchasedBusy.value = true;
+    purchasedError.value = null;
+    try {
+        await resolvePurchasedRestockRequest(purchasedTarget.value.uuid, {
+            note: purchasedNote.value.trim() || null,
+        });
+        purchasedOpen.value = false;
+        // No stock changed — only the request list needs refreshing.
+        await fetchRestockRequests();
+    } catch (err) {
+        purchasedError.value = extractMessage(err, 'Failed to close request');
+    } finally {
+        purchasedBusy.value = false;
+    }
+}
+
 // Shared helper — every Phase 5c lifecycle action uses the
 // same error-message extraction pattern.
 function extractMessage(err: unknown, fallback: string): string {
@@ -2674,6 +2708,9 @@ async function submitSuggestions(): Promise<void> {
                                     <span class="rounded-full px-2 py-0.5 text-xs font-semibold" :class="restockStatusBadgeClass(r.status)">
                                         {{ t(`inventory.restock.statuses.${r.status}`) }}
                                     </span>
+                                    <span v-if="r.status === 'fulfilled' && r.resolution" class="ms-1 text-[10px] font-medium text-slate-500" :title="r.resolution_note ?? undefined">
+                                        {{ t(`inventory.restock.resolution.${r.resolution}`) }}
+                                    </span>
                                 </td>
                                 <td class="px-5 py-3 text-end text-sm tabular-nums text-slate-700">{{ r.totals?.line_count ?? 0 }}</td>
                                 <td class="px-5 py-3 text-end text-sm font-semibold tabular-nums text-slate-900">
@@ -2704,6 +2741,9 @@ async function submitSuggestions(): Promise<void> {
                                         <button v-if="canReviewRestock && r.status === 'approved'" type="button" class="rounded-lg bg-amber-600 px-2 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-700" @click="openAllocate(r)">
                                             <Package class="me-1 inline size-3.5" />
                                             {{ t('inventory.actions.allocate') }}
+                                        </button>
+                                        <button v-if="canReviewRestock && r.status === 'approved'" type="button" :title="t('inventory.restock.purchased_modal.hint')" class="rounded-lg border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100" @click="openPurchased(r)">
+                                            {{ t('inventory.actions.resolve_purchased') }}
                                         </button>
                                         <button v-if="canCreateRestock && (r.status === 'draft' || r.status === 'submitted')" type="button" :title="t('inventory.actions.cancel_request')" class="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100" @click="openCancel(r)">
                                             <X class="size-3.5" />
@@ -3714,6 +3754,7 @@ async function submitSuggestions(): Promise<void> {
                             <tr>
                                 <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.restock.allocate_modal.ingredient') }}</th>
                                 <th class="px-3 py-2 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.restock.allocate_modal.requested') }}</th>
+                                <th class="px-3 py-2 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.restock.allocate_modal.central') }}</th>
                                 <th class="px-3 py-2 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.restock.allocate_modal.allocated') }}</th>
                             </tr>
                         </thead>
@@ -3723,6 +3764,9 @@ async function submitSuggestions(): Promise<void> {
                                     {{ l.ingredient ? (isArabic && l.ingredient.name_ar ? l.ingredient.name_ar : l.ingredient.name) : '—' }}
                                 </td>
                                 <td class="px-3 py-2 text-end tabular-nums text-slate-700">{{ l.quantity_requested }} <span class="text-[10px] text-slate-500">{{ l.unit_at_set }}</span></td>
+                                <td class="px-3 py-2 text-end tabular-nums" :class="parseFloat(l.ingredient?.central_quantity ?? '0') < parseFloat(allocateOverrides[String(l.id)] ?? '0') ? 'font-semibold text-rose-600' : 'text-slate-700'">
+                                    {{ l.ingredient?.central_quantity ?? '—' }}
+                                </td>
                                 <td class="px-3 py-2 text-end">
                                     <input v-model="allocateOverrides[String(l.id)]" type="number" step="0.001" min="0" :max="l.quantity_requested" class="w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-sm tabular-nums text-end">
                                 </td>
@@ -3739,6 +3783,36 @@ async function submitSuggestions(): Promise<void> {
                     <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="allocateOpen = false">{{ t('inventory.restock.allocate_modal.cancel') }}</button>
                     <button type="submit" form="allocate-modal-form" :disabled="allocateBusy || allocateHasOver" class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60">
                         {{ allocateBusy ? t('inventory.restock.allocate_modal.submitting') : t('inventory.restock.allocate_modal.submit') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
+
+        <!-- ================== PHASE A — RESOLVED-BY-PURCHASE MODAL ================== -->
+        <BaseModal
+            v-if="purchasedOpen && purchasedTarget"
+            size="md"
+            :loading="purchasedBusy"
+            @close="purchasedOpen = false"
+        >
+            <template #header>
+                <h2 class="text-lg font-semibold text-slate-950">{{ t('inventory.restock.purchased_modal.title') }}</h2>
+                <p class="mt-1 text-xs text-slate-600">{{ t('inventory.restock.purchased_modal.hint') }}</p>
+            </template>
+                <form id="purchased-modal-form" class="space-y-3" @submit.prevent="submitPurchased">
+                    <div v-if="purchasedError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                        {{ purchasedError }}
+                    </div>
+                    <label class="block">
+                        <span class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.restock.purchased_modal.note_label') }}</span>
+                        <input v-model="purchasedNote" type="text" maxlength="255" :placeholder="t('inventory.restock.purchased_modal.note_placeholder')" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                    </label>
+                </form>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="purchasedOpen = false">{{ t('inventory.restock.purchased_modal.cancel') }}</button>
+                    <button type="submit" form="purchased-modal-form" :disabled="purchasedBusy" class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60">
+                        {{ purchasedBusy ? t('inventory.restock.purchased_modal.submitting') : t('inventory.restock.purchased_modal.submit') }}
                     </button>
                 </div>
             </template>

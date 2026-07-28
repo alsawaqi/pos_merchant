@@ -31,6 +31,11 @@ class RestockRequestResource extends JsonResource
             'reviewed_at' => $this->reviewed_at?->toIso8601String(),
             'review_note' => $this->review_note,
             'fulfilled_at' => $this->fulfilled_at?->toIso8601String(),
+            // Phase A — how a Fulfilled request was resolved: 'warehouse'
+            // (central debit + branch credit) or 'purchase' (no movement;
+            // the goods entered via a purchase record). NULL = pre-Phase-A.
+            'resolution' => $this->resolution,
+            'resolution_note' => $this->resolution_note,
             'note' => $this->note,
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
