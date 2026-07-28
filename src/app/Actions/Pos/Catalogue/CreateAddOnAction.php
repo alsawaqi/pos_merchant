@@ -73,6 +73,12 @@ final readonly class CreateAddOnAction
                     ->update(['is_default' => false]);
             }
 
+            // Delta visibility: the device config delta emits addons only
+            // under groups whose updated_at moved — without this bump a new
+            // option never reaches delta-syncing devices until their next
+            // full sync (staff login).
+            $group->touch();
+
             $this->writeAuditLog->handle(new AuditLogData(
                 event: 'catalogue.addon.created',
                 actorUserId: $actor->getKey(),

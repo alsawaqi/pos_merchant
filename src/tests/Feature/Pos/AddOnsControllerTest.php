@@ -90,6 +90,42 @@ it('edits an addon price_delta and writes a diff audit', function (): void {
     ]);
 });
 
+it('touches the group when an addon is created so the device config delta sees it', function (): void {
+    $ctx = makeMerchantActor();
+    $group = AddOnGroup::factory()->for($ctx['company'], 'company')->create();
+
+    $before = $group->fresh()->updated_at;
+    $this->travel(2)->minutes();
+
+    $this->postJson("/api/addon-groups/{$group->uuid}/addons", [
+        'name' => 'Extra shot',
+        'price_delta' => '0.300',
+    ])->assertCreated();
+
+    expect($group->fresh()->updated_at->gt($before))->toBeTrue();
+});
+
+it('touches the group on a scalar-only addon edit so delta devices get the new price', function (): void {
+    $ctx = makeMerchantActor();
+    $group = AddOnGroup::factory()->for($ctx['company'], 'company')->create();
+    $addon = AddOn::factory()->for($ctx['company'], 'company')->for($group, 'group')
+        ->create(['price_delta' => '0.300']);
+
+    $before = $group->fresh()->updated_at;
+    $this->travel(2)->minutes();
+
+    $this->patchJson("/api/addons/{$addon->uuid}", ['price_delta' => '0.500'])->assertOk();
+
+    expect($group->fresh()->updated_at->gt($before))->toBeTrue();
+
+    // A true no-op PATCH (same value) stays a no-op — no misleading
+    // group bump, no churn for delta devices.
+    $noopBefore = $group->fresh()->updated_at;
+    $this->travel(2)->minutes();
+    $this->patchJson("/api/addons/{$addon->uuid}", ['price_delta' => '0.500'])->assertOk();
+    expect($group->fresh()->updated_at->eq($noopBefore))->toBeTrue();
+});
+
 it('returns 404 when updating an addon owned by another company', function (): void {
     makeMerchantActor();
     $otherCompany = Company::factory()->create();

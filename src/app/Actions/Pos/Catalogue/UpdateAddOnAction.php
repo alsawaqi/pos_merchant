@@ -140,6 +140,12 @@ final readonly class UpdateAddOnAction
 
             $addon->save();
 
+            // Delta visibility: the device config delta emits addons only
+            // under groups whose updated_at moved — a scalar edit (price,
+            // name, status) must bump the group or delta devices keep
+            // charging the old price until their next full sync.
+            $addon->group()->withTrashed()->first()?->touch();
+
             // A single-select group can only have ONE default — making
             // this option the default clears any sibling's flag.
             if (isset($changes['is_default']) && $addon->is_default) {
