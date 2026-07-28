@@ -124,6 +124,72 @@ it('distributes a line across branches and leaves the remainder central', functi
     expect($receipt->lines()->first()->allocations_json)->toHaveCount(2);
 });
 
+// =================== PHASE B — DIRECT-TO-BRANCH DELIVERY ===================
+
+it('delivers a whole receipt straight to a branch: every line lands there, central nets zero', function (): void {
+    $ctx = makeMerchantActor();
+    $tomato = grnIngredient($ctx);
+    $cola = grnProduct($ctx, ['name' => 'Cola Can']);
+
+    $res = $this->postJson('/api/purchase-receipts', [
+        'destination_branch_uuid' => $ctx['branch']->uuid,
+        'lines' => [
+            ['item_type' => 'ingredient', 'item_uuid' => $tomato->uuid, 'quantity' => '100', 'line_cost' => '30'],
+            ['item_type' => 'product', 'item_uuid' => $cola->uuid, 'quantity' => '48', 'line_cost' => '12'],
+        ],
+    ])->assertCreated();
+
+    expect($res->json('data.destination_branch.uuid'))->toBe($ctx['branch']->uuid);
+
+    // The goods physically landed AT the branch...
+    expect(grnBranchQty($ctx['branch']->id, $tomato->id))->toBe('100.000');
+    expect((string) \App\Models\BranchProduct::query()
+        ->where('branch_id', $ctx['branch']->id)
+        ->where('product_id', $cola->id)
+        ->firstOrFail()->stock_qty)->toBe('48.000');
+
+    // ...and the central pool NETS ZERO (conserved transit: received +
+    // allocated straight out in the same transaction).
+    expect((string) IngredientStock::query()->where('ingredient_id', $tomato->id)->firstOrFail()->quantity)->toBe('0.000');
+    expect((string) ProductStock::query()->where('product_id', $cola->id)->firstOrFail()->quantity)->toBe('0.000');
+
+    // Cost/AP machinery identical to a central receipt.
+    expect((float) Expense::query()->where('category', 'ingredients')->sum('amount'))->toBe(30.0);
+    $receipt = PurchaseReceipt::query()->where('uuid', $res->json('data.uuid'))->firstOrFail();
+    expect((int) $receipt->destination_branch_id)->toBe($ctx['branch']->id);
+});
+
+it('rejects mixing a destination branch with per-line branch splits', function (): void {
+    $ctx = makeMerchantActor();
+    $tomato = grnIngredient($ctx);
+
+    $this->postJson('/api/purchase-receipts', [
+        'destination_branch_uuid' => $ctx['branch']->uuid,
+        'lines' => [[
+            'item_type' => 'ingredient', 'item_uuid' => $tomato->uuid, 'quantity' => '100', 'line_cost' => '30',
+            'allocations' => [['branch_uuid' => $ctx['branch']->uuid, 'quantity' => '40']],
+        ]],
+    ])->assertStatus(422)->assertJsonValidationErrors(['lines.0.allocations']);
+
+    expect(PurchaseReceipt::query()->count())->toBe(0);
+});
+
+it('rejects a destination branch from another company', function (): void {
+    $ctx = makeMerchantActor();
+    $other = Company::factory()->create();
+    $foreignBranch = Branch::factory()->for($other, 'company')->create();
+    $tomato = grnIngredient($ctx);
+
+    $res = $this->postJson('/api/purchase-receipts', [
+        'destination_branch_uuid' => $foreignBranch->uuid,
+        'lines' => [
+            ['item_type' => 'ingredient', 'item_uuid' => $tomato->uuid, 'quantity' => '10', 'line_cost' => '3'],
+        ],
+    ])->assertStatus(422);
+    expect($res->json('message'))->toContain('Destination branch');
+    expect(PurchaseReceipt::query()->count())->toBe(0);
+});
+
 it('stamps the booked expenses with the received_at date', function (): void {
     $ctx = makeMerchantActor();
     $tomato = grnIngredient($ctx);

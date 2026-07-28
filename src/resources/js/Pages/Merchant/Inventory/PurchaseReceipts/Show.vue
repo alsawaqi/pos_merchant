@@ -141,6 +141,7 @@ onMounted(async () => {
                         <p class="mt-0.5 text-sm text-slate-500">
                             {{ formatDate(receipt.received_at) }}
                             <template v-if="receipt.supplier"> · {{ receipt.supplier.name }}</template>
+                            <template v-if="receipt.destination_branch"> · {{ t('purchase_receipts.show.delivered_to', { branch: receipt.destination_branch.name }) }}</template>
                             <template v-if="receipt.recorded_by"> · {{ receipt.recorded_by }}</template>
                         </p>
                     </div>

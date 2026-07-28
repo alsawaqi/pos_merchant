@@ -53,7 +53,7 @@ class PurchaseReceiptController extends Controller
 
         $query = PurchaseReceipt::query()
             ->where('company_id', $this->tenant->requiredId())
-            ->with('supplier')
+            ->with(['supplier', 'destinationBranch'])
             ->withCount('lines');
 
         // AP — filter the payables: ?payment_status=outstanding shows everything
@@ -92,6 +92,20 @@ class PurchaseReceiptController extends Controller
                 ->first();
             if ($supplier === null) {
                 return response()->json(['message' => 'Supplier not found.'], 422);
+            }
+        }
+
+        // Phase B — direct-to-branch delivery: the supplier dropped the goods
+        // at a branch, not the central warehouse. Tenant-scoped resolve; the
+        // action auto-allocates every line in full to it.
+        $destination = null;
+        if ($request->filled('destination_branch_uuid')) {
+            $destination = Branch::query()
+                ->where('company_id', $companyId)
+                ->where('uuid', $request->input('destination_branch_uuid'))
+                ->first();
+            if ($destination === null) {
+                return response()->json(['message' => 'Destination branch not found.'], 422);
             }
         }
 
@@ -136,6 +150,7 @@ class PurchaseReceiptController extends Controller
                 $request->user(),
                 $isCredit,
                 $dueDate,
+                $destination,
             );
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
@@ -143,7 +158,7 @@ class PurchaseReceiptController extends Controller
 
         return response()->json([
             'data' => (new PurchaseReceiptResource(
-                $receipt->load(['lines', 'charges', 'supplier', 'recordedByUser'])
+                $receipt->load(['lines', 'charges', 'supplier', 'recordedByUser', 'destinationBranch'])
             ))->resolve($request),
         ], 201);
     }
@@ -153,7 +168,7 @@ class PurchaseReceiptController extends Controller
         $this->ensure($request, MerchantPermission::InventoryView);
         $this->refuseIfNotInTenant($receipt);
 
-        $receipt->load(['lines', 'charges', 'supplier', 'recordedByUser', 'payments.recordedByUser']);
+        $receipt->load(['lines', 'charges', 'supplier', 'recordedByUser', 'destinationBranch', 'payments.recordedByUser']);
 
         return PurchaseReceiptResource::make($receipt);
     }

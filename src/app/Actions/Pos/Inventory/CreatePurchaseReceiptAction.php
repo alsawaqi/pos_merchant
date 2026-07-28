@@ -74,15 +74,36 @@ final readonly class CreatePurchaseReceiptAction
         User $actor,
         bool $isCredit = false,
         ?Carbon $dueDate = null,
+        ?Branch $destinationBranch = null,
     ): PurchaseReceipt {
         $at = $receivedAt ?? now();
 
+        // Phase B — direct-to-branch delivery (owner scenario 3: the supplier
+        // van drops the goods at the branch). Every line auto-allocates its
+        // FULL quantity to the destination through the existing receive+
+        // distribute pipeline, so the ledger stays conserved and the expense/
+        // AP behaviour is byte-identical to a central receipt. Callers must
+        // not mix explicit per-line splits with a destination (the controller
+        // rejects that shape); overriding here keeps the semantics with the
+        // atomic writer whatever the caller.
+        if ($destinationBranch !== null) {
+            $lines = array_map(static function (array $line) use ($destinationBranch): array {
+                $line['allocations'] = [[
+                    'branch' => $destinationBranch,
+                    'quantity' => $line['quantity'],
+                ]];
+
+                return $line;
+            }, $lines);
+        }
+
         return DB::transaction(function () use (
-            $companyId, $supplier, $reference, $at, $note, $lines, $charges, $actor, $isCredit, $dueDate
+            $companyId, $supplier, $reference, $at, $note, $lines, $charges, $actor, $isCredit, $dueDate, $destinationBranch
         ): PurchaseReceipt {
             $receipt = PurchaseReceipt::query()->create([
                 'company_id' => $companyId,
                 'supplier_id' => $supplier?->id,
+                'destination_branch_id' => $destinationBranch?->id,
                 'reference' => $reference,
                 'items_total' => '0.000',
                 'charges_total' => '0.000',
@@ -136,7 +157,7 @@ final readonly class CreatePurchaseReceiptAction
                 'payment_status' => $paymentStatus,
             ]);
 
-            return $receipt->fresh(['lines', 'charges', 'supplier', 'recordedByUser']);
+            return $receipt->fresh(['lines', 'charges', 'supplier', 'recordedByUser', 'destinationBranch']);
         });
     }
 

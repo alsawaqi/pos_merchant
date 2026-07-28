@@ -60,6 +60,9 @@ interface ChargeRow { id: number; name: string; category: string; amount: string
 
 const header = reactive({
     supplier_uuid: '',
+    // Phase B — '' = central warehouse; a branch uuid = the supplier
+    // delivered the whole receipt straight to that branch.
+    destination_branch_uuid: '',
     reference: '',
     received_at: new Date().toISOString().slice(0, 10),
     note: '',
@@ -205,6 +208,7 @@ async function submit(): Promise<void> {
 
     const payload: CreatePurchaseReceiptPayload = {
         supplier_uuid: header.supplier_uuid || null,
+        destination_branch_uuid: header.destination_branch_uuid || null,
         reference: header.reference || null,
         received_at: header.received_at || null,
         note: header.note || null,
@@ -212,9 +216,13 @@ async function submit(): Promise<void> {
         due_date: header.is_credit ? (header.due_date || null) : null,
         lines: validLines.value.map((l) => {
             const [kind, uuid] = l.itemKey.split(':');
-            const allocations = l.allocations
-                .filter((a) => a.branch_uuid && Number(a.quantity) > 0)
-                .map((a) => ({ branch_uuid: a.branch_uuid, quantity: a.quantity }));
+            // Phase B — a direct-to-branch receipt claims every line in full;
+            // per-line splits are dropped (the server rejects mixing them).
+            const allocations = header.destination_branch_uuid
+                ? []
+                : l.allocations
+                    .filter((a) => a.branch_uuid && Number(a.quantity) > 0)
+                    .map((a) => ({ branch_uuid: a.branch_uuid, quantity: a.quantity }));
             return {
                 item_type: kind === 'ingredient' ? 'ingredient' : 'product',
                 item_uuid: uuid,
@@ -312,6 +320,14 @@ onMounted(async () => {
                     </select>
                 </label>
                 <label class="block">
+                    <span class="text-xs font-medium text-slate-600">{{ t('purchase_receipts.form.destination') }}</span>
+                    <select v-model="header.destination_branch_uuid" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                        <option value="">{{ t('purchase_receipts.form.destination_central') }}</option>
+                        <option v-for="b in branches" :key="b.uuid" :value="b.uuid">{{ b.name }}</option>
+                    </select>
+                    <span v-if="header.destination_branch_uuid" class="mt-1 block text-[11px] text-slate-500">{{ t('purchase_receipts.form.destination_hint') }}</span>
+                </label>
+                <label class="block">
                     <span class="text-xs font-medium text-slate-600">{{ t('purchase_receipts.form.reference') }}</span>
                     <input v-model="header.reference" type="text" maxlength="100" :placeholder="t('purchase_receipts.form.reference_ph')" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
                 </label>
@@ -406,12 +422,12 @@ onMounted(async () => {
 
                         <!-- Inline branch split -->
                         <div class="mt-3 border-t border-slate-100 pt-3">
-                            <button type="button" class="inline-flex items-center gap-1.5 text-xs font-semibold text-teal-700 transition hover:text-teal-800" @click="line.showAllocations = !line.showAllocations">
+                            <button v-if="!header.destination_branch_uuid" type="button" class="inline-flex items-center gap-1.5 text-xs font-semibold text-teal-700 transition hover:text-teal-800" @click="line.showAllocations = !line.showAllocations">
                                 <component :is="line.showAllocations ? ChevronUp : ChevronDown" class="size-4" />
                                 {{ t('purchase_receipts.form.distribute_now') }}
                             </button>
 
-                            <div v-if="line.showAllocations" class="mt-3">
+                            <div v-if="line.showAllocations && !header.destination_branch_uuid" class="mt-3">
                                 <p class="text-[11px] text-slate-400">{{ t('purchase_receipts.form.distribute_hint') }}</p>
                                 <div class="mt-2 grid gap-2 sm:grid-cols-2">
                                     <div v-for="alloc in line.allocations" :key="alloc.branch_uuid" class="flex items-center gap-2">

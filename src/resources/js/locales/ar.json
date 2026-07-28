@@ -247,7 +247,10 @@
             "tax_total": "الضريبة",
             "grand_total": "الإجمالي",
             "save": "حفظ السند",
-            "saving": "جارٍ الحفظ…"
+            "saving": "جارٍ الحفظ…",
+            "destination": "التسليم إلى",
+            "destination_central": "المستودع المركزي (استلام وتوزيع)",
+            "destination_hint": "تصل الشحنة كاملة إلى هذا الفرع — يتم تعطيل تقسيم البنود بين الفروع."
         },
         "payment": {
             "title": "الدفع",
@@ -277,6 +280,9 @@
             "note": "ملاحظة",
             "history": "سجل الدفعات",
             "balance_after": "المتبقّي {amount}"
+        },
+        "show": {
+            "delivered_to": "سُلّمت إلى {branch}"
         }
     },
     "common": {

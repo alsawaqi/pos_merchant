@@ -74,6 +74,8 @@ export interface PurchaseReceipt {
     due_date: string | null;
     received_at: string | null;
     supplier: { uuid: string; name: string } | null;
+    /** Phase B — NULL = central warehouse; set = direct-to-branch delivery. */
+    destination_branch?: { uuid: string; name: string } | null;
     recorded_by: string | null;
     /** Present in the list view (withCount). */
     lines_count?: number;
@@ -118,6 +120,12 @@ export interface PurchaseReceiptChargePayload {
 
 export interface CreatePurchaseReceiptPayload {
     supplier_uuid?: string | null;
+    /**
+     * Phase B — direct-to-branch delivery: the whole receipt lands at this
+     * branch (every line auto-allocates 100% to it; per-line allocations
+     * must be omitted). Absent/null = central warehouse.
+     */
+    destination_branch_uuid?: string | null;
     reference?: string | null;
     received_at?: string | null;
     note?: string | null;

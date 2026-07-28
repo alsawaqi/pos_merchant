@@ -1568,6 +1568,8 @@ return new class extends Migration
             $table->uuid('uuid')->unique();
             $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
             $table->foreignId('supplier_id')->nullable()->constrained('pos_suppliers')->nullOnDelete();
+            // Phase B — direct-to-branch delivery (pos_admin 2026_08_05_010200).
+            $table->foreignId('destination_branch_id')->nullable()->constrained('pos_branches')->nullOnDelete();
             $table->string('reference', 100)->nullable();
             $table->decimal('items_total', 12, 3)->default(0);
             $table->decimal('charges_total', 12, 3)->default(0);

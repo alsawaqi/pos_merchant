@@ -46,6 +46,12 @@ class PurchaseReceiptResource extends JsonResource
                 'uuid' => $this->supplier->uuid,
                 'name' => $this->supplier->name,
             ] : null),
+            // Phase B — NULL = central warehouse; set = the branch the whole
+            // delivery landed at (direct-to-branch supplier drop).
+            'destination_branch' => $this->whenLoaded('destinationBranch', fn (): ?array => $this->destinationBranch !== null ? [
+                'uuid' => $this->destinationBranch->uuid,
+                'name' => $this->destinationBranch->name,
+            ] : null),
             'recorded_by' => $this->whenLoaded('recordedByUser', fn (): ?string => $this->recordedByUser?->name),
             'lines_count' => $this->whenCounted('lines'),
             'lines' => $this->whenLoaded('lines', fn (): array => $this->lines

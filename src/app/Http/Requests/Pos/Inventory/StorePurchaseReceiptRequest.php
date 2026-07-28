@@ -27,6 +27,10 @@ class StorePurchaseReceiptRequest extends FormRequest
     {
         return [
             'supplier_uuid' => ['nullable', 'string', 'uuid'],
+            // Phase B — direct-to-branch delivery: the whole receipt lands at
+            // this branch (every line auto-allocates 100% to it). Absent =
+            // central warehouse, today's receive & distribute.
+            'destination_branch_uuid' => ['nullable', 'string', 'uuid'],
             'reference' => ['nullable', 'string', 'max:100'],
             'received_at' => ['nullable', 'date'],
             'note' => ['nullable', 'string', 'max:2000'],
@@ -59,6 +63,20 @@ class StorePurchaseReceiptRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $v): void {
+            // Phase B — a direct-to-branch delivery and per-line branch
+            // splits are mutually exclusive: the destination already claims
+            // every line in full.
+            if ($this->filled('destination_branch_uuid')) {
+                foreach ((array) $this->input('lines', []) as $i => $line) {
+                    if (! empty($line['allocations'])) {
+                        $v->errors()->add(
+                            "lines.{$i}.allocations",
+                            'A direct-to-branch delivery cannot also split lines across branches — the whole receipt lands at the destination branch.',
+                        );
+                    }
+                }
+            }
+
             // A line may not distribute more than it received (the action
             // enforces this too, but a field-level error reads better).
             foreach ((array) $this->input('lines', []) as $i => $line) {

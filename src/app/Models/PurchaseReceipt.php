@@ -26,6 +26,7 @@ use Illuminate\Support\Str;
     'uuid',
     'company_id',
     'supplier_id',
+    'destination_branch_id',
     'reference',
     'items_total',
     'charges_total',
@@ -102,6 +103,17 @@ class PurchaseReceipt extends Model
     public function supplier(): BelongsTo
     {
         return $this->belongsTo(Supplier::class);
+    }
+
+    /**
+     * Phase B — where the whole delivery physically landed. NULL = the
+     * central warehouse (receive & distribute); set = direct-to-branch.
+     *
+     * @return BelongsTo<Branch, $this>
+     */
+    public function destinationBranch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class, 'destination_branch_id');
     }
 
     /**

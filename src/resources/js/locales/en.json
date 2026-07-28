@@ -247,7 +247,10 @@
             "tax_total": "Tax",
             "grand_total": "Total",
             "save": "Save receipt",
-            "saving": "Saving…"
+            "saving": "Saving…",
+            "destination": "Deliver to",
+            "destination_central": "Central warehouse (receive & distribute)",
+            "destination_hint": "The whole delivery lands at this branch — per-line branch splits are disabled."
         },
         "payment": {
             "title": "Payment",
@@ -277,6 +280,9 @@
             "note": "Note",
             "history": "Payment history",
             "balance_after": "balance {amount}"
+        },
+        "show": {
+            "delivered_to": "delivered to {branch}"
         }
     },
     "common": {
