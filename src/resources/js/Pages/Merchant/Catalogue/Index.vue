@@ -1061,6 +1061,16 @@ async function performProviderDelete(): Promise<void> {
                                         <Beaker class="size-3" />
                                         {{ t('catalogue.recipe.badge', { count: (prod.recipe_lines ?? []).length }) }}
                                     </span>
+                                    <!-- A made-to-order / cooked product with NO
+                                         recipe deducts nothing when it sells —
+                                         flag it so a forgotten recipe surfaces. -->
+                                    <span
+                                        v-else-if="prod.stock_mode === 'ingredient' || prod.stock_mode === 'cooked'"
+                                        class="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-rose-700"
+                                        :title="t('catalogue.recipe.missing_hint')"
+                                    >
+                                        {{ t('catalogue.recipe.missing_badge') }}
+                                    </span>
                                     <span v-else class="text-xs text-slate-400">—</span>
                                 </td>
                                 <td class="px-5 py-4">

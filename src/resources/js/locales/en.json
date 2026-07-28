@@ -911,7 +911,14 @@
             "back_step": "Back",
             "create": "Confirm & create",
             "save": "Confirm & save",
-            "saving": "Saving…"
+            "saving": "Saving…",
+            "no_recipe_confirm": {
+                "title": "No recipe on this product",
+                "body_ingredient": "This made-to-order product has no recipe, so selling it will deduct NOTHING from your ingredient inventory. That is allowed — but if you meant to add a recipe, go back and add it now.",
+                "body_cooked": "This cooked product has no recipe, so kitchen production will consume NO ingredients when batches are made. That is allowed — but if you meant to add a recipe, go back and add it now.",
+                "cancel": "Go back",
+                "confirm": "Save without a recipe"
+            }
         },
         "section_label": "Menu",
         "title": "Catalogue",
@@ -1097,7 +1104,9 @@
             "margin": "Margin",
             "margin_hint": "Computed as (base price − recipe cost) ÷ base price.",
             "duplicate_ingredient": "Each ingredient can appear at most once in the recipe.",
-            "badge": "{count} ingredient | {count} ingredients"
+            "badge": "{count} ingredient | {count} ingredients",
+            "missing_badge": "No recipe",
+            "missing_hint": "Selling this product deducts nothing from inventory — add a recipe if that is not intended."
         },
         "table_cost_col": "Cost",
         "table_recipe_col": "Recipe",

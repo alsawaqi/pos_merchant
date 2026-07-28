@@ -30,6 +30,7 @@ import {
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { onBeforeRouteLeave, useRoute, useRouter, RouterLink } from 'vue-router';
 import { useI18n } from 'vue-i18n';
+import BaseModal from '@/Components/BaseModal.vue';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
@@ -808,7 +809,28 @@ function deliveryPricesPayload(): { provider_uuid: string; price: string }[] {
 }
 
 // ---- Submit -----------------------------------------------------------
+
+// "No recipe = no deduction" is a documented, deliberate semantic — but a
+// merchant who simply FORGOT the recipe would silently sell a made-to-order
+// (or produce a cooked) product that consumes nothing, drifting inventory
+// high with no alert (inventory-flow audit). One blocking confirm closes
+// the forgot case without banning the intentional one.
+const noRecipeConfirmOpen = ref(false);
+let noRecipeConfirmed = false;
+
+function confirmNoRecipe(): void {
+    noRecipeConfirmOpen.value = false;
+    noRecipeConfirmed = true;
+    void submit();
+}
+
 async function submit(): Promise<void> {
+    if (hasRecipeStep.value && recipePayload().length === 0 && !noRecipeConfirmed) {
+        noRecipeConfirmOpen.value = true;
+        return;
+    }
+    noRecipeConfirmed = false; // one-shot: a later edit asks again
+
     submitting.value = true;
     submitError.value = null;
     fieldErrors.value = {};
@@ -1855,5 +1877,29 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                 </form>
             </template>
         </div>
+
+        <!-- Empty-recipe confirm: a made-to-order / cooked product with no
+             recipe deducts NOTHING when it sells — legal, but usually a
+             forgotten step. -->
+        <BaseModal v-if="noRecipeConfirmOpen" size="md" @close="noRecipeConfirmOpen = false">
+            <template #header>
+                <h2 class="text-lg font-semibold text-slate-950">{{ t('catalogue.wizard.no_recipe_confirm.title') }}</h2>
+            </template>
+            <p class="text-sm text-slate-700">
+                {{ form.stock_mode === 'cooked'
+                    ? t('catalogue.wizard.no_recipe_confirm.body_cooked')
+                    : t('catalogue.wizard.no_recipe_confirm.body_ingredient') }}
+            </p>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="noRecipeConfirmOpen = false">
+                        {{ t('catalogue.wizard.no_recipe_confirm.cancel') }}
+                    </button>
+                    <button type="button" class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-700" @click="confirmNoRecipe">
+                        {{ t('catalogue.wizard.no_recipe_confirm.confirm') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
     </MerchantLayout>
 </template>
