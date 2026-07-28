@@ -1150,6 +1150,8 @@ return new class extends Migration
             $table->decimal('line_total', 12, 3);
             // sqlite mirror — production is jsonb on Postgres.
             $table->text('recipe_snapshot_json')->nullable();
+            // Frozen parent-line components (pos_admin 2026_08_05_010000).
+            $table->text('component_snapshot_json')->nullable();
             $table->string('status', 32)->default('open');
             $table->text('notes')->nullable();
             $table->timestamps();
