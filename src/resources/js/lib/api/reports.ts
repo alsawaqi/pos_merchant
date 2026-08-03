@@ -295,6 +295,45 @@ export function fetchInventoryConsumptionReport(filter: ReportFilter): Promise<{
 }
 
 // ============================================================
+// Portion Variance Report
+// ============================================================
+
+export interface PortionVarianceReportPayload {
+    window: { from: string; to: string; consolidated: boolean; branch_ids: number[] | null };
+    headline: {
+        theoretical_cost: string;
+        production_cost: string;
+        waste_cost: string;
+        count_shortfall_cost: string;
+        count_overage_cost: string;
+        adjustment_cost: string;
+        uncounted_ingredients: number;
+    };
+    rows: {
+        ingredient_id: number;
+        ingredient_name: string;
+        unit: string;
+        theoretical_qty: string;
+        theoretical_cost: string;
+        production_qty: string;
+        production_cost: string;
+        waste_qty: string;
+        waste_cost: string;
+        count_variance_qty: string;
+        count_variance_cost: string;
+        adjustment_qty: string;
+        adjustment_cost: string;
+        variance_pct: string | null;
+        count_events: number;
+        last_counted_at: string | null;
+    }[];
+}
+
+export function fetchPortionVarianceReport(filter: ReportFilter): Promise<{ data: PortionVarianceReportPayload }> {
+    return apiGet<{ data: PortionVarianceReportPayload }>(reportPath('portion-variance', filter));
+}
+
+// ============================================================
 // Loss / Waste Report (§5.11.5)
 // ============================================================
 

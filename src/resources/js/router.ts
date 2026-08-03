@@ -47,6 +47,7 @@ import ReportsProductPerformance from '@/Pages/Merchant/Reports/ProductPerforman
 import ReportsRecipeCost from '@/Pages/Merchant/Reports/RecipeCost.vue';
 import ReportsStaffActivity from '@/Pages/Merchant/Reports/StaffActivity.vue';
 import ReportsInventoryConsumption from '@/Pages/Merchant/Reports/InventoryConsumption.vue';
+import ReportsPortionVariance from '@/Pages/Merchant/Reports/PortionVariance.vue';
 import ReportsLossWaste from '@/Pages/Merchant/Reports/LossWaste.vue';
 import ReportsRestockPurchasing from '@/Pages/Merchant/Reports/RestockPurchasing.vue';
 import ReportsRoundUpDonation from '@/Pages/Merchant/Reports/RoundUpDonation.vue';
@@ -347,6 +348,7 @@ const routes: RouteRecordRaw[] = [
     { path: '/reports/recipe-cost', name: 'merchant.reports.recipe-cost', component: ReportsRecipeCost, meta: { requiresAuth: true } },
     { path: '/reports/staff-activity', name: 'merchant.reports.staff-activity', component: ReportsStaffActivity, meta: { requiresAuth: true } },
     { path: '/reports/inventory-consumption', name: 'merchant.reports.inventory-consumption', component: ReportsInventoryConsumption, meta: { requiresAuth: true } },
+    { path: '/reports/portion-variance', name: 'merchant.reports.portion-variance', component: ReportsPortionVariance, meta: { requiresAuth: true } },
     { path: '/reports/loss-waste', name: 'merchant.reports.loss-waste', component: ReportsLossWaste, meta: { requiresAuth: true } },
     { path: '/reports/restock-purchasing', name: 'merchant.reports.restock-purchasing', component: ReportsRestockPurchasing, meta: { requiresAuth: true } },
     { path: '/reports/round-up-donation', name: 'merchant.reports.round-up-donation', component: ReportsRoundUpDonation, meta: { requiresAuth: true } },

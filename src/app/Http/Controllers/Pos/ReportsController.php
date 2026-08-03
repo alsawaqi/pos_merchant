@@ -11,6 +11,7 @@ use App\Actions\Pos\Reports\DiscountedCompedProductsReportAction;
 use App\Actions\Pos\Reports\DiscountReportAction;
 use App\Actions\Pos\Reports\InventoryConsumptionReportAction;
 use App\Actions\Pos\Reports\LossWasteReportAction;
+use App\Actions\Pos\Reports\PortionVarianceReportAction;
 use App\Actions\Pos\Reports\PayoutBreakdownReportAction;
 use App\Actions\Pos\Reports\ProductPerformanceReportAction;
 use App\Actions\Pos\Reports\RecipeCostReportAction;
@@ -65,6 +66,7 @@ class ReportsController extends Controller
         private readonly CompReportAction $compReport,
         private readonly ShiftReportAction $shiftReport,
         private readonly DiscountedCompedProductsReportAction $discountedCompedProductsReport,
+        private readonly PortionVarianceReportAction $portionVarianceReport,
     ) {}
 
     /** Discounted & comped products — which exact product was reduced, by what type. */
@@ -177,6 +179,17 @@ class ReportsController extends Controller
         return response()->json(['data' => $payload]);
     }
 
+    /** Portion variance - theoretical recipe usage vs waste vs count variance vs manual adjustments, in qty and frozen cost. */
+    public function portionVariance(ReportFilterRequest $request): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::ReportsView);
+
+        $filter = ReportFilter::fromArray($request->validated(), $request->user()?->allowedBranchIds());
+        $payload = $this->portionVarianceReport->handle($filter);
+
+        return response()->json(['data' => $payload]);
+    }
+
     public function lossWaste(ReportFilterRequest $request): JsonResponse
     {
         $this->ensure($request, MerchantPermission::ReportsView);
@@ -263,6 +276,7 @@ class ReportsController extends Controller
             'staff-activity' => $this->staffActivityReport,
             'inventory-consumption' => $this->inventoryConsumptionReport,
             'loss-waste' => $this->lossWasteReport,
+            'portion-variance' => $this->portionVarianceReport,
             'restock-purchasing' => $this->restockPurchasingReport,
             'round-up-donation' => $this->roundUpDonationReport,
             'discounted-comped-products' => $this->discountedCompedProductsReport,

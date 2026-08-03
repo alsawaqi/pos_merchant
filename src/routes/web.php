@@ -873,6 +873,8 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('reports.inventory-consumption');
         Route::get('reports/loss-waste', [ReportsController::class, 'lossWaste'])
             ->name('reports.loss-waste');
+        Route::get('reports/portion-variance', [ReportsController::class, 'portionVariance'])
+            ->name('reports.portion-variance');
         Route::get('reports/restock-purchasing', [ReportsController::class, 'restockPurchasing'])
             ->name('reports.restock-purchasing');
         Route::get('reports/round-up-donation', [ReportsController::class, 'roundUpDonation'])

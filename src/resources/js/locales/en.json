@@ -2456,6 +2456,10 @@
                     "title": "Loss / Waste",
                     "desc": "Total waste value, by branch, by reason, top wasted ingredients."
                 },
+                "portion_variance": {
+                    "title": "Portion Variance",
+                    "desc": "Recipe-theoretical usage vs waste vs count variance, in quantity and cost."
+                },
                 "restock_purchasing": {
                     "title": "Restock / Purchasing",
                     "desc": "Restock spend by supplier, by branch, top purchased ingredients."
@@ -2787,6 +2791,32 @@
                 "waste": "Waste",
                 "give_away": "Give-away"
             }
+        },
+        "portion_variance": {
+            "page_title": "Portion Variance Report",
+            "subtitle": "Where the food actually went, in money. Costs are frozen at event time; count variance is the day-end physical count vs the book balance — stock missing beyond every recorded reason.",
+            "headline": {
+                "theoretical_cost": "Theoretical usage (cost)",
+                "waste_cost": "Recorded waste (cost)",
+                "count_shortfall_cost": "Count shortfall (cost)",
+                "uncounted": "Consumed but never counted"
+            },
+            "chart_title": "Top unexplained shortfalls (cost)",
+            "columns": {
+                "ingredient": "Ingredient",
+                "unit": "Unit",
+                "theoretical_qty": "Theoretical qty",
+                "theoretical_cost": "Theoretical cost",
+                "production_cost": "Production cost",
+                "waste_qty": "Waste qty",
+                "waste_cost": "Waste cost",
+                "count_variance_qty": "Count var. qty",
+                "count_variance_cost": "Count var. cost",
+                "adjustment_cost": "Manual adj. cost",
+                "variance_pct": "Var %",
+                "last_counted": "Last counted"
+            },
+            "never_counted": "Never counted"
         },
         "restock_purchasing": {
             "page_title": "Restock / Purchasing Report",

@@ -24,6 +24,7 @@ import {
     UserCheck,
     Boxes,
     Trash2,
+    Scale,
     Truck,
     HandHeart,
     type LucideIcon,
@@ -55,6 +56,7 @@ const tiles: Tile[] = [
     { key: 'staff_activity', to: '/reports/staff-activity', icon: UserCheck },
     { key: 'inventory_consumption', to: '/reports/inventory-consumption', icon: Boxes },
     { key: 'loss_waste', to: '/reports/loss-waste', icon: Trash2 },
+    { key: 'portion_variance', to: '/reports/portion-variance', icon: Scale },
     { key: 'restock_purchasing', to: '/reports/restock-purchasing', icon: Truck },
     { key: 'round_up_donation', to: '/reports/round-up-donation', icon: HandHeart },
 ];
