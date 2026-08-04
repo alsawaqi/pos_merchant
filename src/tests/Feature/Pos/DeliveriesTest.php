@@ -124,6 +124,14 @@ it('bulk-confirms at the expected payout, re-dates revenue, and splits commissio
     expect((float) $rows[1]->commission_amount)->toBe(0.0);
     expect((float) $rows[2]->commission_amount)->toBe(2.280);
     expect($rows[2]->occurred_at)->not->toBeNull();
+    // Channel stamps (mixed-tender apportionment): delivery money is
+    // merchant-held, so platform + merchant live in cash_bank (invoice-
+    // billable, never payout-claimable); the 0-amount bank row documents
+    // its cut in the (empty) card channel. A wrong 'card'/'all' stamp on
+    // the residual would let CreatePayoutAction pay out provider money.
+    expect($rows[0]->channel)->toBe('cash_bank');
+    expect($rows[1]->channel)->toBe('card');
+    expect($rows[2]->channel)->toBe('cash_bank');
 
     // Idempotent: re-confirming is refused (no longer pending).
     $this->postJson('/api/deliveries/confirm', ['order_ids' => [$order->id]])->assertStatus(422);

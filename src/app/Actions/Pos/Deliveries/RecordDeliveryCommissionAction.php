@@ -88,25 +88,32 @@ final readonly class RecordDeliveryCommissionAction
             // channel: 'all' and 'cash_bank' lines bite the collected amount.
             // Null-safe: pre-migration rows read 'all' (prior behaviour).
             $appliesTo = (string) ($share->applies_to ?? 'all');
-            $base = ($share->party_type === self::PARTY_BANK || $appliesTo === 'card')
-                ? 0
-                : $collectedBaisas;
+            $isCardScoped = $share->party_type === self::PARTY_BANK || $appliesTo === 'card';
+            $base = $isCardScoped ? 0 : $collectedBaisas;
             $amountBaisas = (int) round($base * $percent / 100);
             $allocatedBaisas += $amountBaisas;
 
             $rows[] = [
                 'party_type' => (string) $share->party_type,
                 'party_label' => (string) $share->label,
+                // Channel stamp mirrors the twins: bank/card-scoped rows live
+                // in the (empty, 0-amount) card channel; everything else is
+                // merchant-held delivery money = the cash_bank channel. This
+                // is byte-identical to what the pos_api twin emits for a pure
+                // non-card order.
+                'channel' => $isCardScoped ? 'card' : 'cash_bank',
                 'percent' => $percent,
                 'amount_baisas' => $amountBaisas,
                 'sort_order' => $sortOrder++,
             ];
         }
 
-        // The merchant takes the exact remainder — Σ(rows) == collected.
+        // The merchant takes the exact remainder — Σ(rows) == collected, all
+        // of it merchant-held (cash_bank channel).
         $rows[] = [
             'party_type' => 'merchant',
             'party_label' => 'Merchant',
+            'channel' => 'cash_bank',
             'percent' => (float) $profile->merchant_percent,
             'amount_baisas' => $collectedBaisas - $allocatedBaisas,
             'sort_order' => $sortOrder,
@@ -116,7 +123,11 @@ final readonly class RecordDeliveryCommissionAction
         // the pos_admin reconciliation twin wraps its rows in their own
         // transaction): a partial breakdown would be frozen forever by the
         // exists() guard above, silently dropping the merchant's residual.
-        return DB::transaction(function () use ($rows, $order, $profile, $grossBaisas, $occurredAt): array {
+        // Deploy-window safety: fall back to legacy 'all' rows (column
+        // default) while the pos_admin migration has not landed yet.
+        $hasChannel = \Illuminate\Support\Facades\Schema::hasColumn('pos_sale_commissions', 'channel');
+
+        return DB::transaction(function () use ($rows, $order, $profile, $grossBaisas, $occurredAt, $hasChannel): array {
             $ids = [];
             foreach ($rows as $row) {
                 $ids[] = (int) DB::table('pos_sale_commissions')->insertGetId([
@@ -129,6 +140,7 @@ final readonly class RecordDeliveryCommissionAction
                     'commission_profile_id' => $profile->id,
                     'party_type' => $row['party_type'],
                     'party_label' => $row['party_label'],
+                    ...($hasChannel ? ['channel' => $row['channel']] : []),
                     'percent' => $row['percent'],
                     'gross_amount' => number_format($grossBaisas / 1000, 3, '.', ''),
                     'commission_amount' => number_format($row['amount_baisas'] / 1000, 3, '.', ''),

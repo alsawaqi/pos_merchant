@@ -183,10 +183,16 @@ final readonly class PayoutBreakdownReportAction
             return $q;
         };
 
-        // Realised = paid out (card) OR a pure cash/bank_pos sale (collected
-        // directly). Correlated EXISTS on pos_payments — portable across sqlite +
-        // Postgres. Only the merchant party's realised amount is read below.
-        $realisedCase = "CASE WHEN pos_payouts.status = 'paid' OR ("
+        // Realised = paid out (card) OR money the merchant collected directly:
+        // a cash_bank-CHANNEL row (mixed-tender apportionment — the cash slice
+        // of ANY order, pure or mixed, is drawer money realised on the spot) or
+        // a legacy pure cash/bank_pos sale. Correlated EXISTS on pos_payments —
+        // portable across sqlite + Postgres. Only the merchant party's realised
+        // amount is read below. Without the channel clause, a mixed order's
+        // cash slice sat in pending_net as if the platform held it.
+        $realisedCase = "CASE WHEN pos_payouts.status = 'paid' "
+            ."OR pos_sale_commissions.channel = 'cash_bank' "
+            ."OR ("
             ."EXISTS (SELECT 1 FROM pos_payments hp WHERE hp.order_id = pos_sale_commissions.order_id AND hp.method IN ('cash','bank_pos') AND hp.status <> 'failed') "
             ."AND NOT EXISTS (SELECT 1 FROM pos_payments cp WHERE cp.order_id = pos_sale_commissions.order_id AND cp.method = 'card' AND cp.status <> 'failed')"
             .") THEN COALESCE(pos_sale_commissions.settled_amount, pos_sale_commissions.commission_amount) ELSE 0 END";

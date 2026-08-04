@@ -191,6 +191,53 @@ it('counts a pure cash sale as realised income (in hand), never pending forever 
     expect($rows[0]['pending_net'])->toBe('0.000');    // NOT pending
 });
 
+it('counts a mixed order cash-channel residual as realised, card-channel as pending', function (): void {
+    $ctx = makeMerchantActor();
+    $company = $ctx['company'];
+
+    // Mixed 6.000 card + 4.000 cash, channel-split rows (mixed-tender
+    // apportionment): the 3.920 cash residual is drawer money — realised the
+    // moment the sale closed; only the 5.700 card residual awaits a payout.
+    $occurredAt = '2026-06-10 10:00:00';
+    $sort = 0;
+    $insert = function (string $party, string $channel, string $amount) use ($company, $occurredAt, &$sort): void {
+        DB::table('pos_sale_commissions')->insert([
+            'uuid' => (string) Str::uuid(), 'company_id' => $company->id, 'branch_id' => 1, 'device_id' => 1,
+            'order_id' => 9001, 'party_type' => $party, 'party_label' => ucfirst($party), 'channel' => $channel,
+            'percent' => 0, 'gross_amount' => '10.000', 'commission_amount' => $amount, 'sort_order' => $sort++,
+            'occurred_at' => $occurredAt, 'created_at' => $occurredAt, 'updated_at' => $occurredAt,
+        ]);
+    };
+    $insert('platform', 'card', '0.120');
+    $insert('platform', 'cash_bank', '0.080');
+    $insert('bank', 'card', '0.180');
+    $insert('merchant', 'card', '5.700');
+    $insert('merchant', 'cash_bank', '3.920');
+    // The order has BOTH tender kinds — the legacy pure-cash realised clause
+    // must NOT be what fires here.
+    $orderRow = ['uuid' => (string) Str::uuid(), 'company_id' => $company->id, 'branch_id' => 1,
+        'order_type' => 'quick', 'status' => 'paid', 'source' => 'main_pos',
+        'subtotal' => '10.000', 'discount_total' => 0, 'tax_total' => 0, 'grand_total' => '10.000',
+        'opened_at' => $occurredAt, 'created_at' => $occurredAt, 'updated_at' => $occurredAt];
+    DB::table('pos_orders')->insert(['id' => 9001] + $orderRow);
+    foreach ([['card', '6.000'], ['cash', '4.000']] as [$method, $amount]) {
+        DB::table('pos_payments')->insert([
+            'uuid' => (string) Str::uuid(), 'order_id' => 9001, 'method' => $method, 'amount' => $amount,
+            'status' => 'success', 'pending_reconciliation' => false,
+            'captured_at' => $occurredAt, 'created_at' => $occurredAt, 'updated_at' => $occurredAt,
+        ]);
+    }
+
+    $rows = $this->getJson('/api/reports/payouts?date_from=2026-06-01&date_to=2026-06-30')
+        ->assertOk()->json('data.by_month');
+
+    expect($rows)->toHaveCount(1);
+    // merchant_net = both residuals; realised = the cash slice only.
+    expect($rows[0]['merchant_net'])->toBe('9.620');
+    expect($rows[0]['finalized_net'])->toBe('3.920');
+    expect($rows[0]['pending_net'])->toBe('5.700');
+});
+
 it('breaks the payout down per branch', function (): void {
     $ctx = makeMerchantActor();
     $cid = $ctx['company']->id;

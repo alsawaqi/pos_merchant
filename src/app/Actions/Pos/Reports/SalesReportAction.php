@@ -508,7 +508,7 @@ final readonly class SalesReportAction
             ->where('pos_sale_commissions.party_type', 'merchant')
             ->selectRaw("
                 COALESCE(SUM(COALESCE(pos_sale_commissions.settled_amount, pos_sale_commissions.commission_amount)), 0) AS total,
-                COALESCE(SUM(CASE WHEN pos_payouts.status = 'paid' THEN COALESCE(pos_sale_commissions.settled_amount, pos_sale_commissions.commission_amount) ELSE 0 END), 0) AS finalized
+                COALESCE(SUM(CASE WHEN pos_payouts.status = 'paid' OR pos_sale_commissions.channel = 'cash_bank' THEN COALESCE(pos_sale_commissions.settled_amount, pos_sale_commissions.commission_amount) ELSE 0 END), 0) AS finalized
             ")
             ->first();
         $merchTotal = (float) ($merch?->total ?? 0);

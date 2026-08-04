@@ -38,6 +38,10 @@ final class CommissionInvoiceBranchLinesAction
         $partyRows = DB::table('pos_sale_commissions as sc')
             ->join('pos_branches', 'pos_branches.id', '=', 'sc.branch_id')
             ->whereIn('sc.order_id', $orderIds)
+            // Channel-consistent with the invoice claim (mirrors the pos_admin
+            // twin): a mixed order's card-channel rows belong to the payout
+            // statement, never to this bill.
+            ->whereIn('sc.channel', ['cash_bank', 'all'])
             ->selectRaw('
                 sc.branch_id AS branch_id,
                 pos_branches.name AS branch_name,
