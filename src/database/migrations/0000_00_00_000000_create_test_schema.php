@@ -1445,9 +1445,11 @@ return new class extends Migration
             $table->uuid('uuid')->unique();
             $table->unsignedBigInteger('company_id')->index();
             $table->unsignedBigInteger('branch_id')->index();
+            $table->string('branch_name')->nullable();
             $table->unsignedBigInteger('device_id')->nullable();
             $table->unsignedBigInteger('order_id')->nullable();
             $table->unsignedBigInteger('payment_id')->nullable();
+            $table->unsignedBigInteger('organization_id')->nullable();
             $table->decimal('amount', 12, 3);
             $table->string('status', 30)->default('pending');
             $table->string('source', 30)->default('pos_roundup');
