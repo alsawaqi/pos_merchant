@@ -1975,6 +1975,52 @@
         "title": "Loyalty Rules",
         "subtitle": "Define visit-based stamp cards and spend-based point rules. Multiple can run in parallel; pause or resume any rule without deleting it. Per-customer balances live on the Customers page.",
         "empty": "No loyalty rules yet. Create a points or stamp-card rule to get started.",
+        "shortfalls": {
+            "title": "Redemption shortfalls",
+            "subtitle": "Offline redemptions that exceeded the available loyalty balance. The sale stayed settled; review the discrepancy and record how it was handled.",
+            "filters": {
+                "pending": "Pending",
+                "resolved": "Resolved",
+                "all": "All"
+            },
+            "columns": {
+                "when": "When",
+                "customer": "Customer",
+                "order": "Order",
+                "requested": "Requested",
+                "applied": "Applied",
+                "shortfall": "Shortfall",
+                "review": "Review"
+            },
+            "status": {
+                "pending": "Pending",
+                "resolved": "Resolved"
+            },
+            "empty": {
+                "pending": "No redemption shortfalls need review.",
+                "resolved": "No redemption shortfalls have been resolved yet.",
+                "all": "No redemption shortfalls were recorded."
+            },
+            "amounts": "{points} pts / {stamps} stamps",
+            "amounts_unavailable": "Details unavailable",
+            "unknown_customer": "Unknown customer",
+            "unknown_reviewer": "Former portal user",
+            "actions": {
+                "resolve": "Mark resolved"
+            },
+            "pagination": {
+                "previous": "Previous",
+                "next": "Next"
+            },
+            "resolve_modal": {
+                "title": "Resolve redemption shortfall",
+                "summary": "Requested {requested}; applied {applied}; shortfall {shortfall}.",
+                "note": "Resolution note",
+                "note_placeholder": "Explain what you checked and how the discrepancy was handled.",
+                "hint": "This records the review only. It does not change the customer's loyalty balance or the sale.",
+                "submit": "Mark resolved"
+            }
+        },
         "table": {
             "wallet": "Wallet"
         },
@@ -2044,6 +2090,8 @@
             "no_entries": "No entries yet."
         },
         "errors": {
+            "shortfalls_load_failed": "Could not load redemption shortfalls.",
+            "shortfall_resolve_failed": "Could not resolve the redemption shortfall.",
             "rules_load_failed": "Could not load loyalty rules.",
             "rule_save_failed": "Could not save the loyalty rule.",
             "summary_failed": "Could not load loyalty summary.",

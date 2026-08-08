@@ -12,7 +12,7 @@
  *   - Add / Edit / Pause / Resume / Delete only when LoyaltyManage
  */
 
-import { Coins, Gift, Pause, Pencil, Play, Plus, Stamp, Trash2 } from 'lucide-vue-next';
+import { AlertTriangle, CheckCircle2, Coins, Gift, Pause, Pencil, Play, Plus, Stamp, Trash2 } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
@@ -23,15 +23,21 @@ import {
     createLoyaltyRule,
     deleteLoyaltyRule,
     listLoyaltyRules,
+    listLoyaltyShortfalls,
     pauseLoyaltyRule,
+    resolveLoyaltyShortfall,
     resumeLoyaltyRule,
     updateLoyaltyRule,
     type LoyaltyRule,
     type LoyaltyRuleType,
+    type LoyaltyShortfallAmounts,
+    type LoyaltyShortfallReview,
+    type LoyaltyShortfallStatus,
+    type PaginatedLoyaltyShortfalls,
 } from '@/lib/api/loyalty';
 import { MerchantPermission } from '@/lib/permissions';
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const { can } = usePermissions();
 const canManage = computed(() => can(MerchantPermission.LoyaltyManage));
 
@@ -50,8 +56,78 @@ async function fetchRules(): Promise<void> {
         loading.value = false;
     }
 }
+const shortfallFilters: Array<LoyaltyShortfallStatus | 'all'> = ['pending', 'resolved', 'all'];
 
-onMounted(() => { void fetchRules(); });
+const shortfallFilter = ref<LoyaltyShortfallStatus | 'all'>('pending');
+const shortfallPage = ref<PaginatedLoyaltyShortfalls | null>(null);
+const shortfallLoading = ref(true);
+const shortfallError = ref<string | null>(null);
+const resolveTarget = ref<LoyaltyShortfallReview | null>(null);
+const resolveNote = ref('');
+const resolveBusy = ref(false);
+const resolveError = ref<string | null>(null);
+const shortfallRows = computed(() => shortfallPage.value?.data ?? []);
+const shortfallMeta = computed(() => shortfallPage.value?.meta ?? null);
+const resolutionNoteValid = computed(() => resolveNote.value.trim().length >= 3);
+
+async function fetchShortfalls(page = 1): Promise<void> {
+    shortfallLoading.value = true;
+    shortfallError.value = null;
+    try {
+        shortfallPage.value = await listLoyaltyShortfalls(shortfallFilter.value, page);
+    } catch (err) {
+        shortfallError.value = err instanceof ApiError
+            ? ((err.payload as { message?: string } | null)?.message ?? `HTTP ${err.status}`)
+            : t('loyalty.errors.shortfalls_load_failed');
+    } finally {
+        shortfallLoading.value = false;
+    }
+}
+
+function setShortfallFilter(status: LoyaltyShortfallStatus | 'all'): void {
+    shortfallFilter.value = status;
+    void fetchShortfalls(1);
+}
+
+function openResolve(row: LoyaltyShortfallReview): void {
+    resolveTarget.value = row;
+    resolveNote.value = '';
+    resolveError.value = null;
+}
+
+async function submitShortfallResolution(): Promise<void> {
+    if (!resolveTarget.value || !resolutionNoteValid.value) return;
+    resolveBusy.value = true;
+    resolveError.value = null;
+    try {
+        await resolveLoyaltyShortfall(resolveTarget.value.transaction_uuid, resolveNote.value.trim());
+        resolveTarget.value = null;
+        await fetchShortfalls(shortfallPage.value?.meta.current_page ?? 1);
+    } catch (err) {
+        resolveError.value = err instanceof ApiError
+            ? ((err.payload as { message?: string } | null)?.message ?? `HTTP ${err.status}`)
+            : t('loyalty.errors.shortfall_resolve_failed');
+    } finally {
+        resolveBusy.value = false;
+    }
+}
+
+function displayDate(value: string | null): string {
+    if (!value) return '-';
+    return new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+}
+function displayAmounts(value: LoyaltyShortfallAmounts | null): string {
+    if (value === null) return t('loyalty.shortfalls.amounts_unavailable');
+    return t('loyalty.shortfalls.amounts', { points: value.points, stamps: value.stamps });
+}
+
+function closeResolve(): void {
+    resolveTarget.value = null;
+    resolveError.value = null;
+}
+
+
+onMounted(() => { void Promise.all([fetchRules(), fetchShortfalls()]); });
 
 // ---- Modal ------------------------------------------------------
 type ModalMode = 'create' | 'edit';
@@ -209,6 +285,136 @@ async function performDelete(): Promise<void> {
                 </button>
             </div>
 
+            <section class="overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm">
+                <div class="flex flex-col gap-4 border-b border-amber-100 bg-amber-50/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="flex items-start gap-3">
+                        <span class="rounded-xl bg-amber-100 p-2 text-amber-700">
+                            <AlertTriangle class="size-5" />
+                        </span>
+                        <div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <h2 class="text-lg font-semibold text-slate-950">{{ t('loyalty.shortfalls.title') }}</h2>
+                                <span class="rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
+                                    {{ shortfallMeta?.total ?? 0 }}
+                                </span>
+                            </div>
+                            <p class="mt-1 max-w-3xl text-sm text-slate-600">{{ t('loyalty.shortfalls.subtitle') }}</p>
+                        </div>
+                    </div>
+                    <div class="inline-flex self-start rounded-lg border border-amber-200 bg-white p-1 sm:self-auto">
+                        <button
+                            v-for="status in shortfallFilters"
+                            :key="status"
+                            type="button"
+                            class="rounded-md px-3 py-1.5 text-xs font-semibold transition"
+                            :class="shortfallFilter === status ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-amber-50'"
+                            :aria-pressed="shortfallFilter === status"
+                            @click="setShortfallFilter(status)"
+                        >
+                            {{ t(`loyalty.shortfalls.filters.${status}`) }}
+                        </button>
+                    </div>
+                </div>
+
+                <div v-if="shortfallError" class="border-b border-rose-200 bg-rose-50 px-5 py-3 text-sm font-semibold text-rose-700">
+                    {{ shortfallError }}
+                </div>
+                <div v-if="shortfallLoading" class="p-10 text-center text-sm font-medium text-slate-500">
+                    {{ t('common.loading') }}
+                </div>
+                <div v-else-if="shortfallRows.length === 0" class="flex flex-col items-center gap-3 p-10 text-center text-slate-500">
+                    <CheckCircle2 class="size-9 text-emerald-400" />
+                    <p class="text-sm font-semibold">{{ t(`loyalty.shortfalls.empty.${shortfallFilter}`) }}</p>
+                </div>
+                <div v-else class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-slate-200">
+                        <thead class="bg-slate-50">
+                            <tr>
+                                <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('loyalty.shortfalls.columns.when') }}</th>
+                                <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('loyalty.shortfalls.columns.customer') }}</th>
+                                <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('loyalty.shortfalls.columns.order') }}</th>
+                                <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('loyalty.shortfalls.columns.requested') }}</th>
+                                <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('loyalty.shortfalls.columns.applied') }}</th>
+                                <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('loyalty.shortfalls.columns.shortfall') }}</th>
+                                <th class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('loyalty.shortfalls.columns.review') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 bg-white">
+                            <tr v-for="row in shortfallRows" :key="row.transaction_uuid" class="align-top transition hover:bg-slate-50">
+                                <td class="whitespace-nowrap px-5 py-4 text-sm tabular-nums text-slate-600">{{ displayDate(row.occurred_at) }}</td>
+                                <td class="px-5 py-4 text-sm">
+                                    <RouterLink
+                                        v-if="row.customer"
+                                        :to="`/customers/${row.customer.uuid}`"
+                                        class="font-semibold text-teal-700 hover:text-teal-800 hover:underline"
+                                    >
+                                        {{ row.customer.name }}
+                                    </RouterLink>
+                                    <span v-else class="text-slate-400">{{ t('loyalty.shortfalls.unknown_customer') }}</span>
+                                    <span v-if="row.rule" class="mt-1 block text-xs text-slate-500">{{ row.rule.name }}</span>
+                                </td>
+                                <td class="px-5 py-4 text-sm text-slate-700">
+                                    <span v-if="row.order" class="font-semibold">{{ row.order.receipt_number ?? `#${row.order.id}` }}</span>
+                                    <span v-else class="text-slate-400">-</span>
+                                    <span v-if="row.order?.status" class="mt-1 block text-xs capitalize text-slate-500">{{ row.order.status }}</span>
+                                </td>
+                                <td class="whitespace-nowrap px-5 py-4 text-sm tabular-nums text-slate-700">{{ displayAmounts(row.requested) }}</td>
+                                <td class="whitespace-nowrap px-5 py-4 text-sm tabular-nums text-slate-700">{{ displayAmounts(row.applied) }}</td>
+                                <td class="whitespace-nowrap px-5 py-4 text-sm font-semibold tabular-nums text-rose-700">{{ displayAmounts(row.shortfall) }}</td>
+                                <td class="px-5 py-4 text-end">
+                                    <div class="flex flex-col items-end gap-2">
+                                        <span
+                                            class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold"
+                                            :class="row.status === 'resolved' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'"
+                                        >
+                                            <CheckCircle2 v-if="row.status === 'resolved'" class="size-3.5" />
+                                            <AlertTriangle v-else class="size-3.5" />
+                                            {{ t(`loyalty.shortfalls.status.${row.status}`) }}
+                                        </span>
+                                        <template v-if="row.resolution">
+                                            <span class="max-w-xs text-xs text-slate-600">{{ row.resolution.note }}</span>
+                                            <span class="text-xs text-slate-400">
+                                                {{ row.resolution.resolved_by ?? t('loyalty.shortfalls.unknown_reviewer') }} / {{ displayDate(row.resolution.resolved_at) }}
+                                            </span>
+                                        </template>
+                                        <button
+                                            v-else-if="canManage"
+                                            type="button"
+                                            class="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                                            @click="openResolve(row)"
+                                        >
+                                            <CheckCircle2 class="size-3.5" />
+                                            {{ t('loyalty.shortfalls.actions.resolve') }}
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div v-if="shortfallMeta && shortfallMeta.last_page > 1" class="flex items-center justify-between border-t border-slate-200 px-5 py-3 text-xs text-slate-600">
+                    <span>{{ shortfallMeta.current_page }} / {{ shortfallMeta.last_page }} / {{ shortfallMeta.total }}</span>
+                    <div class="flex items-center gap-2">
+                        <button
+                            type="button"
+                            class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-semibold disabled:opacity-50"
+                            :disabled="shortfallMeta.current_page <= 1 || shortfallLoading"
+                            @click="fetchShortfalls(shortfallMeta.current_page - 1)"
+                        >
+                            {{ t('loyalty.shortfalls.pagination.previous') }}
+                        </button>
+                        <button
+                            type="button"
+                            class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-semibold disabled:opacity-50"
+                            :disabled="shortfallMeta.current_page >= shortfallMeta.last_page || shortfallLoading"
+                            @click="fetchShortfalls(shortfallMeta.current_page + 1)"
+                        >
+                            {{ t('loyalty.shortfalls.pagination.next') }}
+                        </button>
+                    </div>
+                </div>
+            </section>
             <div v-if="error" class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{{ error }}</div>
 
             <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -269,6 +475,60 @@ async function performDelete(): Promise<void> {
             </section>
         </section>
 
+        <BaseModal
+            v-if="resolveTarget"
+            :title="t('loyalty.shortfalls.resolve_modal.title')"
+            size="md"
+            :loading="resolveBusy"
+            @close="closeResolve"
+        >
+            <form id="loyalty-shortfall-resolve-form" class="space-y-4" @submit.prevent="submitShortfallResolution">
+                <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-slate-700">
+                    <p class="font-semibold text-slate-950">
+                        {{ resolveTarget.customer?.name ?? t('loyalty.shortfalls.unknown_customer') }}
+                    </p>
+                    <p class="mt-1 text-xs text-slate-600">
+                        {{ t('loyalty.shortfalls.resolve_modal.summary', {
+                            requested: displayAmounts(resolveTarget.requested),
+                            applied: displayAmounts(resolveTarget.applied),
+                            shortfall: displayAmounts(resolveTarget.shortfall),
+                        }) }}
+                    </p>
+                </div>
+                <label class="block text-sm font-semibold text-slate-700">
+                    {{ t('loyalty.shortfalls.resolve_modal.note') }}
+                    <textarea
+                        v-model="resolveNote"
+                        required
+                        minlength="3"
+                        maxlength="1000"
+                        rows="4"
+                        class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                        :placeholder="t('loyalty.shortfalls.resolve_modal.note_placeholder')"
+                    ></textarea>
+                </label>
+                <p class="text-xs text-slate-500">{{ t('loyalty.shortfalls.resolve_modal.hint') }}</p>
+                <p v-if="resolveError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                    {{ resolveError }}
+                </p>
+            </form>
+
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="closeResolve">
+                        {{ t('common.cancel') }}
+                    </button>
+                    <button
+                        type="submit"
+                        form="loyalty-shortfall-resolve-form"
+                        :disabled="resolveBusy || !resolutionNoteValid"
+                        class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                        {{ resolveBusy ? t('common.saving') : t('loyalty.shortfalls.resolve_modal.submit') }}
+                    </button>
+                </div>
+            </template>
+        </BaseModal>
         <!-- Create / edit modal -->
         <BaseModal
             v-if="modalOpen"

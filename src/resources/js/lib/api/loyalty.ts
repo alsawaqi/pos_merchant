@@ -15,6 +15,7 @@ export type LoyaltyRuleType = 'visit_based' | 'spend_based';
 export type LoyaltyRuleStatus = 'active' | 'paused';
 export type LoyaltyTransactionType = 'earn' | 'redeem' | 'adjust' | 'expire';
 export type WalletEntryType = 'topup' | 'redemption_use' | 'adjustment' | 'refund_in';
+export type LoyaltyShortfallStatus = 'pending' | 'resolved';
 
 // ---- Domain types -----------------------------------------------
 
@@ -47,6 +48,41 @@ export interface LoyaltyTransaction {
     order_id: number | null;
     recorded_by?: string | null;
     occurred_at: string | null;
+}
+
+export interface LoyaltyShortfallAmounts {
+    points: number;
+    stamps: number;
+}
+
+export interface LoyaltyShortfallReview {
+    transaction_id: number;
+    transaction_uuid: string;
+    status: LoyaltyShortfallStatus;
+    reason: string;
+    requested: LoyaltyShortfallAmounts | null;
+    applied: LoyaltyShortfallAmounts | null;
+    shortfall: LoyaltyShortfallAmounts | null;
+    order: { id: number; uuid: string; receipt_number: string | null; status: string | null } | null;
+    customer: { id: number; uuid: string; name: string; phone: string } | null;
+    rule: { id: number; uuid: string; name: string; type: LoyaltyRuleType } | null;
+    occurred_at: string | null;
+    resolution: {
+        uuid: string;
+        note: string;
+        resolved_at: string | null;
+        resolved_by: string | null;
+    } | null;
+}
+
+export interface PaginatedLoyaltyShortfalls {
+    data: LoyaltyShortfallReview[];
+    meta: {
+        current_page: number;
+        last_page: number;
+        per_page: number;
+        total: number;
+    };
 }
 
 export interface LoyaltyAccount {
@@ -129,6 +165,28 @@ export interface AdjustWalletPayload {
     amount_delta: string;
     reason: string;
 }
+// ---- Shortfall review queue -------------------------------------
+
+export function listLoyaltyShortfalls(
+    status: LoyaltyShortfallStatus | 'all' = 'pending',
+    page = 1,
+    perPage = 25,
+): Promise<PaginatedLoyaltyShortfalls> {
+    return apiGet<PaginatedLoyaltyShortfalls>('/api/loyalty/shortfalls', {
+        query: { status, page, per_page: perPage },
+    });
+}
+
+export function resolveLoyaltyShortfall(
+    transactionUuid: string,
+    resolutionNote: string,
+): Promise<{ data: LoyaltyShortfallReview }> {
+    return apiPost<{ data: LoyaltyShortfallReview }>(
+        `/api/loyalty/shortfalls/${transactionUuid}/resolve`,
+        { resolution_note: resolutionNote },
+    );
+}
+
 
 // ---- Rules ------------------------------------------------------
 

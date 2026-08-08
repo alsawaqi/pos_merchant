@@ -10,6 +10,7 @@ use App\Actions\Pos\Loyalty\CreateLoyaltyRuleAction;
 use App\Actions\Pos\Loyalty\DeleteLoyaltyRuleAction;
 use App\Actions\Pos\Loyalty\EnsureLoyaltyAccountAction;
 use App\Actions\Pos\Loyalty\PauseLoyaltyRuleAction;
+use App\Actions\Pos\Loyalty\ResolveLoyaltyShortfallReviewAction;
 use App\Actions\Pos\Loyalty\ResumeLoyaltyRuleAction;
 use App\Actions\Pos\Loyalty\TopUpWalletAction;
 use App\Actions\Pos\Loyalty\UpdateLoyaltyRuleAction;
@@ -18,10 +19,12 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Pos\Loyalty\AdjustLoyaltyRequest;
 use App\Http\Requests\Pos\Loyalty\AdjustWalletBalanceRequest;
 use App\Http\Requests\Pos\Loyalty\CreateLoyaltyRuleRequest;
+use App\Http\Requests\Pos\Loyalty\ResolveLoyaltyShortfallReviewRequest;
 use App\Http\Requests\Pos\Loyalty\TopUpWalletRequest;
 use App\Http\Requests\Pos\Loyalty\UpdateLoyaltyRuleRequest;
 use App\Http\Resources\Pos\Loyalty\LoyaltyAccountResource;
 use App\Http\Resources\Pos\Loyalty\LoyaltyRuleResource;
+use App\Http\Resources\Pos\Loyalty\LoyaltyShortfallReviewResource;
 use App\Http\Resources\Pos\Loyalty\LoyaltyTransactionResource;
 use App\Http\Resources\Pos\Loyalty\WalletLedgerEntryResource;
 use App\Models\Customer;
@@ -71,9 +74,79 @@ class LoyaltyController extends Controller
         private readonly DeleteLoyaltyRuleAction $deleteRuleAction,
         private readonly EnsureLoyaltyAccountAction $ensureAccount,
         private readonly AdjustLoyaltyAction $adjustLoyalty,
+        private readonly ResolveLoyaltyShortfallReviewAction $resolveShortfallReview,
         private readonly TopUpWalletAction $topUpWalletAction,
         private readonly AdjustWalletBalanceAction $adjustWalletAction,
     ) {}
+
+    // =================== SHORTFALL REVIEWS ===================
+
+    public function shortfallReviews(Request $request): AnonymousResourceCollection
+    {
+        $this->ensure($request, MerchantPermission::LoyaltyView);
+
+        $status = (string) $request->query('status', 'pending');
+        if (! in_array($status, ['pending', 'resolved', 'all'], true)) {
+            abort(422, 'Unsupported loyalty shortfall review status.');
+        }
+
+        $prefix = LoyaltyTransaction::SHORTFALL_REASON_PREFIX;
+        $query = LoyaltyTransaction::query()
+            ->where('company_id', $this->tenant->requiredId())
+            ->where('type', 'adjust')
+            ->where('points_delta', 0)
+            ->where('stamps_delta', 0)
+            ->whereRaw('substr(reason, 1, ?) = ?', [strlen($prefix), $prefix])
+            ->with([
+                'account.customer',
+                'account.rule',
+                'order',
+                'shortfallReview.resolvedBy',
+            ]);
+
+        if ($status === 'pending') {
+            $query->whereDoesntHave('shortfallReview');
+        } elseif ($status === 'resolved') {
+            $query->whereHas('shortfallReview');
+        }
+
+        $perPage = max(1, min((int) $request->query('per_page', '25'), 100));
+        $rows = $query
+            ->orderByDesc('occurred_at')
+            ->orderByDesc('id')
+            ->paginate($perPage);
+
+        return LoyaltyShortfallReviewResource::collection($rows);
+    }
+
+    public function resolveShortfall(
+        ResolveLoyaltyShortfallReviewRequest $request,
+        LoyaltyTransaction $transaction,
+    ): JsonResponse {
+        $this->ensure($request, MerchantPermission::LoyaltyManage);
+        if ((int) $transaction->company_id !== $this->tenant->requiredId()) {
+            abort(404);
+        }
+
+        try {
+            $this->resolveShortfallReview->handle(
+                $transaction,
+                $request->user(),
+                (string) $request->validated()['resolution_note'],
+            );
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'data' => (new LoyaltyShortfallReviewResource($transaction->load([
+                'account.customer',
+                'account.rule',
+                'order',
+                'shortfallReview.resolvedBy',
+            ])))->resolve($request),
+        ]);
+    }
 
     // =================== RULES ===================
 
@@ -105,7 +178,7 @@ class LoyaltyController extends Controller
         ], 201);
     }
 
-    public function updateRule(UpdateLoyaltyRuleRequest $request, LoyaltyRule $rule): LoyaltyRuleResource | JsonResponse
+    public function updateRule(UpdateLoyaltyRuleRequest $request, LoyaltyRule $rule): LoyaltyRuleResource|JsonResponse
     {
         $this->ensure($request, MerchantPermission::LoyaltyManage);
         $this->refuseRuleNotInTenant($rule);
@@ -129,7 +202,7 @@ class LoyaltyController extends Controller
         return response()->json(['data' => null], 204);
     }
 
-    public function pauseRule(Request $request, LoyaltyRule $rule): LoyaltyRuleResource | JsonResponse
+    public function pauseRule(Request $request, LoyaltyRule $rule): LoyaltyRuleResource|JsonResponse
     {
         $this->ensure($request, MerchantPermission::LoyaltyManage);
         $this->refuseRuleNotInTenant($rule);
@@ -143,7 +216,7 @@ class LoyaltyController extends Controller
         return LoyaltyRuleResource::make($updated);
     }
 
-    public function resumeRule(Request $request, LoyaltyRule $rule): LoyaltyRuleResource | JsonResponse
+    public function resumeRule(Request $request, LoyaltyRule $rule): LoyaltyRuleResource|JsonResponse
     {
         $this->ensure($request, MerchantPermission::LoyaltyManage);
         $this->refuseRuleNotInTenant($rule);

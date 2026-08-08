@@ -970,6 +970,25 @@ return new class extends Migration
             $table->timestamp('created_at')->useCurrent();
         });
 
+        // Merchant resolution trail for API-001 shortfall markers. Production
+        // is owned by pos_admin; this is only the isolated test mirror.
+        Schema::create('pos_loyalty_shortfall_reviews', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('loyalty_transaction_id')
+                ->unique('pos_loyalty_shortfall_reviews_txn_unique')
+                ->constrained('pos_loyalty_transactions')
+                ->cascadeOnDelete();
+            $table->foreignId('resolved_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->text('resolution_note');
+            $table->timestamp('resolved_at');
+            $table->timestamp('created_at')->useCurrent();
+            $table->index(
+                ['company_id', 'resolved_at'],
+                'pos_loyalty_shortfall_reviews_company_resolved_idx',
+            );
+        });
         // ---- pos_customer_wallet_ledger (Phase 6b — store credit) ---
         // SEPARATE from loyalty (not in the blueprint loyalty model).
         // Append-only OMR ledger with balance_after; kept in lock-step
@@ -1776,6 +1795,7 @@ return new class extends Migration
 
         // Drop in reverse dependency order. Tests use :memory: so
         // this is essentially never called, but symmetry is cheap.
+        Schema::dropIfExists('pos_loyalty_shortfall_reviews');
         Schema::dropIfExists('pos_order_sequences');
         Schema::dropIfExists('pos_saved_views');
         Schema::dropIfExists('sessions');

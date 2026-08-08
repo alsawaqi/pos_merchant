@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Models\Concerns\BelongsToCompany;
 use App\Enums\LoyaltyTransactionType;
+use App\Models\Concerns\BelongsToCompany;
 use Database\Factories\LoyaltyTransactionFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 
 /**
@@ -46,6 +47,8 @@ class LoyaltyTransaction extends Model
     protected $table = 'pos_loyalty_transactions';
 
     public $timestamps = false; // explicit created_at + occurred_at
+
+    public const SHORTFALL_REASON_PREFIX = '[LOYALTY_REDEMPTION_SHORTFALL][REVIEW_REQUIRED]';
 
     /**
      * @return array<string, string>
@@ -94,5 +97,26 @@ class LoyaltyTransaction extends Model
     public function recordedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'recorded_by_user_id');
+    }
+
+    /** @return BelongsTo<Order, $this> */
+    public function order(): BelongsTo
+    {
+        return $this->belongsTo(Order::class);
+    }
+
+    /** @return HasOne<LoyaltyShortfallReview, $this> */
+    public function shortfallReview(): HasOne
+    {
+        return $this->hasOne(LoyaltyShortfallReview::class, 'loyalty_transaction_id');
+    }
+
+    public function isShortfallReviewMarker(): bool
+    {
+        return $this->type === LoyaltyTransactionType::Adjust
+            && (int) $this->points_delta === 0
+            && (int) $this->stamps_delta === 0
+            && is_string($this->reason)
+            && str_starts_with($this->reason, self::SHORTFALL_REASON_PREFIX);
     }
 }
