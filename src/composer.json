@@ -55,10 +55,10 @@
         ],
         "test": [
             "@php artisan config:clear --ansi @no_additional_args",
-            "vendor/bin/pest"
+            "@php -d memory_limit=512M vendor/bin/pest"
         ],
         "pest": [
-            "vendor/bin/pest"
+            "@php -d memory_limit=512M vendor/bin/pest"
         ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
