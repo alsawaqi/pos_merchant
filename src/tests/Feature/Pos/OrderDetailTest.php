@@ -207,6 +207,27 @@ it('exposes device, tables, comps, delivery, round-up, void reason and offer fla
     expect($res->json('data.payments.0.roundup_amount'))->toBe('0.100');
 });
 
+it('exposes quantity and note on partial line comps', function (): void {
+    $ctx = makeMerchantActor();
+    $order = Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->paid()->create();
+    $item = OrderItem::factory()->for($order, 'order')->create([
+        'product_name_snapshot' => 'Latte', 'qty' => '3.000',
+    ]);
+    DB::table('pos_order_comps')->insert([
+        'company_id' => $ctx['company']->id, 'branch_id' => $ctx['branch']->id, 'order_id' => $order->id,
+        'order_item_id' => $item->id, 'comp_reason_id' => null, 'reason_code_snapshot' => 'MGR',
+        'reason_name_snapshot' => 'Service recovery', 'amount' => '2.000', 'is_gift' => false,
+        'qty' => '1.000', 'approved_by_pos_staff_id' => null, 'note' => 'Delayed order', 'applied_at' => now(),
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+    $res = $this->getJson("/api/orders/{$order->uuid}")->assertOk();
+    $comp = $res->json('data.items.0.comps.0');
+    expect($comp['reason'])->toBe('Service recovery');
+    expect($comp['amount'])->toBe('2.000');
+    expect($comp['qty'])->toBe('1.000');
+    expect($comp['note'])->toBe('Delayed order');
+});
+
 it('surfaces the void reason label on voided orders', function (): void {
     $ctx = makeMerchantActor();
     $order = Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->create([

@@ -815,6 +815,7 @@ export interface OrderDetailComp {
     reason: string | null;
     amount: string;
     is_gift: boolean;
+    qty: string | null;
     note: string | null;
 }
 

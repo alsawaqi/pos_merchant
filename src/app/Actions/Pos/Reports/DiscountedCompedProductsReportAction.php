@@ -166,6 +166,10 @@ final readonly class DiscountedCompedProductsReportAction
      */
     private function lineRows(string $table, string $alias, Closure $typeFilter, int $companyId, ReportFilter $filter): \Illuminate\Support\Collection
     {
+        $lineUnits = $table === 'pos_order_comps'
+            ? "COALESCE({$alias}.qty, poi.qty)"
+            : 'poi.qty';
+
         // Aggregate PER LINE first: a line that received two applications of the
         // same type (e.g. an auto + a manual discount) contributes its quantity
         // ONCE — its money still sums per application. MAX(qty) reads the line's
@@ -177,7 +181,7 @@ final readonly class DiscountedCompedProductsReportAction
         $perLine->selectRaw("
                 poi.product_id AS product_id,
                 poi.product_name_snapshot AS product_name,
-                MAX(poi.qty) AS line_units,
+                MAX({$lineUnits}) AS line_units,
                 COALESCE(SUM({$alias}.amount), 0) AS line_total_off,
                 COUNT(*) AS line_times
             ")
@@ -239,7 +243,7 @@ final readonly class DiscountedCompedProductsReportAction
                 oc.reason_name_snapshot AS name,
                 oc.amount AS amount,
                 poi.product_name_snapshot AS product_name,
-                poi.qty AS units,
+                COALESCE(oc.qty, poi.qty) AS units,
                 oc.applied_at AS applied_at,
                 pos_orders.uuid AS order_uuid
             ")

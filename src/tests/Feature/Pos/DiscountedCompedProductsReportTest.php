@@ -168,6 +168,30 @@ it('counts a line quantity once even when it gets two same-type applications', f
     expect($row['times'])->toBe(2);
 });
 
+it('uses partial comp quantity without changing comp money or discount units', function (): void {
+    $ctx = makeMerchantActor();
+    $latte = Product::factory()->for($ctx['company'], 'company')->create(['name' => 'Latte']);
+    $order = Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->paid()->create(['opened_at' => '2026-06-15 12:00:00']);
+    $line = OrderItem::factory()->for($order, 'order')->for($latte, 'product')->create(['product_name_snapshot' => 'Latte', 'qty' => '3.000']);
+
+    dcpDiscount($ctx, $order, $line->id, null, null, 'Manager 0.5', '0.500');
+    DB::table('pos_order_comps')->insert([
+        'company_id' => $ctx['company']->id, 'branch_id' => $ctx['branch']->id, 'order_id' => $order->id,
+        'order_item_id' => $line->id, 'comp_reason_id' => null, 'reason_code_snapshot' => 'waste',
+        'reason_name_snapshot' => 'Wastage', 'is_gift' => false, 'amount' => '1.500', 'qty' => '1.000',
+        'approved_by_pos_staff_id' => null, 'note' => null, 'applied_at' => '2026-06-15 12:00:00',
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    $data = dcpGet();
+    $rows = collect($data['by_product_and_type'])->keyBy('type');
+    expect($rows['comp']['units'])->toBe('1.000');
+    expect($rows['comp']['total_off'])->toBe('1.500');
+    expect($rows['discount']['units'])->toBe('3.000');
+    expect(collect($data['recent'])->firstWhere('type', 'comp')['units'])->toBe('1.000');
+    expect(collect($data['recent'])->firstWhere('type', 'discount')['units'])->toBe('3.000');
+});
+
 it('does not count unpaid or out-of-window applications', function (): void {
     $ctx = makeMerchantActor();
     $p = Product::factory()->for($ctx['company'], 'company')->create(['name' => 'Latte']);

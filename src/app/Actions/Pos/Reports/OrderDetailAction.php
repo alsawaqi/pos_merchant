@@ -105,6 +105,7 @@ final readonly class OrderDetailAction
                 'reason' => $row->reason_name_snapshot !== null ? (string) $row->reason_name_snapshot : null,
                 'amount' => number_format((float) $row->amount, 3, '.', ''),
                 'is_gift' => (bool) $row->is_gift,
+                'qty' => $row->qty !== null ? number_format((float) $row->qty, 3, '.', '') : null,
                 'note' => $row->note,
             ];
             if ($row->order_item_id === null) {

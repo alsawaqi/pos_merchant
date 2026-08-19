@@ -224,8 +224,9 @@ function commissionStatusClass(status: string): string {
                                         <span v-if="d.is_offer" class="ms-1 inline-flex rounded-full bg-violet-100 px-1.5 py-px text-[10px] font-semibold uppercase text-violet-700">{{ t('orders.detail.offer') }}</span>
                                     </p>
                                     <p v-for="(c, i) in item.comps" :key="`c${i}`" class="mt-0.5 text-xs font-medium text-emerald-700">
-                                        − {{ compLabel(c) }} <span class="tabular-nums">({{ c.amount }})</span>
+                                        − {{ compLabel(c) }} <span v-if="c.qty" class="tabular-nums">×{{ c.qty }}</span> <span class="tabular-nums">({{ c.amount }})</span>
                                         <span class="ms-1 inline-flex rounded-full bg-emerald-100 px-1.5 py-px text-[10px] font-semibold uppercase text-emerald-700">{{ c.is_gift ? t('orders.detail.gift') : t('orders.detail.comp') }}</span>
+                                        <span v-if="c.note" class="block text-xs italic text-slate-400">{{ c.note }}</span>
                                     </p>
                                     <p v-if="item.notes" class="mt-0.5 text-xs italic text-slate-400">{{ item.notes }}</p>
                                 </div>
