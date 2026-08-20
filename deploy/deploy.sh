@@ -11,7 +11,7 @@ docker compose -f "$C" --profile build run --rm composer
 docker compose -f "$C" --profile build run --rm node-build
 docker compose -f "$C" up -d
 timeout 300 docker compose -f "$C" --profile deploy run --rm deploy
-docker restart pos_merchant-pos_merchant-1
+docker compose -f "$C" restart pos_merchant nginx
 
 sleep 6
 code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 https://posmerchant.mithqal.net/login)
