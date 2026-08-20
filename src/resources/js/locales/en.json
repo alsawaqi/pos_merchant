@@ -2241,7 +2241,6 @@
             "expired": "Expired"
         },
         "flags": {
-            "stackable": "stackable",
             "manager_approval": "manager approval",
             "auto": "Auto"
         },
@@ -2270,7 +2269,6 @@
             "time_start": "Time of day starts",
             "time_end": "Time of day ends",
             "time_hint": "Leave blank for all day. Crossing midnight is supported (e.g. 22:00 to 02:00).",
-            "stackable": "Stackable (can combine with other discounts + loyalty)",
             "requires_manager_approval": "Requires manager approval at POS",
             "auto_apply": "Apply automatically",
             "auto_apply_hint": "When on, the POS applies this discount by itself to every qualifying order. When off, the cashier picks it from the discounts list.",

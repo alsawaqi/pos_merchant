@@ -85,6 +85,31 @@ it('creates a discount and writes the audit row', function (): void {
     ]);
 });
 
+it('defaults omitted stackable to false on create and preserves true on update', function (): void {
+    $ctx = makeMerchantActor();
+
+    $created = $this->postJson('/api/discounts', [
+        'name' => 'No Stackable Key',
+        'scope' => 'order',
+        'amount_type' => 'percent',
+        'amount' => '5',
+    ])->assertCreated();
+
+    expect($created->json('data.stackable'))->toBeFalse();
+    $createdRow = Discount::query()->where('uuid', $created->json('data.uuid'))->firstOrFail();
+    expect($createdRow->stackable)->toBeFalse();
+
+    $legacy = Discount::factory()->for($ctx['company'], 'company')
+        ->create(['stackable' => true]);
+
+    $updated = $this->patchJson("/api/discounts/{$legacy->uuid}", [
+        'name' => 'Legacy Stackable',
+    ])->assertOk();
+
+    expect($updated->json('data.stackable'))->toBeTrue();
+    expect($legacy->refresh()->stackable)->toBeTrue();
+});
+
 it('returns 422 when percent amount exceeds 100', function (): void {
     makeMerchantActor();
 

@@ -39,6 +39,7 @@ export interface Discount {
     time_end: string | null;
     /** NULL = all branches; array of ints = subset. */
     branch_scope_json: number[] | null;
+    /** @deprecated Stackability is retained for wire compatibility only. */
     stackable: boolean;
     requires_manager_approval: boolean;
     /**
@@ -69,7 +70,6 @@ export interface CreateDiscountPayload {
     time_start?: string | null;
     time_end?: string | null;
     branch_scope_json?: number[] | null;
-    stackable?: boolean;
     requires_manager_approval?: boolean;
     /** Order scope only; the server forces true for product/category. */
     auto_apply?: boolean;

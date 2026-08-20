@@ -4,7 +4,7 @@
  *
  * Per-merchant promo rules. The blueprint (§5.9) describes a
  * 7-axis configuration surface (scope, amount, validity,
- * day-of-week, time-of-day, branches, stackable + approval).
+ * day-of-week, time-of-day, branches, and approval).
  *
  * The page lists rules with a "currently active" chip that
  * composes status + validity window (computed server-side
@@ -103,7 +103,6 @@ interface FormShape {
     time_start: string;
     time_end: string;
     branch_scope_json: number[] | null;
-    stackable: boolean;
     requires_manager_approval: boolean;
     // P-F4 — only meaningful for scope=order ("applies by itself to every
     // qualifying order"). product/category rules are ALWAYS automatic per
@@ -126,7 +125,6 @@ const form = reactive<FormShape>({
     time_start: '',
     time_end: '',
     branch_scope_json: null,
-    stackable: false,
     requires_manager_approval: false,
     auto_apply: false,
     target_product_ids: [],
@@ -167,7 +165,6 @@ function resetForm(): void {
     form.time_start = '';
     form.time_end = '';
     form.branch_scope_json = null;
-    form.stackable = false;
     form.requires_manager_approval = false;
     form.auto_apply = false;
     form.target_product_ids = [];
@@ -196,7 +193,6 @@ function openEdit(d: Discount): void {
     form.time_start = d.time_start?.slice(0, 5) ?? '';
     form.time_end = d.time_end?.slice(0, 5) ?? '';
     form.branch_scope_json = d.branch_scope_json;
-    form.stackable = d.stackable;
     form.requires_manager_approval = d.requires_manager_approval;
     form.auto_apply = d.auto_apply;
     form.target_product_ids = (d.targets ?? [])
@@ -224,7 +220,6 @@ async function submitModal(): Promise<void> {
             time_start: form.time_start ? `${form.time_start}:00` : null,
             time_end: form.time_end ? `${form.time_end}:00` : null,
             branch_scope_json: form.branch_scope_json,
-            stackable: form.stackable,
             requires_manager_approval: form.requires_manager_approval,
             // Only the merchant's choice for order scope rides the wire;
             // the server forces true for product/category regardless.
@@ -398,7 +393,6 @@ function amountLabel(d: Discount): string {
                                         <span v-if="d.scope === 'order' && d.auto_apply" class="ms-1 inline-flex items-center rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-teal-700">{{ t('discounts.flags.auto') }}</span>
                                     </span>
                                     <span class="block text-xs text-slate-500">
-                                        <span v-if="d.stackable" class="inline-block">{{ t('discounts.flags.stackable') }}</span>
                                         <span v-if="d.requires_manager_approval" class="inline-block ms-2">{{ t('discounts.flags.manager_approval') }}</span>
                                     </span>
                                 </td>
@@ -551,10 +545,6 @@ function amountLabel(d: Discount): string {
 
                     <!-- Flags -->
                     <div class="flex flex-wrap items-center gap-4">
-                        <label class="inline-flex items-center gap-2">
-                            <input v-model="form.stackable" type="checkbox" class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500">
-                            <span class="text-sm font-medium text-slate-700">{{ t('discounts.fields.stackable') }}</span>
-                        </label>
                         <label class="inline-flex items-center gap-2">
                             <input v-model="form.requires_manager_approval" type="checkbox" class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500">
                             <span class="text-sm font-medium text-slate-700">{{ t('discounts.fields.requires_manager_approval') }}</span>

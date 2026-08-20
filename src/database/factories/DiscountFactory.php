@@ -26,7 +26,7 @@ class DiscountFactory extends Factory
         return [
             'uuid' => (string) Str::uuid(),
             'company_id' => Company::factory(),
-            'name' => 'Test Discount ' . strtoupper(Str::random(4)),
+            'name' => 'Test Discount '.strtoupper(Str::random(4)),
             'scope' => DiscountScope::Order->value,
             'amount_type' => DiscountAmountType::Percent->value,
             'amount' => '10.000',
@@ -73,10 +73,5 @@ class DiscountFactory extends Factory
             'amount_type' => DiscountAmountType::Fixed->value,
             'amount' => $amount,
         ]);
-    }
-
-    public function stackable(): static
-    {
-        return $this->state(fn (): array => ['stackable' => true]);
     }
 }
