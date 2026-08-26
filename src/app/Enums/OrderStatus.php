@@ -14,6 +14,8 @@ namespace App\Enums;
  *   kitchen    — order sent to kitchen display, awaiting
  *                fulfillment (only meaningful for products
  *                that need preparation)
+ *   awaiting_payment — QR-web order waiting for a payment
+ *                station to claim and complete its charge
  *   paid       — payment captured, order complete
  *   pending_verification — P-G7: a no-tender delivery-provider
  *                order awaiting the provider's statement. The
@@ -37,6 +39,7 @@ enum OrderStatus: string
     case Open = 'open';
     case Held = 'held';
     case Kitchen = 'kitchen';
+    case AwaitingPayment = 'awaiting_payment';
     case Paid = 'paid';
     case PendingVerification = 'pending_verification';
     case Void = 'void';

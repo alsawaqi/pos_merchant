@@ -1105,6 +1105,27 @@ return new class extends Migration
             $table->unique(['product_id', 'delivery_provider_id'], 'pos_product_delivery_prices_product_provider_unique');
         });
 
+        // QR-001 P1 — one row per station QR rotation. The first scan binds
+        // the token; pos_orders carries the one-way link to the session.
+        Schema::create('pos_qr_sessions', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->foreignId('device_id')->constrained('pos_devices')->cascadeOnDelete();
+            $table->string('token', 64)->unique();
+            $table->timestamp('token_expires_at');
+            $table->string('status', 16)->default('pending');
+            $table->string('client_secret_hash', 64)->nullable();
+            $table->timestamp('bound_at')->nullable();
+            $table->timestamp('last_seen_at')->nullable();
+            $table->timestamp('expires_at');
+            $table->timestamp('closed_at')->nullable();
+            $table->timestamps();
+            $table->index(['device_id', 'status'], 'pos_qr_sessions_device_status_idx');
+            $table->index(['status', 'expires_at'], 'pos_qr_sessions_status_expires_idx');
+        });
+
         // ---- pos_orders + pos_order_items + pos_order_item_addons (Phase 7a) ---
         // Transactional spine. Snapshot columns (product/price/
         // recipe) freeze the state at order-write time so a later
@@ -1120,6 +1141,12 @@ return new class extends Migration
             $table->foreignId('staff_id')->nullable()->constrained('pos_staff')->nullOnDelete();
             $table->foreignId('customer_id')->nullable()->constrained('pos_customers')->nullOnDelete();
             $table->foreignId('table_id')->nullable()->constrained('pos_tables')->nullOnDelete();
+            $table->foreignId('qr_session_id')->nullable()->constrained('pos_qr_sessions')->nullOnDelete();
+            $table->foreignId('charge_device_id')->nullable()->constrained('pos_devices')->nullOnDelete();
+            $table->unsignedInteger('charge_amount_baisas')->nullable();
+            $table->timestamp('charge_claimed_at')->nullable();
+            $table->timestamp('charge_deadline_at')->nullable();
+            $table->string('charge_outcome', 16)->nullable();
             $table->string('order_type', 32);
             $table->string('status', 32)->default('open');
             // Phase B — void reason snapshot (FK-less in the test schema for
@@ -1161,7 +1188,16 @@ return new class extends Migration
             $table->timestamps();
             $table->index(['company_id', 'receipt_number'], 'pos_orders_company_receipt_idx');
             $table->index(['company_id', 'delivery_provider_id'], 'pos_orders_company_provider_idx');
+            $table->index(['status', 'charge_deadline_at'], 'pos_orders_status_charge_deadline_idx');
         });
+        DB::statement(
+            'CREATE UNIQUE INDEX pos_orders_qr_session_live_unique ON pos_orders (qr_session_id) '.
+            "WHERE qr_session_id IS NOT NULL AND status NOT IN ('paid', 'pending_verification', 'void', 'refunded')"
+        );
+        DB::statement(
+            'CREATE INDEX pos_orders_qr_session_idx ON pos_orders (qr_session_id) '.
+            'WHERE qr_session_id IS NOT NULL'
+        );
 
         Schema::create('pos_order_items', function (Blueprint $table): void {
             $table->id();
@@ -1377,6 +1413,7 @@ return new class extends Migration
             $table->decimal('roundup_amount', 12, 3)->nullable();
             $table->unsignedBigInteger('charity_transaction_id')->nullable();
             $table->timestamps();
+            $table->index('softpos_reference', 'pos_payments_softpos_ref_idx');
         });
 
         // v2 #17 — per-sale commission breakdown (one row per party: platform /

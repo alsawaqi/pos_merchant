@@ -3058,7 +3058,8 @@
         "sources": {
             "main_pos": "Main POS",
             "handheld": "Handheld",
-            "customer_tablet": "Tablet"
+            "customer_tablet": "Tablet",
+            "qr_web": "QR Web"
         },
         "types": {
             "quick": "Quick",
@@ -3080,6 +3081,7 @@
             "open": "Open",
             "held": "Held",
             "kitchen": "In kitchen",
+            "awaiting_payment": "Awaiting payment",
             "paid": "Paid",
             "pending_verification": "Pending verification",
             "void": "Void",

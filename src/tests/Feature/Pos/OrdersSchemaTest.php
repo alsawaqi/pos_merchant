@@ -20,6 +20,7 @@ declare(strict_types=1);
  *     companies
  */
 
+use App\Actions\Pos\Orders\SeedDemoOrdersAction;
 use App\Enums\OrderItemStatus;
 use App\Enums\OrderStatus;
 use App\Enums\OrderType;
@@ -32,9 +33,13 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Payment;
 use App\Models\Product;
+use App\Models\Scopes\BelongsToCompanyScope;
 use App\Models\Shift;
+use Database\Factories\DeviceFactory;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -67,6 +72,50 @@ it('rejects a duplicate client_event_id via the schema unique constraint', funct
         ->create(['client_event_id' => 'evt_dupe_test']))->toThrow(Exception::class);
 });
 
+it('allows only one non-terminal order per QR session', function (): void {
+    $ctx = makeMerchantActor();
+    $device = DeviceFactory::new()->create([
+        'company_id' => $ctx['company']->id,
+        'branch_id' => $ctx['branch']->id,
+    ]);
+    $sessionId = DB::table('pos_qr_sessions')->insertGetId([
+        'uuid' => (string) Str::uuid(),
+        'company_id' => $ctx['company']->id,
+        'branch_id' => $ctx['branch']->id,
+        'device_id' => $device->id,
+        'token' => Str::random(64),
+        'token_expires_at' => now()->addMinute(),
+        'status' => 'bound',
+        'expires_at' => now()->addHour(),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $first = Order::factory()
+        ->for($ctx['company'], 'company')
+        ->for($ctx['branch'], 'branch')
+        ->create(['qr_session_id' => $sessionId]);
+
+    expect(fn () => Order::factory()
+        ->for($ctx['company'], 'company')
+        ->for($ctx['branch'], 'branch')
+        ->held()
+        ->create(['qr_session_id' => $sessionId]))
+        ->toThrow(QueryException::class);
+
+    DB::table('pos_orders')->where('id', $first->id)->update([
+        'status' => OrderStatus::Paid->value,
+    ]);
+
+    $replacement = Order::factory()
+        ->for($ctx['company'], 'company')
+        ->for($ctx['branch'], 'branch')
+        ->held()
+        ->create(['qr_session_id' => $sessionId]);
+
+    expect((int) $replacement->qr_session_id)->toBe($sessionId);
+});
+
 it('cascades item + addon rows when the parent order is deleted', function (): void {
     $ctx = makeMerchantActor();
     $product = Product::factory()->for($ctx['company'], 'company')->create();
@@ -83,6 +132,7 @@ it('isTerminal() reports correctly across the OrderStatus enum', function (): vo
     expect(OrderStatus::Open->isTerminal())->toBeFalse();
     expect(OrderStatus::Held->isTerminal())->toBeFalse();
     expect(OrderStatus::Kitchen->isTerminal())->toBeFalse();
+    expect(OrderStatus::AwaitingPayment->isTerminal())->toBeFalse();
     expect(OrderStatus::Paid->isTerminal())->toBeTrue();
     expect(OrderStatus::Void->isTerminal())->toBeTrue();
     expect(OrderStatus::Refunded->isTerminal())->toBeTrue();
@@ -187,7 +237,7 @@ it('isolates orders per company (no cross-tenant leakage on the Order query buil
 
     // The rows really exist; only the cross-tenant escape hatch can see across tenants.
     expect(
-        Order::withoutGlobalScope(\App\Models\Scopes\BelongsToCompanyScope::class)
+        Order::withoutGlobalScope(BelongsToCompanyScope::class)
             ->where('company_id', $otherCompany->id)->count()
     )->toBe(5);
 });
@@ -198,7 +248,7 @@ it('SeedDemoOrdersAction produces deterministic output for the same (count, seed
     $ctx = makeMerchantActor();
     Product::factory()->for($ctx['company'], 'company')->count(5)->create(['base_price' => '2.500']);
 
-    $seeder = app(\App\Actions\Pos\Orders\SeedDemoOrdersAction::class);
+    $seeder = app(SeedDemoOrdersAction::class);
     $endingAt = now()->setDate(2026, 6, 4)->setTime(12, 0);
 
     $result = $seeder->handle($ctx['company'], 50, 12345, $endingAt);
@@ -228,7 +278,7 @@ it('SeedDemoOrdersAction keeps SUM(payments) == SUM(orders.grand_total) for ever
     $ctx = makeMerchantActor();
     Product::factory()->for($ctx['company'], 'company')->count(3)->create(['base_price' => '2.500']);
 
-    $seeder = app(\App\Actions\Pos\Orders\SeedDemoOrdersAction::class);
+    $seeder = app(SeedDemoOrdersAction::class);
     $seeder->handle($ctx['company'], 30, 99, now());
 
     // Per-order invariant: SUM(payments.amount where success)
@@ -250,7 +300,7 @@ it('SeedDemoOrdersAction errors when the company has no branches or products', f
     // Erase the branch + don't add products.
     $ctx['branch']->delete();
 
-    $seeder = app(\App\Actions\Pos\Orders\SeedDemoOrdersAction::class);
+    $seeder = app(SeedDemoOrdersAction::class);
     expect(fn () => $seeder->handle($ctx['company'], 5))
         ->toThrow(RuntimeException::class);
 });
@@ -259,7 +309,7 @@ it('SeedDemoOrdersAction errors on non-positive count', function (): void {
     $ctx = makeMerchantActor();
     Product::factory()->for($ctx['company'], 'company')->create();
 
-    $seeder = app(\App\Actions\Pos\Orders\SeedDemoOrdersAction::class);
+    $seeder = app(SeedDemoOrdersAction::class);
     expect(fn () => $seeder->handle($ctx['company'], 0))
         ->toThrow(RuntimeException::class);
 });

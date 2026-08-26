@@ -38,7 +38,7 @@ const branches = ref<Branch[]>([]);
 // P-G7 — pending_verification: no-tender delivery orders awaiting the
 // provider's statement (visible here, outside the revenue banner).
 // held/kitchen/refunded included so device-parked orders are filterable.
-const statusOptions = ['open', 'held', 'kitchen', 'paid', 'pending_verification', 'void', 'refunded'] as const;
+const statusOptions = ['open', 'held', 'kitchen', 'awaiting_payment', 'paid', 'pending_verification', 'void', 'refunded'] as const;
 
 // Auto-refresh: the devices push sales continuously; without this the
 // merchant only sees new orders after clicking Run. Polls with the
@@ -130,6 +130,7 @@ function statusClass(status: string | null): string {
         case 'open': return 'bg-amber-100 text-amber-700';
         case 'held': return 'bg-orange-100 text-orange-700';
         case 'kitchen': return 'bg-cyan-100 text-cyan-700';
+        case 'awaiting_payment': return 'bg-violet-100 text-violet-700';
         case 'pending_verification': return 'bg-sky-100 text-sky-700';
         case 'void': return 'bg-rose-100 text-rose-700';
         case 'refunded': return 'bg-fuchsia-100 text-fuchsia-700';
@@ -137,7 +138,7 @@ function statusClass(status: string | null): string {
     }
 }
 
-/** main_pos / handheld / customer_tablet → translated label. */
+/** main_pos / handheld / customer_tablet / qr_web → translated label. */
 function sourceLabel(source: string | null): string {
     if (!source) return '—';
     const key = `orders.sources.${source}`;

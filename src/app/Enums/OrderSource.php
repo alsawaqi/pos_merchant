@@ -12,6 +12,7 @@ namespace App\Enums;
  *                       POS Application)
  *   customer_tablet   — customer-facing kiosk / drive-thru
  *                       tablet (§8 Customer Tablet)
+ *   qr_web            — customer order submitted from the QR web flow
  *
  * Used by §5.11.10 Staff Activity Report breakdown + the
  * device-health observability dashboard.
@@ -21,6 +22,7 @@ enum OrderSource: string
     case MainPos = 'main_pos';
     case Handheld = 'handheld';
     case CustomerTablet = 'customer_tablet';
+    case QrWeb = 'qr_web';
 
     /**
      * @return list<string>

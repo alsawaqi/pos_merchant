@@ -90,7 +90,7 @@ function statusLabel(status: string | null): string {
     return label !== key ? label : status;
 }
 
-/** main_pos / handheld / customer_tablet → translated label. */
+/** main_pos / handheld / customer_tablet / qr_web → translated label. */
 function sourceLabel(source: string | null): string {
     if (!source) return '—';
     const key = `orders.sources.${source}`;

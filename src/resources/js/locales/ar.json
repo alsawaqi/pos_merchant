@@ -3058,7 +3058,8 @@
         "sources": {
             "main_pos": "نقطة البيع الرئيسية",
             "handheld": "الجهاز المحمول",
-            "customer_tablet": "جهاز العميل اللوحي"
+            "customer_tablet": "جهاز العميل اللوحي",
+            "qr_web": "طلب عبر رمز QR"
         },
         "types": {
             "quick": "سريع",
@@ -3080,6 +3081,7 @@
             "open": "مفتوح",
             "held": "معلق",
             "kitchen": "في المطبخ",
+            "awaiting_payment": "بانتظار الدفع",
             "paid": "مدفوع",
             "pending_verification": "بانتظار التحقق",
             "void": "ملغى",
