@@ -1142,6 +1142,7 @@ return new class extends Migration
             $table->foreignId('customer_id')->nullable()->constrained('pos_customers')->nullOnDelete();
             $table->foreignId('table_id')->nullable()->constrained('pos_tables')->nullOnDelete();
             $table->foreignId('qr_session_id')->nullable()->constrained('pos_qr_sessions')->nullOnDelete();
+            $table->string('client_request_id', 64)->nullable();
             $table->foreignId('charge_device_id')->nullable()->constrained('pos_devices')->nullOnDelete();
             $table->unsignedInteger('charge_amount_baisas')->nullable();
             $table->timestamp('charge_claimed_at')->nullable();
@@ -1189,6 +1190,7 @@ return new class extends Migration
             $table->index(['company_id', 'receipt_number'], 'pos_orders_company_receipt_idx');
             $table->index(['company_id', 'delivery_provider_id'], 'pos_orders_company_provider_idx');
             $table->index(['status', 'charge_deadline_at'], 'pos_orders_status_charge_deadline_idx');
+            $table->unique(['qr_session_id', 'client_request_id'], 'pos_orders_qr_session_request_unique');
         });
         DB::statement(
             'CREATE UNIQUE INDEX pos_orders_qr_session_live_unique ON pos_orders (qr_session_id) '.

@@ -39,6 +39,7 @@ use Database\Factories\DeviceFactory;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
@@ -114,6 +115,61 @@ it('allows only one non-terminal order per QR session', function (): void {
         ->create(['qr_session_id' => $sessionId]);
 
     expect((int) $replacement->qr_session_id)->toBe($sessionId);
+});
+
+it('scopes customer request idempotency to its QR session', function (): void {
+    expect(Schema::hasColumn('pos_orders', 'client_request_id'))->toBeTrue();
+
+    $ctx = makeMerchantActor();
+    $device = DeviceFactory::new()->create([
+        'company_id' => $ctx['company']->id,
+        'branch_id' => $ctx['branch']->id,
+    ]);
+    $makeSession = static function () use ($ctx, $device): int {
+        return DB::table('pos_qr_sessions')->insertGetId([
+            'uuid' => (string) Str::uuid(),
+            'company_id' => $ctx['company']->id,
+            'branch_id' => $ctx['branch']->id,
+            'device_id' => $device->id,
+            'token' => Str::random(64),
+            'token_expires_at' => now()->addMinute(),
+            'status' => 'bound',
+            'expires_at' => now()->addHour(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    };
+    $makePaidOrder = static function (int $sessionId, ?string $requestId) use ($ctx): Order {
+        return Order::factory()
+            ->for($ctx['company'], 'company')
+            ->for($ctx['branch'], 'branch')
+            ->paid()
+            ->create([
+                'qr_session_id' => $sessionId,
+                'client_request_id' => $requestId,
+            ]);
+    };
+
+    $firstSessionId = $makeSession();
+    $secondSessionId = $makeSession();
+    $requestId = 'checkout-request-1';
+
+    $makePaidOrder($firstSessionId, $requestId);
+
+    // Paid rows sit outside the live-session partial index, so this failure
+    // proves the composite idempotency constraint rather than the E10 guard.
+    expect(fn () => $makePaidOrder($firstSessionId, $requestId))
+        ->toThrow(QueryException::class);
+
+    $sameSessionDifferentRequest = $makePaidOrder($firstSessionId, 'checkout-request-2');
+    $differentSessionSameRequest = $makePaidOrder($secondSessionId, $requestId);
+    $firstNullRequest = $makePaidOrder($firstSessionId, null);
+    $secondNullRequest = $makePaidOrder($firstSessionId, null);
+
+    expect((int) $sameSessionDifferentRequest->qr_session_id)->toBe($firstSessionId)
+        ->and((int) $differentSessionSameRequest->qr_session_id)->toBe($secondSessionId)
+        ->and($firstNullRequest->client_request_id)->toBeNull()
+        ->and($secondNullRequest->client_request_id)->toBeNull();
 });
 
 it('cascades item + addon rows when the parent order is deleted', function (): void {
