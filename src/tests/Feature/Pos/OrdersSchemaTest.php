@@ -73,6 +73,10 @@ it('rejects a duplicate client_event_id via the schema unique constraint', funct
         ->create(['client_event_id' => 'evt_dupe_test']))->toThrow(Exception::class);
 });
 
+it('mirrors the QR charge round-up intent column', function (): void {
+    expect(Schema::hasColumn('pos_orders', 'charge_roundup_amount_baisas'))->toBeTrue();
+});
+
 it('allows only one non-terminal order per QR session', function (): void {
     $ctx = makeMerchantActor();
     $device = DeviceFactory::new()->create([

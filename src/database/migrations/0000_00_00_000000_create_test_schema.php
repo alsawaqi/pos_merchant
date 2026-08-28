@@ -1145,6 +1145,7 @@ return new class extends Migration
             $table->string('client_request_id', 64)->nullable();
             $table->foreignId('charge_device_id')->nullable()->constrained('pos_devices')->nullOnDelete();
             $table->unsignedInteger('charge_amount_baisas')->nullable();
+            $table->unsignedInteger('charge_roundup_amount_baisas')->nullable();
             $table->timestamp('charge_claimed_at')->nullable();
             $table->timestamp('charge_deadline_at')->nullable();
             $table->string('charge_outcome', 16)->nullable();
