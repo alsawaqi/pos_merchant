@@ -77,6 +77,10 @@ it('mirrors the QR charge round-up intent column', function (): void {
     expect(Schema::hasColumn('pos_orders', 'charge_roundup_amount_baisas'))->toBeTrue();
 });
 
+it('mirrors the QR temporary reference column', function (): void {
+    expect(Schema::hasColumn('pos_orders', 'temp_reference'))->toBeTrue();
+});
+
 it('allows only one non-terminal order per QR session', function (): void {
     $ctx = makeMerchantActor();
     $device = DeviceFactory::new()->create([

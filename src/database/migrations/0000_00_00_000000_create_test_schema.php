@@ -1183,6 +1183,7 @@ return new class extends Migration
             // P-F8 — the printed receipt number (prefix + zero-padded
             // counter, e.g. "KLD-0042"); NULL for unnumbered orders.
             $table->string('receipt_number', 24)->nullable();
+            $table->string('temp_reference', 32)->nullable();
             // P-G7 — delivery-provider lifecycle (mirrors pos_admin's
             // 2026_07_20_010000 migration): provider linkage + the
             // Proceed-popup fields + the punch/confirm money snapshot.
