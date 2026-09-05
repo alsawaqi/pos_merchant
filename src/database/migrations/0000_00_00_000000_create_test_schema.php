@@ -1125,7 +1125,7 @@ return new class extends Migration
             $table->uuid('uuid')->unique();
             $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
             $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
-            $table->foreignId('device_id')->constrained('pos_devices')->cascadeOnDelete();
+            $table->foreignId('device_id')->nullable()->constrained('pos_devices')->cascadeOnDelete();
             $table->string('token', 64)->unique();
             $table->timestamp('token_expires_at');
             $table->string('status', 16)->default('pending');
@@ -1155,6 +1155,8 @@ return new class extends Migration
             $table->foreignId('customer_id')->nullable()->constrained('pos_customers')->nullOnDelete();
             $table->foreignId('table_id')->nullable()->constrained('pos_tables')->nullOnDelete();
             $table->foreignId('qr_session_id')->nullable()->constrained('pos_qr_sessions')->nullOnDelete();
+            // T2 portal mirror: the seating table itself is not mirrored here.
+            $table->unsignedBigInteger('table_session_id')->nullable();
             $table->string('client_request_id', 64)->nullable();
             $table->foreignId('charge_device_id')->nullable()->constrained('pos_devices')->nullOnDelete();
             $table->unsignedInteger('charge_amount_baisas')->nullable();
@@ -1230,6 +1232,8 @@ return new class extends Migration
             // Frozen parent-line components (pos_admin 2026_08_05_010000).
             $table->text('component_snapshot_json')->nullable();
             $table->string('status', 32)->default('open');
+            $table->string('cancel_disposition', 16)->nullable();
+            $table->timestamp('cancelled_at')->nullable();
             $table->text('notes')->nullable();
             $table->timestamps();
         });

@@ -81,6 +81,43 @@ it('mirrors the QR temporary reference column', function (): void {
     expect(Schema::hasColumn('pos_orders', 'temp_reference'))->toBeTrue();
 });
 
+it('mirrors the T2 order and item columns', function (): void {
+    $expectedColumns = [
+        'pos_qr_sessions' => ['device_id' => 'INTEGER'],
+        'pos_orders' => ['table_session_id' => 'INTEGER'],
+        'pos_order_items' => [
+            'cancel_disposition' => 'varchar',
+            'cancelled_at' => 'datetime',
+        ],
+    ];
+
+    foreach ($expectedColumns as $table => $expected) {
+        $columns = collect(DB::select("PRAGMA table_info('$table')"))->keyBy('name');
+        foreach ($expected as $column => $type) {
+            expect(Schema::hasColumn($table, $column))->toBeTrue();
+            expect($columns[$column]->type)->toBe($type);
+            expect((int) $columns[$column]->notnull)->toBe(0);
+        }
+    }
+
+    $deviceForeignKey = collect(DB::select("PRAGMA foreign_key_list('pos_qr_sessions')"))
+        ->firstWhere('from', 'device_id');
+    expect($deviceForeignKey)->not->toBeNull();
+    expect([$deviceForeignKey->table, $deviceForeignKey->to, $deviceForeignKey->on_delete])
+        ->toBe(['pos_devices', 'id', 'CASCADE']);
+    expect(collect(DB::select("PRAGMA foreign_key_list('pos_orders')"))->pluck('from')->all())
+        ->not->toContain('table_session_id');
+
+    foreach ([
+        'pos_table_sessions',
+        'pos_table_session_events',
+        'pos_qr_session_scans',
+        'pos_kitchen_tickets',
+    ] as $table) {
+        expect(Schema::hasTable($table))->toBeFalse();
+    }
+});
+
 it('allows only one non-terminal order per QR session', function (): void {
     $ctx = makeMerchantActor();
     $device = DeviceFactory::new()->create([
