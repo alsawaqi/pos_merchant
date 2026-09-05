@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Pos;
 
 use App\Actions\Pos\Settings\SetBranchDineInRoundModeAction;
+use App\Actions\Pos\Settings\SetBranchTableSessionsModeAction;
 use App\Actions\Pos\Settings\SetDineInRoundModeAction;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
@@ -29,11 +30,17 @@ class DineInRoundModeSettingController extends Controller
         private readonly MerchantTenantContext $tenant,
         private readonly SetDineInRoundModeAction $setDefault,
         private readonly SetBranchDineInRoundModeAction $setBranch,
+        private readonly SetBranchTableSessionsModeAction $setTableSessionsMode,
     ) {}
 
     public function show(Request $request): JsonResponse
     {
         $this->ensure($request, MerchantPermission::BranchesView);
+
+        // Opt-in companion snapshot preserves the exact existing T0 contract.
+        if ($request->boolean('table_sessions')) {
+            return response()->json(['data' => $this->tableSessionsModes($request->user())]);
+        }
 
         return response()->json(['data' => $this->current($request->user())]);
     }
@@ -65,6 +72,41 @@ class DineInRoundModeSettingController extends Controller
         $this->setBranch->handle($branch, $mode === 'inherit' ? null : $mode, $request->user());
 
         return response()->json(['data' => $this->current($request->user())]);
+    }
+
+    public function updateTableSessionsMode(Request $request, Branch $branch): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::BranchesUpdate);
+        $this->refuseIfNotInTenant($branch);
+        if (! $request->user()->canAccessBranchId((int) $branch->id)) {
+            abort(403);
+        }
+        $validated = $request->validate(['mode' => ['required', 'string', 'in:off,shadow,live']]);
+        $this->setTableSessionsMode->handle($branch, $validated['mode'], $request->user());
+
+        return response()->json(['data' => $this->tableSessionsModes($request->user())]);
+    }
+
+    /** @return array{branches: list<array{uuid: string, table_sessions_mode: string}>} */
+    private function tableSessionsModes(User $user): array
+    {
+        $companyId = $this->tenant->requiredId();
+        $allowed = $user->allowedBranchIds();
+        $branches = Branch::query()->where('company_id', $companyId)
+            ->when($allowed !== null, fn ($query) => $query->whereIn('id', $allowed))
+            ->orderBy('name')->get();
+        $settings = BranchSetting::query()->where('company_id', $companyId)
+            ->where('key', 'table_sessions_mode')->whereIn('branch_id', $branches->modelKeys())
+            ->get()->keyBy('branch_id');
+
+        return ['branches' => $branches->map(static function (Branch $branch) use ($settings): array {
+            $value = $settings->get($branch->id)?->value;
+
+            return [
+                'uuid' => $branch->uuid,
+                'table_sessions_mode' => is_string($value) && in_array($value, ['off', 'shadow', 'live'], true) ? $value : 'off',
+            ];
+        })->values()->all()];
     }
 
     /**

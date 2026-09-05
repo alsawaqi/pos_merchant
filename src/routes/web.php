@@ -986,6 +986,8 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('settings.dine-in-round-mode.update');
         Route::put('settings/dine-in-round-mode/branches/{branch:uuid}', [DineInRoundModeSettingController::class, 'updateBranch'])
             ->name('settings.dine-in-round-mode.branch-update');
+        Route::put('settings/table-sessions-mode/branches/{branch:uuid}', [DineInRoundModeSettingController::class, 'updateTableSessionsMode'])
+            ->name('settings.table-sessions-mode.branch-update');
 
         // Phase B (Additions §1.2) — void + comp reason code lists. Same
         // orders.cancel gate as the cancellation policy they ride with;

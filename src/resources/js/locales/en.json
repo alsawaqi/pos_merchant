@@ -3194,6 +3194,15 @@
             "save_success": "Device kitchen access updated.",
             "save_failed": "Could not save the device kitchen access policy."
         },
+        "table_sessions_mode": {
+            "title": "Table sync",
+            "description": "Watch the server's table view without changing local cashier actions. Each branch saves independently.",
+            "off": "Off",
+            "shadow": "Watch only",
+            "live": "Live",
+            "live_hint": "Available after the watch-only week",
+            "saved": "Table sync updated."
+        },
         "dine_in_round_mode": {
             "title": "Dine-in QR round handling",
             "subtitle": "Choose how each branch handles QR rounds. Branches without an override follow the company default. Each selection saves immediately.",

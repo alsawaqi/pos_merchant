@@ -4,7 +4,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import { usePermissions } from '@/composables/usePermissions';
-import { ApiError } from '@/lib/api';
+import { ApiError, apiGet, apiPut } from '@/lib/api';
 import {
     getDineInRoundModeSetting,
     updateBranchDineInRoundMode,
@@ -29,6 +29,43 @@ const branchSaving = reactive<Record<string, boolean>>({});
 const branchErrors = reactive<Record<string, string | null>>({});
 const branchSuccess = reactive<Record<string, boolean>>({});
 const modes = ['kitchen_direct', 'staff_confirm'] as const;
+
+type TableSessionsMode = 'off' | 'shadow' | 'live';
+type TableModeSnapshot = { branches: { uuid: string; table_sessions_mode: TableSessionsMode }[] };
+const tableModes = ref<Record<string, TableSessionsMode>>({});
+const tableSaving = reactive<Record<string, boolean>>({});
+const tableErrors = reactive<Record<string, string | null>>({});
+const tableSuccess = reactive<Record<string, boolean>>({});
+function applyTableModes(snapshot: TableModeSnapshot): void {
+    tableModes.value = Object.fromEntries(snapshot.branches.map((branch) => [branch.uuid, branch.table_sessions_mode]));
+}
+
+async function changeTableMode(branch: DineInRoundModeBranch, event: Event): Promise<void> {
+    if (!canManage.value || tableSaving[branch.uuid]) return;
+    const select = event.target as HTMLSelectElement;
+    const mode = select.value as TableSessionsMode;
+    if (mode === 'live') {
+        select.value = tableModes.value[branch.uuid] ?? 'off';
+        return;
+    }
+    tableSaving[branch.uuid] = true;
+    tableErrors[branch.uuid] = null;
+    tableSuccess[branch.uuid] = false;
+    try {
+        await enqueueSave(async () => {
+            const response = await apiPut<{ data: TableModeSnapshot }>(
+                '/api/settings/table-sessions-mode/branches/' + encodeURIComponent(branch.uuid), { mode },
+            );
+            applyTableModes(response.data);
+        });
+        tableSuccess[branch.uuid] = true;
+    } catch (e) {
+        tableErrors[branch.uuid] = apiErrorMessage(e);
+    } finally {
+        tableSaving[branch.uuid] = false;
+        select.value = tableModes.value[branch.uuid] ?? 'off';
+    }
+}
 
 // Every PUT returns a full snapshot. Serialize mutation + application so a
 // delayed response cannot overwrite another select's already-saved policy.
@@ -62,8 +99,12 @@ async function fetchSetting(): Promise<void> {
     loading.value = true;
     loadError.value = null;
     try {
-        const response = await getDineInRoundModeSetting();
+        const [response, tableResponse] = await Promise.all([
+            getDineInRoundModeSetting(),
+            apiGet<{ data: TableModeSnapshot }>('/api/settings/dine-in-round-mode?table_sessions=1'),
+        ]);
         setting.value = response.data;
+        applyTableModes(tableResponse.data);
     } catch (e) {
         loadError.value = apiErrorMessage(e);
     } finally {
@@ -187,6 +228,31 @@ async function changeBranch(branch: DineInRoundModeBranch, event: Event): Promis
                             </tbody>
                         </table>
                     </div>
+                    <section aria-labelledby="table-sync-title" class="border-t border-slate-200 pt-6">
+                        <h2 id="table-sync-title" class="text-lg font-semibold text-slate-900">{{ t('settings.table_sessions_mode.title') }}</h2>
+                        <p class="mt-1 text-sm text-slate-500">{{ t('settings.table_sessions_mode.description') }}</p>
+                        <div v-for="branch in setting.branches" :key="branch.uuid" class="mt-4 rounded-lg border border-slate-200 p-4">
+                            <label :for="'table-sync-' + branch.uuid" class="block text-sm font-medium text-slate-700">
+                                {{ locale === 'ar' && branch.name_ar ? branch.name_ar : branch.name }}
+                            </label>
+                            <select
+                                :id="'table-sync-' + branch.uuid"
+                                :data-testid="'table-sync-' + branch.uuid"
+                                :value="tableModes[branch.uuid] ?? 'off'"
+                                :disabled="!canManage || tableSaving[branch.uuid]"
+                                class="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100 disabled:bg-slate-50 disabled:text-slate-500"
+                                @change="changeTableMode(branch, $event)"
+                            >
+                                <option value="off">{{ t('settings.table_sessions_mode.off') }}</option>
+                                <option value="shadow">{{ t('settings.table_sessions_mode.shadow') }}</option>
+                                <option value="live" disabled :title="t('settings.table_sessions_mode.live_hint')">{{ t('settings.table_sessions_mode.live') }}</option>
+                            </select>
+                            <p class="mt-1 text-xs text-slate-500">{{ t('settings.table_sessions_mode.live_hint') }}</p>
+                            <p v-if="tableSaving[branch.uuid]" role="status" class="mt-2 text-sm text-slate-500">{{ t('common.saving') }}</p>
+                            <p v-if="tableErrors[branch.uuid]" role="alert" class="mt-2 text-sm text-rose-600">{{ tableErrors[branch.uuid] }}</p>
+                            <p v-if="tableSuccess[branch.uuid]" role="status" class="mt-2 text-sm text-emerald-700">{{ t('settings.table_sessions_mode.saved') }}</p>
+                        </div>
+                    </section>
                 </div>
             </div>
         </div>
