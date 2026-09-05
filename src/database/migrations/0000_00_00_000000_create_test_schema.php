@@ -1071,6 +1071,19 @@ return new class extends Migration
             $table->unique(['company_id', 'key'], 'pos_company_settings_company_key_unique');
         });
 
+        // QR-003 T0 — schema owned by pos_admin; this portal writes the rows.
+        // Both FK targets exist in this SQLite mirror.
+        Schema::create('pos_branch_settings', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->string('key', 64);
+            $table->json('value')->nullable();
+            $table->timestamps();
+            $table->unique(['branch_id', 'key'], 'pos_branch_settings_branch_key_unique');
+            $table->index(['company_id', 'key'], 'pos_branch_settings_company_key_idx');
+        });
+
         // P-F8 — server-owned order-number counters (mirrors pos_admin's
         // 2026_07_12_010000 migration; allocated by pos_api, not this app).
         // branch_id NULL = company scope; seq_date NULL = continuous counter.
@@ -1850,6 +1863,7 @@ return new class extends Migration
         Schema::dropIfExists('pos_staff');
         Schema::dropIfExists('pos_password_reset_tokens');
         Schema::dropIfExists('pos_audit_logs');
+        Schema::dropIfExists('pos_branch_settings');
         Schema::dropIfExists('pos_branches');
         Schema::dropIfExists('pos_users');
         Schema::dropIfExists('pos_companies');

@@ -60,6 +60,13 @@ class CompanySetting extends Model
     public const KEY_KITCHEN_POSITIONS = 'kitchen_positions';
 
     /**
+     * QR-003 T0 — company default for dine-in QR round handling. A JSON
+     * string, read by pos_api's DineInRoundMode::forBranch when the branch
+     * has no valid override in pos_branch_settings.
+     */
+    public const KEY_DINE_IN_ROUND_MODE = 'dine_in_round_mode';
+
+    /**
      * PT — whether purchase/input tax tracked on expenses is RECOVERABLE
      * (credited back into net profit on the Sales report, like a VAT
      * receivable) or merely informational (default false). A JSON boolean.

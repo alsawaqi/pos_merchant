@@ -155,6 +155,7 @@
         "orders": "Sales",
         "order_cancellation": "POS Settings",
         "order_numbering": "Order Numbering",
+        "dine_in_round_mode": "Dine-in QR round handling",
         "profile": "My Profile"
     },
     "purchase_tax": {
@@ -3192,6 +3193,20 @@
             "always_hint": "The kitchen role always has access. Tick other roles to grant them kitchen access too. Leave all unticked to keep it kitchen-only — to give a specific person access, set their position to Kitchen on the POS Staff page.",
             "save_success": "Device kitchen access updated.",
             "save_failed": "Could not save the device kitchen access policy."
+        },
+        "dine_in_round_mode": {
+            "title": "Dine-in QR round handling",
+            "subtitle": "Choose how each branch handles QR rounds. Branches without an override follow the company default. Each selection saves immediately.",
+            "company_default_label": "Company default",
+            "branch_column": "Branch",
+            "mode_column": "Round handling",
+            "effective_column": "Effective mode",
+            "inherit": "Inherit company default",
+            "kitchen_direct": "Send directly to kitchen",
+            "staff_confirm": "Require staff confirmation",
+            "forbidden": "You don't have permission to manage this setting for this company or branch.",
+            "save_success": "Dine-in round handling updated.",
+            "save_failed": "Could not save the dine-in round handling setting."
         },
         "order_numbering": {
             "title": "Order Numbering",

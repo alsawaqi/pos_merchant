@@ -24,6 +24,7 @@ use App\Http\Controllers\Pos\DashboardController;
 use App\Http\Controllers\Pos\DeliveriesController;
 use App\Http\Controllers\Pos\DeliveryProvidersController;
 use App\Http\Controllers\Pos\DeviceLiveController;
+use App\Http\Controllers\Pos\DineInRoundModeSettingController;
 use App\Http\Controllers\Pos\DiscountsController;
 use App\Http\Controllers\Pos\ExpenseCategoryController;
 use App\Http\Controllers\Pos\ExpensesController;
@@ -976,6 +977,15 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('settings.order-numbering.show');
         Route::put('settings/order-numbering', [OrderNumberingSettingController::class, 'update'])
             ->name('settings.order-numbering.update');
+
+        // QR-003 T0 — branch operational policy. Read requires branches.view;
+        // writes require branches.update, with P-G5 scope enforced server-side.
+        Route::get('settings/dine-in-round-mode', [DineInRoundModeSettingController::class, 'show'])
+            ->name('settings.dine-in-round-mode.show');
+        Route::put('settings/dine-in-round-mode', [DineInRoundModeSettingController::class, 'update'])
+            ->name('settings.dine-in-round-mode.update');
+        Route::put('settings/dine-in-round-mode/branches/{branch:uuid}', [DineInRoundModeSettingController::class, 'updateBranch'])
+            ->name('settings.dine-in-round-mode.branch-update');
 
         // Phase B (Additions §1.2) — void + comp reason code lists. Same
         // orders.cancel gate as the cancellation policy they ride with;
