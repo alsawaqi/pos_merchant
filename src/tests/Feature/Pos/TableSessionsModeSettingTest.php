@@ -91,11 +91,12 @@ it('enforces branch and tenant boundaries and tolerates malformed rows as off', 
         ->toThrow(InvalidArgumentException::class);
 });
 
-it('keeps the merchant table control permission gated and live disabled with paired translations', function (): void {
+it('keeps the merchant table control permission gated and live enabled with paired translations', function (): void {
     expect(Route::getRoutes()->getByName('settings.table-sessions-mode.branch-update')->methods())->toBe(['PUT']);
     $page = file_get_contents(resource_path('js/Pages/Merchant/Settings/DineInRoundMode.vue'));
-    expect($page)->toContain(':disabled="!canManage || tableSaving[branch.uuid]"', '<option value="live" disabled')
-        ->toContain('@change="changeTableMode(branch, $event)"', "if (mode === 'live')");
+    expect($page)->toContain(':disabled="!canManage || tableSaving[branch.uuid]"', '<option value="live" :title=')
+        ->toContain('@change="changeTableMode(branch, $event)"')
+        ->not->toContain('<option value="live" disabled', "if (mode === 'live')");
     $en = json_decode(file_get_contents(resource_path('js/locales/en.json')), true, flags: JSON_THROW_ON_ERROR);
     $ar = json_decode(file_get_contents(resource_path('js/locales/ar.json')), true, flags: JSON_THROW_ON_ERROR);
     $keys = ['title', 'description', 'off', 'shadow', 'live', 'live_hint', 'saved'];

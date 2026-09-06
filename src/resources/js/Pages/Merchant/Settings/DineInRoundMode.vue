@@ -44,10 +44,6 @@ async function changeTableMode(branch: DineInRoundModeBranch, event: Event): Pro
     if (!canManage.value || tableSaving[branch.uuid]) return;
     const select = event.target as HTMLSelectElement;
     const mode = select.value as TableSessionsMode;
-    if (mode === 'live') {
-        select.value = tableModes.value[branch.uuid] ?? 'off';
-        return;
-    }
     tableSaving[branch.uuid] = true;
     tableErrors[branch.uuid] = null;
     tableSuccess[branch.uuid] = false;
@@ -245,7 +241,7 @@ async function changeBranch(branch: DineInRoundModeBranch, event: Event): Promis
                             >
                                 <option value="off">{{ t('settings.table_sessions_mode.off') }}</option>
                                 <option value="shadow">{{ t('settings.table_sessions_mode.shadow') }}</option>
-                                <option value="live" disabled :title="t('settings.table_sessions_mode.live_hint')">{{ t('settings.table_sessions_mode.live') }}</option>
+                                <option value="live" :title="t('settings.table_sessions_mode.live_hint')">{{ t('settings.table_sessions_mode.live') }}</option>
                             </select>
                             <p class="mt-1 text-xs text-slate-500">{{ t('settings.table_sessions_mode.live_hint') }}</p>
                             <p v-if="tableSaving[branch.uuid]" role="status" class="mt-2 text-sm text-slate-500">{{ t('common.saving') }}</p>

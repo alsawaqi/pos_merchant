@@ -3200,7 +3200,7 @@
             "off": "Off",
             "shadow": "Watch only",
             "live": "Live",
-            "live_hint": "Available after the watch-only week",
+            "live_hint": "Live — only after the watch-only week and the T6 pilot sign-off",
             "saved": "Table sync updated."
         },
         "dine_in_round_mode": {
