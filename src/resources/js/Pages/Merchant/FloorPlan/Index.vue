@@ -39,6 +39,7 @@ import FloorPlanner from '@/Pages/Merchant/FloorPlan/FloorPlanner.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
 import { listBranches, type Branch } from '@/lib/api/branches';
+import { getTableCardPreview, tableCardsPrintUrl } from '@/lib/api/qrTableCards';
 import {
     createFloor,
     createTable,
@@ -113,6 +114,26 @@ const tableForm = reactive<{
 const qrModalOpen = ref(false);
 const qrModalTable = ref<MerchantTable | null>(null);
 const qrCopied = ref(false);
+const qrPreview = ref<{ svg: string; url: string } | null>(null);
+const qrPreviewLoading = ref(false);
+let qrPreviewSequence = 0;
+
+async function loadQrPreview(): Promise<void> {
+    const branchUuid = selectedBranchUuid.value;
+    const table = qrModalTable.value;
+    const sequence = ++qrPreviewSequence;
+    qrPreview.value = null;
+    if (!branchUuid || !table) return;
+    qrPreviewLoading.value = true;
+    try {
+        const preview = await getTableCardPreview(branchUuid, table.uuid);
+        if (sequence === qrPreviewSequence) qrPreview.value = preview;
+    } catch {
+        if (sequence === qrPreviewSequence) qrPreview.value = null;
+    } finally {
+        if (sequence === qrPreviewSequence) qrPreviewLoading.value = false;
+    }
+}
 
 // ---- Delete confirms -------------------------------------------
 const floorDeleteTarget = ref<Floor | null>(null);
@@ -347,6 +368,7 @@ function openQrModal(table: MerchantTable): void {
     qrModalTable.value = table;
     qrCopied.value = false;
     qrModalOpen.value = true;
+    void loadQrPreview();
 }
 
 async function copyQrToken(): Promise<void> {
@@ -363,10 +385,12 @@ async function copyQrToken(): Promise<void> {
 
 async function rotateQrToken(): Promise<void> {
     if (!qrModalTable.value) return;
+    if (!window.confirm(t('floor_plan.qr_modal.regenerate_confirm'))) return;
     try {
         const response = await regenerateTableQr(qrModalTable.value.uuid);
         qrModalTable.value = response.data;
         qrCopied.value = false;
+        await loadQrPreview();
         await fetchFloors();
     } catch (err) {
         error.value = err instanceof Error ? err.message : 'Failed';
@@ -721,7 +745,14 @@ function statusBadgeClass(status: string | null): string {
                         </button>
                     </div>
                 </label>
-                <p class="text-xs text-slate-500">{{ t('floor_plan.qr_modal.menu_url_hint') }}</p>
+                <p v-if="qrPreviewLoading" role="status" class="text-sm text-slate-500">{{ t('common.loading') }}</p>
+                <template v-else-if="qrPreview && selectedBranchUuid">
+                    <div class="mx-auto w-52 [&_svg]:h-auto [&_svg]:w-full" v-html="qrPreview.svg"></div>
+                    <p class="break-all text-xs text-slate-500" dir="ltr">{{ t('floor_plan.qr_modal.menu_url_hint', { url: qrPreview.url }) }}</p>
+                    <a :href="tableCardsPrintUrl(selectedBranchUuid, qrModalTable.uuid)" target="_blank" rel="noopener"
+                        class="inline-block rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800">{{ t('floor_plan.qr_modal.print_card') }}</a>
+                </template>
+                <p v-else role="status" class="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">{{ t('floor_plan.qr_modal.preview_unavailable') }}</p>
             </div>
             <template #footer>
                 <div class="flex justify-between gap-2">

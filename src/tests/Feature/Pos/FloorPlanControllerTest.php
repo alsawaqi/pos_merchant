@@ -25,7 +25,6 @@ declare(strict_types=1);
  *   - Cross-tenant safety on every mutating endpoint.
  */
 
-use App\Enums\MerchantPermission;
 use App\Enums\MerchantRole;
 use App\Enums\TableShape;
 use App\Models\Branch;
@@ -33,6 +32,7 @@ use App\Models\Company;
 use App\Models\Floor;
 use App\Models\Table;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -345,7 +345,7 @@ it('regenerates a table qr_token and never leaks it to the audit log', function 
 
     // Audit row exists but the token itself is NOT in the
     // payload — same hygiene as password/PIN events.
-    $auditRow = \Illuminate\Support\Facades\DB::table('pos_audit_logs')
+    $auditRow = DB::table('pos_audit_logs')
         ->where('event', 'table.qr_regenerated')
         ->where('auditable_id', $table->id)
         ->first();
@@ -439,7 +439,7 @@ it('bulk-saves a floor layout and writes exactly one audit row', function (): vo
     expect($t2->position_y)->toBe(200);
 
     // Exactly one audit row for the whole save (not N).
-    $auditRows = \Illuminate\Support\Facades\DB::table('pos_audit_logs')
+    $auditRows = DB::table('pos_audit_logs')
         ->where('event', 'floor.layout_saved')
         ->where('auditable_id', $floor->id)
         ->get();
@@ -467,7 +467,7 @@ it('writes no audit row when the save is a no-op (nothing actually moved)', func
         ],
     ])->assertOk();
 
-    $rows = \Illuminate\Support\Facades\DB::table('pos_audit_logs')
+    $rows = DB::table('pos_audit_logs')
         ->where('event', 'floor.layout_saved')
         ->where('auditable_id', $floor->id)
         ->count();
@@ -607,4 +607,15 @@ it('allows single-table PATCH to update position fields', function (): void {
         ->assertJsonPath('data.position_y', 175)
         ->assertJsonPath('data.width', 100)
         ->assertJsonPath('data.height', 100);
+});
+
+it('shows the real printed-card URL and warns that regeneration invalidates printed cards', function (): void {
+    $en = json_decode(file_get_contents(resource_path('js/locales/en.json')), true, flags: JSON_THROW_ON_ERROR);
+    $ar = json_decode(file_get_contents(resource_path('js/locales/ar.json')), true, flags: JSON_THROW_ON_ERROR);
+    expect($en['floor_plan']['qr_modal']['menu_url_hint'])->toContain('{url}')->not->toContain('/menu?t=')
+        ->and($ar['floor_plan']['qr_modal']['menu_url_hint'])->toContain('{url}')->not->toContain('/menu?t=')
+        ->and($en['floor_plan']['qr_modal']['regenerate_confirm'])->toContain('Printed cards for this table stop working')
+        ->and($ar['floor_plan']['qr_modal']['regenerate_confirm'])->not->toBeEmpty();
+    $page = file_get_contents(resource_path('js/Pages/Merchant/FloorPlan/Index.vue'));
+    expect($page)->toContain('getTableCardPreview', 'v-html="qrPreview.svg"', 'tableCardsPrintUrl(selectedBranchUuid, qrModalTable.uuid)', "window.confirm(t('floor_plan.qr_modal.regenerate_confirm'))");
 });

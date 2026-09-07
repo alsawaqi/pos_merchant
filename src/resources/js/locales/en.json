@@ -1,4 +1,13 @@
 {
+    "print": {
+        "table_cards": {
+            "title": "Table cards",
+            "print": "Print",
+            "missing_url": "QR_WEB_BASE_URL is not configured. No table cards can be printed.",
+            "empty": "No active tables on the selected floors.",
+            "scan": "Scan to order · امسح للطلب"
+        }
+    },
     "app": {
         "name": "MITHQAL Merchant Portal",
         "tagline": "Run your business with confidence."
@@ -156,6 +165,7 @@
         "order_cancellation": "POS Settings",
         "order_numbering": "Order Numbering",
         "dine_in_round_mode": "Dine-in QR round handling",
+        "qr_table_cards": "QR table cards",
         "profile": "My Profile"
     },
     "purchase_tax": {
@@ -818,7 +828,10 @@
             "token_label": "Token",
             "copy": "Copy",
             "copied": "Copied",
-            "menu_url_hint": "Menu URL will be /menu?t={token} once the customer-facing app ships.",
+            "menu_url_hint": "Customer menu: {url}",
+            "regenerate_confirm": "Printed cards for this table stop working. Regenerate the QR code?",
+            "preview_unavailable": "No printable card is available. Check the customer app URL and that this table and floor are active.",
+            "print_card": "Print this card",
             "regenerate": "Regenerate (invalidate old)",
             "done": "Done"
         },
@@ -3193,6 +3206,23 @@
             "always_hint": "The kitchen role always has access. Tick other roles to grant them kitchen access too. Leave all unticked to keep it kitchen-only — to give a specific person access, set their position to Kitchen on the POS Staff page.",
             "save_success": "Device kitchen access updated.",
             "save_failed": "Could not save the device kitchen access policy."
+        },
+        "qr_table_cards": {
+            "title": "QR table cards",
+            "subtitle": "Control printed-card ordering and location checks for each branch.",
+            "card_label": "Printed table cards",
+            "location_label": "Location check",
+            "off": "Off",
+            "on": "On",
+            "advisory": "Advisory",
+            "enforce": "Enforce",
+            "hint": "Advisory: staff see whether the phone was at the branch. Enforce: phones outside the branch cannot open a table. Customers who refuse location can still order and are confirmed by staff.",
+            "unfenced": "This branch has no location set — the check cannot run (set it in the admin portal).",
+            "missing_url": "QR_WEB_BASE_URL is not configured. Set the customer app's public origin before printing any table cards.",
+            "print": "Print cards",
+            "saved": "Settings saved.",
+            "failed": "Could not load or save the table card settings. Please try again.",
+            "retry": "Try again"
         },
         "table_sessions_mode": {
             "title": "Table sync",

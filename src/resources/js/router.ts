@@ -36,6 +36,7 @@ import RolesIndex from '@/Pages/Merchant/Roles/Index.vue';
 import SettingsOrderCancellation from '@/Pages/Merchant/Settings/OrderCancellation.vue';
 import SettingsOrderNumbering from '@/Pages/Merchant/Settings/OrderNumbering.vue';
 import SettingsDineInRoundMode from '@/Pages/Merchant/Settings/DineInRoundMode.vue';
+import SettingsQrTableCards from '@/Pages/Merchant/Settings/QrTableCards.vue';
 import ReportsIndex from '@/Pages/Merchant/Reports/Index.vue';
 import ReportsSales from '@/Pages/Merchant/Reports/Sales.vue';
 import ReportsCustomers from '@/Pages/Merchant/Reports/Customers.vue';
@@ -380,6 +381,12 @@ const routes: RouteRecordRaw[] = [
         path: '/settings/dine-in-round-mode',
         name: 'merchant.settings.dine-in-round-mode',
         component: SettingsDineInRoundMode,
+        meta: { requiresAuth: true },
+    },
+    {
+        path: '/settings/qr-table-cards',
+        name: 'merchant.settings.qr-table-cards',
+        component: SettingsQrTableCards,
         meta: { requiresAuth: true },
     },
 

@@ -83,6 +83,7 @@ const navigationCatalog: readonly NavItem[] = [
     { key: 'order_cancellation', to: '/settings/order-cancellation', icon: Settings, permission: MerchantPermission.OrdersCancel },
     { key: 'order_numbering', to: '/settings/order-numbering', icon: Hash, permission: MerchantPermission.OrdersCancel },
     { key: 'dine_in_round_mode', to: '/settings/dine-in-round-mode', icon: ChefHat, permission: MerchantPermission.BranchesView },
+    { key: 'qr_table_cards', to: '/settings/qr-table-cards', icon: ChefHat, permission: MerchantPermission.BranchesView },
 ];
 
 const visibleNavigation = computed(() =>

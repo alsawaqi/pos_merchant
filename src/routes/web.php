@@ -48,6 +48,7 @@ use App\Http\Controllers\Pos\ProductsController;
 use App\Http\Controllers\Pos\ProductStockController;
 use App\Http\Controllers\Pos\PurchaseReceiptController;
 use App\Http\Controllers\Pos\PurchaseTaxRecoverableSettingController;
+use App\Http\Controllers\Pos\QrTableCardsSettingController;
 use App\Http\Controllers\Pos\ReportsController;
 use App\Http\Controllers\Pos\ReportsPositionsSettingController;
 use App\Http\Controllers\Pos\RestockRequestsController;
@@ -58,12 +59,14 @@ use App\Http\Controllers\Pos\StaffMessagesController;
 use App\Http\Controllers\Pos\StockController;
 use App\Http\Controllers\Pos\StockCountsController;
 use App\Http\Controllers\Pos\SuppliersController;
+use App\Http\Controllers\Pos\TableCardsPrintController;
 use App\Http\Controllers\Pos\TableInsightsController;
 use App\Http\Controllers\Pos\TablesController;
 use App\Http\Controllers\Pos\TaxesController;
 use App\Http\Controllers\Pos\VoidReasonsController;
 use App\Http\Controllers\Pos\WasteController;
 use App\Http\Controllers\SpaController;
+use App\Http\Middleware\EnsureBranchScope;
 use App\Http\Middleware\EnsureMerchantSessionIsFresh;
 use App\Http\Middleware\EnsureUserIsAuthenticated;
 use App\Http\Middleware\RedirectIfAuthenticated;
@@ -154,6 +157,9 @@ Route::post('/auth/two-factor-challenge', [TwoFactorChallengeController::class, 
 // left open for an hour bounces to /login on the next click
 // instead of silently using a stale session.
 Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFresh::class])->group(function (): void {
+    Route::get('/print/table-cards/{branch:uuid}', TableCardsPrintController::class)
+        ->middleware(EnsureBranchScope::class)->name('print.table-cards');
+
     Route::get('/auth/user', [AuthenticatedSessionController::class, 'show'])
         ->middleware(RequireJsonRequest::class)
         ->name('auth.user');
@@ -988,6 +994,10 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('settings.dine-in-round-mode.branch-update');
         Route::put('settings/table-sessions-mode/branches/{branch:uuid}', [DineInRoundModeSettingController::class, 'updateTableSessionsMode'])
             ->name('settings.table-sessions-mode.branch-update');
+        Route::get('settings/qr-table-cards', [QrTableCardsSettingController::class, 'show'])
+            ->name('settings.qr-table-cards.show');
+        Route::put('settings/qr-table-cards/branches/{branch:uuid}', [QrTableCardsSettingController::class, 'update'])
+            ->name('settings.qr-table-cards.branch-update');
 
         // Phase B (Additions §1.2) — void + comp reason code lists. Same
         // orders.cancel gate as the cancellation policy they ride with;
