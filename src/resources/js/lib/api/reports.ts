@@ -883,6 +883,12 @@ export interface OrderDetailPayload {
     order_discounts: OrderDetailDiscount[];
     order_comps: OrderDetailComp[];
     payments: OrderDetailPayment[];
+    reversals: {
+        uuid: string; kind: string; amount: string; status: string;
+        approver: string | null; attempted_at: string | null;
+        completed_at: string | null; response_code: string | null;
+        lines: { order_item_id: number; product_name: string; qty: string; amount: string; returned_to_stock: boolean }[];
+    }[];
     loyalty: {
         points_earned: number;
         points_redeemed: number;

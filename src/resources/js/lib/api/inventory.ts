@@ -22,6 +22,7 @@ export type StockMovementType =
     | 'initial'
     | 'restock'
     | 'sale_consumption'
+    | 'refund_return'
     | 'addon_consumption'
     | 'waste'
     | 'loss'

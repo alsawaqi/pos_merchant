@@ -2402,6 +2402,7 @@ async function submitSuggestions(): Promise<void> {
                             <option value="waste">{{ t('inventory.movement_types.waste') }}</option>
                             <option value="loss">{{ t('inventory.movement_types.loss') }}</option>
                             <option value="sale_consumption">{{ t('inventory.movement_types.sale_consumption') }}</option>
+                            <option value="refund_return">{{ t('inventory.movement_types.refund_return') }}</option>
                             <option value="addon_consumption">{{ t('inventory.movement_types.addon_consumption') }}</option>
                             <option value="transfer_in">{{ t('inventory.movement_types.transfer_in') }}</option>
                             <option value="transfer_out">{{ t('inventory.movement_types.transfer_out') }}</option>

@@ -1842,6 +1842,80 @@ return new class extends Migration
             $table->timestamps();
             $table->unique(['target_id', 'window_start'], 'pos_branch_target_windows_target_start_unique');
         });
+
+        // PAY-002: test-only mirror; production schema remains owned by pos_admin.
+        Schema::create('pos_payment_reversals', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->unsignedBigInteger('company_id');
+            $table->unsignedBigInteger('branch_id');
+            $table->foreignId('order_id')->constrained('pos_orders')->restrictOnDelete();
+            $table->foreignId('payment_id')->constrained('pos_payments')->restrictOnDelete();
+            $table->string('kind', 8);
+            $table->decimal('amount', 12, 3);
+            $table->integer('amount_baisas');
+            $table->char('currency_code', 4);
+            $table->string('status', 16)->default('pending');
+            $table->string('softpos_provider', 32);
+            $table->string('softpos_package', 128);
+            $table->unsignedBigInteger('bank_id');
+            $table->string('terminal_id', 64)->nullable();
+            $table->string('original_softpos_transaction_id', 64)->nullable();
+            $table->string('reversal_softpos_transaction_id', 64)->nullable();
+            $table->string('reversal_rrn', 32)->nullable();
+            $table->string('reversal_auth_code', 32)->nullable();
+            $table->string('response_code', 16)->nullable();
+            $table->string('response_description', 255)->nullable();
+            $table->jsonb('receipt_json')->nullable();
+            $table->string('reason_code', 32)->nullable();
+            $table->string('reason_note', 255)->nullable();
+            $table->foreignId('void_reason_id')->nullable()->constrained('pos_void_reasons')->restrictOnDelete();
+            $table->unsignedBigInteger('requested_by_staff_id')->nullable();
+            $table->foreignId('approved_by_staff_id')->constrained('pos_staff')->restrictOnDelete();
+            $table->foreignId('device_id')->constrained('pos_devices')->restrictOnDelete();
+            $table->string('client_request_id', 64);
+            $table->string('request_fingerprint', 64);
+            $table->timestamp('attempted_at');
+            $table->timestamp('completed_at')->nullable();
+            $table->unsignedBigInteger('resolved_by_user_id')->nullable();
+            $table->string('resolved_note', 255)->nullable();
+            $table->unsignedBigInteger('ledger_payment_id')->nullable();
+            $table->timestamps();
+            $table->unique(['device_id', 'client_request_id'], 'pos_reversals_device_request_unique');
+            $table->index(['device_id', 'status'], 'pos_reversals_device_status_idx');
+            $table->index(['payment_id', 'status'], 'pos_reversals_payment_status_idx');
+        });
+        if (DB::getDriverName() === 'pgsql') {
+            DB::statement("CREATE UNIQUE INDEX pos_reversals_one_pending ON pos_payment_reversals (payment_id) WHERE status = 'pending'");
+        }
+
+        Schema::table('pos_payment_reversals', function (Blueprint $table): void {
+            $table->boolean('refund_needs_transaction_id')->default(false);
+            $table->boolean('void_needs_session_id')->default(false);
+        });
+        Schema::create('pos_payment_reversal_results', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('reversal_id')->constrained('pos_payment_reversals')->restrictOnDelete();
+            $table->foreignId('device_id')->constrained('pos_devices')->restrictOnDelete();
+            $table->string('client_request_id', 64);
+            $table->string('request_fingerprint', 64);
+            $table->jsonb('response_json');
+            $table->timestamp('created_at');
+            $table->unique(['device_id', 'client_request_id'], 'pos_reversal_results_device_request_unique');
+        });
+
+        Schema::create('pos_payment_reversal_lines', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('reversal_id')->constrained('pos_payment_reversals')->restrictOnDelete();
+            $table->foreignId('order_item_id')->constrained('pos_order_items')->restrictOnDelete();
+            $table->decimal('qty', 10, 3);
+            $table->decimal('amount', 12, 3);
+            $table->integer('amount_baisas');
+            $table->string('stock_mode_at_refund', 16);
+            $table->boolean('returned_to_stock')->default(false);
+            $table->unsignedBigInteger('product_stock_movement_id')->nullable();
+            $table->unique(['reversal_id', 'order_item_id'], 'pos_reversal_lines_item_unique');
+        });
     }
 
     public function down(): void
@@ -1856,6 +1930,9 @@ return new class extends Migration
 
         // Drop in reverse dependency order. Tests use :memory: so
         // this is essentially never called, but symmetry is cheap.
+        Schema::dropIfExists('pos_payment_reversal_results');
+        Schema::dropIfExists('pos_payment_reversal_lines');
+        Schema::dropIfExists('pos_payment_reversals');
         Schema::dropIfExists('pos_loyalty_shortfall_reviews');
         Schema::dropIfExists('pos_order_sequences');
         Schema::dropIfExists('pos_saved_views');

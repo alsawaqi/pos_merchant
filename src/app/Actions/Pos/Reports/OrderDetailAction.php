@@ -7,6 +7,7 @@ namespace App\Actions\Pos\Reports;
 use App\Actions\Pos\Reports\Support\SaleCommissionStatus;
 use App\Models\Order;
 use App\Support\MerchantTenantContext;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -79,7 +80,7 @@ final readonly class OrderDetailAction
                 // badge the row so a merchant can tell promos apart.
                 'is_offer' => $row->offer_id !== null,
                 'applied_at' => $row->applied_at !== null
-                    ? \Illuminate\Support\Carbon::parse($row->applied_at)->format('Y-m-d\TH:i:s')
+                    ? Carbon::parse($row->applied_at)->format('Y-m-d\TH:i:s')
                     : null,
             ];
             if ($row->order_item_id === null) {
@@ -224,6 +225,7 @@ final readonly class OrderDetailAction
                 'roundup_amount' => $p->roundup_amount !== null ? (string) $p->roundup_amount : null,
                 'captured_at' => $p->captured_at?->format('Y-m-d\TH:i:s'),
             ])->all(),
+            'reversals' => $this->reversals($companyId, (int) $order->id),
             'loyalty' => $this->loyalty($companyId, (int) $order->id),
             // Commission split + reconciliation/payout status for this sale
             // (settled-aware; final only once the payout is paid). A no-commission
@@ -241,6 +243,38 @@ final readonly class OrderDetailAction
      *
      * @return array<string, mixed>
      */
+    private function reversals(int $companyId, int $orderId): array
+    {
+        // Explicit projection: bank, provider, raw receipt and manager proof
+        // are not part of the merchant contract.
+        $rows = DB::table('pos_payment_reversals as r')
+            ->leftJoin('pos_staff as s', function ($join): void {
+                $join->on('s.id', '=', 'r.approved_by_staff_id')->on('s.company_id', '=', 'r.company_id');
+            })
+            ->where('r.company_id', $companyId)->where('r.order_id', $orderId)
+            ->orderByDesc('r.id')
+            ->get(['r.id', 'r.uuid', 'r.kind', 'r.amount', 'r.status', 's.name as approver',
+                'r.attempted_at', 'r.completed_at', 'r.response_code']);
+        $lines = DB::table('pos_payment_reversal_lines as l')
+            ->join('pos_order_items as i', 'i.id', '=', 'l.order_item_id')
+            ->whereIn('l.reversal_id', $rows->pluck('id'))->where('i.order_id', $orderId)
+            ->orderBy('l.id')->get(['l.reversal_id', 'l.order_item_id', 'i.product_name_snapshot',
+                'l.qty', 'l.amount', 'l.returned_to_stock'])->groupBy('reversal_id');
+
+        return $rows->map(static fn ($row): array => [
+            'uuid' => $row->uuid, 'kind' => $row->kind, 'amount' => number_format((float) $row->amount, 3, '.', ''),
+            'status' => $row->status, 'approver' => $row->approver,
+            'attempted_at' => $row->attempted_at, 'completed_at' => $row->completed_at,
+            'response_code' => $row->response_code,
+            'lines' => ($lines[$row->id] ?? collect())->map(static fn ($line): array => [
+                'order_item_id' => (int) $line->order_item_id, 'product_name' => $line->product_name_snapshot,
+                'qty' => number_format((float) $line->qty, 3, '.', ''),
+                'amount' => number_format((float) $line->amount, 3, '.', ''),
+                'returned_to_stock' => (bool) $line->returned_to_stock,
+            ])->all(),
+        ])->all();
+    }
+
     private function loyalty(int $companyId, int $orderId): array
     {
         $rows = DB::table('pos_loyalty_transactions')
@@ -272,7 +306,7 @@ final readonly class OrderDetailAction
                 'points_delta' => $pd,
                 'stamps_delta' => $sd,
                 'occurred_at' => $row->occurred_at !== null
-                    ? \Illuminate\Support\Carbon::parse($row->occurred_at)->format('Y-m-d\TH:i:s')
+                    ? Carbon::parse($row->occurred_at)->format('Y-m-d\TH:i:s')
                     : null,
             ];
         }

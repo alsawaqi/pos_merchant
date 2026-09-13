@@ -325,6 +325,27 @@ function commissionStatusClass(status: string): string {
                     </ul>
                 </section>
 
+                <section v-if="detail.reversals.length" class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('orders.detail.reversals') }}</h3>
+                    <ul class="divide-y divide-slate-100 text-sm">
+                        <li v-for="reversal in detail.reversals" :key="reversal.uuid" class="space-y-1 py-3">
+                            <div class="flex justify-between font-semibold">
+                                <span>{{ t('orders.detail.reversal_' + reversal.kind) }} · {{ t('orders.detail.reversal_' + reversal.status) }}</span>
+                                <span class="tabular-nums">{{ reversal.amount }} OMR</span>
+                            </div>
+                            <p class="text-xs text-slate-500">{{ t('orders.detail.approved_by') }}: {{ reversal.approver ?? '—' }}</p>
+                            <p class="text-xs text-slate-500">{{ formatDateTime(reversal.completed_at ?? reversal.attempted_at) }}</p>
+                            <p v-if="reversal.response_code" class="text-xs text-slate-500">{{ t('orders.detail.response_code') }}: {{ reversal.response_code }}</p>
+                            <ul class="ps-3 text-xs text-slate-600">
+                                <li v-for="line in reversal.lines" :key="line.order_item_id">
+                                    {{ line.qty }} × {{ line.product_name }} · {{ line.amount }} OMR
+                                    <span v-if="line.returned_to_stock"> · {{ t('orders.detail.returned_to_stock') }}</span>
+                                </li>
+                            </ul>
+                        </li>
+                    </ul>
+                </section>
+
                 <!-- Loyalty (#2 points gained) -->
                 <section class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                     <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('orders.detail.loyalty') }}</h3>

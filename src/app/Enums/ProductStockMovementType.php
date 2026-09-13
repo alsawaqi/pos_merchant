@@ -23,6 +23,7 @@ enum ProductStockMovementType: string
     case TransferIn = 'transfer_in';
     case TransferOut = 'transfer_out';
     case SaleConsumption = 'sale_consumption';
+    case RefundReturn = 'refund_return';
     case Adjustment = 'adjustment';
     case Waste = 'waste';
     // P-G1 kitchen production: a finished batch lands its pieces in the
