@@ -227,7 +227,7 @@ final readonly class TableInsightsAction
         // The display list (most-recent sittings, capped) — full relations.
         $orders = Order::query()
             ->with(['customer:id,name,phone', 'staff:id,name'])
-            ->withCount('items')
+            ->withCount('displayItems as items_count')
             ->where('company_id', $companyId)
             ->where($coversTable)
             ->where('status', self::PAID->value)
@@ -518,8 +518,8 @@ final readonly class TableInsightsAction
      * N+1). withTrashed so a sitting on a since-removed joined table still
      * resolves a label.
      *
-     * @param  \Illuminate\Support\Collection<int, Order>  $orders
-     * @return array<int, list<string>>  order id => other-table labels
+     * @param  Collection<int, Order>  $orders
+     * @return array<int, list<string>> order id => other-table labels
      */
     private function joinedLabelsForSittings($orders, int $viewedTableId): array
     {

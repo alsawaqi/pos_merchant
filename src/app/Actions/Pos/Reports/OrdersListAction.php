@@ -43,7 +43,7 @@ final readonly class OrdersListAction
 
         $query = Order::query()
             ->with(['branch:id,name', 'customer:id,name'])
-            ->withCount('items')
+            ->withCount('displayItems as items_count')
             ->where('company_id', $companyId)
             ->whereBetween('opened_at', [$filter->dateFrom, $filter->dateTo])
             ->orderByDesc('opened_at')

@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Models\Concerns\BelongsToCompany;
+use App\Enums\OrderItemStatus;
 use App\Enums\OrderSource;
 use App\Enums\OrderStatus;
 use App\Enums\OrderType;
+use App\Models\Concerns\BelongsToCompany;
 use Database\Factories\OrderFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -194,6 +195,21 @@ class Order extends Model
     public function items(): HasMany
     {
         return $this->hasMany(OrderItem::class)->orderBy('id');
+    }
+
+    /**
+     * Retained bill lines for merchant display and counts, not edit history.
+     * Whole-order voids still show what was sold before the cancellation.
+     *
+     * @return HasMany<OrderItem, $this>
+     */
+    public function displayItems(): HasMany
+    {
+        return $this->items()->where('qty', '>', 0)
+            ->where(function (Builder $query): void {
+                $query->where('status', '!=', OrderItemStatus::Void->value)
+                    ->orWhereHas('order', fn (Builder $order): Builder => $order->where('status', OrderStatus::Void->value));
+            });
     }
 
     /**

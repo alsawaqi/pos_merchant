@@ -41,7 +41,7 @@ final readonly class CustomerOrdersAction
 
         $query = Order::query()
             ->with(['branch:id,name'])
-            ->withCount('items')
+            ->withCount('displayItems as items_count')
             ->where('company_id', $companyId)
             ->when($branchIds !== null, fn ($q) => $q->whereIn('branch_id', $branchIds))
             ->where('customer_id', $customerId)

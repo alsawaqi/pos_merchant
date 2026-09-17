@@ -51,7 +51,7 @@ final readonly class OrderDetailAction
                 'staff:id,name',
                 'device:id,name',
                 'table:id,label',
-                'items.addons',
+                'displayItems.addons',
                 'payments',
             ])
             ->where('company_id', $companyId)
@@ -116,7 +116,7 @@ final readonly class OrderDetailAction
             }
         }
 
-        $items = $order->items->map(static function ($item) use ($lineDiscountNames, $lineComps): array {
+        $items = $order->displayItems->map(static function ($item) use ($lineDiscountNames, $lineComps): array {
             return [
                 'id' => (int) $item->id,
                 'product_name' => (string) $item->product_name_snapshot,
