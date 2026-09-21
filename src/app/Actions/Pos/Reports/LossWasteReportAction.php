@@ -7,7 +7,9 @@ namespace App\Actions\Pos\Reports;
 use App\Data\Reports\ReportFilter;
 use App\Enums\StockMovementType;
 use App\Support\MerchantTenantContext;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Phase 7b — Loss / Waste Report (blueprint §5.11.5).
@@ -176,7 +178,7 @@ final readonly class LossWasteReportAction
             ->whereIn('pos_product_stock_movements.movement_type', ['waste', 'give_away'])
             ->whereBetween('pos_product_stock_movements.occurred_at', [$filter->dateFrom, $filter->dateTo])
             ->when($branchScope !== null, fn ($q) => $q->whereIn('pos_product_stock_movements.branch_id', $branchScope))
-            ->selectRaw("
+            ->selectRaw('
                 pos_products.id AS product_id,
                 pos_products.name AS product_name,
                 pos_product_stock_movements.movement_type AS movement_type,
@@ -184,7 +186,7 @@ final readonly class LossWasteReportAction
                 ABS(COALESCE(SUM(pos_product_stock_movements.quantity), 0)) AS total_qty,
                 ABS(COALESCE(SUM(pos_product_stock_movements.quantity * COALESCE(pos_product_stock_movements.unit_cost, pos_products.cost_price, 0)), 0)) AS value,
                 COUNT(*) AS event_count
-            ")
+            ')
             ->groupBy('pos_products.id', 'pos_products.name', 'pos_product_stock_movements.movement_type', 'pos_product_stock_movements.reason')
             ->orderByDesc('total_qty')
             ->get()
@@ -263,8 +265,81 @@ final readonly class LossWasteReportAction
             'shortfall' => $shortfall,
             // P-G1.5 — day-end product waste + give-aways (pieces).
             'product_dispositions' => $productDispositions,
+            'table_cancellations' => $this->tableCancellations($companyId, $branchScope, $filter),
             'voids_by_reason' => $voidsByReason,
             'voids_by_staff' => $voidsByStaff,
         ];
+    }
+
+    /** A breakdown only: these costs already live in waste/product dispositions. */
+    private function tableCancellations(int $companyId, ?array $branchScope, ReportFilter $filter): array
+    {
+        // The merchant's legacy test/schema mirror intentionally omits the
+        // seating journal. Older installations can still read the other sections.
+        if (! Schema::hasTable('pos_table_session_events')) {
+            return ['rows' => [], 'quantity' => 0, 'cost_baisas' => 0, 'included_in_waste' => true];
+        }
+        $events = DB::table('pos_table_session_events as e')
+            ->leftJoin('pos_tables as t', 't.id', '=', 'e.table_id')
+            ->join('pos_branches as b', 'b.id', '=', 'e.branch_id')
+            ->where('e.company_id', $companyId)->where('b.company_id', $companyId)
+            ->where('e.event_type', 'round_resolved')->where('e.payload->action', 'line_cancelled')
+            ->whereBetween('e.created_at', [$filter->dateFrom, $filter->dateTo])
+            ->when($branchScope !== null, fn ($q) => $q->whereIn('e.branch_id', $branchScope))
+            ->select('e.*', 't.label as table_label', 'b.name as branch_name')->orderBy('e.id')->get();
+        $rows = [];
+        $usedMovements = [];
+        foreach ($events as $event) {
+            $p = json_decode($event->payload, true, 512, JSON_THROW_ON_ERROR);
+            $productId = (int) ($p['product_id'] ?? 0);
+            $prepared = ($p['prepared'] ?? false) === true;
+            $cost = $prepared ? (int) ($p['waste']['cost_baisas'] ?? 0) : 0;
+            $matched = true;
+            if ($prepared && ! ($p['waste']['booked'] ?? false)) {
+                // Older shelf movements have no direct reference id. Only
+                // an authoritative successful product.waste ACK may match one;
+                // require a unique movement, never guess or count it twice.
+                $acks = DB::table('pos_sync_events')->where('device_id', $event->device_id)
+                    ->where('event_type', 'product.waste')->where('ack_status', 'processed')
+                    ->where('result_json->table_cancellation_waste->request_id', $p['client_request_id'])->orderBy('id')->get();
+                $matched = $acks->isNotEmpty();
+                foreach ($acks as $ack) {
+                    $request = json_decode($ack->payload_json, true, 512, JSON_THROW_ON_ERROR);
+                    $proof = json_decode($ack->result_json, true, 512, JSON_THROW_ON_ERROR)['table_cancellation_waste'];
+                    if ((int) ($proof['company_id'] ?? 0) !== $companyId || (int) ($proof['branch_id'] ?? 0) !== (int) $event->branch_id) {
+                        continue;
+                    }
+                    $moves = DB::table('pos_product_stock_movements')->where('company_id', $companyId)
+                        ->where('branch_id', $event->branch_id)->where('product_id', $productId)->where('movement_type', 'waste')
+                        ->where('quantity', -(float) $proof['quantity'])->where('reason', 'other')
+                        ->where('recorded_by_pos_staff_id', $request['staff_id'] ?? null)
+                        ->where('note', $request['note'] ?? null)
+                        ->where('occurred_at', Carbon::parse($request['wasted_at'] ?? $ack->client_timestamp ?? $ack->server_received_at))
+                        ->whereNotIn('id', $usedMovements ?: [0])->get();
+                    if ($moves->count() !== 1 || $moves->first()->unit_cost === null) {
+                        $matched = false;
+
+                        continue;
+                    }
+                    $movement = $moves->first();
+                    $usedMovements[] = (int) $movement->id;
+                    $cost += (int) round(abs((float) $movement->quantity) * (float) $movement->unit_cost * 1000);
+                }
+            }
+            $product = DB::table('pos_products')->where('company_id', $companyId)->where('id', $productId)->value('name');
+            $addons = DB::table('pos_addons')->where('company_id', $companyId)->whereIn('id', $p['addon_ids'] ?? [])
+                ->orderBy('id')->pluck('name')->all();
+            $staff = isset($p['staff_id']) ? DB::table('pos_staff')->where('company_id', $companyId)->where('id', $p['staff_id'])->value('name') : null;
+            $rows[] = ['id' => (int) $event->id, 'occurred_at' => $event->created_at,
+                'branch_id' => (int) $event->branch_id, 'branch_name' => $event->branch_name,
+                'table_label' => $event->table_label, 'product_name' => $product, 'addons' => $addons,
+                'cancelled_qty' => (int) ($p['cancelled_qty'] ?? 0), 'prepared' => $prepared,
+                'cost_baisas' => $cost, 'cost_matched' => $matched, 'staff_name' => $staff,
+                'authorized_by' => $p['authorized_by'] ?? null, 'reason' => $p['reason'] ?? null,
+                'whole_bill' => (bool) ($p['whole_bill'] ?? false)];
+        }
+
+        return ['rows' => $rows, 'quantity' => array_sum(array_column($rows, 'cancelled_qty')),
+            'cost_baisas' => array_sum(array_column($rows, 'cost_baisas')), 'included_in_waste' => true];
     }
 }

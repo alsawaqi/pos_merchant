@@ -2819,6 +2819,7 @@
             }
         },
         "loss_waste": {
+            "table_cancellations": {"title": "Table cancellations", "note": "Breakdown of waste already listed above; not added again to the headline.", "time": "Date / time", "table": "Table", "item": "Item / add-ons", "qty": "Cancelled quantity", "prepared": "Prepared", "cost": "Waste cost (OMR)", "staff": "Cancelled by", "manager": "Approved by", "reason": "Reason", "whole": "Whole bill", "yes": "Yes", "no": "No", "unmatched": "Some shelf waste could not be matched uniquely.", "total": "Period total"},
             "page_title": "Loss / Waste Report",
             "headline_labels": {
                 "total_value": "Total value",

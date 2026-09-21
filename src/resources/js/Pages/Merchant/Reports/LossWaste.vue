@@ -215,6 +215,33 @@ type ApexSeries = { name: string; data: number[] }[];
                 </table>
             </section>
 
+            <section v-if="payload.table_cancellations?.rows.length" class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
+                <h2 class="border-b border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700">{{ t('reports.loss_waste.table_cancellations.title') }}</h2>
+                <p class="px-5 pt-3 text-xs text-slate-500">{{ t('reports.loss_waste.table_cancellations.note') }}</p>
+                <table class="w-full text-sm">
+                    <thead class="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">
+                        <tr>
+                            <th v-for="key in ['time', 'table', 'item', 'qty', 'prepared', 'cost', 'staff', 'manager', 'reason', 'whole']" :key="key" class="px-3 py-2 text-start">{{ t(`reports.loss_waste.table_cancellations.${key}`) }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="row in payload.table_cancellations.rows" :key="row.id" class="border-b border-slate-100">
+                            <td class="px-3 py-2">{{ row.occurred_at }}<small class="block">{{ row.branch_name }}</small></td>
+                            <td class="px-3 py-2">{{ row.table_label ?? '—' }}</td>
+                            <td class="px-3 py-2">{{ row.product_name ?? '—' }}<small class="block">{{ row.addons.join(' · ') }}</small></td>
+                            <td class="px-3 py-2">{{ row.cancelled_qty }}</td>
+                            <td class="px-3 py-2">{{ t(`reports.loss_waste.table_cancellations.${row.prepared ? 'yes' : 'no'}`) }}</td>
+                            <td class="px-3 py-2">{{ (row.cost_baisas / 1000).toFixed(3) }}<small v-if="!row.cost_matched" class="block">{{ t('reports.loss_waste.table_cancellations.unmatched') }}</small></td>
+                            <td class="px-3 py-2">{{ row.staff_name ?? '—' }}</td>
+                            <td class="px-3 py-2">{{ row.authorized_by ?? '—' }}</td>
+                            <td class="px-3 py-2">{{ row.reason ?? '—' }}</td>
+                            <td class="px-3 py-2">{{ t(`reports.loss_waste.table_cancellations.${row.whole_bill ? 'yes' : 'no'}`) }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p class="px-5 py-3 text-sm">{{ t('reports.loss_waste.table_cancellations.total') }}: {{ payload.table_cancellations.quantity }} · {{ (payload.table_cancellations.cost_baisas / 1000).toFixed(3) }} OMR</p>
+            </section>
+
             <!-- Phase B — voided orders by reason / staff (Additions §1.2). -->
             <div v-if="payload.voids_by_reason.length || payload.voids_by_staff.length" class="grid gap-6 lg:grid-cols-2">
                 <section v-if="payload.voids_by_reason.length" class="rounded-xl border border-slate-200 bg-white shadow-sm">

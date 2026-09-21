@@ -338,6 +338,13 @@ export function fetchPortionVarianceReport(filter: ReportFilter): Promise<{ data
 // ============================================================
 
 export interface LossWasteReportPayload {
+    table_cancellations: {
+        rows: { id: number; occurred_at: string; branch_id: number; branch_name: string;
+            table_label: string | null; product_name: string | null; addons: string[];
+            cancelled_qty: number; prepared: boolean; cost_baisas: number; cost_matched: boolean;
+            staff_name: string | null; authorized_by: string | null; reason: string | null; whole_bill: boolean }[];
+        quantity: number; cost_baisas: number; included_in_waste: boolean;
+    };
     window: { from: string; to: string; consolidated: boolean; branch_ids: number[] | null };
     headline: { total_value: string; total_qty: string; event_count: number };
     by_branch: { branch_id: number; branch_name: string; value: string; event_count: number }[];
