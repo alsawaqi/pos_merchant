@@ -8,6 +8,7 @@ use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
 use App\Models\Customer;
 use App\Models\User;
+use App\Support\CustomerIdentity;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -63,27 +64,14 @@ final readonly class CreateCustomerAction
             : null;
         $tags = $this->normaliseTags($attributes['tags'] ?? null);
 
-        // Pre-flight duplicate check — surfaces a friendlier
-        // error than the raw unique-constraint violation. The
-        // DB constraint still backs us up under concurrent
-        // writes.
-        $duplicate = Customer::query()
-            ->where('company_id', $companyId)
-            ->where('phone', $phone)
-            ->exists();
-        if ($duplicate) {
-            throw new RuntimeException('A customer with this phone already exists.');
-        }
-
         return DB::transaction(function () use ($name, $phone, $dateOfBirth, $tags, $actor, $companyId): Customer {
-            /** @var Customer $customer */
-            $customer = Customer::query()->create([
-                'company_id' => $companyId,
-                'name' => $name,
-                'phone' => $phone,
-                'date_of_birth' => $dateOfBirth,
-                'tags_json' => $tags,
-            ]);
+            CustomerIdentity::lock($companyId, $phone);
+            $duplicate = CustomerIdentity::liveMatch($companyId, $phone);
+            if ($duplicate !== null) {
+                throw new RuntimeException('A customer with this phone already exists: '.$duplicate->name.'.');
+            }
+            $customer = CustomerIdentity::findOrCreate($companyId, $phone, $name, true);
+            $customer->update(['date_of_birth' => $dateOfBirth, 'tags_json' => $tags]);
 
             $this->writeAuditLog->handle(new AuditLogData(
                 event: 'customers.created',

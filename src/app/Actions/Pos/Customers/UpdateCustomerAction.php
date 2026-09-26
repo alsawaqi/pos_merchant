@@ -8,6 +8,8 @@ use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
 use App\Models\Customer;
 use App\Models\User;
+use App\Support\CanonicalPhone;
+use App\Support\CustomerIdentity;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -57,17 +59,8 @@ final readonly class UpdateCustomerAction
                 throw new RuntimeException('Customer phone is required.');
             }
             $attributes['phone'] = $newPhone;
-            if ($newPhone !== $customer->phone) {
-                $duplicate = Customer::query()
-                    ->where('company_id', $companyId)
-                    ->where('phone', $newPhone)
-                    ->where('id', '!=', $customer->id)
-                    ->exists();
-                if ($duplicate) {
-                    throw new RuntimeException('Another customer with this phone already exists.');
-                }
-            }
         }
+
         if (array_key_exists('name', $attributes)) {
             $newName = trim((string) $attributes['name']);
             if ($newName === '') {
@@ -87,6 +80,23 @@ final readonly class UpdateCustomerAction
         }
 
         return DB::transaction(function () use ($customer, $attributes, $actor, $companyId): Customer {
+            if (isset($attributes['phone'])) {
+                CustomerIdentity::lock($companyId, $attributes['phone']);
+                $customer = Customer::query()->where('company_id', $companyId)->whereKey($customer->id)->lockForUpdate()->firstOrFail();
+                $samePhone = CanonicalPhone::same((string) $customer->phone, $attributes['phone']);
+                // Keep the stored spelling when a harmless reformat is already
+                // occupied by a legacy duplicate (the raw unique index stays).
+                if ($samePhone && Customer::withTrashed()->where('company_id', $companyId)
+                    ->where('phone', $attributes['phone'])->where('id', '!=', $customer->id)->exists()) {
+                    $attributes['phone'] = (string) $customer->phone;
+                }
+                if (! $samePhone) {
+                    $duplicate = CustomerIdentity::liveMatch($companyId, $attributes['phone']);
+                    if ($duplicate !== null && $duplicate->id !== $customer->id) {
+                        throw new RuntimeException('Another customer with this phone already exists: '.$duplicate->name.'.');
+                    }
+                }
+            }
             $changes = [];
             foreach (self::MUTABLE_FIELDS as $field) {
                 if (! array_key_exists($field, $attributes)) {

@@ -9,6 +9,7 @@ use App\Data\Security\AuditLogData;
 use App\Models\Customer;
 use App\Models\CustomerVehiclePlate;
 use App\Models\CustomerWalletLedgerEntry;
+use App\Models\LoyaltyAccount;
 use App\Models\LoyaltyTransaction;
 use App\Models\Order;
 use App\Models\User;
@@ -54,7 +55,7 @@ final readonly class MergeCustomersAction
     /**
      * @return array{customer: Customer, summary: array<string, int>}
      */
-    public function handle(Customer $survivor, Customer $source, User $actor): array
+    public function handle(Customer $survivor, Customer $source, User $actor, bool $refuseUnfinishedOrders = false): array
     {
         $companyId = $this->tenant->requiredId();
 
@@ -67,7 +68,31 @@ final readonly class MergeCustomersAction
             throw new RuntimeException('A customer cannot be merged into itself.');
         }
 
-        return DB::transaction(function () use ($survivor, $source, $actor, $companyId): array {
+        return DB::transaction(function () use ($survivor, $source, $actor, $companyId, $refuseUnfinishedOrders): array {
+            // Deterministic locking: customer rows, then all accounts, each by id.
+            $locked = Customer::withTrashed()->where('company_id', $companyId)
+                ->whereIn('id', [$survivor->id, $source->id])->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+            $survivor = $locked->get($survivor->id);
+            $source = $locked->get($source->id);
+            if ($survivor === null || $source === null || $survivor->trashed()) {
+                throw new RuntimeException('Both customers must be live in this company.');
+            }
+            if ($source->merged_into_customer_id !== null) {
+                return ['customer' => $survivor, 'summary' => ['already_merged' => 1]];
+            }
+            if ($source->trashed()) {
+                throw new RuntimeException('The source customer is deleted.');
+            }
+            $blocking = self::blockingReason($companyId, [(int) $survivor->id, (int) $source->id]);
+            if ($refuseUnfinishedOrders && $blocking !== null) {
+                throw new RuntimeException($blocking);
+            }
+            $accounts = LoyaltyAccount::query()->where('company_id', $companyId)
+                ->whereIn('customer_id', [$survivor->id, $source->id])->orderBy('id')->lockForUpdate()->get();
+            $beforeBalances = self::balances($survivor);
+            $orderIds = Order::query()->where('company_id', $companyId)->where('customer_id', $source->id)->orderBy('id')->pluck('id')->all();
+            $deletedAccounts = [];
+            $deletedPlates = [];
             $summary = [
                 'orders_moved' => 0,
                 'plates_moved' => 0,
@@ -95,11 +120,12 @@ final readonly class MergeCustomersAction
                 ->pluck('plate_number')
                 ->all();
             if ($survivorPlates !== []) {
-                CustomerVehiclePlate::query()
+                $duplicates = CustomerVehiclePlate::query()
                     ->where('company_id', $companyId)
                     ->where('customer_id', $source->id)
-                    ->whereIn('plate_number', $survivorPlates)
-                    ->delete();
+                    ->whereIn('plate_number', $survivorPlates);
+                $deletedPlates = (clone $duplicates)->orderBy('id')->pluck('id')->all();
+                $duplicates->delete();
             }
             $summary['plates_moved'] = CustomerVehiclePlate::query()
                 ->where('company_id', $companyId)
@@ -107,8 +133,8 @@ final readonly class MergeCustomersAction
                 ->update(['customer_id' => $survivor->id]);
 
             // --- Loyalty accounts (unique per loyalty_rule_id) ---
-            $survivorAccounts = $survivor->loyaltyAccounts()->get()->keyBy('loyalty_rule_id');
-            foreach ($source->loyaltyAccounts()->get() as $sourceAccount) {
+            $survivorAccounts = $accounts->where('customer_id', $survivor->id)->keyBy('loyalty_rule_id');
+            foreach ($accounts->where('customer_id', $source->id) as $sourceAccount) {
                 $target = $survivorAccounts->get($sourceAccount->loyalty_rule_id);
 
                 if ($target !== null) {
@@ -125,6 +151,12 @@ final readonly class MergeCustomersAction
                         ->where('loyalty_account_id', $sourceAccount->id)
                         ->update(['loyalty_account_id' => $target->id]);
 
+                    if (LoyaltyTransaction::withoutGlobalScopes()->where('loyalty_account_id', $sourceAccount->id)->exists()) {
+                        throw new RuntimeException('Source loyalty account still has transactions; merge rolled back.');
+                    }
+                    $deletedAccounts[] = ['id' => $sourceAccount->id,
+                        'rule_id' => $sourceAccount->loyalty_rule_id,
+                        'points' => $sourceAccount->point_balance, 'stamps' => $sourceAccount->stamp_count];
                     $sourceAccount->delete();
                     $summary['loyalty_accounts_merged']++;
                 } else {
@@ -164,7 +196,8 @@ final readonly class MergeCustomersAction
                 $survivor->date_of_birth = $source->date_of_birth->toDateString();
             }
 
-            $survivor->save();
+            $survivor->touch();
+            $source->merged_into_customer_id = $survivor->id;
             $source->save();
 
             // --- Audit + retire the source ---
@@ -176,6 +209,11 @@ final readonly class MergeCustomersAction
                 auditableId: $survivor->id,
                 newValues: array_merge($summary, [
                     'source_customer_id' => $source->id,
+                    'repointed_order_ids' => $orderIds,
+                    'deleted_loyalty_accounts' => $deletedAccounts,
+                    'deleted_plate_link_ids' => $deletedPlates,
+                    'survivor_balances_before' => $beforeBalances,
+                    'survivor_balances_after' => self::balances($survivor),
                     'source_customer_phone' => $source->phone,
                     // D3 — the survivor's folded profile fields.
                     'tags' => $survivor->tags_json,
@@ -187,6 +225,26 @@ final readonly class MergeCustomersAction
 
             return ['customer' => $survivor->fresh(), 'summary' => $summary];
         });
+    }
+
+    /** @param list<int> $ids */
+    public static function blockingReason(int $companyId, array $ids): ?string
+    {
+        $order = Order::query()->where('company_id', $companyId)->whereIn('customer_id', $ids)
+            ->whereIn('status', ['open', 'held', 'kitchen', 'awaiting_payment', 'pending_verification'])
+            ->orderBy('id')->first();
+
+        return $order === null ? null : 'Merge blocked by order '.$order->id.' ('.($order->status instanceof \BackedEnum ? $order->status->value : $order->status).').';
+    }
+
+    /** @return array<string, mixed> */
+    public static function balances(Customer $customer): array
+    {
+        return ['wallet' => $customer->wallet_balance,
+            'rules' => $customer->loyaltyAccounts()->get()->map(fn ($account): array => [
+                'rule_id' => $account->loyalty_rule_id, 'points' => $account->point_balance,
+                'stamps' => $account->stamp_count,
+            ])->all()];
     }
 
     private function laterOf(?Carbon $a, ?Carbon $b): ?Carbon

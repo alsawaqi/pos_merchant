@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToCompany;
+use App\Support\CanonicalPhone;
 use Database\Factories\CustomerFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -92,6 +93,9 @@ class Customer extends Model
 
     protected static function booted(): void
     {
+        static::saving(static function (self $row): void {
+            $row->phone_canonical = CanonicalPhone::of($row->phone);
+        });
         static::creating(static function (self $row): void {
             if ($row->uuid === null || $row->uuid === '') {
                 $row->uuid = (string) Str::uuid();
