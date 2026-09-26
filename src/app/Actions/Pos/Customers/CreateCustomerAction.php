@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Support\CustomerIdentity;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -66,15 +67,31 @@ final readonly class CreateCustomerAction
 
         return DB::transaction(function () use ($name, $phone, $dateOfBirth, $tags, $actor, $companyId): Customer {
             CustomerIdentity::lock($companyId, $phone);
+            $exact = Customer::withTrashed()->where('company_id', $companyId)
+                ->where('phone', $phone)->lockForUpdate()->first();
+            if ($exact?->merged_into_customer_id !== null) {
+                $survivor = CustomerIdentity::survivor($companyId, (int) $exact->id);
+                throw new RuntimeException('This number belongs to a customer that was merged into '.($survivor?->name ?? 'another customer').'.');
+            }
             $duplicate = CustomerIdentity::liveMatch($companyId, $phone);
             if ($duplicate !== null) {
                 throw new RuntimeException('A customer with this phone already exists: '.$duplicate->name.'.');
             }
-            $customer = CustomerIdentity::findOrCreate($companyId, $phone, $name, true);
-            $customer->update(['date_of_birth' => $dateOfBirth, 'tags_json' => $tags]);
+            $revived = $exact !== null && $exact->trashed();
+            if ($revived) {
+                $exact->restore();
+                $customer = $exact;
+                $customer->update(['name' => $name, 'date_of_birth' => $dateOfBirth, 'tags_json' => $tags]);
+            } else {
+                $customer = Customer::create([
+                    'uuid' => (string) Str::uuid(), 'company_id' => $companyId,
+                    'name' => $name, 'phone' => $phone,
+                    'date_of_birth' => $dateOfBirth, 'tags_json' => $tags,
+                ]);
+            }
 
             $this->writeAuditLog->handle(new AuditLogData(
-                event: 'customers.created',
+                event: $revived ? 'customers.restored' : 'customers.created',
                 actorUserId: $actor->getKey(),
                 companyId: $companyId,
                 auditableType: Customer::class,

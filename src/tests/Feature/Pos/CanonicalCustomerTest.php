@@ -24,8 +24,13 @@ it('refuses canonical duplicate create but keeps existing duplicate name and for
     $this->postJson('/api/customers', ['name' => 'New', 'phone' => '90000001'])->assertStatus(422);
     $this->patchJson('/api/customers/'.$second->uuid, ['name' => 'Still editable', 'phone' => '0096890000001'])->assertOk();
     expect($second->fresh()->name)->toBe('Still editable');
-    $this->patchJson('/api/customers/'.$second->uuid, ['name' => 'Exact collision still editable', 'phone' => '+968 9000 0001'])->assertOk();
-    expect($second->fresh()->name)->toBe('Exact collision still editable');
+    $beforeCollision = DB::table('pos_customers')->orderBy('id')->get()->toJson();
+    $auditBeforeCollision = DB::table('pos_audit_logs')->orderBy('id')->get()->toJson();
+    $this->patchJson('/api/customers/'.$second->uuid, ['name' => 'Exact collision still editable', 'phone' => '+968 9000 0001'])->assertUnprocessable()
+        ->assertJsonPath('message', 'That spelling is already used by Existing Customer. Keep the current number, or merge the two customers first.');
+    expect($second->fresh()->name)->toBe('Still editable');
+    expect(DB::table('pos_customers')->orderBy('id')->get()->toJson())->toBe($beforeCollision);
+    expect(DB::table('pos_audit_logs')->orderBy('id')->get()->toJson())->toBe($auditBeforeCollision);
     expect($second->fresh()->phone)->toBe('0096890000001');
     expect(Customer::count())->toBe(2);
 });

@@ -84,11 +84,10 @@ final readonly class UpdateCustomerAction
                 CustomerIdentity::lock($companyId, $attributes['phone']);
                 $customer = Customer::query()->where('company_id', $companyId)->whereKey($customer->id)->lockForUpdate()->firstOrFail();
                 $samePhone = CanonicalPhone::same((string) $customer->phone, $attributes['phone']);
-                // Keep the stored spelling when a harmless reformat is already
-                // occupied by a legacy duplicate (the raw unique index stays).
-                if ($samePhone && Customer::withTrashed()->where('company_id', $companyId)
-                    ->where('phone', $attributes['phone'])->where('id', '!=', $customer->id)->exists()) {
-                    $attributes['phone'] = (string) $customer->phone;
+                $spellingOwner = Customer::withTrashed()->where('company_id', $companyId)
+                    ->where('phone', $attributes['phone'])->where('id', '!=', $customer->id)->first();
+                if ($samePhone && $spellingOwner !== null) {
+                    throw new RuntimeException('That spelling is already used by '.$spellingOwner->name.'. Keep the current number, or merge the two customers first.');
                 }
                 if (! $samePhone) {
                     $duplicate = CustomerIdentity::liveMatch($companyId, $attributes['phone']);
