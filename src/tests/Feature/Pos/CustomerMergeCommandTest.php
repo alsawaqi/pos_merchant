@@ -61,7 +61,7 @@ it('folds selected duplicate pairs with a complete append-only reference audit a
     expect(CustomerVehiclePlate::where('customer_id', $a->id)->orderBy('plate_number')->pluck('plate_number')->all())->toBe(['SHARED', 'SOURCE']);
     expect($b->fresh()->trashed())->toBeTrue()->and($b->fresh()->merged_into_customer_id)->toBe($a->id);
     expect($a->fresh()->updated_at->greaterThan($since))->toBeTrue();
-    $audit = DB::table('pos_audit_logs')->where('event', 'customers.merged')->first();
+    $audit = DB::table('pos_audit_logs')->where('company_id', $company->id)->where('event', 'customers.merged')->first();
     $values = json_decode($audit->new_values, true);
     expect($values['repointed_order_ids'])->toBe([$order->id]);
     expect($values['deleted_loyalty_accounts'])->toHaveCount(1);
