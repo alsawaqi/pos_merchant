@@ -77,7 +77,6 @@ it('P1 honors explicit offsets in partial updates without changing the other bou
     ['loyalty/rules', 'pos_loyalty_rules'],
 ]);
 
-
 it('P1 keeps validation and persistence on the same mixed-offset instant and preserves legacy UTC input', function (string $kind): void {
     makeMerchantActor();
     $created = $this->postJson('/api/'.$kind, omanRulePayload($kind) + [
