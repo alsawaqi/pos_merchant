@@ -20,6 +20,8 @@ import { BadgePercent, Calendar, Pause, Pencil, Plus, PlayCircle, Trash2 } from 
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
+import { omanDateTimeInput, omanDateTimePayload, ruleWindowStatus, useRuleClock } from '@/lib/ruleTime';
+const ruleNow = useRuleClock();
 import BaseModal from '@/Components/BaseModal.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
@@ -252,8 +254,8 @@ function openEdit(o: Offer): void {
     form.name_ar = o.name_ar ?? '';
     form.type = o.type;
     form.auto_apply = o.auto_apply;
-    form.validity_start = o.validity_start?.slice(0, 16) ?? '';
-    form.validity_end = o.validity_end?.slice(0, 16) ?? '';
+    form.validity_start = omanDateTimeInput(o.validity_start);
+    form.validity_end = omanDateTimeInput(o.validity_end);
     form.dayofweek_mask = o.dayofweek_mask ?? 127;
     form.time_start = o.time_start?.slice(0, 5) ?? '';
     form.time_end = o.time_end?.slice(0, 5) ?? '';
@@ -374,8 +376,8 @@ async function submitModal(): Promise<void> {
             config: buildConfig(),
             // Bundle is always cashier-picked; the server forces false anyway.
             auto_apply: isBundle.value ? false : form.auto_apply,
-            validity_start: form.validity_start || null,
-            validity_end: form.validity_end || null,
+            validity_start: omanDateTimePayload(form.validity_start),
+            validity_end: omanDateTimePayload(form.validity_end),
             dayofweek_mask: form.dayofweek_mask === 127 ? null : form.dayofweek_mask,
             time_start: form.time_start ? `${form.time_start}:00` : null,
             time_end: form.time_end ? `${form.time_end}:00` : null,
@@ -441,15 +443,15 @@ async function performDelete(): Promise<void> {
 
 // ---- Display helpers -------------------------------------------
 function statusBadgeClass(o: Offer): string {
-    if (o.status === 'paused') return 'bg-amber-100 text-amber-700';
-    return o.currently_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600';
+    const status = ruleWindowStatus(o, ruleNow.value);
+    if (status === 'paused') return 'bg-amber-100 text-amber-700';
+    if (status === 'expired') return 'bg-slate-200 text-slate-700';
+    return status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600';
 }
 
 function statusLabel(o: Offer): string {
-    if (o.status === 'paused') return t('offers.statuses.paused');
-    return o.currently_active
-        ? t('offers.statuses.active_now')
-        : t('offers.statuses.scheduled');
+    const status = ruleWindowStatus(o, ruleNow.value);
+    return t(`offers.statuses.${status === 'active' ? 'active_now' : status}`);
 }
 
 const OFFER_TYPES: OfferType[] = ['bogo', 'bundle', 'multi_buy', 'cheapest_free', 'spend_get'];
@@ -883,6 +885,10 @@ const OFFER_TYPES: OfferType[] = ['bogo', 'bundle', 'multi_buy', 'cheapest_free'
 
                         <!-- Time-of-day -->
                         <div class="grid grid-cols-2 gap-3">
+                            <div class="col-span-2">
+                                <p class="text-xs font-medium text-slate-600">{{ t('rule_time.daily_hours') }}</p>
+                                <p class="mt-1 text-xs text-slate-500">{{ t('rule_time.daily_hours_hint') }}</p>
+                            </div>
                             <div>
                                 <label class="block text-xs font-medium text-slate-600">{{ t('offers.fields.time_start') }}</label>
                                 <input v-model="form.time_start" type="time" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">

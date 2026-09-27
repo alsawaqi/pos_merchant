@@ -16,6 +16,8 @@ import { AlertTriangle, CheckCircle2, Coins, Gift, Pause, Pencil, Play, Plus, St
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
+import { omanDateTimeInput, omanDateTimePayload, ruleWindowStatus, useRuleClock } from '@/lib/ruleTime';
+const ruleNow = useRuleClock();
 import BaseModal from '@/Components/BaseModal.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
@@ -139,6 +141,8 @@ const modalTarget = ref<LoyaltyRule | null>(null);
 
 const form = reactive<{
     name: string;
+    validity_start: string;
+    validity_end: string;
     type: LoyaltyRuleType;
     // spend_based
     points_per_omr: number;
@@ -152,6 +156,8 @@ const form = reactive<{
     reward_value: string;
 }>({
     name: '',
+    validity_start: '',
+    validity_end: '',
     type: 'spend_based',
     points_per_omr: 1,
     redemption_points: 100,
@@ -167,7 +173,7 @@ function openCreate(): void {
     modalMode.value = 'create';
     modalTarget.value = null;
     Object.assign(form, {
-        name: '', type: 'spend_based',
+        name: '', type: 'spend_based', validity_start: '', validity_end: '',
         points_per_omr: 1, redemption_points: 100, redemption_value: '5.000', min_redemption_points: 100,
         min_order_value: '2.000', stamps_required: 5, reward_type: 'free_product', reward_value: '',
     });
@@ -181,6 +187,8 @@ function openEdit(rule: LoyaltyRule): void {
     const c = rule.config ?? {};
     Object.assign(form, {
         name: rule.name,
+        validity_start: omanDateTimeInput(rule.validity_start),
+        validity_end: omanDateTimeInput(rule.validity_end),
         type: rule.type,
         points_per_omr: Number(c.points_per_omr ?? 1),
         redemption_points: Number(c.redemption_points ?? 100),
@@ -217,10 +225,10 @@ async function submit(): Promise<void> {
     modalError.value = null;
     try {
         if (modalMode.value === 'create') {
-            const r = await createLoyaltyRule({ name: form.name, type: form.type, config_json: buildConfig() });
+            const r = await createLoyaltyRule({ name: form.name, type: form.type, config_json: buildConfig(), validity_start: omanDateTimePayload(form.validity_start), validity_end: omanDateTimePayload(form.validity_end) });
             rules.value = [r.data, ...rules.value];
         } else if (modalTarget.value) {
-            const r = await updateLoyaltyRule(modalTarget.value.uuid, { name: form.name, config_json: buildConfig() });
+            const r = await updateLoyaltyRule(modalTarget.value.uuid, { name: form.name, config_json: buildConfig(), validity_start: omanDateTimePayload(form.validity_start), validity_end: omanDateTimePayload(form.validity_end) });
             const idx = rules.value.findIndex((x) => x.uuid === r.data.uuid);
             if (idx >= 0) rules.value[idx] = r.data;
         }
@@ -447,9 +455,9 @@ async function performDelete(): Promise<void> {
                                 <td class="px-5 py-4">
                                     <span
                                         class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold"
-                                        :class="rule.status === 'paused' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'"
+                                        :class="ruleWindowStatus(rule, ruleNow) === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'"
                                     >
-                                        {{ t(`loyalty.statuses.${rule.status}`) }}
+                                        {{ t(`loyalty.statuses.${ruleWindowStatus(rule, ruleNow)}`) }}
                                     </span>
                                 </td>
                                 <td class="px-5 py-4 text-end text-sm tabular-nums text-slate-500">{{ rule.accounts_count ?? 0 }}</td>
@@ -552,6 +560,15 @@ async function performDelete(): Promise<void> {
                             <option value="visit_based">{{ t('loyalty.types.visit_based') }}</option>
                         </select>
                         <p v-if="modalMode === 'edit'" class="mt-1 text-xs text-slate-400">{{ t('loyalty.modal.type_locked') }}</p>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <label class="block text-xs font-medium text-slate-600">{{ t('rule_time.validity_start') }}
+                            <input v-model="form.validity_start" type="datetime-local" class="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                        </label>
+                        <label class="block text-xs font-medium text-slate-600">{{ t('rule_time.validity_end') }}
+                            <input v-model="form.validity_end" type="datetime-local" class="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                        </label>
                     </div>
 
                     <!-- spend_based config -->

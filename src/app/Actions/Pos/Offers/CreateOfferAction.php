@@ -12,6 +12,7 @@ use App\Models\Offer;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
 use App\Support\OfferConfig;
+use App\Support\RuleValidity;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -45,6 +46,7 @@ final readonly class CreateOfferAction
      */
     public function handle(array $attributes, User $actor): Offer
     {
+        $attributes = RuleValidity::normalize($attributes);
         $companyId = $this->tenant->requiredId();
 
         $name = trim((string) ($attributes['name'] ?? ''));

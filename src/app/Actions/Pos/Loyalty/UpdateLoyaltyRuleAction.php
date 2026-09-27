@@ -10,6 +10,7 @@ use App\Enums\LoyaltyRuleStatus;
 use App\Models\LoyaltyRule;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
+use App\Support\RuleValidity;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -35,6 +36,7 @@ final readonly class UpdateLoyaltyRuleAction
      */
     public function handle(LoyaltyRule $rule, array $attributes, User $actor): LoyaltyRule
     {
+        $attributes = RuleValidity::normalize($attributes);
         $companyId = $this->tenant->requiredId();
         if ((int) $rule->company_id !== $companyId) {
             throw new RuntimeException('Loyalty rule does not belong to this company.');

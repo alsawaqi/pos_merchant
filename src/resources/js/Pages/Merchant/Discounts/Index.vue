@@ -21,6 +21,8 @@ import { Calendar, CheckCircle2, Pause, PauseCircle, Pencil, Percent, Plus, Play
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
+import { omanDateTimeInput, omanDateTimePayload, ruleWindowStatus, useRuleClock } from '@/lib/ruleTime';
+const ruleNow = useRuleClock();
 import BaseModal from '@/Components/BaseModal.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
@@ -186,9 +188,9 @@ function openEdit(d: Discount): void {
     form.scope = d.scope;
     form.amount_type = d.amount_type;
     form.amount = d.amount;
-    // Cast iso8601 → datetime-local input format (strip tz).
-    form.validity_start = d.validity_start?.slice(0, 16) ?? '';
-    form.validity_end = d.validity_end?.slice(0, 16) ?? '';
+    // Display the UTC instant as Oman wall time, regardless of browser timezone.
+    form.validity_start = omanDateTimeInput(d.validity_start);
+    form.validity_end = omanDateTimeInput(d.validity_end);
     form.dayofweek_mask = d.dayofweek_mask ?? 127;
     form.time_start = d.time_start?.slice(0, 5) ?? '';
     form.time_end = d.time_end?.slice(0, 5) ?? '';
@@ -214,8 +216,8 @@ async function submitModal(): Promise<void> {
             scope: form.scope,
             amount_type: form.amount_type,
             amount: form.amount,
-            validity_start: form.validity_start || null,
-            validity_end: form.validity_end || null,
+            validity_start: omanDateTimePayload(form.validity_start),
+            validity_end: omanDateTimePayload(form.validity_end),
             dayofweek_mask: form.dayofweek_mask === 127 ? null : form.dayofweek_mask,
             time_start: form.time_start ? `${form.time_start}:00` : null,
             time_end: form.time_end ? `${form.time_end}:00` : null,
@@ -301,17 +303,15 @@ async function performDelete(): Promise<void> {
 
 // ---- Display helpers -------------------------------------------
 function statusBadgeClass(d: Discount): string {
-    if (d.status === 'paused') return 'bg-amber-100 text-amber-700';
-    if (d.status === 'expired') return 'bg-slate-200 text-slate-700';
-    return d.currently_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600';
+    const status = ruleWindowStatus(d, ruleNow.value);
+    if (status === 'paused') return 'bg-amber-100 text-amber-700';
+    if (status === 'expired') return 'bg-slate-200 text-slate-700';
+    return status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600';
 }
 
 function statusLabel(d: Discount): string {
-    if (d.status === 'paused') return t('discounts.statuses.paused');
-    if (d.status === 'expired') return t('discounts.statuses.expired');
-    return d.currently_active
-        ? t('discounts.statuses.active_now')
-        : t('discounts.statuses.scheduled');
+    const status = ruleWindowStatus(d, ruleNow.value);
+    return t(`discounts.statuses.${status === 'active' ? 'active_now' : status}`);
 }
 
 function amountLabel(d: Discount): string {
@@ -531,6 +531,10 @@ function amountLabel(d: Discount): string {
 
                         <!-- Time-of-day -->
                         <div class="grid grid-cols-2 gap-3">
+                            <div class="col-span-2">
+                                <p class="text-xs font-medium text-slate-600">{{ t('rule_time.daily_hours') }}</p>
+                                <p class="mt-1 text-xs text-slate-500">{{ t('rule_time.daily_hours_hint') }}</p>
+                            </div>
                             <div>
                                 <label class="block text-xs font-medium text-slate-600">{{ t('discounts.fields.time_start') }}</label>
                                 <input v-model="form.time_start" type="time" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">

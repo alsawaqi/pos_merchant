@@ -12,6 +12,7 @@ use App\Enums\DiscountStatus;
 use App\Models\Discount;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
+use App\Support\RuleValidity;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -44,6 +45,7 @@ final readonly class CreateDiscountAction
      */
     public function handle(array $attributes, User $actor): Discount
     {
+        $attributes = RuleValidity::normalize($attributes);
         $companyId = $this->tenant->requiredId();
 
         $name = trim((string) ($attributes['name'] ?? ''));

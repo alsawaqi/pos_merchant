@@ -11,6 +11,7 @@ use App\Enums\DiscountScope;
 use App\Models\Discount;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
+use App\Support\RuleValidity;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -49,6 +50,7 @@ final readonly class UpdateDiscountAction
      */
     public function handle(Discount $discount, array $attributes, User $actor): Discount
     {
+        $attributes = RuleValidity::normalize($attributes);
         $companyId = $this->tenant->requiredId();
         if ((int) $discount->company_id !== $companyId) {
             abort(404);

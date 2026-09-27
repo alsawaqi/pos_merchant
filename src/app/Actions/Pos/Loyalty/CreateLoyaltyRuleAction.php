@@ -11,6 +11,7 @@ use App\Enums\LoyaltyRuleType;
 use App\Models\LoyaltyRule;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
+use App\Support\RuleValidity;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -39,6 +40,7 @@ final readonly class CreateLoyaltyRuleAction
      */
     public function handle(array $attributes, User $actor): LoyaltyRule
     {
+        $attributes = RuleValidity::normalize($attributes);
         $companyId = $this->tenant->requiredId();
 
         $name = trim((string) ($attributes['name'] ?? ''));
