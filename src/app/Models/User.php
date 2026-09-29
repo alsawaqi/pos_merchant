@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\MerchantRole;
 use App\Models\Concerns\DecryptsDefensively;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -53,6 +55,17 @@ class User extends Authenticatable
     use DecryptsDefensively, HasApiTokens, HasFactory, HasRoles, Notifiable;
 
     protected $table = 'pos_users';
+
+    protected static function booted(): void
+    {
+        static::updating(function (self $user): void {
+            if ($user->isDirty(['status', 'password', 'user_type'])) {
+                // Independent rotation also invalidates sessions when stale model copies save concurrently.
+                $user->auth_version = random_int(1, 9007199254740991);
+                $user->remember_token = null;
+            }
+        });
+    }
 
     /**
      * @return array<string, string>
@@ -110,10 +123,10 @@ class User extends Authenticatable
      * + every controller that queries this table so a platform-admin
      * id can never be returned by a merchant endpoint.
      *
-     * @param  \Illuminate\Database\Eloquent\Builder<self>  $query
-     * @return \Illuminate\Database\Eloquent\Builder<self>
+     * @param  Builder<self>  $query
+     * @return Builder<self>
      */
-    public function scopeMerchant(\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder
+    public function scopeMerchant(Builder $query): Builder
     {
         return $query->where('user_type', 'merchant');
     }
@@ -151,7 +164,7 @@ class User extends Authenticatable
         if ($scope === null) {
             return null;
         }
-        if ($this->hasRole(\App\Enums\MerchantRole::SuperAdmin->value)) {
+        if ($this->hasRole(MerchantRole::SuperAdmin->value)) {
             return null;
         }
 

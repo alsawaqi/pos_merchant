@@ -63,6 +63,8 @@ final readonly class CreatePortalUserAction
             // Idempotent — safe on every call. Cheap because spatie
             // caches the permission set after the first read.
             $this->seedRoles->handle($companyId);
+            app(AuthorizePortalUserManagement::class)->handle($actor, roles: [$attributes['role']],
+                grantScope: $attributes['branch_scope'] ?? null, changesScope: true);
 
             // 20-char alphanumeric — same convention as pos_admin
             // (~120 bits of entropy, copy/paste-safe).
@@ -83,6 +85,7 @@ final readonly class CreatePortalUserAction
                 'password' => $plaintextPassword, // bcrypted via cast
                 'user_type' => 'merchant',
                 'status' => 'active',
+                'must_change_password' => true,
                 'branch_scope_json' => $attributes['branch_scope'] ?? null,
                 'setup_token_hash' => null,
                 'setup_token_expires_at' => null,

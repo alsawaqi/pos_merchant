@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Middleware\EnsureBranchScope;
+use App\Http\Middleware\EnsureUserAccess;
 use App\Http\Middleware\PreventBackHistoryCache;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\SetMerchantTenantContext;
@@ -40,6 +41,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // any route-bound model carrying a branch outside the user's
         // branch_scope_json aborts 403.
         $middleware->web(append: [
+            EnsureUserAccess::class,
             SetMerchantTenantContext::class,
             EnsureBranchScope::class,
         ]);
@@ -60,6 +62,10 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // The merchant `web` guard redirects guests to /login —
         // matches the route name registered in routes/web.php.
+        $middleware->prependToPriorityList(
+            before: SubstituteBindings::class,
+            prepend: EnsureUserAccess::class,
+        );
         $middleware->redirectGuestsTo('/login');
         $middleware->redirectUsersTo('/');
     })

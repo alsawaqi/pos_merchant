@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Cookie;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
+use Spatie\Permission\PermissionRegistrar;
 
 /**
  * Dual-mode session controller for the merchant portal.
@@ -64,7 +65,13 @@ class AuthenticatedSessionController extends Controller
                 ->where('email', $request->credentials()['email'])
                 ->first();
 
+            if ($candidate !== null && ($candidate->company_id === null
+                || ! DB::table('pos_companies')->where('id', $candidate->company_id)->where('status', 'active')->whereNull('deleted_at')->exists())) {
+                throw ValidationException::withMessages(['email' => 'Account suspended.']);
+            }
+
             $passwordOk = $candidate !== null
+                && $candidate->status === 'active'
                 && Auth::guard('web')->validate($request->credentials())
                 && $candidate->user_type === 'merchant';
 
@@ -94,6 +101,7 @@ class AuthenticatedSessionController extends Controller
             Auth::guard('web')->login($candidate, $request->remember());
             RateLimiter::clear($request->throttleKey());
             $request->session()->regenerate();
+            $request->session()->put('pos.auth_version', (int) $candidate->auth_version);
         }
 
         $request->session()->put('pos_merchant.remembered', $request->remember());
@@ -183,7 +191,7 @@ class AuthenticatedSessionController extends Controller
         // Pull roles + permissions under the user's company team
         // scope so the SPA's can() / hasRole() helpers can mirror
         // server-side gates without an extra round-trip.
-        $registrar = app(\Spatie\Permission\PermissionRegistrar::class);
+        $registrar = app(PermissionRegistrar::class);
         $previousTeam = $registrar->getPermissionsTeamId();
         if ($user->company_id !== null) {
             $registrar->setPermissionsTeamId((int) $user->company_id);

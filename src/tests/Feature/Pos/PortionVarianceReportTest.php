@@ -18,8 +18,10 @@ declare(strict_types=1);
  *   - Branch filter, window filter, tenant isolation, permission gate
  */
 
+use App\Enums\MerchantRole;
 use App\Enums\StockMovementType;
 use App\Enums\WasteReason;
+use App\Models\Branch;
 use App\Models\Company;
 use App\Models\Ingredient;
 use App\Models\StockCount;
@@ -27,6 +29,7 @@ use App\Models\StockCountLine;
 use App\Models\StockMovement;
 use App\Models\WasteRecord;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\PermissionRegistrar;
 
 uses(RefreshDatabase::class);
 
@@ -196,7 +199,7 @@ it('computes the headline totals and the uncounted coverage counter', function (
 
 it('scopes by branch_ids and rejects out-of-scope branches', function (): void {
     $ctx = makeMerchantActor();
-    $other = App\Models\Branch::factory()->for($ctx['company'], 'company')->create(['name' => 'B2']);
+    $other = Branch::factory()->for($ctx['company'], 'company')->create(['name' => 'B2']);
     $milk = Ingredient::factory()->for($ctx['company'], 'company')->create(['name' => 'Milk']);
 
     pvSeedSale($ctx, $milk, '-1.000', '1.000');
@@ -213,10 +216,9 @@ it('scopes by branch_ids and rejects out-of-scope branches', function (): void {
 
     // A foreign company's branch id: the unrestricted super admin is not
     // branch-clamped, but the company join keeps the data invisible.
-    $foreign = App\Models\Branch::factory()->for(Company::factory()->create(), 'company')->create();
+    $foreign = Branch::factory()->for(Company::factory()->create(), 'company')->create();
     $data = $this->getJson('/api/reports/portion-variance?date_from=2026-06-01&date_to=2026-06-10&branch_ids[]='.$foreign->id)
-        ->assertOk()->json('data');
-    expect($data['rows'])->toBe([]);
+        ->assertUnprocessable()->assertJsonValidationErrors('branch_ids.0');
 });
 
 it('filters by the window on occurred_at and counted_at', function (): void {
@@ -287,9 +289,9 @@ it('reports kitchen-production usage and counts production-only ingredients as c
 });
 
 it('applies the P-G5 branch clamp for branch-scoped users', function (): void {
-    $ctx = makeMerchantActor(App\Enums\MerchantRole::Manager->value);
+    $ctx = makeMerchantActor(MerchantRole::Manager->value);
     $ctx['user']->forceFill(['branch_scope_json' => [$ctx['branch']->id]])->save();
-    $branchB = App\Models\Branch::factory()->for($ctx['company'], 'company')->create(['name' => 'B2']);
+    $branchB = Branch::factory()->for($ctx['company'], 'company')->create(['name' => 'B2']);
 
     $milk = Ingredient::factory()->for($ctx['company'], 'company')->create(['name' => 'Milk']);
     pvSeedSale($ctx, $milk, '-1.000', '1.000');
@@ -332,7 +334,7 @@ it('applies the P-G5 branch clamp for branch-scoped users', function (): void {
 it('is invisible across tenants', function (): void {
     $ctx = makeMerchantActor();
     $foreignCompany = Company::factory()->create();
-    $foreignBranch = App\Models\Branch::factory()->for($foreignCompany, 'company')->create();
+    $foreignBranch = Branch::factory()->for($foreignCompany, 'company')->create();
     $foreignIng = Ingredient::factory()->for($foreignCompany, 'company')->create(['name' => 'Foreign']);
 
     StockMovement::factory()->for($foreignBranch, 'branch')->for($foreignIng, 'ingredient')->create([
@@ -341,7 +343,7 @@ it('is invisible across tenants', function (): void {
         'unit_cost_at_time' => '1.000',
         'occurred_at' => '2026-06-03 12:00:00',
     ]);
-    // The waste and count buckets scope independently — cover them too.
+    // The waste and count buckets scope independently â€” cover them too.
     WasteRecord::factory()->for($foreignBranch, 'branch')->for($foreignIng, 'ingredient')->create([
         'quantity' => '1.000',
         'unit_cost_at_time' => '1.000',
@@ -367,7 +369,7 @@ it('is invisible across tenants', function (): void {
 it('requires the reports.view permission', function (): void {
     $ctx = makeMerchantActor();
     $ctx['user']->syncRoles([]);
-    app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
 
     $this->getJson('/api/reports/portion-variance?date_from=2026-06-01&date_to=2026-06-10')
         ->assertForbidden();

@@ -10,6 +10,7 @@ uses(RefreshDatabase::class);
 it('changes the password and clears must_change_password', function (): void {
     $ctx = makeMerchantActor();
     $ctx['user']->forceFill(['password' => 'old-password-123', 'must_change_password' => true])->save();
+    $this->withSession(['pos.auth_version' => (int) $ctx['user']->auth_version]);
 
     $this->postJson('/auth/change-password', [
         'current_password' => 'old-password-123',
@@ -25,6 +26,7 @@ it('changes the password and clears must_change_password', function (): void {
 it('rejects a wrong current password', function (): void {
     $ctx = makeMerchantActor();
     $ctx['user']->forceFill(['password' => 'old-password-123'])->save();
+    $this->withSession(['pos.auth_version' => (int) $ctx['user']->auth_version]);
 
     $this->postJson('/auth/change-password', [
         'current_password' => 'WRONG-PASSWORD',
@@ -46,6 +48,7 @@ it('requires the new password to be confirmed and at least 8 chars', function ()
 it('surfaces must_change_password in the /auth/user payload', function (): void {
     $ctx = makeMerchantActor();
     $ctx['user']->forceFill(['must_change_password' => true])->save();
+    $this->withSession(['pos.auth_version' => (int) $ctx['user']->auth_version]);
 
     $this->getJson('/auth/user')->assertOk()->assertJsonPath('user.must_change_password', true);
 });

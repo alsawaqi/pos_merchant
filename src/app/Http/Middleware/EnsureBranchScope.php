@@ -56,6 +56,14 @@ class EnsureBranchScope
     {
         $user = $request->user();
         if ($user instanceof User && $user->allowedBranchIds() !== null) {
+            if ($request->is('api/payouts', 'api/payouts/*', 'api/commission-invoices', 'api/commission-invoices/*',
+                'api/purchase-receipts', 'api/purchase-receipts/*',
+                'api/reports/payouts', 'api/reports/payouts/*')) {
+                abort(403, 'This page requires access to all branches.');
+            }
+            if ($request->isMethod('GET') && $request->is('api/portal-users')) {
+                abort(403, 'This page requires access to all branches.');
+            }
             $this->enforce($request, $user);
         }
 

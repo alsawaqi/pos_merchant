@@ -41,6 +41,9 @@ final readonly class UpdatePortalUserAction
      */
     public function handle(User $user, array $attributes, User $actor): User
     {
+        app(AuthorizePortalUserManagement::class)->handle($actor, $user,
+            isset($attributes['role']) ? [$attributes['role']] : null,
+            $attributes['branch_scope'] ?? null, array_key_exists('branch_scope', $attributes));
         $companyId = $this->tenant->requiredId();
 
         if ($user->company_id !== $companyId) {

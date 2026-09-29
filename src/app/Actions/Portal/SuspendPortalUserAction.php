@@ -28,6 +28,8 @@ final readonly class SuspendPortalUserAction
 
     public function handle(User $user, User $actor): User
     {
+        app(AuthorizePortalUserManagement::class)->handle($actor, $user);
+
         return DB::transaction(function () use ($user, $actor): User {
             $companyId = $this->tenant->requiredId();
 

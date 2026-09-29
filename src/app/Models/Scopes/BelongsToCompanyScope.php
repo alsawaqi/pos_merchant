@@ -39,6 +39,10 @@ final class BelongsToCompanyScope implements Scope
         $companyId = app(MerchantTenantContext::class)->id();
 
         if ($companyId === null) {
+            if (app()->bound('request') && request()->route() !== null) {
+                throw new \LogicException('A merchant request requires a pinned tenant.');
+            }
+
             return;
         }
 

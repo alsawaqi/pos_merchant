@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Http\Requests\Portal;
 
 use App\Enums\MerchantRole;
+use App\Models\Branch;
 use App\Support\MerchantTenantContext;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 /**
  * Validates the payload for POST /api/portal-users.
@@ -31,6 +33,11 @@ class CreatePortalUserRequest extends FormRequest
     /**
      * @return array<string, mixed>
      */
+    public function messages(): array
+    {
+        return ['email.unique' => 'Unable to create this account with the supplied details.'];
+    }
+
     public function rules(): array
     {
         return [
@@ -46,9 +53,9 @@ class CreatePortalUserRequest extends FormRequest
         ];
     }
 
-    public function withValidator(\Illuminate\Validation\Validator $validator): void
+    public function withValidator(Validator $validator): void
     {
-        $validator->after(function (\Illuminate\Validation\Validator $v): void {
+        $validator->after(function (Validator $v): void {
             $scope = $this->input('branch_scope');
             if (! is_array($scope) || $scope === []) {
                 return;
@@ -63,7 +70,7 @@ class CreatePortalUserRequest extends FormRequest
             // own company. Without this, an admin could grant a
             // teammate access to a branch owned by a different
             // merchant by hand-crafting the request.
-            $ownedCount = \App\Models\Branch::query()
+            $ownedCount = Branch::query()
                 ->where('company_id', $companyId)
                 ->whereIn('id', $scope)
                 ->count();

@@ -79,6 +79,7 @@ return new class extends Migration
         // merchant) and the portal-user extension columns. Phone is
         // TEXT to absorb the encrypted ciphertext (~3x plaintext).
         Schema::create('pos_users', function (Blueprint $table): void {
+            $table->unsignedBigInteger('auth_version')->default(0);
             $table->id();
             $table->foreignId('company_id')->nullable()->constrained('pos_companies')->nullOnDelete();
             $table->string('name');

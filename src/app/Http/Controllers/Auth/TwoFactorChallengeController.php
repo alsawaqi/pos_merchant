@@ -86,6 +86,7 @@ class TwoFactorChallengeController extends Controller
         // store after a password-only success — keep both in sync.
         Auth::guard('web')->login($user, $remember);
         $request->session()->regenerate();
+        $request->session()->put('pos.auth_version', (int) $user->auth_version);
         $request->session()->put('pos_merchant.remembered', $remember);
         $request->session()->put('pos_merchant.last_activity_at', now()->timestamp);
 
@@ -121,7 +122,9 @@ class TwoFactorChallengeController extends Controller
             ->where('status', 'active')
             ->find($userId);
 
-        if ($user === null || ! $user->hasConfirmedTwoFactor()) {
+        if ($user === null || ! $user->hasConfirmedTwoFactor()
+            || $user->company_id === null
+            || ! DB::table('pos_companies')->where('id', $user->company_id)->where('status', 'active')->whereNull('deleted_at')->exists()) {
             return null;
         }
 

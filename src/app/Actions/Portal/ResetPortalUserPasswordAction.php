@@ -37,6 +37,8 @@ final readonly class ResetPortalUserPasswordAction
             abort(404);
         }
 
+        app(AuthorizePortalUserManagement::class)->handle($actor, $user);
+
         return DB::transaction(function () use ($user, $actor, $companyId): array {
             $plaintextPassword = Str::password(
                 length: 20,
@@ -46,6 +48,7 @@ final readonly class ResetPortalUserPasswordAction
                 spaces: false,
             );
 
+            $user->must_change_password = true;
             $user->password = $plaintextPassword; // bcrypted via cast
             $user->save();
 

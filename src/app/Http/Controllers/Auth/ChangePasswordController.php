@@ -39,6 +39,9 @@ class ChangePasswordController extends Controller
             'must_change_password' => false,
         ])->save();
 
+        $request->session()->regenerate();
+        $request->session()->put('pos.auth_version', (int) $user->auth_version);
+
         return response()->json([
             'message' => 'Password changed.',
             'must_change_password' => false,

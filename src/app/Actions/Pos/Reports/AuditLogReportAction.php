@@ -81,7 +81,7 @@ final readonly class AuditLogReportAction
             'auditable_type' => $row->auditable_type,
             'auditable_id' => $row->auditable_id !== null ? (int) $row->auditable_id : null,
             'ip_address' => $row->ip_address,
-            'old_values' => $row->old_values,
+            'old_values' => $row->event === 'device.assigned' ? ['redacted' => true] : $row->old_values,
             'new_values' => $row->new_values,
             'metadata' => $row->metadata,
             'created_at' => $row->created_at?->format('Y-m-d\TH:i:s'),

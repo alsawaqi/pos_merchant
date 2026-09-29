@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Pos\Role;
 
+use App\Actions\Portal\AuthorizePortalUserManagement;
 use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
 use App\Enums\MerchantRole;
@@ -43,6 +44,7 @@ final readonly class AssignRolesToUserAction
      */
     public function handle(User $portalUser, array $roleNames, User $actor): User
     {
+        app(AuthorizePortalUserManagement::class)->handle($actor, $portalUser, $roleNames);
         $companyId = $this->tenant->requiredId();
 
         // Cross-tenant: refuse to mutate a user from another

@@ -21,6 +21,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use RuntimeException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 /**
  * Merchant portal — manage YOUR OWN team's portal users.
@@ -95,6 +96,10 @@ class PortalUsersController extends Controller
         try {
             $result = $this->create->handle($request->validated(), $request->user());
         } catch (RuntimeException $e) {
+            if ($e instanceof HttpExceptionInterface) {
+                throw $e;
+            }
+
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
@@ -158,7 +163,7 @@ class PortalUsersController extends Controller
      * Action refuses self-suspension with a RuntimeException; we
      * surface it as 422 with the inline message.
      */
-    public function suspend(Request $request, User $portalUser): PortalUserResource | JsonResponse
+    public function suspend(Request $request, User $portalUser): PortalUserResource|JsonResponse
     {
         $this->ensure($request, MerchantPermission::PortalUsersRevoke);
         $this->refuseIfNotInTenant($portalUser);
@@ -166,6 +171,10 @@ class PortalUsersController extends Controller
         try {
             $updated = $this->suspend->handle($portalUser, $request->user());
         } catch (RuntimeException $e) {
+            if ($e instanceof HttpExceptionInterface) {
+                throw $e;
+            }
+
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
@@ -219,7 +228,7 @@ class PortalUsersController extends Controller
      * teammate, but should NOT be able to promote them to
      * SuperAdmin.
      */
-    public function assignRoles(Request $request, User $portalUser): PortalUserResource | JsonResponse
+    public function assignRoles(Request $request, User $portalUser): PortalUserResource|JsonResponse
     {
         $this->ensure($request, MerchantPermission::RolesManage);
         $this->refuseIfNotInTenant($portalUser);
@@ -235,7 +244,7 @@ class PortalUsersController extends Controller
                 $validated['roles'],
                 $request->user(),
             );
-        } catch (\RuntimeException $e) {
+        } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
