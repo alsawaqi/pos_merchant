@@ -99,6 +99,9 @@ class PortalUsersController extends Controller
             if ($e instanceof HttpExceptionInterface) {
                 throw $e;
             }
+            if ($e instanceof HttpExceptionInterface) {
+                throw $e;
+            }
 
             return response()->json(['message' => $e->getMessage()], 422);
         }
@@ -174,6 +177,9 @@ class PortalUsersController extends Controller
             if ($e instanceof HttpExceptionInterface) {
                 throw $e;
             }
+            if ($e instanceof HttpExceptionInterface) {
+                throw $e;
+            }
 
             return response()->json(['message' => $e->getMessage()], 422);
         }
@@ -245,6 +251,10 @@ class PortalUsersController extends Controller
                 $request->user(),
             );
         } catch (RuntimeException $e) {
+            if ($e instanceof HttpExceptionInterface) {
+                throw $e;
+            }
+
             return response()->json(['message' => $e->getMessage()], 422);
         }
 

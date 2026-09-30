@@ -47,7 +47,7 @@ class ReportFilterRequest extends FormRequest
             'branch_ids' => ['sometimes', 'nullable', 'array', 'max:100'],
             'branch_ids.*' => ['integer', Rule::exists('pos_branches', 'id')
                 ->where(function ($query): void {
-                    $query->where('company_id', $this->user()?->company_id)->whereNull('deleted_at');
+                    $query->where('company_id', $this->user()?->company_id);
                     $scope = $this->user()?->allowedBranchIds();
                     if ($scope !== null) {
                         $query->whereIn('id', $scope);

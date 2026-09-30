@@ -17,6 +17,8 @@ use Illuminate\Support\Facades\DB;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
+require_once __DIR__.'/P0DisposableDatabase.php';
+
 final class LaunchP0RealSchemaTest extends TestCase
 {
     use DatabaseTransactions;
@@ -25,7 +27,7 @@ final class LaunchP0RealSchemaTest extends TestCase
     {
         parent::setUp();
         $this->assertSame('pgsql', DB::getDriverName());
-        $this->assertSame('qr_fix4_p0', DB::connection()->getDatabaseName());
+        $this->assertSame(\p0DisposableDatabase('core', 'qr_fix4_p0'), DB::connection()->getDatabaseName());
         $this->assertTrue(DB::table('pos_admin_migrations')->where('migration', '2026_09_30_000003_add_pos_user_auth_version')->exists());
         app(MerchantTenantContext::class)->set(null);
         app(PermissionRegistrar::class)->forgetCachedPermissions();

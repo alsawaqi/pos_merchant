@@ -1,3 +1,5 @@
+import { accountAccess, observeAccountAccess } from '@/stores/accountAccess';
+
 /**
  * Shared HTTP client for the merchant SPA. Mirrors pos_admin's
  * api.ts wrapper — CSRF auto-retry, 401/419 → /login interceptor,
@@ -168,6 +170,8 @@ async function apiRequest<T>(method: string, url: string, options: ApiRequestOpt
         payload = null;
     }
 
+    observeAccountAccess(response.status, payload);
+
     // CSRF token mismatch — fetch a fresh one + replay exactly once.
     if (response.status === 419 && !options._csrfRetried) {
         await refreshCsrfToken();
@@ -176,7 +180,7 @@ async function apiRequest<T>(method: string, url: string, options: ApiRequestOpt
 
     // 401 → bounce to /login unless the caller opted out (only
     // /auth/user does that to probe the current sign-in state).
-    if (response.status === 401 && !options.skipAuthInterceptor && url !== AUTH_PROBE_ENDPOINT) {
+    if (response.status === 401 && !accountAccess.suspended && !options.skipAuthInterceptor && url !== AUTH_PROBE_ENDPOINT) {
         const redirect = encodeURIComponent(window.location.pathname + window.location.search);
         window.location.href = `${LOGIN_PATH}?redirect=${redirect}`;
         // Throw to halt any caller waiting on the response — they
@@ -216,7 +220,8 @@ export async function apiDownload(url: string): Promise<{ blob: Blob; filename: 
             payload = null;
         }
 
-        if (response.status === 401) {
+        observeAccountAccess(response.status, payload);
+        if (response.status === 401 && !accountAccess.suspended) {
             const redirect = encodeURIComponent(window.location.pathname + window.location.search);
             window.location.href = `${LOGIN_PATH}?redirect=${redirect}`;
         }

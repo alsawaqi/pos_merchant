@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Actions\Pos\Role;
 
+use App\Actions\Admin\SeedMerchantRolesAction;
 use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
 use App\Enums\MerchantPermission;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
-use RuntimeException;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
@@ -19,7 +19,7 @@ use Spatie\Permission\PermissionRegistrar;
  *
  * Custom roles are user-managed (deletable, renameable, fully
  * editable). The 5 system roles seeded by
- * {@see \App\Actions\Admin\SeedMerchantRolesAction} can be
+ * {@see SeedMerchantRolesAction} can be
  * edited but never deleted; this action only handles the
  * user-created ones.
  *
@@ -61,6 +61,8 @@ final readonly class CreateRoleAction
                     $requested,
                     MerchantPermission::values(),
                 ));
+
+                app(AuthorizeRoleChanges::class)->handle($actor, $allowed);
 
                 /** @var Role $role */
                 $role = Role::query()->create([

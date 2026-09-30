@@ -15,10 +15,12 @@ use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Support\Facades\DB;
 use Spatie\Permission\PermissionRegistrar;
 
+require_once __DIR__.'/P0DisposableDatabase.php';
+
 require __DIR__.'/../../vendor/autoload.php';
 $app = require __DIR__.'/../../bootstrap/app.php';
 $app->make(ConsoleKernel::class)->bootstrap();
-if (DB::getDriverName() !== 'pgsql' || DB::connection()->getDatabaseName() !== 'qr_fix4_fix5') {
+if (DB::getDriverName() !== 'pgsql' || DB::connection()->getDatabaseName() !== \p0DisposableDatabase('merge', 'qr_fix4_fix5')) {
     fwrite(STDERR, "refusing: not the S1 disposable database\n");
     exit(2);
 }

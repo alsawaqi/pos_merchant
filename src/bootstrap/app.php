@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Middleware\EnsureBranchScope;
 use App\Http\Middleware\EnsureUserAccess;
+use App\Http\Middleware\EnsureUserIsAuthenticated;
 use App\Http\Middleware\PreventBackHistoryCache;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\SetMerchantTenantContext;
@@ -65,6 +66,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->prependToPriorityList(
             before: SubstituteBindings::class,
             prepend: EnsureUserAccess::class,
+        );
+        $middleware->prependToPriorityList(
+            before: SetMerchantTenantContext::class,
+            prepend: EnsureUserIsAuthenticated::class,
         );
         $middleware->redirectGuestsTo('/login');
         $middleware->redirectUsersTo('/');

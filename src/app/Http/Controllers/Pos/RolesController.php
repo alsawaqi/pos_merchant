@@ -20,6 +20,7 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use RuntimeException;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 /**
  * Merchant portal — manage YOUR OWN company's roles.
@@ -113,7 +114,7 @@ class RolesController extends Controller
     /**
      * PATCH /api/roles/{role}
      */
-    public function update(UpdateRoleRequest $request, Role $role): RoleResource | JsonResponse
+    public function update(UpdateRoleRequest $request, Role $role): RoleResource|JsonResponse
     {
         $this->ensure($request, MerchantPermission::RolesManage);
         $this->refuseIfNotInTenant($role);
@@ -121,6 +122,10 @@ class RolesController extends Controller
         try {
             $updated = $this->update->handle($role, $request->validated(), $request->user());
         } catch (RuntimeException $e) {
+            if ($e instanceof HttpExceptionInterface) {
+                throw $e;
+            }
+
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
@@ -140,6 +145,10 @@ class RolesController extends Controller
         try {
             $this->delete->handle($role, $request->user());
         } catch (RuntimeException $e) {
+            if ($e instanceof HttpExceptionInterface) {
+                throw $e;
+            }
+
             return response()->json(['message' => $e->getMessage()], 422);
         }
 

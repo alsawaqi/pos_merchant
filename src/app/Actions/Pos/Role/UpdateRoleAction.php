@@ -75,6 +75,9 @@ final readonly class UpdateRoleAction
 
         try {
             return DB::transaction(function () use ($role, $attributes, $actor, $companyId): Role {
+                $role = Role::query()->whereKey($role->id)->lockForUpdate()->firstOrFail();
+                app(AuthorizeRoleChanges::class)->handle($actor,
+                    $attributes['permissions'] ?? $role->permissions()->pluck('name')->all(), $role);
                 $changes = [];
 
                 // ---- name -----------------------------------
@@ -111,7 +114,7 @@ final readonly class UpdateRoleAction
                         $missing = array_diff(self::SUPER_ADMIN_LOCKED_PERMISSIONS, $allowed);
                         if ($missing !== []) {
                             throw new RuntimeException(
-                                'These permissions cannot be removed from the Super Admin role: ' . implode(', ', $missing),
+                                'These permissions cannot be removed from the Super Admin role: '.implode(', ', $missing),
                             );
                         }
                     }

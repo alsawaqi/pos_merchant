@@ -65,11 +65,6 @@ class AuthenticatedSessionController extends Controller
                 ->where('email', $request->credentials()['email'])
                 ->first();
 
-            if ($candidate !== null && ($candidate->company_id === null
-                || ! DB::table('pos_companies')->where('id', $candidate->company_id)->where('status', 'active')->whereNull('deleted_at')->exists())) {
-                throw ValidationException::withMessages(['email' => 'Account suspended.']);
-            }
-
             $passwordOk = $candidate !== null
                 && $candidate->status === 'active'
                 && Auth::guard('web')->validate($request->credentials())
@@ -79,6 +74,12 @@ class AuthenticatedSessionController extends Controller
                 RateLimiter::hit($request->throttleKey(), 60);
 
                 return $this->failedLogin($request);
+            }
+
+            if ($candidate !== null && ($candidate->company_id === null
+                || ! DB::table('pos_companies')->where('id', $candidate->company_id)->where('status', 'active')->whereNull('deleted_at')->exists())) {
+                RateLimiter::hit($request->throttleKey(), 60);
+                throw ValidationException::withMessages(['email' => 'Account suspended.']);
             }
 
             // Phase D8 — a TOTP-enrolled account does NOT get a

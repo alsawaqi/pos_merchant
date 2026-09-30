@@ -13,6 +13,8 @@ use App\Support\MerchantTenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use RuntimeException;
+use Spatie\Permission\Models\Role;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
  * P-G6 — the portal → portal inbox (channel 2).
@@ -91,7 +93,8 @@ class PortalMessagesController extends Controller
      */
     public function recipients(Request $request): JsonResponse
     {
-        $this->user($request);
+        $actor = $this->user($request);
+        $scope = $actor->allowedBranchIds();
         $companyId = $this->tenant->requiredId();
 
         $users = User::query()
@@ -99,11 +102,14 @@ class PortalMessagesController extends Controller
             ->where('company_id', $companyId)
             ->where('status', 'active')
             ->orderBy('name')
-            ->get(['id', 'name'])
+            ->get(['id', 'name', 'branch_scope_json'])
+            ->filter(fn (User $u): bool => $scope === null || $u->branch_scope_json === null
+                || array_intersect($scope, array_map('intval', $u->branch_scope_json)) !== [])
+            ->values()
             ->map(fn (User $u): array => ['id' => (int) $u->id, 'name' => (string) $u->name])
             ->all();
 
-        $roles = \Spatie\Permission\Models\Role::query()
+        $roles = Role::query()
             ->where('team_id', $companyId)
             ->where('guard_name', 'web')
             ->orderBy('name')
@@ -120,7 +126,7 @@ class PortalMessagesController extends Controller
         } catch (RuntimeException $e) {
             // abort(403) inside the action (F5 scope) is an HttpException,
             // which extends RuntimeException — let it through as a 403.
-            if ($e instanceof \Symfony\Component\HttpKernel\Exception\HttpException) {
+            if ($e instanceof HttpException) {
                 throw $e;
             }
 
