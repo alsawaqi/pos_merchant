@@ -109,7 +109,7 @@ class PortalMessagesController extends Controller
             ->map(fn (User $u): array => ['id' => (int) $u->id, 'name' => (string) $u->name])
             ->all();
 
-        $roles = Role::query()
+        $roles = $scope !== null ? [] : Role::query()
             ->where('team_id', $companyId)
             ->where('guard_name', 'web')
             ->orderBy('name')

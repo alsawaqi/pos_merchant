@@ -52,6 +52,7 @@ final readonly class DeleteRoleAction
 
         try {
             DB::transaction(function () use ($role, $actor, $companyId): void {
+                app(AuthorizeRoleChanges::class)->handle($actor, [], $role);
                 $userCount = $role->users()->count();
                 if ($userCount > 0) {
                     throw new RuntimeException(

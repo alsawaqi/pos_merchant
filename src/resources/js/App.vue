@@ -12,7 +12,7 @@ let checking = false;
 async function checkAccount(): Promise<void> {
     if (!authState.user || accountAccess.suspended || checking || document.visibilityState !== 'visible') return;
     checking = true;
-    try { await apiGet('/auth/user', { skipAuthInterceptor: true }); }
+    try { await apiGet('/auth/access', { skipAuthInterceptor: true }); }
     catch { /* The shared API client records suspension; transient failures retry later. */ }
     finally { checking = false; }
 }

@@ -160,6 +160,9 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
     Route::get('/print/table-cards/{branch:uuid}', TableCardsPrintController::class)
         ->middleware(EnsureBranchScope::class)->name('print.table-cards');
 
+    Route::get('/auth/access', fn () => response()->json(['active' => true]))
+        ->middleware(RequireJsonRequest::class)->name('auth.access');
+
     Route::get('/auth/user', [AuthenticatedSessionController::class, 'show'])
         ->middleware(RequireJsonRequest::class)
         ->name('auth.user');

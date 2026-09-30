@@ -46,7 +46,10 @@ class EnsureMerchantSessionIsFresh
             return $this->expiredResponse($request);
         }
 
-        $session->put('pos_merchant.last_activity_at', now()->timestamp);
+        // Passive suspension probes enforce expiry but are not user activity.
+        if (! $request->routeIs('auth.access')) {
+            $session->put('pos_merchant.last_activity_at', now()->timestamp);
+        }
 
         return $next($request);
     }

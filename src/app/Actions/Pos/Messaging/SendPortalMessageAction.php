@@ -44,16 +44,22 @@ final readonly class SendPortalMessageAction
         $targetBranchId = null;
 
         if ($targetType === PortalMessage::TARGET_USER) {
-            $exists = User::query()
+            $target = User::query()
                 ->merchant()
                 ->where('company_id', $companyId)
                 ->whereKey((int) ($attributes['target_user_id'] ?? 0))
-                ->exists();
-            if (! $exists) {
+                ->first();
+            if ($target === null) {
                 throw new RuntimeException('The selected teammate was not found.');
             }
+            $scope = $actor->allowedBranchIds();
+            abort_unless($scope === null || $target->branch_scope_json === null
+                || array_intersect($scope, array_map('intval', $target->branch_scope_json)) !== [],
+                403, 'The selected teammate is outside your branch scope.');
             $targetUserId = (int) $attributes['target_user_id'];
         } elseif ($targetType === PortalMessage::TARGET_ROLE) {
+            // Role audiences are company-wide and resolve dynamically at read
+            // time, so a branch-restricted sender cannot address a whole role.
             $roleName = (string) ($attributes['target_role'] ?? '');
             $roleExists = Role::query()
                 ->where('team_id', $companyId)
@@ -63,6 +69,7 @@ final readonly class SendPortalMessageAction
             if (! $roleExists) {
                 throw new RuntimeException('The selected role was not found.');
             }
+            BranchScope::ensureUnrestricted($actor, 'Role messages require access to all branches.');
             $targetRole = $roleName;
         } elseif ($targetType === PortalMessage::TARGET_BRANCH) {
             $branch = Branch::query()
