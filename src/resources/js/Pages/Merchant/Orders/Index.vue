@@ -60,7 +60,7 @@ async function fetchInto(f: OrderListFilter, silent = false): Promise<void> {
         error.value = null;
     }
     try {
-        const r = await fetchOrders(f);
+        const r = await fetchOrders(f, { background: silent });
         if (seq !== fetchSeq) return; // superseded by a newer fetch
         payload.value = r.data;
         error.value = null;

@@ -795,7 +795,10 @@ export interface OrderListPayload {
     meta: { current_page: number; per_page: number; last_page: number; total: number };
 }
 
-export function fetchOrders(filter: OrderListFilter): Promise<{ data: OrderListPayload }> {
+export function fetchOrders(
+    filter: OrderListFilter,
+    options: { background?: boolean } = {},
+): Promise<{ data: OrderListPayload }> {
     const q = new URLSearchParams();
     q.set('date_from', filter.date_from);
     q.set('date_to', filter.date_to);
@@ -803,7 +806,12 @@ export function fetchOrders(filter: OrderListFilter): Promise<{ data: OrderListP
     if (filter.page !== undefined) q.set('page', String(filter.page));
     if (filter.per_page !== undefined) q.set('per_page', String(filter.per_page));
     const url = withBranchScope(`/api/orders?${q.toString()}`, filter.branch_ids);
-    return apiGet<{ data: OrderListPayload }>(url);
+    // An automatic refresh is not user activity: it must not keep an idle
+    // session alive (the server skips the idle-timer refresh for it).
+    return apiGet<{ data: OrderListPayload }>(
+        url,
+        options.background ? { headers: { 'X-Background-Refresh': '1' } } : {},
+    );
 }
 
 // ---- Single-order detail (v2 #2) -------------------------------

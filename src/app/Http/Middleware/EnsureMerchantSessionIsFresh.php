@@ -46,8 +46,10 @@ class EnsureMerchantSessionIsFresh
             return $this->expiredResponse($request);
         }
 
-        // Passive suspension probes enforce expiry but are not user activity.
-        if (! $request->routeIs('auth.access')) {
+        // Passive suspension probes and automatic background refreshes (an
+        // open Orders tab) enforce expiry but are not user activity. The
+        // header can only let a session expire sooner, never extend it.
+        if (! $request->routeIs('auth.access') && $request->header('X-Background-Refresh') !== '1') {
             $session->put('pos_merchant.last_activity_at', now()->timestamp);
         }
 
