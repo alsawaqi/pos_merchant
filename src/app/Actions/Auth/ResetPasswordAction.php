@@ -61,12 +61,26 @@ final readonly class ResetPasswordAction
         }
 
         DB::transaction(function () use ($user, $token, $password): void {
+            // Atomic single use (review finding): claim the token with a
+            // conditional UPDATE first. Of two requests racing with the
+            // same link exactly one changes the row; the other gets the
+            // same generic "invalid or expired" answer and changes nothing.
+            $claimed = PasswordResetToken::query()
+                ->whereKey($token->id)
+                ->whereNull('used_at')
+                ->where('expires_at', '>', now())
+                ->update(['used_at' => now()]);
+
+            if ($claimed !== 1) {
+                throw ValidationException::withMessages([
+                    'token' => [__('passwords.token')],
+                ]);
+            }
+
             $user->forceFill([
                 'password' => $password, // hashed by the model cast
                 'must_change_password' => false,
             ])->save();
-
-            $token->forceFill(['used_at' => now()])->save();
 
             // Defence in depth — any other outstanding token for this
             // user dies with the reset (SendPasswordResetLinkAction

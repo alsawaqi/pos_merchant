@@ -14,6 +14,7 @@ declare(strict_types=1);
 
 use App\Enums\MerchantRole;
 use App\Models\Company;
+use App\Models\PasswordResetToken;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -189,6 +190,42 @@ it('ends the old sessions when an admin reset link is used', function (): void {
 
     $audit = DB::table('pos_audit_logs')->where('event', 'portal_user.password_reset_completed')->sole();
     expect((string) $audit->new_values)->toContain('admin_reset_link');
+});
+
+it('lets only one of two racing requests use the same link', function (): void {
+    $company = Company::factory()->create();
+    $owner = p1MerchantOwner($company, ['password' => null]);
+    $raw = str_repeat('q', 64);
+    p1IssueLink($owner, 'invite', $raw, 72 * 60);
+
+    // The other request wins right after this one looked the token up.
+    $raced = false;
+    PasswordResetToken::retrieved(function (PasswordResetToken $token) use (&$raced): void {
+        if (! $raced) {
+            $raced = true;
+            DB::table('pos_password_reset_tokens')->where('id', $token->id)->update(['used_at' => now()]);
+        }
+    });
+
+    try {
+        $this->postJson('/auth/reset-password', [
+            'email' => $owner->email,
+            'token' => $raw,
+            'password' => 'Loser-password-9',
+            'password_confirmation' => 'Loser-password-9',
+        ])->assertStatus(422)->assertJsonValidationErrors(['token']);
+    } finally {
+        PasswordResetToken::flushEventListeners();
+    }
+
+    expect(DB::table('pos_users')->where('id', $owner->id)->value('password'))->toBeNull();
+
+    // And plainly sequential: the second use of a link is refused.
+    $raw2 = str_repeat('s', 64);
+    p1IssueLink($owner, 'invite', $raw2, 72 * 60);
+    $payload = ['email' => $owner->email, 'token' => $raw2, 'password' => 'Winner-password-9', 'password_confirmation' => 'Winner-password-9'];
+    $this->postJson('/auth/reset-password', $payload)->assertOk();
+    $this->postJson('/auth/reset-password', $payload)->assertStatus(422)->assertJsonValidationErrors(['token']);
 });
 
 it('refuses a set-password that has no numbers', function (): void {
