@@ -88,6 +88,9 @@ final readonly class SendPasswordResetLinkAction
             PasswordResetToken::query()->create([
                 'user_id' => $user->id,
                 'token_hash' => hash('sha256', $rawToken),
+                // LAUNCH-P1 P1-2: the shared table also holds the
+                // admin-issued invite / reset links.
+                'purpose' => 'forgot',
                 'expires_at' => $expiresAt,
                 'created_at' => now(),
             ]);

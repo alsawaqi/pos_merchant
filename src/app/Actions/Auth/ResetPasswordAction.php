@@ -13,8 +13,12 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Consume a forgot-password token and set the user's new password
- * (Phase D7).
+ * Consume a password link and set the user's new password (Phase D7;
+ * LAUNCH-P1 P1-2).
+ *
+ * One flow for every link in pos_password_reset_tokens: the merchant's
+ * own forgot-password link, the admin-issued set-password invite (72 h,
+ * reached via /setup-password) and the admin-issued reset (60 min).
  *
  * Every failure mode (unknown email, non-merchant row, wrong token,
  * expired token, already-used token) collapses into the SAME
@@ -23,9 +27,9 @@ use Illuminate\Validation\ValidationException;
  *
  * On success the user's must_change_password flag clears too — the
  * whole point of the forced-first-login flag is "prove you chose
- * your own secret", which a completed reset satisfies. Other
- * sessions are NOT revoked, matching the existing change-password
- * flow's behaviour.
+ * your own secret", which a completed reset satisfies. The password
+ * change rotates auth_version (User::booted), so every other session of
+ * the user ends. Audited with the kind of link used.
  */
 final readonly class ResetPasswordAction
 {
@@ -72,6 +76,8 @@ final readonly class ResetPasswordAction
                 ->whereNull('used_at')
                 ->delete();
 
+            // LAUNCH-P1 P1-2: the same page also consumes the admin-issued
+            // set-password links (pos_admin writes the purpose).
             $this->writeAuditLog->handle(new AuditLogData(
                 event: 'portal_user.password_reset_completed',
                 actorUserId: (int) $user->id,
@@ -80,7 +86,14 @@ final readonly class ResetPasswordAction
                 auditableId: (int) $user->id,
                 newValues: [
                     'reset_at' => now()->toIso8601String(),
-                    'reset_via' => 'forgot_password_link',
+                    'reset_via' => match ((string) ($token->purpose ?? 'forgot')) {
+                        'invite' => 'set_password_link',
+                        'reset' => 'admin_reset_link',
+                        default => 'forgot_password_link',
+                    },
+                    // The password change rotated auth_version: every
+                    // other session of this user has ended.
+                    'sessions_ended' => true,
                 ],
             ));
         });

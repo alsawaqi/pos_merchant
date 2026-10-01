@@ -18,8 +18,20 @@ import { useI18n } from 'vue-i18n';
 import { ArrowRight, CheckCircle2, Eye, EyeOff, Loader2, Lock, ShieldCheck, TriangleAlert } from 'lucide-vue-next';
 import { ApiError, apiPost } from '@/lib/api';
 
+/**
+ * LAUNCH-P1 P1-2: the same page serves /setup-password (mode "setup"),
+ * the link a new merchant user receives to choose their first
+ * password. Only the wording changes; the endpoint is the same.
+ */
+const props = withDefaults(defineProps<{ mode?: 'reset' | 'setup' }>(), { mode: 'reset' });
+
 const { t } = useI18n();
 const route = useRoute();
+const isSetup = computed(() => props.mode === 'setup');
+/** Translation key with the setup-mode variant when there is one. */
+function k(key: string): string {
+    return isSetup.value ? `auth.setup.${key}` : `auth.reset.${key}`;
+}
 
 const token = computed(() => (typeof route.query.token === 'string' ? route.query.token : ''));
 const email = computed(() => (typeof route.query.email === 'string' ? route.query.email : ''));
@@ -40,7 +52,7 @@ async function onSubmit(): Promise<void> {
     fieldErrors.value = {};
 
     if (password.value !== confirmPassword.value) {
-        fieldErrors.value.password = t('auth.reset.mismatch');
+        fieldErrors.value.password = t(k('mismatch'));
         return;
     }
 
@@ -68,7 +80,7 @@ async function onSubmit(): Promise<void> {
                 errorMessage.value = err.firstValidationMessage();
             }
         } else {
-            errorMessage.value = t('auth.reset.error_generic');
+            errorMessage.value = t(k('error_generic'));
         }
     } finally {
         submitting.value = false;
@@ -99,16 +111,16 @@ async function onSubmit(): Promise<void> {
                         </span>
                     </div>
                     <h1 class="mt-6 text-center text-2xl font-bold tracking-tight text-slate-950">
-                        {{ t('auth.reset.success_title') }}
+                        {{ t(k('success_title')) }}
                     </h1>
                     <p class="mt-3 text-center text-sm leading-relaxed text-slate-600">
-                        {{ t('auth.reset.success_body') }}
+                        {{ t(k('success_body')) }}
                     </p>
                     <RouterLink
                         to="/login"
                         class="mt-8 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-indigo-600 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-teal-600/30 transition hover:-translate-y-0.5 hover:shadow-xl"
                     >
-                        {{ t('auth.reset.go_to_login') }}
+                        {{ t(k('go_to_login')) }}
                     </RouterLink>
                 </template>
 
@@ -120,16 +132,16 @@ async function onSubmit(): Promise<void> {
                         </span>
                     </div>
                     <h1 class="mt-6 text-center text-2xl font-bold tracking-tight text-slate-950">
-                        {{ t('auth.reset.invalid_title') }}
+                        {{ t(k('invalid_title')) }}
                     </h1>
                     <p class="mt-3 text-center text-sm leading-relaxed text-slate-600">
-                        {{ t('auth.reset.invalid_body') }}
+                        {{ t(k('invalid_body')) }}
                     </p>
                     <RouterLink
                         to="/forgot-password"
                         class="mt-8 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-indigo-600 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-teal-600/30 transition hover:-translate-y-0.5 hover:shadow-xl"
                     >
-                        {{ t('auth.reset.request_new') }}
+                        {{ t(k('request_new')) }}
                     </RouterLink>
                     <RouterLink
                         to="/login"
@@ -142,10 +154,10 @@ async function onSubmit(): Promise<void> {
                 <!-- New password form -->
                 <template v-else>
                     <h1 class="mt-8 text-2xl font-bold tracking-tight text-slate-950">
-                        {{ t('auth.reset.title') }}
+                        {{ t(k('title')) }}
                     </h1>
                     <p class="mt-2 text-sm leading-relaxed text-slate-600">
-                        {{ t('auth.reset.subtitle', { email }) }}
+                        {{ t(k('subtitle'), { email }) }}
                     </p>
 
                     <div
@@ -171,7 +183,7 @@ async function onSubmit(): Promise<void> {
 
                         <!-- New password -->
                         <label class="block">
-                            <span class="text-sm font-semibold text-slate-800">{{ t('auth.reset.new') }}</span>
+                            <span class="text-sm font-semibold text-slate-800">{{ t(k('new')) }}</span>
                             <div class="group relative mt-2">
                                 <span class="pointer-events-none absolute inset-y-0 start-0 grid w-11 place-items-center text-slate-400 transition group-focus-within:text-teal-600">
                                     <Lock class="size-4" />
@@ -195,12 +207,12 @@ async function onSubmit(): Promise<void> {
                             <p v-if="fieldErrors.password" class="mt-1.5 text-xs font-semibold text-rose-600">
                                 {{ fieldErrors.password }}
                             </p>
-                            <p v-else class="mt-1.5 text-xs text-slate-500">{{ t('auth.reset.hint') }}</p>
+                            <p v-else class="mt-1.5 text-xs text-slate-500">{{ t(k('hint')) }}</p>
                         </label>
 
                         <!-- Confirm -->
                         <label class="block">
-                            <span class="text-sm font-semibold text-slate-800">{{ t('auth.reset.confirm') }}</span>
+                            <span class="text-sm font-semibold text-slate-800">{{ t(k('confirm')) }}</span>
                             <div class="group relative mt-2">
                                 <span class="pointer-events-none absolute inset-y-0 start-0 grid w-11 place-items-center text-slate-400 transition group-focus-within:text-teal-600">
                                     <Lock class="size-4" />
@@ -222,7 +234,7 @@ async function onSubmit(): Promise<void> {
                             class="group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-indigo-600 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-teal-600/30 transition hover:-translate-y-0.5 hover:shadow-xl disabled:cursor-wait disabled:opacity-70 disabled:hover:translate-y-0"
                         >
                             <Loader2 v-if="submitting" class="size-4 animate-spin" />
-                            <span>{{ submitting ? t('auth.reset.submitting') : t('auth.reset.submit') }}</span>
+                            <span>{{ submitting ? t(k('submitting')) : t(k('submit')) }}</span>
                             <ArrowRight v-if="!submitting" class="size-4 transition group-hover:translate-x-1 rtl:group-hover:-translate-x-1" />
                         </button>
                     </form>

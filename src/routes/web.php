@@ -112,6 +112,11 @@ Route::middleware(RedirectIfAuthenticated::class)->group(function (): void {
         ->name('password.request');
     Route::get('/reset-password', SpaController::class)
         ->name('password.reset');
+    // LAUNCH-P1 P1-2 — a new merchant user's "set your password" page,
+    // reached from the admin's set-password link. Same token endpoint
+    // (POST /auth/reset-password) as the forgot-password flow.
+    Route::get('/setup-password', SpaController::class)
+        ->name('password.setup');
 
     // Phase D8 — the TOTP code page a 2FA-enrolled login bounces
     // to. Guest-only by definition: the pending challenge lives in

@@ -86,6 +86,16 @@ const routes: RouteRecordRaw[] = [
         meta: { guestOnly: true },
     },
     {
+        // LAUNCH-P1 P1-2 — a new user's "set your password" page, reached
+        // from the set-password link MITHQAL sends (email or WhatsApp).
+        // Same page and endpoint as the reset, worded for a first visit.
+        path: '/setup-password',
+        name: 'setup-password',
+        component: ResetPassword,
+        props: { mode: 'setup' },
+        meta: { guestOnly: true },
+    },
+    {
         // Phase D8 — TOTP code step. The login POST parks the
         // pending state server-side and redirects here; the page
         // bounces back to /login when nothing is pending.

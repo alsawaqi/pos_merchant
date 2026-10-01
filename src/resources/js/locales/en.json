@@ -68,7 +68,7 @@
             "confirm": "Confirm new password",
             "submit": "Reset password",
             "submitting": "Resetting…",
-            "hint": "At least 8 characters.",
+            "hint": "At least 8 characters, with letters and numbers.",
             "mismatch": "The passwords do not match.",
             "success_title": "Password reset",
             "success_body": "Your password has been updated. Sign in with your new password.",
@@ -77,6 +77,23 @@
             "invalid_body": "This reset link is no longer valid. Reset links expire after 60 minutes and can be used once — request a fresh one below.",
             "request_new": "Request a new link",
             "error_generic": "Could not reset your password. Please try again."
+        },
+        "setup": {
+            "title": "Set your password",
+            "subtitle": "Welcome to MITHQAL. Choose the password for {email}.",
+            "new": "Password",
+            "confirm": "Confirm password",
+            "submit": "Set my password",
+            "submitting": "Saving…",
+            "hint": "At least 8 characters, with letters and numbers.",
+            "mismatch": "The passwords do not match.",
+            "success_title": "Your password is set",
+            "success_body": "Your account is ready. Sign in with your email and the password you just chose.",
+            "go_to_login": "Go to sign in",
+            "invalid_title": "Link invalid or expired",
+            "invalid_body": "This set-password link is no longer valid. Links work once and expire after 72 hours. Ask your MITHQAL contact for a new link, or request a reset link below.",
+            "request_new": "Request a reset link",
+            "error_generic": "Could not set your password. Please try again."
         },
         "two_factor": {
             "title": "Two-step verification",

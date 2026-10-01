@@ -173,6 +173,9 @@ return new class extends Migration
             $table->timestamp('expires_at');
             $table->timestamp('used_at')->nullable();
             $table->timestamp('created_at')->useCurrent();
+            // pos_admin 2026_10_01_000001 (LAUNCH-P1 P1-2).
+            $table->string('purpose', 16)->default('forgot');
+            $table->unsignedBigInteger('issued_by_user_id')->nullable()->index();
         });
 
         // ---- pos_staff (Phase 4.6) --------------------------------

@@ -26,6 +26,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable([
     'user_id',
     'token_hash',
+    // LAUNCH-P1 P1-2: invite | reset (issued by an admin in pos_admin)
+    // | forgot (this portal's own forgot-password).
+    'purpose',
+    'issued_by_user_id',
     'expires_at',
     'used_at',
     'created_at',
