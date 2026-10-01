@@ -108,6 +108,23 @@ it('ends an open session with company_inactive when a merchant is closed', funct
     $this->getJson('/auth/user')->assertForbidden()->assertJsonPath('code', 'company_inactive');
 });
 
+it('blocks the portal while a merchant is suspended during onboarding and lets it back in after', function (): void {
+    $company = Company::factory()->create(['status' => 'onboarding']);
+    $owner = p1MerchantOwner($company);
+    $this->postJson('/auth/login', ['email' => $owner->email, 'password' => 'Owner-password-1'])->assertOk();
+
+    // The admin suspends the onboarding merchant (review finding).
+    DB::table('pos_companies')->where('id', $company->id)->update(['status' => 'suspended']);
+    $this->getJson('/auth/user')->assertForbidden()->assertJsonPath('code', 'company_suspended');
+    $this->postJson('/auth/login', ['email' => $owner->email, 'password' => 'Owner-password-1'])
+        ->assertUnprocessable()
+        ->assertJsonPath('errors.email.0', 'Account suspended.');
+
+    // Suspension lifted back to onboarding: the portal works again.
+    DB::table('pos_companies')->where('id', $company->id)->update(['status' => 'onboarding']);
+    $this->postJson('/auth/login', ['email' => $owner->email, 'password' => 'Owner-password-1'])->assertOk();
+});
+
 it('still answers a suspended merchant with Account suspended', function (): void {
     $company = Company::factory()->create(['status' => 'suspended']);
     $owner = p1MerchantOwner($company);
