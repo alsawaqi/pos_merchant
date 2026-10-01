@@ -27,7 +27,6 @@ use App\Enums\MerchantRole;
 use App\Models\Company;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Hash;
 
 uses(RefreshDatabase::class);
 
@@ -62,7 +61,7 @@ it('lists portal users scoped to the actor company', function (): void {
 
 // =================== CREATE ===================
 
-it('creates a teammate with a generated 20-char password returned once', function (): void {
+it('creates a teammate with a set-password link and no password', function (): void {
     $ctx = makeMerchantActor();
 
     $response = $this->postJson('/api/portal-users', [
@@ -71,13 +70,15 @@ it('creates a teammate with a generated 20-char password returned once', functio
         'role' => MerchantRole::Manager->value,
     ])->assertCreated();
 
-    $plaintext = $response->json('plaintext_password');
-    expect($plaintext)->toBeString()->and(strlen($plaintext))->toBe(20);
+    // Owner follow-up 2026-10-01: no password is generated or shown.
+    $response->assertJsonMissingPath('plaintext_password')
+        ->assertJsonPath('set_password_link.purpose', 'invite');
+    expect((string) $response->json('set_password_link.url'))->toContain('/setup-password?token=');
 
     $created = User::query()->where('email', 'teammate@example.test')->firstOrFail();
     expect($created->user_type)->toBe('merchant');
     expect($created->company_id)->toBe($ctx['company']->id);
-    expect(Hash::check($plaintext, $created->password))->toBeTrue();
+    expect($created->password)->toBeNull();
 
     $this->assertDatabaseHas('pos_audit_logs', [
         'event' => 'portal_user.created',
@@ -133,24 +134,24 @@ it('returns 404 when updating a teammate from a different company', function ():
 
 // =================== RESET PASSWORD ===================
 
-it('resets a teammate password and returns the new plaintext once', function (): void {
+it('resets a teammate password with a link and blocks the old one', function (): void {
     $ctx = makeMerchantActor();
     $teammate = User::factory()->create([
         'company_id' => $ctx['company']->id,
         'user_type' => 'merchant',
         'password' => 'initial-pass-1234567',
     ]);
-    $hashBefore = $teammate->fresh()->password;
 
     $response = $this->postJson("/api/portal-users/{$teammate->id}/reset-password")
         ->assertOk();
 
-    $plaintext = $response->json('plaintext_password');
-    expect($plaintext)->toBeString()->and(strlen($plaintext))->toBe(20);
+    // Owner follow-up 2026-10-01: a 60-minute link, never a password,
+    // and the old password stops working at once.
+    $response->assertJsonMissingPath('plaintext_password')
+        ->assertJsonPath('set_password_link.purpose', 'reset');
 
     $teammate->refresh();
-    expect($teammate->password)->not->toBe($hashBefore);
-    expect(Hash::check($plaintext, $teammate->password))->toBeTrue();
+    expect($teammate->password)->toBeNull();
 
     $this->assertDatabaseHas('pos_audit_logs', [
         'event' => 'portal_user.password_reset',

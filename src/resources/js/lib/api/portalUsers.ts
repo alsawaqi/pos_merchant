@@ -5,10 +5,9 @@
  * All endpoints are auto-scoped server-side to the actor's
  * company — no merchant uuid in the URL.
  *
- * The create + reset-password responses carry a one-shot
- * `plaintext_password` field OUTSIDE the `data` envelope so the
- * frontend has to consciously handle it (vs accidentally storing
- * it alongside other user fields).
+ * Owner follow-up 2026-10-01: the create + reset-password responses
+ * carry a one-time `set_password_link` OUTSIDE the `data` envelope —
+ * never a password. Reset also blocks the old password at once.
  */
 
 import { apiGet, apiPatch, apiPost, type JsonValue } from '@/lib/api';
@@ -35,6 +34,11 @@ export interface PortalUser {
     last_login_at: string | null;
     invited_at: string | null;
     invited_by_admin_id: number | null;
+    /** The user has a usable password. */
+    password_set?: boolean;
+    /** No usable password yet (new, or reset): waiting for their link. */
+    setup_pending?: boolean;
+    set_password_link_expires_at?: string | null;
     created_at: string | null;
 }
 
@@ -53,9 +57,24 @@ export interface UpdatePortalUserPayload {
     branch_scope?: number[] | null;
 }
 
-export interface PortalUserWithPasswordResponse {
+/**
+ * Owner follow-up 2026-10-01 — a single-use set-password link, returned
+ * ONCE on create / reset (never a password). Same shape as pos_admin's.
+ */
+export interface SetPasswordLink {
+    url: string;
+    /** ISO-8601. Invite links last 72 hours, reset links 60 minutes. */
+    expires_at: string;
+    purpose: 'invite' | 'reset';
+    emailed: boolean;
+    mail_configured: boolean;
+    email_error: string | null;
+}
+
+export interface PortalUserWithLinkResponse {
     data: PortalUser;
-    plaintext_password: string;
+    /** Shown once in the "Copy set-password link" dialog, then forgotten. */
+    set_password_link: SetPasswordLink;
 }
 
 export function listPortalUsers(): Promise<{ data: PortalUser[] }> {
@@ -64,8 +83,8 @@ export function listPortalUsers(): Promise<{ data: PortalUser[] }> {
 
 export function createPortalUser(
     payload: CreatePortalUserPayload,
-): Promise<PortalUserWithPasswordResponse> {
-    return apiPost<PortalUserWithPasswordResponse>(
+): Promise<PortalUserWithLinkResponse> {
+    return apiPost<PortalUserWithLinkResponse>(
         '/api/portal-users',
         payload as unknown as JsonValue,
     );
@@ -91,8 +110,8 @@ export function reactivatePortalUser(id: number): Promise<{ data: PortalUser }> 
 
 export function resetPortalUserPassword(
     id: number,
-): Promise<PortalUserWithPasswordResponse> {
-    return apiPost<PortalUserWithPasswordResponse>(
+): Promise<PortalUserWithLinkResponse> {
+    return apiPost<PortalUserWithLinkResponse>(
         `/api/portal-users/${id}/reset-password`,
     );
 }

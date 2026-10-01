@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Resources\Portal;
 
+use App\Models\PasswordResetToken;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
 use Illuminate\Http\Request;
@@ -55,6 +56,17 @@ class PortalUserResource extends JsonResource
             'last_login_at' => $this->last_login_at?->toIso8601String(),
             'invited_at' => $this->invited_at?->toIso8601String(),
             'invited_by_admin_id' => $this->invited_by_admin_id,
+            // Owner follow-up 2026-10-01: logins get set-password links.
+            // `setup_pending` = no usable password yet (new, or reset);
+            // the link itself is only ever shown once.
+            'password_set' => $this->password !== null,
+            'setup_pending' => $this->password === null,
+            'set_password_link_expires_at' => PasswordResetToken::query()
+                ->where('user_id', $this->id)
+                ->whereNull('used_at')
+                ->where('expires_at', '>', now())
+                ->orderByDesc('id')
+                ->value('expires_at')?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
         ];
     }

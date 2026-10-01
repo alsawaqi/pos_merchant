@@ -384,11 +384,13 @@
         },
         "actions": {
             "edit": "Edit",
-            "reset_password": "Reset password",
+            "reset_password": "Send reset link",
+            "resend_link": "Resend set-password link",
             "assign_roles": "Roles",
             "suspend": "Suspend",
             "reactivate": "Reactivate"
         },
+        "pending_password": "Waiting for password",
         "no_roles": "No roles assigned",
         "assign_roles": {
             "title": "Assign roles",
@@ -400,7 +402,7 @@
         "create": {
             "button": "Create teammate",
             "title": "Create a new teammate",
-            "subtitle": "We will generate a one-time password you can share with them out of band.",
+            "subtitle": "They get a link to choose their own password: by email when email is set up, and you can copy it to send by WhatsApp.",
             "submit": "Create teammate",
             "submitting": "Creating…"
         },
@@ -409,13 +411,26 @@
             "submit": "Save changes",
             "submitting": "Saving…"
         },
-        "password_modal": {
-            "title": "One-time password",
-            "subtitle": "Copy this password and share it with {name} ({email}) through a secure channel.",
-            "one_shot_warning": "This password is shown once. After you close this dialog it cannot be retrieved — only reset.",
-            "password_label": "Generated password",
-            "copy": "Copy",
+        "reset_confirm": {
+            "title": "Send a password reset link?",
+            "message": "{name}'s current password stops working now and they are signed out on every device. They choose a new password with the link (valid 60 minutes).",
+            "confirm": "Send reset link"
+        },
+        "link_dialog": {
+            "title_invite": "Teammate created — send the set-password link",
+            "title_reset": "Password reset link",
+            "intro": "{name} chooses their own password with this link. Nobody else ever sees it.",
+            "emailed": "The link was emailed to {email}. You can also copy it below.",
+            "email_failed": "The email could not be sent. Copy the link and send it another way (for example WhatsApp).",
+            "not_emailed": "Email is not set up yet, so nothing was emailed. Copy the link and send it (for example by WhatsApp).",
+            "link_label": "Set-password link",
+            "copy": "Copy set-password link",
             "copied": "Copied",
+            "copy_failed": "Copying is blocked by the browser. The link is selected; press Ctrl+C.",
+            "expires": "Expires",
+            "valid_invite": "valid for 72 hours",
+            "valid_reset": "valid for 60 minutes",
+            "warning": "Anyone with this link can set the password, and it works only once. Send it only to {email}. This link is shown only now.",
             "done": "Done"
         },
         "fields": {

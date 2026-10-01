@@ -44,6 +44,13 @@ use Spatie\Permission\PermissionRegistrar;
 class AuthenticatedSessionController extends Controller
 {
     /**
+     * Shown to a user with no usable password (reset by an admin or by
+     * their team's owner, or invited and not set up yet): the old
+     * password is gone on purpose and only the set-password link works.
+     */
+    public const AWAITING_LINK_MESSAGE = 'Your password was reset or has not been set yet. Open the set-password link you received to choose a new one. If the link expired, use "Forgot password?" or ask for a new link.';
+
+    /**
      * @throws ValidationException
      */
     public function store(LoginRequest $request): JsonResponse|RedirectResponse
@@ -74,7 +81,15 @@ class AuthenticatedSessionController extends Controller
             if (! $passwordOk) {
                 RateLimiter::hit($request->throttleKey(), 60);
 
-                return $this->failedLogin($request);
+                // Owner follow-up 2026-10-01: a user whose password was
+                // reset (or who has not set one yet) has NO usable
+                // password — say "use the set-password link", not
+                // "wrong password".
+                $awaitingLink = $candidate !== null
+                    && $candidate->status === 'active'
+                    && $candidate->password === null;
+
+                return $this->failedLogin($request, $awaitingLink ? self::AWAITING_LINK_MESSAGE : null);
             }
 
             // LAUNCH-P1 P1-13 (decision B7): onboarding merchants sign in;
@@ -175,16 +190,18 @@ class AuthenticatedSessionController extends Controller
     /**
      * @throws ValidationException
      */
-    private function failedLogin(LoginRequest $request): RedirectResponse
+    private function failedLogin(LoginRequest $request, ?string $message = null): RedirectResponse
     {
+        $message ??= __('auth.failed');
+
         if ($request->expectsJson()) {
             throw ValidationException::withMessages([
-                'email' => __('auth.failed'),
+                'email' => $message,
             ]);
         }
 
         return back()
-            ->withErrors(['email' => __('auth.failed')])
+            ->withErrors(['email' => $message])
             ->withInput($request->only('email', 'remember'));
     }
 

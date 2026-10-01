@@ -2,9 +2,13 @@
 /**
  * Portal Users — merchant manages their own team.
  *
- * Sprint Phase 4.5. List teammates, create new ones (server
- * generates a one-shot password), edit (name / phone / role /
- * branch scope), suspend / reactivate, reset password.
+ * Sprint Phase 4.5. List teammates, create new ones, edit (name /
+ * phone / role / branch scope), suspend / reactivate, reset password.
+ *
+ * Owner follow-up 2026-10-01: creating a teammate and "reset password"
+ * show a one-time "Copy set-password link" dialog (also emailed when
+ * mail is configured) — no password is ever generated or shown. A reset
+ * asks first: the teammate's old password stops working at once.
  *
  * Permissions:
  *   - Page reachable when MerchantPermission.PortalUsersView
@@ -20,11 +24,12 @@
  * branch_scope=null, otherwise the multi-select array.
  */
 
-import { Copy, KeyRound, Pencil, Plus, RotateCw, ShieldCheck, ShieldOff, Users } from 'lucide-vue-next';
+import { KeyRound, Pencil, Plus, RotateCw, ShieldCheck, ShieldOff, Users } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import BaseModal from '@/Components/BaseModal.vue';
+import SetPasswordLinkDialog from '@/Components/SetPasswordLinkDialog.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
 import {
@@ -37,6 +42,7 @@ import {
     type CreatePortalUserPayload,
     type PortalUser,
     type PortalUserStatus,
+    type SetPasswordLink,
 } from '@/lib/api/portalUsers';
 import { listBranches, type Branch } from '@/lib/api/branches';
 import { assignRolesToPortalUser, listRoles, type Role } from '@/lib/api/roles';
@@ -84,11 +90,10 @@ const createForm = reactive<CreatePortalUserPayload & { scope_all: boolean }>({
     scope_all: true,
 });
 
-// ---- One-shot password modal ------------------------------------
-const passwordModalOpen = ref(false);
-const passwordModalUser = ref<PortalUser | null>(null);
-const passwordModalSecret = ref('');
-const passwordCopied = ref(false);
+// ---- One-time "Copy set-password link" dialog --------------------
+const linkDialog = ref<{ link: SetPasswordLink; user: PortalUser } | null>(null);
+// A reset blocks the teammate's old password at once: ask first.
+const resetConfirmUser = ref<PortalUser | null>(null);
 
 // ---- Edit modal -------------------------------------------------
 const editOpen = ref(false);
@@ -246,10 +251,8 @@ async function submitCreate(): Promise<void> {
             branch_scope: createForm.scope_all ? null : (createForm.branch_scope ?? []),
         });
         createOpen.value = false;
-        passwordModalUser.value = response.data;
-        passwordModalSecret.value = response.plaintext_password;
-        passwordCopied.value = false;
-        passwordModalOpen.value = true;
+        linkDialog.value = { link: response.set_password_link, user: response.data };
+        void fetchUsers();
     } catch (err) {
         if (err instanceof ApiError && err.isValidationError()) {
             createFieldErrors.value = err.payload.errors;
@@ -262,26 +265,8 @@ async function submitCreate(): Promise<void> {
     }
 }
 
-async function copyPassword(): Promise<void> {
-    if (!passwordModalSecret.value) {
-        return;
-    }
-    try {
-        await navigator.clipboard.writeText(passwordModalSecret.value);
-        passwordCopied.value = true;
-        window.setTimeout(() => { passwordCopied.value = false; }, 2000);
-    } catch {
-        const el = document.getElementById('portal-user-password-out');
-        if (el instanceof HTMLInputElement) {
-            el.select();
-        }
-    }
-}
-
-function closePasswordModal(): void {
-    passwordModalOpen.value = false;
-    passwordModalUser.value = null;
-    passwordModalSecret.value = '';
+function closeLinkDialog(): void {
+    linkDialog.value = null;
     void fetchUsers();
 }
 
@@ -349,15 +334,28 @@ async function toggleSuspension(row: PortalUser): Promise<void> {
 
 // ---- Reset password ---------------------------------------------
 
-async function onResetPassword(row: PortalUser): Promise<void> {
+/**
+ * "Resend set-password link" for a teammate waiting for one (no
+ * confirmation), otherwise "Send reset link" — confirmed first, because
+ * the teammate's old password stops working at once.
+ */
+function onResetPassword(row: PortalUser): void {
+    if (row.setup_pending) {
+        void sendPasswordLink(row);
+        return;
+    }
+    resetConfirmUser.value = row;
+}
+
+async function sendPasswordLink(row: PortalUser): Promise<void> {
     rowBusy.value[row.id] = true;
     try {
         const response = await resetPortalUserPassword(row.id);
-        passwordModalUser.value = response.data;
-        passwordModalSecret.value = response.plaintext_password;
-        passwordCopied.value = false;
-        passwordModalOpen.value = true;
+        resetConfirmUser.value = null;
+        linkDialog.value = { link: response.set_password_link, user: response.data };
+        void fetchUsers();
     } catch (err) {
+        resetConfirmUser.value = null;
         error.value = err instanceof Error ? err.message : 'Reset failed';
     } finally {
         rowBusy.value[row.id] = false;
@@ -526,6 +524,9 @@ function toggleBranchInCreate(branchId: number): void {
                                     <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold" :class="statusBadgeClass(row.status)">
                                         {{ statusLabel(row.status) }}
                                     </span>
+                                    <p v-if="row.setup_pending" class="mt-1 text-[10px] font-semibold uppercase tracking-wider text-amber-700">
+                                        {{ t('portal_users.pending_password') }}
+                                    </p>
                                 </td>
                                 <td class="px-5 py-4 text-xs font-mono text-slate-500">{{ formatTimestamp(row.last_login_at) }}</td>
                                 <td class="px-5 py-4 text-end">
@@ -547,7 +548,7 @@ function toggleBranchInCreate(branchId: number): void {
                                             @click="onResetPassword(row)"
                                         >
                                             <RotateCw class="size-3.5" :class="{ 'animate-spin': rowBusy[row.id] }" />
-                                            {{ t('portal_users.actions.reset_password') }}
+                                            {{ row.setup_pending ? t('portal_users.actions.resend_link') : t('portal_users.actions.reset_password') }}
                                         </button>
                                         <button
                                             v-if="can(MerchantPermission.RolesManage)"
@@ -650,46 +651,38 @@ function toggleBranchInCreate(branchId: number): void {
             </template>
         </BaseModal>
 
-        <!-- ============== ONE-SHOT PASSWORD MODAL ============== -->
-        <BaseModal v-if="passwordModalOpen && passwordModalUser" size="lg" @close="closePasswordModal">
-            <template #header>
-                <h2 class="text-lg font-semibold text-slate-950">{{ t('portal_users.password_modal.title') }}</h2>
-                <p class="mt-1 text-sm text-slate-500">
-                    {{ t('portal_users.password_modal.subtitle', { name: passwordModalUser.name, email: passwordModalUser.email }) }}
-                </p>
-            </template>
+        <!-- ======= ONE-TIME "COPY SET-PASSWORD LINK" (owner follow-up) ======= -->
+        <SetPasswordLinkDialog
+            v-if="linkDialog"
+            :link="linkDialog.link"
+            :user-name="linkDialog.user.name"
+            :user-email="linkDialog.user.email"
+            @close="closeLinkDialog"
+        />
 
-            <div class="space-y-4">
-                <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
-                    {{ t('portal_users.password_modal.one_shot_warning') }}
-                </div>
-
-                <label class="block">
-                    <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('portal_users.password_modal.password_label') }}</span>
-                    <div class="mt-2 flex gap-2">
-                        <input
-                            id="portal-user-password-out"
-                            :value="passwordModalSecret"
-                            readonly
-                            class="flex-1 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-mono tracking-wider text-slate-950 focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
-                        >
-                        <button
-                            type="button"
-                            class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-semibold transition"
-                            :class="passwordCopied ? 'border-teal-300 bg-teal-50 text-teal-700' : 'text-slate-700 hover:bg-slate-50'"
-                            @click="copyPassword"
-                        >
-                            <Copy class="size-4" />
-                            {{ passwordCopied ? t('portal_users.password_modal.copied') : t('portal_users.password_modal.copy') }}
-                        </button>
-                    </div>
-                </label>
-            </div>
-
+        <!-- Reset asks first: the old password stops working at once. -->
+        <BaseModal
+            v-if="resetConfirmUser"
+            :title="t('portal_users.reset_confirm.title')"
+            size="md"
+            :loading="rowBusy[resetConfirmUser.id]"
+            @close="resetConfirmUser = null"
+        >
+            <p class="text-sm text-slate-700" data-testid="reset-confirm-message">
+                {{ t('portal_users.reset_confirm.message', { name: resetConfirmUser.name }) }}
+            </p>
             <template #footer>
                 <div class="flex justify-end gap-2">
-                    <button type="button" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800" @click="closePasswordModal">
-                        {{ t('portal_users.password_modal.done') }}
+                    <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="resetConfirmUser = null">
+                        {{ t('common.cancel') }}
+                    </button>
+                    <button
+                        type="button"
+                        :disabled="rowBusy[resetConfirmUser.id]"
+                        class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                        @click="sendPasswordLink(resetConfirmUser)"
+                    >
+                        {{ t('portal_users.reset_confirm.confirm') }}
                     </button>
                 </div>
             </template>

@@ -5,20 +5,24 @@ declare(strict_types=1);
 namespace App\Actions\Portal;
 
 use App\Actions\Admin\SeedMerchantRolesAction;
+use App\Actions\Auth\IssueSetPasswordLinkAction;
 use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
 use App\Models\User;
+use App\Support\Auth\SetPasswordLink;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
  * Merchant-side "create a teammate" — same shape as the pos_admin
- * CreateMerchantUserAction (generates password, returns plaintext
- * ONCE) but actor + tenant come from the SIGNED-IN merchant user
- * rather than a platform admin, and the gates are different:
+ * CreateMerchantUserAction: the login is created WITHOUT a password and
+ * a single-use 72-hour set-password link is returned once (copy dialog)
+ * and emailed when mail is configured (owner follow-up 2026-10-01: no
+ * password generated or shown anywhere). Actor + tenant come from the
+ * SIGNED-IN merchant user rather than a platform admin, and the gates
+ * are different:
  *
  *   - No "≥1 branch + ≥1 device" check (that gate is for the
  *     FIRST user, which is provisioned by pos_admin; subsequent
@@ -47,17 +51,18 @@ final readonly class CreatePortalUserAction
         private SeedMerchantRolesAction $seedRoles,
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
+        private IssueSetPasswordLinkAction $issueLink,
     ) {}
 
     /**
      * @param  array{name: string, email: string, phone?: string|null, role: string, branch_scope?: array<int>|null}  $attributes
-     * @return array{user: User, plaintext_password: string}
+     * @return array{user: User, link: SetPasswordLink}
      */
     public function handle(array $attributes, User $actor): array
     {
         $companyId = $this->tenant->requiredId();
 
-        return DB::transaction(function () use ($attributes, $actor, $companyId): array {
+        $user = DB::transaction(function () use ($attributes, $actor, $companyId): User {
             // Ensure all 5 default roles + the latest permission
             // catalogue exist under this company's team scope.
             // Idempotent — safe on every call. Cheap because spatie
@@ -66,26 +71,18 @@ final readonly class CreatePortalUserAction
             app(AuthorizePortalUserManagement::class)->handle($actor, roles: [$attributes['role']],
                 grantScope: $attributes['branch_scope'] ?? null, changesScope: true);
 
-            // 20-char alphanumeric — same convention as pos_admin
-            // (~120 bits of entropy, copy/paste-safe).
-            $plaintextPassword = Str::password(
-                length: 20,
-                letters: true,
-                numbers: true,
-                symbols: false,
-                spaces: false,
-            );
-
             /** @var User $user */
             $user = User::query()->create([
                 'company_id' => $companyId,
                 'name' => $attributes['name'],
                 'email' => $attributes['email'],
                 'phone' => $attributes['phone'] ?? null,
-                'password' => $plaintextPassword, // bcrypted via cast
+                // Owner follow-up 2026-10-01: no password is generated
+                // or shown. The teammate chooses one with the link.
+                'password' => null,
                 'user_type' => 'merchant',
                 'status' => 'active',
-                'must_change_password' => true,
+                'must_change_password' => false,
                 'branch_scope_json' => $attributes['branch_scope'] ?? null,
                 'setup_token_hash' => null,
                 'setup_token_expires_at' => null,
@@ -127,13 +124,16 @@ final readonly class CreatePortalUserAction
                     'role' => $attributes['role'],
                     'branch_scope' => $attributes['branch_scope'] ?? 'all',
                     'created_by_side' => 'merchant_portal',
+                    'password' => 'set_password_link',
                 ],
             ));
 
-            return [
-                'user' => $user,
-                'plaintext_password' => $plaintextPassword,
-            ];
+            return $user;
         });
+
+        // After commit: the email must never point at a rolled-back user.
+        $link = $this->issueLink->handle($user, 'invite', $actor);
+
+        return ['user' => $user, 'link' => $link];
     }
 }

@@ -31,7 +31,7 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
  *   PATCH  /api/portal-users/{user}             → update (name/phone/role/scope)
  *   POST   /api/portal-users/{user}/suspend     → suspend
  *   POST   /api/portal-users/{user}/reactivate  → reactivate
- *   POST   /api/portal-users/{user}/reset-password → mint a new pw
+ *   POST   /api/portal-users/{user}/reset-password → block old pw, send link
  *
  * All endpoints are auto-scoped to the signed-in user's
  * company_id via MerchantTenantContext — there is no company
@@ -83,8 +83,8 @@ class PortalUsersController extends Controller
     /**
      * POST /api/portal-users
      *
-     * Returns the new user + a one-shot plaintext password the
-     * SPA surfaces in a copy-once modal then forgets.
+     * Returns the new user (no password) + a one-time set-password
+     * link the SPA shows in its copy dialog, then forgets.
      */
     public function store(CreatePortalUserRequest $request): JsonResponse
     {
@@ -108,7 +108,9 @@ class PortalUsersController extends Controller
 
         return response()->json([
             'data' => (new PortalUserResource($result['user']))->resolve($request),
-            'plaintext_password' => $result['plaintext_password'],
+            // Owner follow-up 2026-10-01: a one-time set-password link,
+            // never a password.
+            'set_password_link' => $result['link']->toArray(),
         ], 201);
     }
 
@@ -203,8 +205,8 @@ class PortalUsersController extends Controller
     /**
      * POST /api/portal-users/{user}/reset-password
      *
-     * Returns the new plaintext password ONCE — same envelope as
-     * the create response.
+     * Blocks the teammate's old password at once, ends their sessions and
+     * returns a one-time set-password link — same envelope as create.
      */
     public function resetPassword(Request $request, User $portalUser): JsonResponse
     {
@@ -215,7 +217,7 @@ class PortalUsersController extends Controller
 
         return response()->json([
             'data' => (new PortalUserResource($result['user']))->resolve($request),
-            'plaintext_password' => $result['plaintext_password'],
+            'set_password_link' => $result['link']->toArray(),
         ]);
     }
 
