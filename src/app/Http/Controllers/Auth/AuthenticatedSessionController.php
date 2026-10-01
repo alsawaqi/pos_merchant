@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Models\User;
+use App\Support\Auth\CompanyAccess;
 use App\Support\Auth\PendingTwoFactorChallenge;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -76,10 +77,13 @@ class AuthenticatedSessionController extends Controller
                 return $this->failedLogin($request);
             }
 
-            if ($candidate !== null && ($candidate->company_id === null
-                || ! DB::table('pos_companies')->where('id', $candidate->company_id)->where('status', 'active')->whereNull('deleted_at')->exists())) {
+            // LAUNCH-P1 P1-13 (decision B7): onboarding merchants sign in;
+            // only suspended / inactive (or a missing company) are refused,
+            // each with its own message.
+            $denial = $candidate === null ? null : CompanyAccess::denial($candidate->company_id);
+            if ($denial !== null) {
                 RateLimiter::hit($request->throttleKey(), 60);
-                throw ValidationException::withMessages(['email' => 'Account suspended.']);
+                throw ValidationException::withMessages(['email' => $denial['message']]);
             }
 
             // Phase D8 — a TOTP-enrolled account does NOT get a

@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Support\Auth\CompanyAccess;
 use App\Support\MerchantTenantContext;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Spatie\Permission\PermissionRegistrar;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -41,16 +41,17 @@ class SetMerchantTenantContext
     {
         $user = $request->user();
 
-        if ($user !== null && ($user->company_id === null
-            || ! DB::table('pos_companies')->where('id', $user->company_id)
-                ->where('status', 'active')->whereNull('deleted_at')->exists())) {
+        // LAUNCH-P1 P1-13 (decision B7): onboarding merchants work; only
+        // suspended / inactive (or a missing company) block.
+        $denial = $user === null ? null : CompanyAccess::denial($user->company_id);
+        if ($denial !== null) {
             Auth::guard('web')->logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();
 
             return $request->expectsJson()
-                ? response()->json(['message' => 'Account suspended.', 'code' => 'company_suspended'], 403)
-                : redirect('/login')->withErrors(['email' => 'Account suspended.']);
+                ? response()->json(['message' => $denial['message'], 'code' => $denial['code']], 403)
+                : redirect('/login')->withErrors(['email' => $denial['message']]);
         }
         if ($user !== null && $user->company_id !== null) {
             $this->tenant->set((int) $user->company_id);

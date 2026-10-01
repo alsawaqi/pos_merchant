@@ -8,6 +8,7 @@ use App\Actions\Auth\CompleteTwoFactorChallengeAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\TwoFactorChallengeRequest;
 use App\Models\User;
+use App\Support\Auth\CompanyAccess;
 use App\Support\Auth\PendingTwoFactorChallenge;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -122,9 +123,10 @@ class TwoFactorChallengeController extends Controller
             ->where('status', 'active')
             ->find($userId);
 
+        // LAUNCH-P1 P1-13 (decision B7): onboarding merchants may finish
+        // signing in; suspended / inactive / missing companies may not.
         if ($user === null || ! $user->hasConfirmedTwoFactor()
-            || $user->company_id === null
-            || ! DB::table('pos_companies')->where('id', $user->company_id)->where('status', 'active')->whereNull('deleted_at')->exists()) {
+            || CompanyAccess::denial($user->company_id) !== null) {
             return null;
         }
 
