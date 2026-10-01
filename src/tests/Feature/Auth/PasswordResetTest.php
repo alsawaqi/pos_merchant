@@ -11,6 +11,14 @@ use Illuminate\Support\Facades\Mail;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    // Production sends these links by SMTP (LAUNCH-P1 P1-3). Without a
+    // real transport the link is deliberately not minted or sent at all
+    // (see LaunchP1MerchantMailTest), so these tests run with SMTP
+    // configured; Mail::fake() intercepts every send.
+    config(['mail.default' => 'smtp', 'mail.mailers.smtp.host' => 'smtp.mithqal.test']);
+});
+
 /**
  * Phase D7 — self-service forgot/reset password.
  *

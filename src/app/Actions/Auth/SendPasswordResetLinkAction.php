@@ -9,7 +9,9 @@ use App\Data\Security\AuditLogData;
 use App\Mail\PasswordResetMail;
 use App\Models\PasswordResetToken;
 use App\Models\User;
+use App\Support\Mail\MailDelivery;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Throwable;
@@ -63,8 +65,21 @@ final readonly class SendPasswordResetLinkAction
             return;
         }
 
+        // Review finding: a link is only worth minting when real mail can
+        // deliver it — with MAIL_MAILER=log (or SMTP without a host) it
+        // would only be written into a log file. Nothing is minted, sent
+        // or logged; the endpoint still answers 200.
+        if (! MailDelivery::configured()) {
+            Log::info('Forgot-password link not sent: no mail transport is configured (MAIL_MAILER).', [
+                'user_id' => $user->id,
+            ]);
+
+            return;
+        }
+
         $recentlyMinted = PasswordResetToken::query()
             ->where('user_id', $user->id)
+            ->where('purpose', 'forgot')
             ->where('created_at', '>=', now()->subSeconds(self::MINT_COOLDOWN_SECONDS))
             ->exists();
 
@@ -77,12 +92,15 @@ final readonly class SendPasswordResetLinkAction
         $expiresAt = now()->addMinutes(self::EXPIRY_MINUTES);
 
         DB::transaction(function () use ($user, $rawToken, $expiresAt): void {
-            // Invalidate every outstanding token — only the newest
-            // link in the mailbox works, which keeps the "I clicked
-            // the old email" support surface small.
+            // Invalidate older FORGOT links only — the newest one in
+            // the mailbox works. A link issued by an admin or by the
+            // team's owner (invite / reset) stays valid: anyone can
+            // type an email here, so this must never revoke it
+            // (review finding).
             PasswordResetToken::query()
                 ->where('user_id', $user->id)
                 ->whereNull('used_at')
+                ->where('purpose', 'forgot')
                 ->delete();
 
             PasswordResetToken::query()->create([
@@ -107,7 +125,7 @@ final readonly class SendPasswordResetLinkAction
         });
 
         try {
-            // Synchronous in dev (MAIL_MAILER=log → storage/logs).
+            // Synchronous, so a failure is reported at once.
             Mail::to($user->email)->send(
                 new PasswordResetMail($user, $rawToken, $expiresAt),
             );

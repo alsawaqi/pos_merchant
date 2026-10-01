@@ -12,6 +12,8 @@ use App\Models\PasswordResetToken;
 use App\Models\User;
 use Dotenv\Dotenv;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 
 uses(RefreshDatabase::class);
 
@@ -47,6 +49,49 @@ it('honours MAIL_ENCRYPTION=ssl as implicit TLS and bounds the SMTP wait', funct
 
     expect($config['mailers']['smtp']['scheme'])->toBe('smtps')
         ->and($config['mailers']['smtp']['timeout'])->toBeInt()->toBeGreaterThan(0);
+});
+
+it('never sends or logs a forgot-password link when mail is only logged or has no host', function (array $mail): void {
+    config($mail);
+    Mail::fake();
+    $user = User::factory()->create(['email' => 'owner@cafe.test']);
+
+    $this->postJson('/auth/forgot-password', ['email' => 'owner@cafe.test'])->assertOk();
+
+    Mail::assertNothingSent();
+    expect(PasswordResetToken::query()->where('user_id', $user->id)->exists())->toBeFalse();
+})->with([
+    'MAIL_MAILER=log' => [['mail.default' => 'log']],
+    'SMTP without a host' => [['mail.default' => 'smtp', 'mail.mailers.smtp.host' => '']],
+]);
+
+it('does not let a forgot-password request revoke an admin-issued reset link', function (): void {
+    config(['mail.default' => 'smtp', 'mail.mailers.smtp.host' => 'smtp.mithqal.test']);
+    Mail::fake();
+    // An admin reset: the old password is gone and a reset link is out.
+    $user = User::factory()->create(['email' => 'reset.me@cafe.test', 'password' => null]);
+    $raw = str_repeat('a', 64);
+    DB::table('pos_password_reset_tokens')->insert([
+        'user_id' => $user->id,
+        'token_hash' => hash('sha256', $raw),
+        'purpose' => 'reset',
+        'expires_at' => now()->addHour(),
+        'created_at' => now(),
+    ]);
+
+    // Anyone can type this email on the forgot-password page.
+    $this->postJson('/auth/forgot-password', ['email' => 'reset.me@cafe.test'])->assertOk();
+
+    expect(DB::table('pos_password_reset_tokens')->where('user_id', $user->id)->whereNull('used_at')->pluck('purpose')->sort()->values()->all())
+        ->toBe(['forgot', 'reset']);
+
+    // The admin's link still works.
+    $this->postJson('/auth/reset-password', [
+        'email' => 'reset.me@cafe.test',
+        'token' => $raw,
+        'password' => 'Admin-link-pass-1',
+        'password_confirmation' => 'Admin-link-pass-1',
+    ])->assertOk();
 });
 
 it('answers forgot-password normally when the mail server is down', function (): void {
