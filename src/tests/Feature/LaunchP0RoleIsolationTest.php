@@ -42,15 +42,16 @@ it('W6 refuses peers and users outside the manager branch scope', function () {
     }
 });
 
-it('W6 resets revoke prior sessions and enforce password change on the server', function () {
+it('W6 resets revoke prior sessions and block the old password on the server', function () {
     $ctx = makeMerchantActor();
     $target = User::factory()->create(['company_id' => $ctx['company']->id, 'user_type' => 'merchant', 'remember_token' => 'old-remember']);
     $target->assignRole(MerchantRole::Viewer->value);
     $version = (int) $target->auth_version;
     $this->postJson("/api/portal-users/{$target->id}/reset-password")->assertOk();
-    expect($target->fresh()->must_change_password)->toBeTrue()->and($target->fresh()->remember_token)->toBeNull()
+    // LAUNCH-P1 owner follow-up 2026-10-01: a reset no longer hands out a
+    // temporary password that must be changed; the old password is
+    // removed at once and only the set-password link can choose a new one.
+    expect($target->fresh()->password)->toBeNull()->and($target->fresh()->remember_token)->toBeNull()
         ->and((int) $target->fresh()->auth_version)->not->toBe($version);
     $this->actingAs($target->fresh())->withSession(['pos.auth_version' => $version])->getJson('/api/portal-users')->assertUnauthorized();
-    $this->actingAs($target->fresh())->withSession(['pos.auth_version' => (int) $target->fresh()->auth_version])
-        ->getJson('/api/portal-users')->assertForbidden()->assertJsonPath('code', 'password_change_required');
 });
