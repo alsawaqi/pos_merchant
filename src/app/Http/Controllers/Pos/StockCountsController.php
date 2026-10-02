@@ -71,6 +71,14 @@ class StockCountsController extends Controller
             if ($ingredient === null) {
                 return response()->json(['message' => 'Ingredient not found.'], 422);
             }
+            // LAUNCH-P3 P3-4 — a count never includes a prep item (no stock).
+            if ($ingredient->isPrep()) {
+                try {
+                    $ingredient->ensureStocked();
+                } catch (RuntimeException $e) {
+                    return response()->json(['message' => $e->getMessage()], 422);
+                }
+            }
             $lines[] = [
                 'ingredient' => $ingredient,
                 'counted_pieces' => $line['counted_pieces'] ?? null,

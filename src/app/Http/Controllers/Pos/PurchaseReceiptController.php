@@ -234,6 +234,14 @@ class PurchaseReceiptController extends Controller
             if ($ingredient === null) {
                 return response()->json(['message' => 'An ingredient on the receipt was not found.'], 422);
             }
+            // LAUNCH-P3 P3-4 — goods are never received into a prep item.
+            if ($ingredient->isPrep()) {
+                try {
+                    $ingredient->ensureStocked();
+                } catch (RuntimeException $e) {
+                    return response()->json(['message' => $e->getMessage()], 422);
+                }
+            }
             $resolved['ingredient'] = $ingredient;
         } else {
             $product = Product::query()

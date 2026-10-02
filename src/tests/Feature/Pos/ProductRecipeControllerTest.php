@@ -35,6 +35,7 @@ declare(strict_types=1);
  */
 
 use App\Enums\IngredientUnit;
+use App\Enums\MerchantPermission;
 use App\Enums\MerchantRole;
 use App\Models\Company;
 use App\Models\Ingredient;
@@ -42,6 +43,9 @@ use App\Models\Product;
 use App\Models\ProductRecipe;
 use App\Models\ProductRecipeVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 
 uses(RefreshDatabase::class);
 
@@ -160,7 +164,7 @@ it('preserves ingredient_id keys + line_count in the audit row\'s new_values', f
         ],
     ])->assertOk();
 
-    $audit = \Illuminate\Support\Facades\DB::table('pos_audit_logs')
+    $audit = DB::table('pos_audit_logs')
         ->where('event', 'catalogue.product.recipe_updated')
         ->where('auditable_id', $product->id)
         ->first();
@@ -197,7 +201,7 @@ it('writes ZERO version rows + ZERO audit rows on a no-op PUT (same shape)', fun
     expect(ProductRecipeVersion::query()->where('product_id', $product->id)->count())->toBe(0);
 
     // Zero audit rows — silent skip.
-    $audits = \Illuminate\Support\Facades\DB::table('pos_audit_logs')
+    $audits = DB::table('pos_audit_logs')
         ->where('event', 'catalogue.product.recipe_updated')
         ->where('auditable_id', $product->id)
         ->count();
@@ -497,12 +501,21 @@ it('forbids a CashierSupervisor from updating a product recipe', function (): vo
         ->assertForbidden();
 });
 
-it('lets an InventoryManager update a product recipe (catalogue.manage in their grant)', function (): void {
+// LAUNCH-P3 P3-3 — catalogue.manage alone no longer edits recipes: the
+// InventoryManager system role holds it but not "Edit recipes" until the
+// merchant adds it to the role.
+it('lets an InventoryManager update a product recipe only once the role holds "Edit recipes"', function (): void {
     $ctx = makeMerchantActor(MerchantRole::InventoryManager->value);
     $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'ingredient']);
     $ing = Ingredient::factory()->for($ctx['company'], 'company')->create();
+    $payload = ['lines' => [['ingredient_uuid' => $ing->uuid, 'quantity' => '0.100']]];
 
-    $this->putJson("/api/products/{$product->uuid}/recipe", [
-        'lines' => [['ingredient_uuid' => $ing->uuid, 'quantity' => '0.100']],
-    ])->assertOk();
+    $this->putJson("/api/products/{$product->uuid}/recipe", $payload)->assertForbidden();
+
+    Role::findByName(MerchantRole::InventoryManager->value, 'web')
+        ->givePermissionTo(MerchantPermission::CatalogueRecipesManage->value);
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+    $ctx['user']->unsetRelation('roles')->unsetRelation('permissions');
+
+    $this->putJson("/api/products/{$product->uuid}/recipe", $payload)->assertOk();
 });

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Pos\Reports;
 
-use App\Actions\Pos\Reports\Support\RecipeSnapshotCost;
+use App\Actions\Pos\Reports\Support\OrderLineCost;
 use App\Data\Reports\ReportFilter;
 use App\Enums\ExpenseStatus;
 use App\Enums\OrderStatus;
@@ -547,35 +547,33 @@ final readonly class SalesReportAction
     }
 
     /**
-     * Total COGS (OMR) for the paid orders in scope: the recipe + add-on
-     * ingredient cost snapshotted on each line. Read raw via the query
-     * builder + summed in PHP (the snapshot is a JSON array, not SQL-summable).
+     * Total COGS (OMR) for the paid orders in scope. LAUNCH-P3 P3-5 — the
+     * COMPLETE food cost of each line from its frozen copies: recipe (prep
+     * items already exploded by pos_api), packaging, add-on option lines,
+     * add-ons that are products, and cooked / bought-in pieces
+     * ({@see OrderLineCost}). Read raw via the query builder + summed in PHP
+     * (the snapshots are JSON, not SQL-summable).
      *
      * @param  Builder  $paidQuery
      */
     private function cogs($paidQuery): float
     {
         $itemRows = DB::table('pos_order_items')
-            ->joinSub((clone $paidQuery)->select('id'), 'scoped_orders', 'scoped_orders.id', '=', 'pos_order_items.order_id')
-            ->select('pos_order_items.id', 'pos_order_items.qty', 'pos_order_items.recipe_snapshot_json')
+            ->joinSub((clone $paidQuery)->select('id', 'branch_id', 'opened_at', 'closed_at'), 'scoped_orders', 'scoped_orders.id', '=', 'pos_order_items.order_id')
+            ->select(
+                'pos_order_items.id',
+                'pos_order_items.product_id',
+                'pos_order_items.qty',
+                'pos_order_items.recipe_snapshot_json',
+                'pos_order_items.component_snapshot_json',
+                'scoped_orders.branch_id',
+            )
+            ->selectRaw('COALESCE(scoped_orders.closed_at, scoped_orders.opened_at) AS sold_at')
             ->get();
 
         $baisas = 0;
-        $qtyByItem = [];
-        foreach ($itemRows as $row) {
-            $qty = (float) $row->qty;
-            $qtyByItem[(int) $row->id] = $qty;
-            $baisas += RecipeSnapshotCost::itemBaisas($row->recipe_snapshot_json, $qty);
-        }
-
-        if ($qtyByItem !== []) {
-            $addonRows = DB::table('pos_order_item_addons')
-                ->whereIn('order_item_id', array_keys($qtyByItem))
-                ->select('order_item_id', 'ingredient_snapshot_json')
-                ->get();
-            foreach ($addonRows as $row) {
-                $baisas += RecipeSnapshotCost::addonBaisas($row->ingredient_snapshot_json, $qtyByItem[(int) $row->order_item_id] ?? 0.0);
-            }
+        foreach ((new OrderLineCost($this->tenant->requiredId()))->costs($itemRows) as $cost) {
+            $baisas += $cost['total'];
         }
 
         return $baisas / 1000;

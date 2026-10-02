@@ -92,6 +92,10 @@ final readonly class WriteStockMovementAction
         if ((int) $ingredient->company_id !== $companyId) {
             throw new RuntimeException('Ingredient does not belong to your company.');
         }
+        // LAUNCH-P3 P3-4 — a prep item never gets a stock row or a movement:
+        // its raw ingredients carry the stock (defence in depth behind every
+        // stock screen, which already leaves prep items out).
+        $ingredient->ensureStocked();
 
         $occurredAt = $occurredAt instanceof DateTimeInterface
             ? Carbon::instance($occurredAt)

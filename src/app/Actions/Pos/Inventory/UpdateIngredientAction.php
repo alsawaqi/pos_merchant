@@ -10,11 +10,13 @@ use App\Models\AddOn;
 use App\Models\AddOnConsumption;
 use App\Models\BranchStock;
 use App\Models\Ingredient;
+use App\Models\IngredientRecipe;
 use App\Models\ProductRecipe;
 use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
+use App\Support\Recipes\PrepGraph;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -103,6 +105,11 @@ final readonly class UpdateIngredientAction
                 // pipeline, so its base-unit qty must be protected too.
                 || AddOn::query()
                     ->where('ingredient_id', $ingredient->id)
+                    ->exists()
+                // LAUNCH-P3 P3-4 — a prep recipe line is per batch in this
+                // ingredient's base unit too.
+                || IngredientRecipe::query()
+                    ->where('ingredient_id', $ingredient->id)
                     ->exists();
             if ($hasHistory) {
                 throw new RuntimeException(
@@ -140,6 +147,8 @@ final readonly class UpdateIngredientAction
             }
 
             $ingredient->save();
+            // LAUNCH-P3 — prep items cost through this ingredient.
+            PrepGraph::forget($companyId);
 
             $this->writeAuditLog->handle(new AuditLogData(
                 event: 'inventory.ingredient.updated',

@@ -8,6 +8,7 @@ use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
 use App\Models\Ingredient;
 use App\Models\User;
+use App\Support\Recipes\PrepGraph;
 use App\Support\StockDecimal;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
@@ -93,6 +94,8 @@ final readonly class ApplyWeightedAverageCostAction
 
             if (! $new->isEqualTo($old)) {
                 $locked->forceFill(['default_unit_cost' => $newText])->save();
+                // LAUNCH-P3 — prep items cost through this ingredient.
+                PrepGraph::forget((int) $locked->company_id);
             }
             // Keep the caller's instance in step (it stamps later legs).
             $ingredient->forceFill(['default_unit_cost' => $newText]);

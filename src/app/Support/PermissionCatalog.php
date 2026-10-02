@@ -158,8 +158,14 @@ final class PermissionCatalog
                     ],
                     [
                         'key' => MerchantPermission::CatalogueManage->value,
-                        'label_en' => 'Create + edit + delete catalogue items',
-                        'label_ar' => 'إنشاء وتعديل وحذف عناصر الكتالوج',
+                        'label_en' => 'Create + edit + delete catalogue items (recipes need "Edit recipes")',
+                        'label_ar' => 'إنشاء وتعديل وحذف عناصر الكتالوج (الوصفات تحتاج صلاحية "تعديل الوصفات")',
+                    ],
+                    // LAUNCH-P3 P3-3.
+                    [
+                        'key' => MerchantPermission::CatalogueRecipesManage->value,
+                        'label_en' => 'Edit recipes (product recipes, prep items, add-on stock usage)',
+                        'label_ar' => 'تعديل الوصفات (وصفات المنتجات، المستحضرات، استهلاك الإضافات من المخزون)',
                     ],
                 ],
             ],
@@ -427,6 +433,7 @@ final class PermissionCatalog
                 $out[] = $perm['key'];
             }
         }
+
         return $out;
     }
 }

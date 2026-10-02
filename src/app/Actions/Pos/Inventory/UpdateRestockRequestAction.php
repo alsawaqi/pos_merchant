@@ -77,6 +77,8 @@ final readonly class UpdateRestockRequestAction
         if ($ingredients->count() !== count($uuids)) {
             throw new RuntimeException('One or more ingredients in the request do not belong to your company.');
         }
+        // LAUNCH-P3 P3-4 — prep items have no stock to restock.
+        $ingredients->each(static fn (Ingredient $ingredient) => $ingredient->ensureStocked());
 
         // Diff comparison — same ingredients + same quantities (compared in BASE
         // units, so an alt-unit re-entry that resolves to the same base is a

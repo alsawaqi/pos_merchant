@@ -35,7 +35,7 @@ class UpdateProductRecipeRequest extends FormRequest
             // decimal(12,3) on the column; allow up to
             // 999,999.999 of any unit. Negative + zero
             // rejected because both make no recipe sense.
-            'lines.*.quantity' => ['required', 'numeric', 'gt:0', 'max:999999.999'],
+            'lines.*.quantity' => ['required', 'numeric', 'gt:0', 'decimal:0,4', 'max:999999.999'],
             // #13 — per-line entered unit (alt-unit name, or null = base); the
             // quantity is converted to base before storage (kept base on device).
             'lines.*.unit' => ['nullable', 'string', 'max:32'],

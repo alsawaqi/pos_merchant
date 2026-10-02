@@ -341,5 +341,10 @@ class IngredientStockController extends Controller
         if ((int) $ingredient->company_id !== $this->tenant->requiredId()) {
             abort(404);
         }
+        // LAUNCH-P3 P3-4 — a prep item has no stock, so no central warehouse
+        // either: none of these endpoints exists for it.
+        if ($ingredient->isPrep()) {
+            abort(404);
+        }
     }
 }

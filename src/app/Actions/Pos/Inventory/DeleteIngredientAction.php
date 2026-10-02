@@ -16,6 +16,7 @@ use App\Models\ProductRecipe;
 use App\Models\RestockRequestLine;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
+use App\Support\Recipes\PrepUsage;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -113,6 +114,16 @@ final readonly class DeleteIngredientAction
             throw new RuntimeException(sprintf(
                 'Cannot delete ingredient — %d add-on option line(s) still consume it. Edit those options first.',
                 $optionLineCount,
+            ));
+        }
+
+        // LAUNCH-P3 P3-4 — a live prep item's recipe that lists this
+        // ingredient explodes into it at every sale of a dish using the prep.
+        $prepLineCount = PrepUsage::livePrepRecipeLines((int) $ingredient->id);
+        if ($prepLineCount > 0) {
+            throw new RuntimeException(sprintf(
+                'Cannot delete ingredient — %d prep item recipe(s) still use it. Edit those prep items first.',
+                $prepLineCount,
             ));
         }
 

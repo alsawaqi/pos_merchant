@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Enums;
 
+use App\Actions\Admin\SeedMerchantRolesAction;
+
 /**
  * Permission keys for the merchant portal. Mirrors the role of
  * pos_admin's PlatformPermission enum — every action that needs
  * gating reads from this catalogue, and every role's spatie
- * permission set in {@see \App\Actions\Admin\SeedMerchantRolesAction}
+ * permission set in {@see SeedMerchantRolesAction}
  * is built from these values.
  *
  * Phase 4.5 scope: portal-user CRUD. Subsequent phases add their
@@ -71,6 +73,16 @@ enum MerchantPermission: string
     // than getting granular ones.
     case CatalogueView = 'catalogue.view';
     case CatalogueManage = 'catalogue.manage';
+
+    // LAUNCH-P3 P3-3 — "Edit recipes" (owner decision 2026-10-02: who may
+    // change recipes is decided by the merchant's roles). Required for
+    // product recipes, prep items (their recipe and yield) and add-on
+    // stock-usage lines; catalogue.manage alone no longer allows those
+    // edits. Default: Super Admin + Manager (pos_admin migration
+    // 2026_10_02_100004 grants it to existing ones); custom roles get it
+    // only when the merchant adds it. Every recipe change is recorded with
+    // who and what (version rows + audit).
+    case CatalogueRecipesManage = 'catalogue.recipes.manage';
 
     // Phase 5a — inventory. One catalog for ingredients,
     // suppliers, branch stock + movements (manage covers all

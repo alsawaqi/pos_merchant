@@ -23,6 +23,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * The pay-time engine in pos_api merges per ingredient/product and
  * clamps the effective consumption at zero — a removal never restocks.
  * Quantities are per ONE parent line unit.
+ *
+ * LAUNCH-P3 P3-1 — ingredient lines also record how they were typed
+ * (entered_unit / entered_quantity); quantity + unit stay the BASE values the
+ * device API reads. The ingredient may be a prep item (P3-4).
  */
 #[Fillable([
     'add_on_id',
@@ -32,6 +36,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'quantity',
     'unit',
     'display_order',
+    'entered_unit',
+    'entered_quantity',
 ])]
 class AddOnConsumption extends Model
 {
@@ -49,6 +55,7 @@ class AddOnConsumption extends Model
         return [
             'quantity' => ScaledDecimal::class.':3,4',
             'display_order' => 'integer',
+            'entered_quantity' => ScaledDecimal::class.':0,4',
         ];
     }
 

@@ -36,6 +36,9 @@ use RuntimeException;
  */
 class IngredientsController extends Controller
 {
+    /** LAUNCH-P3 P3-4 — a prep item is edited / deleted with its recipe, on the prep-item endpoints. */
+    private const PREP_MESSAGE = 'This is a prep item: edit or delete it on the Prep items page.';
+
     public function __construct(
         private readonly MerchantTenantContext $tenant,
         private readonly CreateIngredientAction $create,
@@ -43,12 +46,26 @@ class IngredientsController extends Controller
         private readonly DeleteIngredientAction $delete,
     ) {}
 
+    /**
+     * GET /api/ingredients[?include_prep=1]
+     *
+     * LAUNCH-P3 P3-4 — prep items have no stock, so the plain list (every
+     * stock screen: goods received, counts, transfers, restock, stock) leaves
+     * them out. Recipe editors pass include_prep=1 to pick prep items like
+     * ingredients; each prep row then carries its derived cost per base unit.
+     * Read gate: inventory.view, or catalogue.view (the recipe pickers of a
+     * catalogue-only role — recipes already show their ingredients' costs).
+     */
     public function index(Request $request): AnonymousResourceCollection
     {
-        $this->ensure($request, MerchantPermission::InventoryView);
+        $user = $request->user();
+        if ($user === null || ! ($user->can(MerchantPermission::InventoryView->value) || $user->can(MerchantPermission::CatalogueView->value))) {
+            abort(403);
+        }
 
         $ingredients = Ingredient::query()
             ->where('company_id', $this->tenant->requiredId())
+            ->when(! $request->boolean('include_prep'), static fn ($q) => $q->stocked())
             ->with('primarySupplier', 'altUnits')
             ->orderBy('name')
             ->get();
@@ -72,10 +89,13 @@ class IngredientsController extends Controller
         ], 201);
     }
 
-    public function update(UpdateIngredientRequest $request, Ingredient $ingredient): IngredientResource | JsonResponse
+    public function update(UpdateIngredientRequest $request, Ingredient $ingredient): IngredientResource|JsonResponse
     {
         $this->ensure($request, MerchantPermission::InventoryManage);
         $this->refuseIfNotInTenant($ingredient);
+        if ($ingredient->isPrep()) {
+            return response()->json(['message' => self::PREP_MESSAGE], 422);
+        }
 
         try {
             $updated = $this->update->handle($ingredient, $request->validated(), $request->user());
@@ -118,6 +138,9 @@ class IngredientsController extends Controller
     {
         $this->ensure($request, MerchantPermission::InventoryManage);
         $this->refuseIfNotInTenant($ingredient);
+        if ($ingredient->isPrep()) {
+            return response()->json(['message' => self::PREP_MESSAGE], 422);
+        }
 
         try {
             $this->delete->handle($ingredient, $request->user());

@@ -163,6 +163,10 @@ final class SeedMerchantRolesAction
                     // changes, new SKUs).
                     MerchantPermission::CatalogueView->value,
                     MerchantPermission::CatalogueManage->value,
+                    // LAUNCH-P3 P3-3: managers edit recipes by default
+                    // (existing Manager roles: pos_admin migration
+                    // 2026_10_02_100004).
+                    MerchantPermission::CatalogueRecipesManage->value,
                     // Inventory (Phase 5a): managers run the
                     // day-to-day buying, adjusting, and waste
                     // reporting.

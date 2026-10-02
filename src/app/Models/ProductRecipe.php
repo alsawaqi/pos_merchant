@@ -27,7 +27,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * resilience), the recipe still reflects the intent at set
  * time.
  *
- * Schema owned by pos_admin's 2026_05_30_010000 migration.
+ * LAUNCH-P3 P3-1 — entered_unit / entered_quantity record how the line was
+ * typed ("5 g", "2 @piece") so the editor reopens it unchanged; quantity +
+ * unit_at_set keep meaning the BASE quantity and unit (the device API reads
+ * them). NULL entered columns (pre-P3 lines) read as "entered in the base".
+ * The ingredient may be a prep item (P3-4): pos_api explodes it into raw
+ * ingredients when an order line's recipe is copied.
+ *
+ * Schema owned by pos_admin's 2026_05_30_010000 migration (entered columns:
+ * 2026_10_02_100003).
  */
 #[Fillable([
     'product_id',
@@ -35,6 +43,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'quantity',
     'unit_at_set',
     'sort_order',
+    'entered_unit',
+    'entered_quantity',
 ])]
 class ProductRecipe extends Model
 {
@@ -52,6 +62,7 @@ class ProductRecipe extends Model
             'quantity' => ScaledDecimal::class.':3,4',
             'unit_at_set' => IngredientUnit::class,
             'sort_order' => 'integer',
+            'entered_quantity' => ScaledDecimal::class.':0,4',
         ];
     }
 

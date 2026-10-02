@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Pos\Catalogue;
 
-use App\Actions\Pos\Inventory\IngredientUnitConverter;
 use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
 use App\Models\Ingredient;
@@ -13,8 +12,9 @@ use App\Models\ProductRecipe;
 use App\Models\ProductRecipeVersion;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
-use App\Support\StockDecimal;
-use Illuminate\Support\Collection;
+use App\Support\Recipes\RecipeEditGate;
+use App\Support\Recipes\RecipeLineChanges;
+use App\Support\Recipes\RecipeQuantity;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -25,19 +25,28 @@ use RuntimeException;
  * lines. We:
  *   1. Resolve every ingredient_uuid → ingredient_id +
  *      verify tenant ownership. Bogus or cross-tenant uuid
- *      aborts the whole replace (no partial writes).
- *   2. Compare the new shape to what's already on disk. If
- *      identical (same ingredients + same quantities), skip
+ *      aborts the whole replace (no partial writes). The
+ *      ingredient may be a PREP ITEM (LAUNCH-P3 P3-4); pos_api
+ *      explodes it into raw ingredients when an order is copied.
+ *   2. Convert each line to the BASE unit and keep how it was
+ *      typed (LAUNCH-P3 P3-1, {@see RecipeQuantity}); an amount
+ *      that rounds to 0 in the base unit is refused (422).
+ *   3. Compare the new shape to what's already on disk (base
+ *      quantity AND the entered form). If identical, skip
  *      everything (no audit, no version row, no DB writes).
- *   3. Snapshot the CURRENT (pre-edit) recipe into
- *      pos_product_recipe_versions with denormalised
- *      ingredient name + current unit_cost_at_time. This is
- *      what makes historical COGS resilient to later
- *      ingredient edits / deletions.
- *   4. Delete the existing recipe lines + insert the new ones.
+ *   4. Snapshot the CURRENT (pre-edit) recipe into
+ *      pos_product_recipe_versions with denormalised ingredient
+ *      name + current unit_cost_at_time (+ LAUNCH-P3: the entered
+ *      unit / quantity), dated at the edit. pos_api reads these
+ *      rows as "the recipe in force before this moment" (P3-6),
+ *      so the keys it reads (ingredient_id, quantity, unit) keep
+ *      their meaning: the BASE quantity and unit.
+ *   5. Delete the existing recipe lines + insert the new ones.
  *      Wrapped in DB::transaction so a mid-write failure
  *      leaves the recipe in its pre-edit state.
- *   5. Write the audit row.
+ *   6. Write the audit row — LAUNCH-P3 P3-2: with every line
+ *      added, removed or changed (before → after), so a
+ *      150 g → 120 g edit leaves a visible trace, and the note.
  *
  * Empty array = "no recipe / pre-made goods". Phase 8 order
  * pipeline checks hasRecipe() before writing sale-consumption
@@ -46,17 +55,17 @@ use RuntimeException;
  * Duplicate ingredients in the payload → 422 (the caller
  * should sum them client-side; we don't silently merge).
  *
- * Audit event: catalogue.product.recipe_updated. Payload
- * captures old + new line counts + which ingredient_ids
- * changed, so the audit log surfaces "what was modified"
- * without dumping the full recipe twice.
+ * LAUNCH-P3 P3-3 — changing a recipe needs the "Edit recipes"
+ * permission ({@see RecipeEditGate}); a no-op never does.
+ *
+ * Audit event: catalogue.product.recipe_updated.
  */
 final readonly class UpdateProductRecipeAction
 {
     public function __construct(
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
-        private IngredientUnitConverter $units,
+        private RecipeQuantity $quantities,
     ) {}
 
     /**
@@ -87,53 +96,36 @@ final readonly class UpdateProductRecipeAction
             throw new RuntimeException('One or more ingredients in the recipe do not belong to your company.');
         }
 
-        // Build a normalised representation of the new recipe for diff
-        // comparison: [(ingredient_id => base-unit quantity)]. #13 — the qty is
-        // converted to the ingredient's base unit, so a re-entry in an alt unit
-        // that resolves to the same base is a no-op (and storage stays base, so
-        // the device + pos_api consumption are unchanged).
-        $newShape = collect($lines)->mapWithKeys(function (array $l) use ($ingredients): array {
+        // Base quantity (what the device deducts) + the entered form, per line.
+        $resolved = [];
+        foreach ($lines as $idx => $l) {
             /** @var Ingredient $ing */
             $ing = $ingredients[$l['ingredient_uuid']];
-            $qty = $this->units->toBase($ing, $l['quantity'], $l['unit'] ?? null);
+            $resolved[] = ['ingredient' => $ing, 'sort_order' => $idx]
+                + $this->quantities->resolve($ing, $l['quantity'], $l['unit'] ?? null);
+        }
 
-            // LAUNCH-P2 — recipe lines keep 4 decimals (0.3 g of a kg ingredient).
-            return [$ing->id => (string) StockDecimal::quantity($qty)];
-        });
-
-        $currentShape = $product->recipeLines()
-            ->get(['ingredient_id', 'quantity'])
-            ->mapWithKeys(static fn (ProductRecipe $r): array => [
-                (int) $r->ingredient_id => (string) $r->quantity,
-            ]);
+        $current = $product->recipeLines()->with('ingredient')->get();
+        $before = RecipeLineChanges::fromProductLines($current, $this->quantities);
+        $after = RecipeLineChanges::fromResolved($resolved, $this->quantities);
 
         // No-op skip — identical recipe = no version, no audit,
-        // no DB churn.
-        if ($this->shapesEqual($currentShape, $newShape)) {
+        // no DB churn (a pre-P3 line re-saved in its base unit is identical).
+        if (RecipeLineChanges::same($before, $after)) {
             return $product->fresh(['recipeLines.ingredient']);
         }
 
-        return DB::transaction(function () use (
-            $product,
-            $lines,
-            $ingredients,
-            $newShape,
-            $currentShape,
-            $actor,
-            $note,
-            $companyId,
-        ): Product {
+        RecipeEditGate::ensure($actor);
+
+        return DB::transaction(function () use ($product, $resolved, $before, $after, $actor, $note, $companyId): Product {
             // Step 1: snapshot the PRE-edit recipe as a version.
             // Empty array is a valid snapshot (means "previous
-            // state was no recipe") — Phase 8 won't look at
-            // versions for that case but the audit trail
-            // benefits from the explicit zero state.
-            $snapshot = $this->buildSnapshot($product);
+            // state was no recipe").
             ProductRecipeVersion::query()->create([
                 'product_id' => $product->id,
-                'recipe_json' => $snapshot,
+                'recipe_json' => RecipeLineChanges::snapshot($before),
                 'edited_by_user_id' => $actor->getKey(),
-                'note' => $note,
+                'note' => $note !== null && trim($note) !== '' ? trim($note) : null,
                 'edited_at' => now(),
             ]);
 
@@ -141,20 +133,20 @@ final readonly class UpdateProductRecipeAction
             // individual rows because the recipe is small
             // (typically 1-8 ingredients per product).
             $product->recipeLines()->delete();
-            foreach ($lines as $idx => $l) {
+            foreach ($resolved as $line) {
                 /** @var Ingredient $ing */
-                $ing = $ingredients[$l['ingredient_uuid']];
-                // #13 — store recipe consumption in the ingredient's BASE unit
-                // (what the device + pos_api deduct in); unit_at_set stays base.
-                $qty = $this->units->toBase($ing, $l['quantity'], $l['unit'] ?? null);
+                $ing = $line['ingredient'];
                 ProductRecipe::query()->create([
                     'product_id' => $product->id,
                     'ingredient_id' => $ing->id,
-                    'quantity' => StockDecimal::quantity($qty),
-                    // Denormalised — survives later unit edits
-                    // on the ingredient master.
+                    // #13 — consumption in the ingredient's BASE unit (what the
+                    // device + pos_api deduct in); unit_at_set stays base.
+                    'quantity' => $line['quantity'],
                     'unit_at_set' => $ing->unit?->value,
-                    'sort_order' => $idx,
+                    'sort_order' => $line['sort_order'],
+                    // LAUNCH-P3 P3-1 — how it was typed.
+                    'entered_unit' => $line['entered_unit'],
+                    'entered_quantity' => $line['entered_quantity'],
                 ]);
             }
 
@@ -166,9 +158,8 @@ final readonly class UpdateProductRecipeAction
             // sync.
             $product->touch();
 
-            // Step 3: audit row summarising the change.
-            $oldIds = $currentShape->keys()->all();
-            $newIds = $newShape->keys()->all();
+            // Step 3: audit row — counts + ids (as before) and, since
+            // LAUNCH-P3, every line change in the entered unit + the note.
             $this->writeAuditLog->handle(new AuditLogData(
                 event: 'catalogue.product.recipe_updated',
                 actorUserId: $actor->getKey(),
@@ -176,57 +167,20 @@ final readonly class UpdateProductRecipeAction
                 auditableType: Product::class,
                 auditableId: $product->id,
                 oldValues: [
-                    'line_count' => count($oldIds),
-                    'ingredient_ids' => $oldIds,
+                    'line_count' => count($before),
+                    'ingredient_ids' => array_keys($before),
+                    'lines' => RecipeLineChanges::readable($before),
                 ],
                 newValues: [
-                    'line_count' => count($newIds),
-                    'ingredient_ids' => $newIds,
+                    'line_count' => count($after),
+                    'ingredient_ids' => array_keys($after),
+                    'lines' => RecipeLineChanges::readable($after),
+                    'changes' => RecipeLineChanges::diff($before, $after),
+                    'note' => $note !== null && trim($note) !== '' ? trim($note) : null,
                 ],
             ));
 
             return $product->fresh(['recipeLines.ingredient']);
         });
-    }
-
-    /**
-     * @param  Collection<int, string>  $a
-     * @param  Collection<int, string>  $b
-     */
-    private function shapesEqual(Collection $a, Collection $b): bool
-    {
-        if ($a->count() !== $b->count()) {
-            return false;
-        }
-        foreach ($a as $ingredientId => $qty) {
-            if (! $b->has($ingredientId)) {
-                return false;
-            }
-            // Decimal-string equality — never compare floats.
-            if ((string) $b[$ingredientId] !== (string) $qty) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * @return array<int, array{ingredient_id: int, ingredient_name: string, quantity: string, unit: string, unit_cost_at_time: string}>
-     */
-    private function buildSnapshot(Product $product): array
-    {
-        return $product->recipeLines()
-            ->with('ingredient')
-            ->get()
-            ->map(static fn (ProductRecipe $r): array => [
-                'ingredient_id' => (int) $r->ingredient_id,
-                'ingredient_name' => $r->ingredient?->name ?? '',
-                'quantity' => (string) $r->quantity,
-                'unit' => $r->unit_at_set?->value ?? '',
-                'unit_cost_at_time' => (string) ($r->ingredient?->default_unit_cost ?? '0.000'),
-            ])
-            ->values()
-            ->all();
     }
 }

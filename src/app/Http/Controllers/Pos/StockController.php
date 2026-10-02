@@ -74,6 +74,8 @@ class StockController extends Controller
 
         $ingredients = Ingredient::query()
             ->where('company_id', $this->tenant->requiredId())
+            // LAUNCH-P3 P3-4 — prep items have no stock: never a stock row.
+            ->stocked()
             ->where(fn ($q) => $q->where('status', 'active')->orWhereIn('id', $balances->keys()->all()))
             ->get();
 
@@ -313,6 +315,8 @@ class StockController extends Controller
 
         return Ingredient::query()
             ->where('company_id', $this->tenant->requiredId())
+            // LAUNCH-P3 P3-4 — no adjust / restock / purchase of a prep item.
+            ->stocked()
             ->where('uuid', $uuid)
             ->first();
     }

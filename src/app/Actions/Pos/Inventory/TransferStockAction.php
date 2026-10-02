@@ -75,6 +75,8 @@ final readonly class TransferStockAction
             if ($ingredient === null) {
                 throw new RuntimeException('Ingredient does not belong to your company.');
             }
+            // LAUNCH-P3 P3-4 — a prep item has no stock to move.
+            $ingredient->ensureStocked();
             if (isset($seen[$ingredient->id])) {
                 throw new RuntimeException('Ingredient "'.$ingredient->name.'" is listed more than once.');
             }

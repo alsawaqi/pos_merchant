@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Resources\Pos\Inventory;
 
 use App\Models\Ingredient;
+use App\Support\Recipes\PrepGraph;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -30,7 +31,14 @@ class IngredientResource extends JsonResource
             'units_per_piece' => $this->units_per_piece !== null ? (string) $this->units_per_piece : null,
             'allow_fractional_pieces' => (bool) $this->allow_fractional_pieces,
             // Cost (up to 6dp) + threshold (up to 4dp) as strings (ScaledDecimal cast).
-            'default_unit_cost' => (string) $this->default_unit_cost,
+            // LAUNCH-P3 P3-4 — a prep item stores no cost: it costs what its
+            // recipe costs per base unit (PrepGraph), so the recipe editors'
+            // live cost works the same for both kinds.
+            'default_unit_cost' => $this->is_prep
+                ? PrepGraph::forCompany((int) $this->company_id)->unitCost((int) $this->id)
+                : (string) $this->default_unit_cost,
+            'is_prep' => (bool) $this->is_prep,
+            'prep_yield_quantity' => $this->is_prep ? (string) $this->prep_yield_quantity : null,
             'min_stock_threshold' => $this->min_stock_threshold !== null
                 ? (string) $this->min_stock_threshold
                 : null,

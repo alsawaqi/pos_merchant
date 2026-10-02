@@ -44,6 +44,7 @@ use App\Http\Controllers\Pos\PayoutsController;
 use App\Http\Controllers\Pos\PhysicalItemsController;
 use App\Http\Controllers\Pos\PortalMessagesController;
 use App\Http\Controllers\Pos\PosStaffController;
+use App\Http\Controllers\Pos\PrepItemsController;
 use App\Http\Controllers\Pos\ProductionsController;
 use App\Http\Controllers\Pos\ProductsController;
 use App\Http\Controllers\Pos\ProductStockController;
@@ -387,6 +388,9 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // on every change so historical COGS stays accurate.
         Route::put('products/{product:uuid}/recipe', [ProductsController::class, 'updateRecipe'])
             ->name('products.update-recipe');
+        // LAUNCH-P3 P3-2 — the recipe's visible history (catalogue.view).
+        Route::get('products/{product:uuid}/recipe-history', [ProductsController::class, 'recipeHistory'])
+            ->name('products.recipe-history');
 
         // P-G2 — physical-item components (cups/lids consumed per unit
         // sold). Same idempotent full-replace shape as the recipe;
@@ -520,6 +524,24 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // Phase A — purchase batch history (Additions §2.4).
         Route::get('ingredients/{ingredient:uuid}/purchases', [IngredientsController::class, 'purchases'])
             ->name('ingredients.purchases');
+
+        // LAUNCH-P3 P3-4 — prep items (a sauce, a dough): an ingredient row
+        // with its own recipe per batch and a yield, used by recipes like an
+        // ingredient and exploded into its raw ingredients at sale. No stock
+        // of its own. Read: catalogue.view or inventory.view; writes need
+        // "Edit recipes" (catalogue.recipes.manage). Gated in the controller.
+        Route::get('prep-items', [PrepItemsController::class, 'index'])
+            ->name('prep-items.index');
+        Route::post('prep-items', [PrepItemsController::class, 'store'])
+            ->name('prep-items.store');
+        Route::get('prep-items/{prepItem:uuid}', [PrepItemsController::class, 'show'])
+            ->name('prep-items.show');
+        Route::patch('prep-items/{prepItem:uuid}', [PrepItemsController::class, 'update'])
+            ->name('prep-items.update');
+        Route::delete('prep-items/{prepItem:uuid}', [PrepItemsController::class, 'destroy'])
+            ->name('prep-items.destroy');
+        Route::get('prep-items/{prepItem:uuid}/history', [PrepItemsController::class, 'history'])
+            ->name('prep-items.history');
 
         // P-G4 — central ingredient warehouse: company pool + Receive &
         // Distribute to branches + transfer + adjust + ledger (the ingredient

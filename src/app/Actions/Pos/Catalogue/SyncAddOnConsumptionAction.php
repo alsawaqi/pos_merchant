@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Pos\Catalogue;
 
-use App\Actions\Pos\Inventory\IngredientUnitConverter;
 use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
 use App\Models\AddOn;
@@ -13,6 +12,8 @@ use App\Models\Ingredient;
 use App\Models\Product;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
+use App\Support\Recipes\RecipeEditGate;
+use App\Support\Recipes\RecipeQuantity;
 use App\Support\StockDecimal;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -41,6 +42,14 @@ use RuntimeException;
  * addon GROUPS, so an untouched group would hide the change from
  * delta-syncing devices until the next full sync.
  *
+ * LAUNCH-P3:
+ *   - P3-1 an ingredient line keeps how it was typed (entered_unit /
+ *     entered_quantity, {@see RecipeQuantity}); quantity + unit stay the
+ *     BASE values the device reads; an amount that rounds to 0 in the base
+ *     unit is refused. The ingredient may be a prep item (P3-4).
+ *   - P3-3 changing the lines needs "Edit recipes"; an unchanged set (the
+ *     modal re-sends it on every save) never does.
+ *
  * Audit event: catalogue.addon.consumption_updated.
  */
 final readonly class SyncAddOnConsumptionAction
@@ -50,7 +59,7 @@ final readonly class SyncAddOnConsumptionAction
     public function __construct(
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
-        private IngredientUnitConverter $units,
+        private RecipeQuantity $quantities,
     ) {}
 
     /**
@@ -68,15 +77,26 @@ final readonly class SyncAddOnConsumptionAction
 
         [$resolved, $products] = $this->resolveLines($lines, $companyId);
 
-        // Normalised shape for the no-op diff: key = kind:ref:direction.
+        // Normalised shape for the no-op diff: key = kind:ref:direction; value
+        // = the base quantity + (ingredient lines, LAUNCH-P3) the entered form.
         $newShape = collect($resolved)->mapWithKeys(static fn (array $l): array => [
-            ($l['ingredient_id'] !== null ? 'i:'.$l['ingredient_id'] : 'p:'.$l['component_product_id']).':'.$l['direction'] => $l['quantity'],
+            ($l['ingredient_id'] !== null ? 'i:'.$l['ingredient_id'] : 'p:'.$l['component_product_id']).':'.$l['direction'] => self::shapeValue(
+                $l['quantity'],
+                $l['unit'],
+                $l['entered_unit'],
+                $l['entered_quantity'],
+            ),
         ])->sortKeys();
 
         $currentShape = $addon->consumptionLines()
             ->get()
             ->mapWithKeys(static fn (AddOnConsumption $c): array => [
-                ($c->ingredient_id !== null ? 'i:'.$c->ingredient_id : 'p:'.$c->component_product_id).':'.$c->direction => (string) $c->quantity,
+                ($c->ingredient_id !== null ? 'i:'.$c->ingredient_id : 'p:'.$c->component_product_id).':'.$c->direction => self::shapeValue(
+                    (string) $c->quantity,
+                    $c->ingredient_id !== null ? $c->unit : null,
+                    $c->entered_unit,
+                    $c->entered_quantity,
+                ),
             ])->sortKeys();
 
         // No-op BEFORE the kind guards: an untouched set must never block an
@@ -86,6 +106,9 @@ final readonly class SyncAddOnConsumptionAction
         if ($newShape->toArray() === $currentShape->toArray()) {
             return $addon->fresh();
         }
+
+        // LAUNCH-P3 P3-3 — the lines DO change: "Edit recipes" required.
+        RecipeEditGate::ensure($actor);
 
         $this->assertLineKinds($resolved, $products, $addon);
 
@@ -100,6 +123,8 @@ final readonly class SyncAddOnConsumptionAction
                     'quantity' => $line['quantity'],
                     'unit' => $line['unit'],
                     'display_order' => $idx,
+                    'entered_unit' => $line['entered_unit'],
+                    'entered_quantity' => $line['entered_quantity'],
                 ]);
             }
 
@@ -123,10 +148,26 @@ final readonly class SyncAddOnConsumptionAction
     }
 
     /**
+     * The comparable (and audited) value of one line: the base quantity, and
+     * for an ingredient line its base unit and the amount as entered — a
+     * pre-P3 line (NULL entered columns) equals the same amount typed in the
+     * base unit, so re-sending an untouched set stays a no-op.
+     */
+    private static function shapeValue(string $quantity, ?string $baseUnit, ?string $enteredUnit, string|int|float|null $enteredQuantity): string
+    {
+        $qty = (string) StockDecimal::quantity($quantity);
+        if ($baseUnit === null) {
+            return $qty;
+        }
+
+        return $qty.' '.$baseUnit.' (entered '.RecipeQuantity::enteredKey($baseUnit, $qty, $enteredUnit, $enteredQuantity).')';
+    }
+
+    /**
      * Kind guards, run only when the set actually changes: what KINDS of
      * product an option may consume, and the double-consumption trap.
      *
-     * @param  array<int, array{ingredient_id: ?int, component_product_id: ?int, direction: string, quantity: string, unit: ?string}>  $resolved
+     * @param  array<int, array{ingredient_id: ?int, component_product_id: ?int, direction: string, quantity: string, unit: ?string, entered_unit: ?string, entered_quantity: ?string}>  $resolved
      * @param  Collection<string, Product>  $products
      */
     private function assertLineKinds(array $resolved, $products, AddOn $addon): void
@@ -171,7 +212,7 @@ final readonly class SyncAddOnConsumptionAction
      * the kind guards — those run in assertLineKinds after the no-op diff.
      *
      * @param  array<int, array<string, mixed>>  $lines
-     * @return array{0: array<int, array{ingredient_id: ?int, component_product_id: ?int, direction: string, quantity: string, unit: ?string}>, 1: Collection<string, Product>}
+     * @return array{0: array<int, array{ingredient_id: ?int, component_product_id: ?int, direction: string, quantity: string, unit: ?string, entered_unit: ?string, entered_quantity: ?string}>, 1: Collection<string, Product>}
      */
     private function resolveLines(array $lines, int $companyId): array
     {
@@ -209,20 +250,23 @@ final readonly class SyncAddOnConsumptionAction
                 if ($ingredient === null) {
                     throw new RuntimeException('One or more ingredients in the stock-usage lines do not belong to your company.');
                 }
-                // Convert-at-entry, store-in-base (the recipe convention) —
-                // throws on an unknown unit for this ingredient.
-                $qty = $this->units->toBase($ingredient, $line['quantity'], $line['unit'] ?? null);
-                if ($qty <= 0) {
+                if ((float) $line['quantity'] <= 0) {
                     throw new RuntimeException('Stock-usage quantities must be positive.');
                 }
+                // Convert-at-entry, store-in-base (the recipe convention) —
+                // throws on an unknown unit, and (LAUNCH-P3 P3-1) on an
+                // amount that would round to 0 in the base unit.
+                $amount = $this->quantities->resolve($ingredient, $line['quantity'], $line['unit'] ?? null);
                 $key = 'i:'.$ingredient->id.':'.$direction;
                 $entry = [
                     'ingredient_id' => (int) $ingredient->id,
                     'component_product_id' => null,
                     'direction' => $direction,
                     // LAUNCH-P2 — ingredient amounts keep 4 decimals.
-                    'quantity' => StockDecimal::quantity($qty),
+                    'quantity' => $amount['quantity'],
                     'unit' => $ingredient->unit?->value,
+                    'entered_unit' => $amount['entered_unit'],
+                    'entered_quantity' => $amount['entered_quantity'],
                 ];
             } else {
                 /** @var Product|null $product */
@@ -240,6 +284,8 @@ final readonly class SyncAddOnConsumptionAction
                     'direction' => $direction,
                     'quantity' => number_format((float) $line['quantity'], 3, '.', ''),
                     'unit' => null,
+                    'entered_unit' => null,
+                    'entered_quantity' => null,
                 ];
             }
 

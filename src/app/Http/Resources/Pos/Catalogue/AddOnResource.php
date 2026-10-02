@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Resources\Pos\Catalogue;
 
 use App\Models\AddOn;
+use App\Support\Recipes\RecipeQuantity;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -39,23 +40,34 @@ class AddOnResource extends JsonResource
             ]),
             // PD3b — the option's stock-usage lines (ingredient lines in
             // the ingredient's BASE unit; product lines in pieces).
-            'consumption' => $this->whenLoaded('consumptionLines', fn (): array => $this->consumptionLines->map(static fn ($line): array => [
-                'type' => $line->ingredient_id !== null ? 'ingredient' : 'product',
-                'direction' => $line->direction,
-                'quantity' => (string) $line->quantity,
-                'unit' => $line->unit,
-                'ingredient' => $line->ingredient === null ? null : [
-                    'uuid' => $line->ingredient->uuid,
-                    'name' => $line->ingredient->name,
-                    'unit' => $line->ingredient->unit?->value,
-                ],
-                'product' => $line->componentProduct === null ? null : [
-                    'uuid' => $line->componentProduct->uuid,
-                    'name' => $line->componentProduct->name,
-                    'stock_mode' => $line->componentProduct->stock_mode,
-                    'is_internal' => (bool) $line->componentProduct->is_internal,
-                ],
-            ])->values()->all()),
+            'consumption' => $this->whenLoaded('consumptionLines', fn (): array => $this->consumptionLines->map(static function ($line): array {
+                // LAUNCH-P3 P3-1 — how an ingredient line was typed, while it
+                // still converts to the stored base quantity.
+                $entered = $line->ingredient !== null
+                    ? app(RecipeQuantity::class)->display($line->ingredient, (string) $line->quantity, $line->entered_unit, $line->entered_quantity)
+                    : ['entered' => false, 'unit' => null, 'quantity' => null];
+
+                return [
+                    'type' => $line->ingredient_id !== null ? 'ingredient' : 'product',
+                    'direction' => $line->direction,
+                    'quantity' => (string) $line->quantity,
+                    'unit' => $line->unit,
+                    'entered_unit' => $entered['entered'] ? $entered['unit'] : null,
+                    'entered_quantity' => $entered['entered'] ? $entered['quantity'] : null,
+                    'ingredient' => $line->ingredient === null ? null : [
+                        'uuid' => $line->ingredient->uuid,
+                        'name' => $line->ingredient->name,
+                        'unit' => $line->ingredient->unit?->value,
+                        'is_prep' => (bool) $line->ingredient->is_prep,
+                    ],
+                    'product' => $line->componentProduct === null ? null : [
+                        'uuid' => $line->componentProduct->uuid,
+                        'name' => $line->componentProduct->name,
+                        'stock_mode' => $line->componentProduct->stock_mode,
+                        'is_internal' => (bool) $line->componentProduct->is_internal,
+                    ],
+                ];
+            })->values()->all()),
             'display_order' => $this->display_order,
             'status' => $this->status,
             'created_at' => $this->created_at?->toIso8601String(),

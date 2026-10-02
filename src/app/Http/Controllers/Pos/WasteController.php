@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Pos;
 
+use App\Actions\Pos\Inventory\RecordPrepWasteAction;
 use App\Actions\Pos\Inventory\RecordWasteAction;
 use App\Enums\MerchantPermission;
 use App\Enums\WasteReason;
@@ -43,6 +44,7 @@ class WasteController extends Controller
     public function __construct(
         private readonly MerchantTenantContext $tenant,
         private readonly RecordWasteAction $record,
+        private readonly RecordPrepWasteAction $recordPrep,
     ) {}
 
     public function index(Request $request, Branch $branch): AnonymousResourceCollection
@@ -117,6 +119,34 @@ class WasteController extends Controller
         $occurredAt = null;
         if ($request->filled('occurred_at')) {
             $occurredAt = new \DateTimeImmutable((string) $request->input('occurred_at'));
+        }
+
+        // LAUNCH-P3 P3-4 — a prep item has no stock: its waste is the waste
+        // of its exploded raw ingredients, one event naming the prep item.
+        if ($ingredient->isPrep()) {
+            try {
+                $result = $this->recordPrep->handle(
+                    branch: $branch,
+                    prep: $ingredient,
+                    quantity: $request->input('quantity'),
+                    reason: WasteReason::from((string) $request->input('reason')),
+                    actor: $request->user(),
+                    notes: $request->input('notes'),
+                    occurredAt: $occurredAt,
+                    unit: $request->input('unit'),
+                );
+            } catch (RuntimeException $e) {
+                return response()->json(['message' => $e->getMessage()], 422);
+            }
+
+            $records = $result['records']->each(fn (WasteRecord $r) => $r->load(['ingredient', 'branch', 'recordedBy']));
+
+            return response()->json([
+                'data' => (new WasteRecordResource($records->first()))->resolve($request),
+                'records' => WasteRecordResource::collection($records)->resolve($request),
+                'prep_item' => ['uuid' => $ingredient->uuid, 'name' => $ingredient->name, 'quantity' => $result['quantity'], 'unit' => $ingredient->unit?->value],
+                'total_cost' => $result['total_cost'],
+            ], 201);
         }
 
         try {

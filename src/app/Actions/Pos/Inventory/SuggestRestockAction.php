@@ -60,6 +60,8 @@ final readonly class SuggestRestockAction
 
         $ingredients = Ingredient::query()
             ->where('company_id', $companyId)
+            // LAUNCH-P3 P3-4 — prep items have no stock to restock.
+            ->stocked()
             ->active()
             ->orderBy('name')
             ->get();

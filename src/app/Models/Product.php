@@ -6,7 +6,10 @@ namespace App\Models;
 
 use App\Enums\ProductStatus;
 use App\Models\Concerns\BelongsToCompany;
+use App\Support\Recipes\PrepGraph;
 use App\Support\StockDecimal;
+use Brick\Math\BigRational;
+use Brick\Math\RoundingMode;
 use Database\Factories\ProductFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -361,18 +364,30 @@ class Product extends Model
             ? $this->recipeLines
             : $this->recipeLines()->with('ingredient')->get();
 
-        $total = 0.0;
+        // LAUNCH-P3 P3-4 — a line using a PREP ITEM costs what the prep
+        // recipe costs (PrepGraph: Σ component × cost ÷ yield, recursively);
+        // exact arithmetic, rounded once at the end.
+        $total = BigRational::zero();
+        $prepLines = [];
         foreach ($lines as $line) {
-            $cost = (float) ($line->ingredient?->default_unit_cost ?? 0);
-            $qty = (float) $line->quantity;
-            $total += $qty * $cost;
+            if ($line->ingredient?->is_prep) {
+                $prepLines[(int) $line->ingredient_id] = (string) $line->quantity;
+
+                continue;
+            }
+            $total = $total->plus(
+                BigRational::of((string) $line->quantity)->multipliedBy((string) ($line->ingredient?->default_unit_cost ?? '0')),
+            );
+        }
+        if ($prepLines !== []) {
+            $total = $total->plus(PrepGraph::forCompany((int) $this->company_id)->linesCostExact($prepLines));
         }
 
         // LAUNCH-P2 — a frozen per-piece cost (product waste) keeps 6
         // decimals so it is never rounded before it is multiplied; the
         // displayed cost stays at OMR baisa.
         return $perUnitPrecision
-            ? (string) StockDecimal::unitCost($total)
-            : number_format($total, 3, '.', '');
+            ? (string) StockDecimal::unitCost((string) $total->toScale(StockDecimal::UNIT_COST_SCALE, RoundingMode::HALF_UP))
+            : (string) $total->toScale(3, RoundingMode::HALF_UP);
     }
 }

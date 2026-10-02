@@ -528,7 +528,24 @@ return new class extends Migration
             $table->string('status', 32)->default('active');
             $table->timestamps();
             $table->softDeletes();
+            // pos_admin 2026_10_02_100001 (LAUNCH-P3): prep items + their yield.
+            $table->boolean('is_prep')->default(false);
+            $table->decimal('prep_yield_quantity', 14, 4)->nullable();
             $table->unique(['company_id', 'name'], 'pos_ingredients_company_name_unique');
+        });
+
+        // pos_admin 2026_10_02_100002 (LAUNCH-P3): a prep item's recipe per batch.
+        Schema::create('pos_ingredient_recipes', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('prep_ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
+            $table->foreignId('ingredient_id')->constrained('pos_ingredients')->restrictOnDelete();
+            $table->decimal('quantity', 14, 4);
+            $table->string('entered_unit', 32)->nullable();
+            $table->decimal('entered_quantity', 14, 4)->nullable();
+            $table->integer('sort_order')->default(0);
+            $table->timestamps();
+            $table->unique(['prep_ingredient_id', 'ingredient_id'], 'pos_ingredient_recipes_prep_ingredient_unique');
+            $table->index(['ingredient_id'], 'pos_ingredient_recipes_ingredient_idx');
         });
 
         // v2 #13 — per-ingredient alternate units (base unit + factor).
@@ -652,6 +669,9 @@ return new class extends Migration
             $table->string('unit_at_set', 16);
             $table->unsignedSmallInteger('sort_order')->default(0);
             $table->timestamps();
+            // pos_admin 2026_10_02_100003 (LAUNCH-P3): how the line was typed.
+            $table->string('entered_unit', 32)->nullable();
+            $table->decimal('entered_quantity', 14, 4)->nullable();
             $table->unique(['product_id', 'ingredient_id'], 'pos_product_recipes_product_ingredient_unique');
         });
 
@@ -693,6 +713,9 @@ return new class extends Migration
             $table->string('unit', 16)->nullable();
             $table->unsignedSmallInteger('display_order')->default(0);
             $table->timestamps();
+            // pos_admin 2026_10_02_100003 (LAUNCH-P3): how the line was typed.
+            $table->string('entered_unit', 32)->nullable();
+            $table->decimal('entered_quantity', 14, 4)->nullable();
             $table->unique(['add_on_id', 'ingredient_id', 'direction'], 'pos_addon_consumptions_ing_dir_unique');
             $table->unique(['add_on_id', 'component_product_id', 'direction'], 'pos_addon_consumptions_prod_dir_unique');
         });

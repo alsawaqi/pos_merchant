@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Pos\Reports;
 
-use App\Actions\Pos\Reports\Support\RecipeSnapshotCost;
+use App\Actions\Pos\Reports\Support\OrderLineCost;
 use App\Data\Reports\ReportFilter;
 use App\Enums\OrderStatus;
 use App\Support\MerchantTenantContext;
@@ -48,8 +48,8 @@ final readonly class ProductPerformanceReportAction
             $itemsBase->whereIn('pos_orders.branch_id', $branchScope);
         }
 
-        // Per-product COGS from the snapshotted recipes (see RecipeSnapshotCost).
-        $costByProduct = $this->costByProduct($itemsBase);
+        // Per-product COGS from the frozen order-line copies (LAUNCH-P3 P3-5).
+        $costByProduct = $this->costByProduct($itemsBase, $companyId);
 
         // P-G3 — product-as-add-on sales count into the product's numbers
         // (agreed default): units = parent line qty per attach, revenue =
@@ -183,16 +183,30 @@ final readonly class ProductPerformanceReportAction
     }
 
     /**
-     * Per-product COGS (baisas) from the line recipe snapshots.
+     * Per-product COGS (baisas). LAUNCH-P3 P3-5 — the complete food cost of
+     * each line from its frozen copies ({@see OrderLineCost}): recipe,
+     * packaging, add-on option lines, add-ons that are products and cooked /
+     * bought-in pieces, attributed to the line's product (its revenue —
+     * line_total — includes the add-ons too).
      *
      * @param  Builder  $itemsBase
      * @return array<int, int> product_id => cogs_baisas
      */
-    private function costByProduct($itemsBase): array
+    private function costByProduct($itemsBase, int $companyId): array
     {
         $rows = (clone $itemsBase)
-            ->select('pos_order_items.product_id', 'pos_order_items.qty', 'pos_order_items.recipe_snapshot_json')
+            ->select(
+                'pos_order_items.id',
+                'pos_order_items.product_id',
+                'pos_order_items.qty',
+                'pos_order_items.recipe_snapshot_json',
+                'pos_order_items.component_snapshot_json',
+                'pos_orders.branch_id',
+            )
+            ->selectRaw('COALESCE(pos_orders.closed_at, pos_orders.opened_at) AS sold_at')
             ->get();
+
+        $costs = (new OrderLineCost($companyId))->costs($rows);
 
         $cost = [];
         foreach ($rows as $row) {
@@ -200,7 +214,7 @@ final readonly class ProductPerformanceReportAction
                 continue;
             }
             $pid = (int) $row->product_id;
-            $cost[$pid] = ($cost[$pid] ?? 0) + RecipeSnapshotCost::itemBaisas($row->recipe_snapshot_json, (float) $row->qty);
+            $cost[$pid] = ($cost[$pid] ?? 0) + ($costs[(int) $row->id]['total'] ?? 0);
         }
 
         return $cost;

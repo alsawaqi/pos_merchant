@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Casts\ScaledDecimal;
 use App\Enums\IngredientUnit;
 use App\Models\Concerns\BelongsToCompany;
+use App\Support\Recipes\PrepGraph;
 use Database\Factories\IngredientFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -30,7 +31,16 @@ use Illuminate\Support\Str;
  * up to 6 decimals, so a gram can cost 0.00035) and quantities keep up to 4;
  * both read back as strings with at least 3 decimals (ScaledDecimal cast).
  *
- * Schema owned by pos_admin's 2026_05_29_010100 migration.
+ * LAUNCH-P3 P3-4 — a PREP ITEM (is_prep) is a row of this table with its own
+ * recipe ({@see prepRecipeLines()}, per batch) and prep_yield_quantity (what
+ * one batch makes, in its own base unit). Recipes use it like an ingredient;
+ * its raw ingredients come off stock when a dish sells. A prep item has NO
+ * stock of its own (never a branch / central balance or a movement) and its
+ * cost per base unit is derived from its recipe ({@see PrepGraph}),
+ * never stored: default_unit_cost stays 0 on a prep item.
+ *
+ * Schema owned by pos_admin's 2026_05_29_010100 migration (prep columns:
+ * 2026_10_02_100001).
  */
 #[Fillable([
     'uuid',
@@ -46,6 +56,8 @@ use Illuminate\Support\Str;
     'min_stock_threshold',
     'primary_supplier_id',
     'status',
+    'is_prep',
+    'prep_yield_quantity',
 ])]
 class Ingredient extends Model
 {
@@ -65,6 +77,8 @@ class Ingredient extends Model
             'allow_fractional_pieces' => 'boolean',
             'default_unit_cost' => ScaledDecimal::class.':3,6',
             'min_stock_threshold' => ScaledDecimal::class.':3,4',
+            'is_prep' => 'boolean',
+            'prep_yield_quantity' => ScaledDecimal::class.':0,4',
         ];
     }
 
@@ -190,5 +204,62 @@ class Ingredient extends Model
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('status', 'active');
+    }
+
+    // ===================== LAUNCH-P3 — prep items =====================
+
+    /**
+     * LAUNCH-P3 P3-4 — a prep item's recipe: what ONE batch is made of, one
+     * line per component (a raw ingredient or another prep item).
+     *
+     * @return HasMany<IngredientRecipe, $this>
+     */
+    public function prepRecipeLines(): HasMany
+    {
+        return $this->hasMany(IngredientRecipe::class, 'prep_ingredient_id')
+            ->orderBy('sort_order')
+            ->orderBy('id');
+    }
+
+    /**
+     * Stock-holding rows only: prep items never have stock (P3-4), so every
+     * stock list / count / transfer / receipt picker reads this scope.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeStocked(Builder $query): Builder
+    {
+        return $query->where('is_prep', false);
+    }
+
+    /**
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopePrepItems(Builder $query): Builder
+    {
+        return $query->where('is_prep', true);
+    }
+
+    public function isPrep(): bool
+    {
+        return (bool) $this->is_prep;
+    }
+
+    /**
+     * LAUNCH-P3 P3-4 — refuse a stock operation on a prep item with a message
+     * that says why (it has no stock of its own; its ingredients do).
+     *
+     * @throws \RuntimeException
+     */
+    public function ensureStocked(): void
+    {
+        if ($this->isPrep()) {
+            throw new \RuntimeException(sprintf(
+                '"%s" is a prep item: it has no stock of its own. Its ingredients come off stock when a dish that uses it sells — receive, count and move those ingredients instead.',
+                $this->name,
+            ));
+        }
     }
 }

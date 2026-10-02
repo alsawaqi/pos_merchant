@@ -519,6 +519,8 @@ final readonly class DashboardSummaryAction
         $balances = DB::table('pos_branch_stock')
             ->join('pos_ingredients', 'pos_ingredients.id', '=', 'pos_branch_stock.ingredient_id')
             ->where('pos_ingredients.company_id', $companyId)
+            // LAUNCH-P3 P3-4 — prep items have no stock.
+            ->where('pos_ingredients.is_prep', false)
             ->when($branchIds !== null, fn ($q) => $q->whereIn('pos_branch_stock.branch_id', $branchIds))
             ->whereNotNull('pos_ingredients.min_stock_threshold')
             ->selectRaw('
@@ -560,6 +562,8 @@ final readonly class DashboardSummaryAction
             ->when($branchIds !== null, fn ($q) => $q->whereIn('pos_branches.id', $branchIds))
             ->where('pos_ingredients.company_id', $companyId)
             ->whereNull('pos_ingredients.deleted_at')
+            // LAUNCH-P3 P3-4 — prep items have no stock: never "low".
+            ->where('pos_ingredients.is_prep', false)
             ->where(fn ($q) => $q->where('pos_ingredients.status', 'active')->orWhereNotNull('pos_branch_stock.id'))
             ->selectRaw("
                 pos_branches.uuid AS branch_uuid,

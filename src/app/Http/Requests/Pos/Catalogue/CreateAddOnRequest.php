@@ -53,7 +53,7 @@ class CreateAddOnRequest extends FormRequest
             $prefix.'.*.ingredient_uuid' => ['required_if:'.$prefix.'.*.type,ingredient', 'nullable', 'string', 'uuid'],
             $prefix.'.*.product_uuid' => ['required_if:'.$prefix.'.*.type,product', 'nullable', 'string', 'uuid'],
             $prefix.'.*.direction' => ['nullable', 'string', 'in:add,remove'],
-            $prefix.'.*.quantity' => ['required', 'numeric', 'gt:0', 'max:999999.999'],
+            $prefix.'.*.quantity' => ['required', 'numeric', 'gt:0', 'decimal:0,4', 'max:999999.999'],
             $prefix.'.*.unit' => ['nullable', 'string', 'max:32'],
         ];
     }

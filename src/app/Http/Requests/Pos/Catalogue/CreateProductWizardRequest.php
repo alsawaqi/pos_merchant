@@ -70,7 +70,7 @@ class CreateProductWizardRequest extends FormRequest
             // (cross-checked against product.stock_mode below).
             'recipe_lines' => ['present', 'array', 'max:50'],
             'recipe_lines.*.ingredient_uuid' => ['required', 'string', 'uuid'],
-            'recipe_lines.*.quantity' => ['required', 'numeric', 'gt:0', 'max:999999.999'],
+            'recipe_lines.*.quantity' => ['required', 'numeric', 'gt:0', 'decimal:0,4', 'max:999999.999'],
             'recipe_lines.*.unit' => ['nullable', 'string', 'max:32'],
             'recipe_note' => ['nullable', 'string', 'max:1000'],
 

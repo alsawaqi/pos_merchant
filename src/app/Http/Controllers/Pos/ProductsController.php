@@ -32,6 +32,7 @@ use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Support\BranchScope;
 use App\Support\MerchantTenantContext;
+use App\Support\Recipes\ProductRecipeHistory;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -91,7 +92,7 @@ class ProductsController extends Controller
             // round-trips.
             // P-G2 — components + their product so the Physical items
             // section pre-populates without an extra round-trip.
-            ->with(['category', 'addOnGroups', 'recipeLines.ingredient', ...$this->branchProductsEager($request), 'components.component']);
+            ->with(['category', 'addOnGroups', 'recipeLines.ingredient.altUnits', ...$this->branchProductsEager($request), 'components.component']);
 
         // Optional ?category=<uuid> filter. Unknown / cross-
         // tenant uuid silently yields zero results (no leak).
@@ -136,7 +137,7 @@ class ProductsController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $product->load(['category', 'addOnGroups', 'recipeLines.ingredient']);
+        $product->load(['category', 'addOnGroups', 'recipeLines.ingredient.altUnits']);
 
         return response()->json([
             'data' => (new ProductResource($product))->resolve($request),
@@ -158,6 +159,13 @@ class ProductsController extends Controller
         // guard as the standalone PUT). A scoped user creates with
         // branches: null and the product is available everywhere.
         $validated = $request->validated();
+
+        // LAUNCH-P3 P3-3 — a recipe or option stock-usage lines in the
+        // payload need "Edit recipes" too (catalogue.manage alone creates
+        // the product without them).
+        if (self::wizardCarriesRecipe($validated)) {
+            $this->ensure($request, MerchantPermission::CatalogueRecipesManage);
+        }
         if (($validated['branches'] ?? null) !== null) {
             BranchScope::ensureUnrestricted(
                 $request->user(),
@@ -180,7 +188,7 @@ class ProductsController extends Controller
         $product->load([
             'category',
             'addOnGroups.addOns',
-            'recipeLines.ingredient',
+            'recipeLines.ingredient.altUnits',
             'components.component',
             'deliveryPrices.deliveryProvider',
             ...$this->branchProductsEager($request),
@@ -211,7 +219,7 @@ class ProductsController extends Controller
             // PD3b — the wizard's option editor prefills stock-usage lines.
             'addOnGroups.addOns.consumptionLines.ingredient',
             'addOnGroups.addOns.consumptionLines.componentProduct',
-            'recipeLines.ingredient',
+            'recipeLines.ingredient.altUnits',
             'components.component',
             'deliveryPrices.deliveryProvider',
             ...$this->branchProductsEager($request),
@@ -254,7 +262,7 @@ class ProductsController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $updated->load(['category', 'addOnGroups', 'recipeLines.ingredient', ...$this->branchProductsEager($request)]);
+        $updated->load(['category', 'addOnGroups', 'recipeLines.ingredient.altUnits', ...$this->branchProductsEager($request)]);
 
         return ProductResource::make($updated);
     }
@@ -282,7 +290,7 @@ class ProductsController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $updated->load(['category', 'addOnGroups', 'recipeLines.ingredient', ...$this->branchProductsEager($request), 'components.component']);
+        $updated->load(['category', 'addOnGroups', 'recipeLines.ingredient.altUnits', ...$this->branchProductsEager($request), 'components.component']);
 
         return ProductResource::make($updated);
     }
@@ -386,7 +394,9 @@ class ProductsController extends Controller
      */
     public function updateRecipe(UpdateProductRecipeRequest $request, Product $product): ProductResource|JsonResponse
     {
-        $this->ensure($request, MerchantPermission::CatalogueManage);
+        // LAUNCH-P3 P3-3 — recipes have their own permission ("Edit
+        // recipes"); catalogue.manage alone no longer changes them.
+        $this->ensure($request, MerchantPermission::CatalogueRecipesManage);
         $this->refuseIfNotInTenant($product);
 
         // PD2 — a ready / bought-in product is PURCHASED, never made: its
@@ -414,9 +424,47 @@ class ProductsController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $updated->load(['category', 'addOnGroups', 'recipeLines.ingredient', ...$this->branchProductsEager($request)]);
+        $updated->load(['category', 'addOnGroups', 'recipeLines.ingredient.altUnits', ...$this->branchProductsEager($request)]);
 
         return ProductResource::make($updated);
+    }
+
+    /**
+     * GET /api/products/{product:uuid}/recipe-history
+     *
+     * LAUNCH-P3 P3-2 — the recipe's visible history: version number, date,
+     * who, every line added / removed / changed (before → after, in the unit
+     * it was entered in) and the note. Read gate: catalogue.view.
+     */
+    public function recipeHistory(Request $request, Product $product, ProductRecipeHistory $history): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::CatalogueView);
+        $this->refuseIfNotInTenant($product);
+        $this->refuseIfPhysicalItem($product);
+
+        return response()->json(['data' => $history->build($product)]);
+    }
+
+    /**
+     * LAUNCH-P3 P3-3 — whether a wizard create carries recipe content (recipe
+     * lines, or stock-usage lines on an owned option) that needs "Edit recipes".
+     *
+     * @param  array<string, mixed>  $validated
+     */
+    private static function wizardCarriesRecipe(array $validated): bool
+    {
+        if (($validated['recipe_lines'] ?? []) !== []) {
+            return true;
+        }
+        foreach ($validated['owned_groups'] ?? [] as $group) {
+            foreach ($group['options'] ?? [] as $option) {
+                if (! empty($option['consumption'])) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -460,7 +508,7 @@ class ProductsController extends Controller
         // P-G5 — this is a FULL-REPLACE of the per-branch set: a scoped
         // user submitting it would silently delete other branches' rows,
         // so branch assignment stays an all-branches (HQ) operation.
-        \App\Support\BranchScope::ensureUnrestricted($request->user(), 'Branch availability is managed by accounts with access to all branches.');
+        BranchScope::ensureUnrestricted($request->user(), 'Branch availability is managed by accounts with access to all branches.');
 
         try {
             $this->syncBranches->handle(
@@ -472,7 +520,7 @@ class ProductsController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $product->load(['category', 'addOnGroups', 'recipeLines.ingredient', ...$this->branchProductsEager($request)]);
+        $product->load(['category', 'addOnGroups', 'recipeLines.ingredient.altUnits', ...$this->branchProductsEager($request)]);
 
         return ProductResource::make($product);
     }
