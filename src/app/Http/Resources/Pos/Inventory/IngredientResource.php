@@ -29,7 +29,7 @@ class IngredientResource extends JsonResource
             'piece_unit_label_ar' => $this->piece_unit_label_ar,
             'units_per_piece' => $this->units_per_piece !== null ? (string) $this->units_per_piece : null,
             'allow_fractional_pieces' => (bool) $this->allow_fractional_pieces,
-            // Money + threshold as strings (decimal:3 cast).
+            // Cost (up to 6dp) + threshold (up to 4dp) as strings (ScaledDecimal cast).
             'default_unit_cost' => (string) $this->default_unit_cost,
             'min_stock_threshold' => $this->min_stock_threshold !== null
                 ? (string) $this->min_stock_threshold

@@ -13,6 +13,7 @@ use App\Models\RestockRequest;
 use App\Models\RestockRequestLine;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
+use App\Support\StockDecimal;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -129,8 +130,8 @@ final readonly class AllocateRestockRequestAction
                 if ($allocated > $requested) {
                     throw new RuntimeException(sprintf(
                         'Allocated %s exceeds requested %s for line %d.',
-                        number_format($allocated, 3, '.', ''),
-                        number_format($requested, 3, '.', ''),
+                        StockDecimal::quantity($allocated),
+                        StockDecimal::quantity($requested),
                         $line->id,
                     ));
                 }
@@ -167,8 +168,8 @@ final readonly class AllocateRestockRequestAction
                     throw new RuntimeException(sprintf(
                         'Not enough central stock of %s: %s available, %s needed. Receive stock into the warehouse first, reduce the allocation, or close the request as purchased.',
                         $names[$ingredientId],
-                        number_format($available, 3, '.', ''),
-                        number_format($needed, 3, '.', ''),
+                        StockDecimal::quantity($available),
+                        StockDecimal::quantity($needed),
                     ));
                 }
             }
@@ -179,10 +180,10 @@ final readonly class AllocateRestockRequestAction
                 $allocated = $entry['allocated'];
 
                 $line->forceFill([
-                    'quantity_allocated' => number_format($allocated, 3, '.', ''),
+                    'quantity_allocated' => StockDecimal::quantity($allocated),
                 ])->save();
 
-                $perLine[$line->id] = number_format($allocated, 3, '.', '');
+                $perLine[$line->id] = StockDecimal::quantity($allocated);
 
                 // Skip the stock movements for zero allocations —
                 // a zero-quantity movement would be both confusing
@@ -216,7 +217,7 @@ final readonly class AllocateRestockRequestAction
                     branch: $branch,
                     ingredient: $ingredient,
                     type: StockMovementType::Restock,
-                    quantity: number_format($allocated, 3, '.', ''),
+                    quantity: StockDecimal::quantity($allocated),
                     unitCostAtTime: (string) $ingredient->default_unit_cost,
                     referenceType: RestockRequestLine::class,
                     referenceId: $line->id,

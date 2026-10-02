@@ -12,6 +12,11 @@
  *
  * Server gate: inventory.manage + access to all branches (it credits the
  * central warehouse).
+ *
+ * LAUNCH-P2 P2-3 — each line picks a unit (the base unit, its kg↔g / l↔ml
+ * pair, an extra unit or the piece unit) and a PRICE PER THAT UNIT; the line
+ * shows the quantity converted to the base unit and its total before saving.
+ * The split is entered in the same unit. The server converts again.
  */
 
 import { ClipboardList, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-vue-next';
@@ -26,6 +31,15 @@ import { listProducts, type Product } from '@/lib/api/catalogue';
 import { listPhysicalItems, type PhysicalItem } from '@/lib/api/physicalItems';
 import { listTaxes, type Tax } from '@/lib/api/taxes';
 import { createPurchaseReceipt, type CreatePurchaseReceiptPayload } from '@/lib/api/purchaseReceipts';
+import {
+    purchaseLinePreview,
+    purchaseUnitFactor,
+    purchaseUnitName,
+    purchaseUnitOptions,
+    trimNumber,
+    type PurchaseLinePreview,
+    type PurchaseUnitOption,
+} from '@/lib/purchaseUnits';
 import PurchaseTaxField, { type PurchaseTaxModel } from '@/Pages/Merchant/Inventory/PurchaseTaxField.vue';
 
 const { t, locale } = useI18n();
@@ -50,8 +64,11 @@ interface AllocationRow { branch_uuid: string; quantity: string | number; }
 interface LineRow {
     id: number; // stable v-for key — see nextRowId()
     itemKey: string; // "ingredient:uuid" | "product:uuid" | "physical:uuid"
+    // P2-3 — the purchase unit ('' = the base unit) the quantity and the
+    // split are in, and the price per that unit.
+    unit: string;
     quantity: string | number;
-    line_cost: string | number;
+    unit_price: string | number;
     tax: PurchaseTaxModel; // PT — optional tax paid on this line
     showAllocations: boolean;
     allocations: AllocationRow[];
@@ -91,7 +108,12 @@ function blankAllocations(): AllocationRow[] {
 }
 
 function addLine(): void {
-    lines.value.push({ id: nextRowId(), itemKey: '', quantity: '', line_cost: '', tax: { tax_amount: 0, tax_rate: null }, showAllocations: false, allocations: blankAllocations() });
+    lines.value.push({ id: nextRowId(), itemKey: '', unit: '', quantity: '', unit_price: '', tax: { tax_amount: 0, tax_rate: null }, showAllocations: false, allocations: blankAllocations() });
+}
+
+/** A new item starts in its base unit. */
+function onItemChange(line: LineRow): void {
+    line.unit = '';
 }
 
 function removeLine(idx: number): void {
@@ -111,17 +133,59 @@ function itemName(i: { name: string; name_ar?: string | null }): string {
     return (isAr.value ? i.name_ar : null) ?? i.name;
 }
 
-/** Resolve a line's chosen item to its display name + measure unit. */
+/** The ingredient a line picked, or null (a product line or nothing yet). */
+function lineIngredient(line: LineRow): Ingredient | null {
+    if (!line.itemKey) {
+        return null;
+    }
+    const [kind, uuid] = line.itemKey.split(':');
+    return kind === 'ingredient' ? (ingredients.value.find((i) => i.uuid === uuid) ?? null) : null;
+}
+
+/** P2-3 — the units this line can be entered in (ingredients only). */
+function lineUnitOptions(line: LineRow): PurchaseUnitOption[] {
+    return purchaseUnitOptions(lineIngredient(line));
+}
+
+/** The chosen unit's short name, or "each" for a product line. */
 function lineUnit(line: LineRow): string {
     if (!line.itemKey) {
         return '';
     }
-    const [kind, uuid] = line.itemKey.split(':');
-    if (kind === 'ingredient') {
-        const ing = ingredients.value.find((i) => i.uuid === uuid);
-        return ing ? String(ing.unit) : '';
+    const ing = lineIngredient(line);
+    return ing ? purchaseUnitName(ing, line.unit) : t('purchase_receipts.form.unit_each');
+}
+
+/** The live preview: base quantity, line total, cost per base unit. */
+function linePreview(line: LineRow): PurchaseLinePreview {
+    const ing = lineIngredient(line);
+    const factor = ing ? purchaseUnitFactor(lineUnitOptions(line), line.unit) : 1;
+    return purchaseLinePreview(factor, line.quantity, line.unit_price === '' ? 0 : line.unit_price);
+}
+
+/** The line total (OMR) as computed from quantity × unit price. */
+function lineCost(line: LineRow): number {
+    return linePreview(line).lineCost ?? 0;
+}
+
+/** "= 25000 g" — shown when the chosen unit is not the base unit. */
+function lineBaseEquivalent(line: LineRow): string | null {
+    const ing = lineIngredient(line);
+    if (!ing || line.unit === '' || line.unit === ing.unit) {
+        return null;
     }
-    return t('purchase_receipts.form.unit_each');
+    const base = linePreview(line).baseQuantity;
+    return base === null ? null : t('purchase_receipts.form.base_equivalent', { quantity: trimNumber(base, 4), unit: ing.unit });
+}
+
+/** "0.00035 per g" — the cost the stock will carry. */
+function lineCostPerBase(line: LineRow): string | null {
+    const ing = lineIngredient(line);
+    const cost = linePreview(line).costPerBase;
+    if (!ing || cost === null || line.unit === '' || line.unit === ing.unit) {
+        return null;
+    }
+    return t('purchase_receipts.form.cost_per_base', { cost: trimNumber(cost, 6), unit: ing.unit });
 }
 
 function branchName(uuid: string): string {
@@ -147,14 +211,14 @@ function lineIncomplete(line: LineRow): boolean {
     return line.itemKey !== '' && !(Number(line.quantity) > 0);
 }
 
-const itemsTotal = computed(() => lines.value.reduce((sum, l) => sum + (Number(l.line_cost) || 0), 0));
+const itemsTotal = computed(() => lines.value.reduce((sum, l) => sum + lineCost(l), 0));
 const chargesTotal = computed(() => charges.value.reduce((sum, c) => sum + (Number(c.amount) || 0), 0));
 // PT — Σ of every line + charge tax; grand = items + charges + tax (gross).
 // Mirror the backend's rule (tax only counts when the base cost is positive — a
 // free line / zero charge books no tax) so this preview matches the persisted
 // receipt totals exactly.
 const taxTotal = computed(() =>
-    lines.value.reduce((s, l) => s + (Number(l.line_cost) > 0 ? (Number(l.tax.tax_amount) || 0) : 0), 0)
+    lines.value.reduce((s, l) => s + (lineCost(l) > 0 ? (Number(l.tax.tax_amount) || 0) : 0), 0)
     + charges.value.reduce((s, c) => s + (Number(c.amount) > 0 ? (Number(c.tax.tax_amount) || 0) : 0), 0));
 const grandTotal = computed(() => itemsTotal.value + chargesTotal.value + taxTotal.value);
 
@@ -180,12 +244,12 @@ const canSubmit = computed(() => {
     if (incompleteLines.value.length > 0) {
         return false;
     }
-    // No line may over-distribute or carry a negative cost.
+    // No line may over-distribute or carry a negative price.
     for (const l of validLines.value) {
         if (lineOverDistributed(l)) {
             return false;
         }
-        if (Number(l.line_cost) < 0) {
+        if (Number(l.unit_price) < 0) {
             return false;
         }
     }
@@ -223,11 +287,14 @@ async function submit(): Promise<void> {
                 : l.allocations
                     .filter((a) => a.branch_uuid && Number(a.quantity) > 0)
                     .map((a) => ({ branch_uuid: a.branch_uuid, quantity: a.quantity }));
+            // P2-3 — quantity and split in the chosen unit, the price per
+            // that unit; the server converts both and computes the total.
             return {
                 item_type: kind === 'ingredient' ? 'ingredient' : 'product',
                 item_uuid: uuid,
+                unit: kind === 'ingredient' && l.unit !== '' ? l.unit : null,
                 quantity: l.quantity,
-                line_cost: l.line_cost === '' ? 0 : l.line_cost,
+                unit_price: l.unit_price === '' ? 0 : l.unit_price,
                 tax_amount: l.tax.tax_amount,
                 tax_rate: l.tax.tax_rate,
                 allocations: allocations.length > 0 ? allocations : undefined,
@@ -383,7 +450,7 @@ onMounted(async () => {
                         <div class="flex flex-wrap items-end gap-3">
                             <label class="block min-w-[14rem] flex-1">
                                 <span class="text-xs font-medium text-slate-600">{{ t('purchase_receipts.form.item') }}</span>
-                                <select v-model="line.itemKey" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                                <select v-model="line.itemKey" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" @change="onItemChange(line)">
                                     <option value="" disabled>{{ t('purchase_receipts.form.pick_item') }}</option>
                                     <optgroup :label="t('purchase_receipts.form.group_ingredients')">
                                         <option v-for="i in ingredients" :key="i.uuid" :value="`ingredient:${i.uuid}`">{{ itemName(i) }}</option>
@@ -399,25 +466,40 @@ onMounted(async () => {
                             <label class="block w-28">
                                 <span class="text-xs font-medium text-slate-600">{{ t('purchase_receipts.form.quantity') }}</span>
                                 <div class="relative mt-1">
-                                    <input v-model="line.quantity" type="number" step="0.001" min="0" placeholder="0" class="block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                                    <input v-model="line.quantity" type="number" step="any" min="0" placeholder="0" class="block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
                                 </div>
-                                <span v-if="lineUnit(line)" class="mt-0.5 block text-[10px] text-slate-400">{{ lineUnit(line) }}</span>
+                                <span v-if="lineUnitOptions(line).length === 0 && lineUnit(line)" class="mt-0.5 block text-[10px] text-slate-400">{{ lineUnit(line) }}</span>
                             </label>
-                            <label class="block w-32">
-                                <span class="text-xs font-medium text-slate-600">{{ t('purchase_receipts.form.cost') }}</span>
-                                <input v-model="line.line_cost" type="number" step="0.001" min="0" placeholder="0.000" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                            <!-- P2-3 — the unit the quantity (and split) is entered in. -->
+                            <label v-if="lineUnitOptions(line).length > 0" class="block w-40">
+                                <span class="text-xs font-medium text-slate-600">{{ t('purchase_receipts.form.unit') }}</span>
+                                <select v-model="line.unit" data-test="line-unit" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                                    <option v-for="o in lineUnitOptions(line)" :key="o.value" :value="o.value">{{ o.label }}</option>
+                                </select>
                             </label>
+                            <label class="block w-36">
+                                <span class="text-xs font-medium text-slate-600">{{ lineUnit(line) ? t('purchase_receipts.form.price_per_unit', { unit: lineUnit(line) }) : t('purchase_receipts.form.unit_price') }}</span>
+                                <input v-model="line.unit_price" type="number" step="any" min="0" placeholder="0.000" data-test="line-unit-price" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                            </label>
+                            <div class="block w-28">
+                                <span class="text-xs font-medium text-slate-600">{{ t('purchase_receipts.form.line_total') }}</span>
+                                <div class="mt-1 rounded-lg bg-slate-50 px-3 py-2 text-sm font-semibold tabular-nums text-slate-800">{{ money(lineCost(line)) }}</div>
+                            </div>
                             <button type="button" class="mb-1.5 grid size-9 place-items-center rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-600" :aria-label="t('common.delete')" @click="removeLine(idx)">
                                 <Trash2 class="size-4" />
                             </button>
                         </div>
 
                         <p v-if="lineIncomplete(line)" class="mt-2 text-xs text-rose-600">{{ t('purchase_receipts.form.needs_quantity') }}</p>
+                        <!-- P2-3 — what lands in stock, in the base unit, before saving. -->
+                        <p v-if="lineBaseEquivalent(line)" class="mt-2 text-xs font-medium text-teal-700" data-test="line-base-equivalent">
+                            {{ lineBaseEquivalent(line) }}<span v-if="lineCostPerBase(line)" class="text-slate-500"> · {{ lineCostPerBase(line) }}</span>
+                        </p>
 
                         <!-- PT — optional tax on this line (disabled on a free line:
                              the backend books no tax when the cost is not positive). -->
                         <div class="mt-2.5">
-                            <PurchaseTaxField v-model="line.tax" :base="Number(line.line_cost) || 0" :taxes="taxes" :disabled="!(Number(line.line_cost) > 0)" />
+                            <PurchaseTaxField v-model="line.tax" :base="lineCost(line)" :taxes="taxes" :disabled="!(lineCost(line) > 0)" />
                         </div>
 
                         <!-- Inline branch split -->
@@ -429,10 +511,11 @@ onMounted(async () => {
 
                             <div v-if="line.showAllocations && !header.destination_branch_uuid" class="mt-3">
                                 <p class="text-[11px] text-slate-400">{{ t('purchase_receipts.form.distribute_hint') }}</p>
+                                <p v-if="lineUnit(line)" class="text-[11px] text-slate-500">{{ t('purchase_receipts.form.split_in_unit', { unit: lineUnit(line) }) }}</p>
                                 <div class="mt-2 grid gap-2 sm:grid-cols-2">
                                     <div v-for="alloc in line.allocations" :key="alloc.branch_uuid" class="flex items-center gap-2">
                                         <span class="flex-1 truncate text-sm text-slate-700">{{ branchName(alloc.branch_uuid) }}</span>
-                                        <input v-model="alloc.quantity" type="number" step="0.001" min="0" placeholder="0" class="w-24 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                                        <input v-model="alloc.quantity" type="number" step="any" min="0" placeholder="0" class="w-24 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
                                     </div>
                                 </div>
                                 <p class="mt-2 text-xs" :class="lineOverDistributed(line) ? 'text-rose-600' : 'text-slate-500'">

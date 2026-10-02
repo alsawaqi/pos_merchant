@@ -16,21 +16,25 @@ use App\Models\StockMovement;
 use App\Models\User;
 use App\Models\WasteRecord;
 use App\Support\MerchantTenantContext;
+use App\Support\StockDecimal;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
  * Phase A (Additions §2.8) — submit a day-end physical stock count
- * for one branch and reconcile it against the running balance.
+ * for one branch and reconcile it against the book balance.
  *
  * Per ingredient line:
  *   counted    staff enter PIECES ("5 bottles on the shelf") which
  *              convert via units_per_piece, or primary units
  *              directly for non-piece ingredients.
- *   expected   the CURRENT running balance — by construction equal
- *              to opening + purchases − consumption ± transfers,
- *              because every one of those already flowed through
- *              the movement ledger.
+ *   expected   LAUNCH-P2 P2-6 — the book balance AT THE COUNT MOMENT:
+ *              every movement dated before counted_at (sale time for
+ *              device sales, not sync time), i.e. the current balance
+ *              minus whatever is dated at or after the count. A sale
+ *              made before the count that syncs later is folded in when
+ *              it arrives ({@see FoldLateMovementIntoCountAction}).
  *   variance   counted − expected.
  *     < 0  →  WasteRecord with reason reconciliation_variance + the
  *             signed-negative waste movement (via RecordWasteAction)
@@ -39,6 +43,8 @@ use RuntimeException;
  *     > 0  →  positive Adjustment movement (found MORE than booked;
  *             calling that "waste" would corrupt the waste report).
  *     = 0  →  no movement; the line still records the clean count.
+ *   Variance movements are dated at the count moment, so the balance
+ *   after the count is what was counted plus later movements.
  *
  * Everything happens in ONE transaction: a count either fully
  * reconciles or doesn't exist. The header + lines are the queryable
@@ -123,20 +129,24 @@ final readonly class SubmitStockCountAction
             $resolved[] = [
                 'ingredient' => $ingredient,
                 'counted_pieces' => $countedPieces,
-                'counted_units' => round((float) $countedUnits, 3),
+                'counted_units' => round((float) $countedUnits, StockDecimal::QUANTITY_SCALE),
             ];
         }
 
         $note = ($note !== null && trim($note) !== '') ? trim($note) : null;
 
         return DB::transaction(function () use ($branch, $resolved, $note, $actor, $companyId): StockCount {
+            // The count moment: whole seconds, the precision the ledger
+            // stores occurred_at in.
+            $countedAt = now()->startOfSecond();
+
             /** @var StockCount $count */
             $count = StockCount::query()->create([
                 'company_id' => $companyId,
                 'branch_id' => $branch->id,
                 'note' => $note,
                 'recorded_by_user_id' => $actor->getKey(),
-                'counted_at' => now(),
+                'counted_at' => $countedAt,
             ]);
 
             $shortfallValue = 0.0;
@@ -146,13 +156,11 @@ final readonly class SubmitStockCountAction
                 /** @var Ingredient $ingredient */
                 $ingredient = $line['ingredient'];
 
-                $expected = (float) (BranchStock::query()
-                    ->where('branch_id', $branch->id)
-                    ->where('ingredient_id', $ingredient->id)
-                    ->value('quantity') ?? 0.0);
-                $variance = round($line['counted_units'] - $expected, 3);
+                $expected = $this->bookBalanceAt($branch, $ingredient, $countedAt);
+                $variance = round($line['counted_units'] - $expected, StockDecimal::QUANTITY_SCALE);
 
                 $movementId = null;
+                $wasteId = null;
                 if ($variance < 0) {
                     // Shortfall — the doc's "waste / loss movement
                     // with reason = reconciliation variance".
@@ -163,7 +171,9 @@ final readonly class SubmitStockCountAction
                         reason: WasteReason::ReconciliationVariance,
                         actor: $actor,
                         notes: $this->lineNote($line, $expected, $note),
+                        occurredAt: $countedAt,
                     );
+                    $wasteId = (int) $waste->id;
                     $movementId = StockMovement::query()
                         ->where('reference_type', WasteRecord::class)
                         ->where('reference_id', $waste->id)
@@ -178,6 +188,7 @@ final readonly class SubmitStockCountAction
                         signedQuantity: $variance,
                         note: $this->lineNote($line, $expected, $note),
                         actor: $actor,
+                        occurredAt: $countedAt,
                     );
                     $movementId = $movement->id;
                     $linesWithVariance++;
@@ -187,13 +198,14 @@ final readonly class SubmitStockCountAction
                     'stock_count_id' => $count->id,
                     'ingredient_id' => $ingredient->id,
                     'counted_pieces' => $line['counted_pieces'] !== null
-                        ? number_format($line['counted_pieces'], 3, '.', '')
+                        ? StockDecimal::quantity($line['counted_pieces'])
                         : null,
-                    'counted_units' => number_format($line['counted_units'], 3, '.', ''),
-                    'expected_units' => number_format($expected, 3, '.', ''),
-                    'variance_units' => number_format($variance, 3, '.', ''),
+                    'counted_units' => StockDecimal::quantity($line['counted_units']),
+                    'expected_units' => StockDecimal::quantity($expected),
+                    'variance_units' => StockDecimal::quantity($variance),
                     'unit_cost_at_time' => (string) $ingredient->default_unit_cost,
                     'stock_movement_id' => $movementId,
+                    'waste_record_id' => $wasteId,
                 ]);
             }
 
@@ -217,6 +229,28 @@ final readonly class SubmitStockCountAction
     }
 
     /**
+     * The branch's book balance of an ingredient AT $at: the running balance
+     * minus every movement dated after $at (movements that happened after
+     * the count moment, e.g. sales already synced from a till whose clock is
+     * ahead). Uses the movement time, never the sync time. A movement in the
+     * count's own second that is already on the books counts as before it.
+     */
+    private function bookBalanceAt(Branch $branch, Ingredient $ingredient, Carbon $at): float
+    {
+        $balance = (float) (BranchStock::query()
+            ->where('branch_id', $branch->id)
+            ->where('ingredient_id', $ingredient->id)
+            ->value('quantity') ?? 0.0);
+        $after = (float) DB::table('pos_stock_movements')
+            ->where('branch_id', $branch->id)
+            ->where('ingredient_id', $ingredient->id)
+            ->where('occurred_at', '>', $at)
+            ->sum('quantity');
+
+        return round($balance - $after, StockDecimal::QUANTITY_SCALE);
+    }
+
+    /**
      * @param  array{ingredient: Ingredient, counted_pieces: float|null, counted_units: float}  $line
      */
     private function lineNote(array $line, float $expected, ?string $note): string
@@ -225,14 +259,14 @@ final readonly class SubmitStockCountAction
         $counted = $line['counted_pieces'] !== null
             ? sprintf(
                 '%s %s (= %s %s)',
-                rtrim(rtrim(number_format($line['counted_pieces'], 3, '.', ''), '0'), '.'),
+                StockDecimal::format($line['counted_pieces'], 0, StockDecimal::QUANTITY_SCALE),
                 $ingredient->piece_unit_label ?? 'piece(s)',
-                number_format($line['counted_units'], 3, '.', ''),
+                StockDecimal::quantity($line['counted_units']),
                 $ingredient->unit?->value ?? '',
             )
-            : sprintf('%s %s', number_format($line['counted_units'], 3, '.', ''), $ingredient->unit?->value ?? '');
+            : sprintf('%s %s', StockDecimal::quantity($line['counted_units']), $ingredient->unit?->value ?? '');
 
-        $text = sprintf('Day-end stock count: counted %s, expected %s.', $counted, number_format($expected, 3, '.', ''));
+        $text = sprintf('Day-end stock count: counted %s, expected %s.', $counted, StockDecimal::quantity($expected));
 
         return $note !== null ? $text.' '.$note : $text;
     }

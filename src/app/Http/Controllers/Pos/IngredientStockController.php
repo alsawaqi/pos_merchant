@@ -22,7 +22,9 @@ use App\Models\BranchStock;
 use App\Models\Ingredient;
 use App\Models\IngredientStock;
 use App\Models\StockMovement;
+use App\Support\BranchScope;
 use App\Support\MerchantTenantContext;
+use App\Support\SingleStockIn;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -124,7 +126,11 @@ class IngredientStockController extends Controller
         $this->ensure($request, MerchantPermission::InventoryManage);
         $this->refuseIfNotInTenant($ingredient);
         // P-G5 — the central warehouse is an HQ resource.
-        \App\Support\BranchScope::ensureUnrestricted($request->user(), 'The central warehouse is managed by accounts with access to all branches.');
+        BranchScope::ensureUnrestricted($request->user(), 'The central warehouse is managed by accounts with access to all branches.');
+        // LAUNCH-P2 P2-4 — stock comes in through Goods received only.
+        if (($refusal = SingleStockIn::refusal()) !== null) {
+            return $refusal;
+        }
 
         try {
             $this->receive->handle(
@@ -155,7 +161,11 @@ class IngredientStockController extends Controller
         $this->ensure($request, MerchantPermission::InventoryManage);
         $this->refuseIfNotInTenant($ingredient);
         // P-G5 — receiving + distributing drains the HQ pool.
-        \App\Support\BranchScope::ensureUnrestricted($request->user(), 'The central warehouse is managed by accounts with access to all branches.');
+        BranchScope::ensureUnrestricted($request->user(), 'The central warehouse is managed by accounts with access to all branches.');
+        // LAUNCH-P2 P2-4 — stock comes in through Goods received only.
+        if (($refusal = SingleStockIn::refusal()) !== null) {
+            return $refusal;
+        }
 
         $lines = [];
         foreach ((array) $request->input('allocations', []) as $row) {
@@ -190,7 +200,7 @@ class IngredientStockController extends Controller
         $this->ensure($request, MerchantPermission::InventoryManage);
         $this->refuseIfNotInTenant($ingredient);
         // P-G5 — allocation debits the HQ pool.
-        \App\Support\BranchScope::ensureUnrestricted($request->user(), 'The central warehouse is managed by accounts with access to all branches.');
+        BranchScope::ensureUnrestricted($request->user(), 'The central warehouse is managed by accounts with access to all branches.');
 
         $lines = [];
         foreach ((array) $request->input('allocations') as $row) {
@@ -229,8 +239,8 @@ class IngredientStockController extends Controller
         }
 
         // P-G5 — both sides of a transfer must be within the scope.
-        \App\Support\BranchScope::ensureBranch($request->user(), $from);
-        \App\Support\BranchScope::ensureBranch($request->user(), $to);
+        BranchScope::ensureBranch($request->user(), $from);
+        BranchScope::ensureBranch($request->user(), $to);
 
         try {
             $this->transfer->handle(
@@ -263,9 +273,9 @@ class IngredientStockController extends Controller
         // P-G5 — a branch adjustment needs that branch in scope; a
         // CENTRAL adjustment (no branch) is an HQ act.
         if ($branch !== null) {
-            \App\Support\BranchScope::ensureBranch($request->user(), $branch);
+            BranchScope::ensureBranch($request->user(), $branch);
         } else {
-            \App\Support\BranchScope::ensureUnrestricted($request->user(), 'The central warehouse is managed by accounts with access to all branches.');
+            BranchScope::ensureUnrestricted($request->user(), 'The central warehouse is managed by accounts with access to all branches.');
         }
 
         try {

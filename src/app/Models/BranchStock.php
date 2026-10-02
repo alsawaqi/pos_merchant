@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Casts\ScaledDecimal;
+use Brick\Math\BigDecimal;
+use Brick\Math\RoundingMode;
 use Database\Factories\BranchStockFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -36,13 +39,19 @@ class BranchStock extends Model
 
     protected $table = 'pos_branch_stock';
 
+    public const STATUS_NEGATIVE = 'negative';
+
+    public const STATUS_BELOW_MINIMUM = 'below_minimum';
+
+    public const STATUS_OK = 'ok';
+
     /**
      * @return array<string, string>
      */
     protected function casts(): array
     {
         return [
-            'quantity' => 'decimal:3',
+            'quantity' => ScaledDecimal::class.':3,4',
             'last_movement_at' => 'datetime',
         ];
     }
@@ -65,17 +74,22 @@ class BranchStock extends Model
 
     /**
      * Healthy / Low / Critical based on the ingredient's
-     * min_stock_threshold. NULL threshold → always Healthy.
+     * min_stock_threshold. NULL threshold → Healthy unless the
+     * balance is below zero (LAUNCH-P2: negative stock is never
+     * "healthy" — the till sells on and flags it instead).
      * Used by the Branch Stock UI for the badge column and
      * the dashboard's "inventory alerts" tile in Phase 7.
      */
     public function healthLevel(): string
     {
+        $qty = (float) $this->quantity;
+        if ($qty < 0) {
+            return 'critical';
+        }
         $threshold = $this->ingredient?->min_stock_threshold;
         if ($threshold === null) {
             return 'healthy';
         }
-        $qty = (float) $this->quantity;
         $threshold = (float) $threshold;
         if ($qty <= 0) {
             return 'critical';
@@ -83,6 +97,36 @@ class BranchStock extends Model
         if ($qty < $threshold) {
             return 'low';
         }
+
         return 'healthy';
+    }
+
+    /**
+     * LAUNCH-P2 P2-7 — sell, but warn. 'negative' (below zero, shown red),
+     * 'below_minimum' (under the ingredient's minimum, amber) or 'ok'.
+     */
+    public function stockStatus(): string
+    {
+        $qty = (float) $this->quantity;
+        if ($qty < 0) {
+            return self::STATUS_NEGATIVE;
+        }
+        $threshold = $this->ingredient?->min_stock_threshold;
+        if ($threshold !== null && $qty < (float) $threshold) {
+            return self::STATUS_BELOW_MINIMUM;
+        }
+
+        return self::STATUS_OK;
+    }
+
+    /**
+     * LAUNCH-P2 P2-7 — quantity × the ingredient's weighted-average cost,
+     * rounded once to OMR baisa.
+     */
+    public function stockValue(): string
+    {
+        return (string) BigDecimal::of((string) ($this->quantity ?? '0'))
+            ->multipliedBy((string) ($this->ingredient?->default_unit_cost ?? '0'))
+            ->toScale(3, RoundingMode::HALF_UP);
     }
 }

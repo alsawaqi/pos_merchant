@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Casts\ScaledDecimal;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -36,6 +37,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'allocations_json',
     'expense_id',
     'display_order',
+    'purchase_unit',
+    'purchase_quantity',
+    'unit_price',
+    'unit_cost',
 ])]
 class PurchaseReceiptLine extends Model
 {
@@ -47,11 +52,14 @@ class PurchaseReceiptLine extends Model
     protected function casts(): array
     {
         return [
-            'quantity' => 'decimal:3',
+            'quantity' => ScaledDecimal::class.':3,4',
             'line_cost' => 'decimal:3',
             'tax_amount' => 'decimal:3',
             'tax_rate' => 'decimal:2',
             'allocations_json' => 'array',
+            'purchase_quantity' => ScaledDecimal::class.':3,4',
+            'unit_price' => ScaledDecimal::class.':3,6',
+            'unit_cost' => ScaledDecimal::class.':3,6',
         ];
     }
 

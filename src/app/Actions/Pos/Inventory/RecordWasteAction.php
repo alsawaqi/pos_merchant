@@ -13,6 +13,7 @@ use App\Models\Ingredient;
 use App\Models\User;
 use App\Models\WasteRecord;
 use App\Support\MerchantTenantContext;
+use App\Support\StockDecimal;
 use DateTimeInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -65,8 +66,8 @@ final readonly class RecordWasteAction
 
     /**
      * @param  string|float|int  $quantity  ABSOLUTE positive amount, in [$unit]
-     * @param  string|null       $unit      Entered unit (alt-unit name, or null =
-     *                                       base); converted to base before write (#13).
+     * @param  string|null  $unit  Entered unit (alt-unit name, or null =
+     *                             base); converted to base before write (#13).
      */
     public function handle(
         Branch $branch,
@@ -89,7 +90,8 @@ final readonly class RecordWasteAction
 
         // #13 — convert the entered quantity to base units (the unit branch stock
         // is in), so the positivity + sufficient-stock checks compare like-for-like.
-        $absQty = $this->units->toBase($ingredient, $quantity, $unit);
+        // LAUNCH-P2 — ledger precision (4dp) once, used for record + movement.
+        $absQty = round($this->units->toBase($ingredient, $quantity, $unit), StockDecimal::QUANTITY_SCALE);
         if ($absQty <= 0) {
             throw new RuntimeException('Waste quantity must be positive.');
         }
@@ -103,15 +105,19 @@ final readonly class RecordWasteAction
         // Defensive sufficient-stock check. Phase 5a's
         // adjust-down flow has the same rule; we replicate it
         // here rather than letting the ledger go negative.
+        // LAUNCH-P2 P2-6 — a count's reconciliation shortfall is measured
+        // against the balance AT THE COUNT MOMENT, which later movements
+        // (or sell-but-warn negative stock) may have pushed below it: that
+        // shortfall is a fact the count observed and is always booked.
         $currentBalance = (float) DB::table('pos_branch_stock')
             ->where('branch_id', $branch->id)
             ->where('ingredient_id', $ingredient->id)
             ->value('quantity') ?? 0.0;
-        if ($currentBalance < $absQty) {
+        if ($reason !== WasteReason::ReconciliationVariance && $currentBalance < $absQty) {
             throw new RuntimeException(sprintf(
                 'Not enough stock to waste — branch holds %s but waste is %s.',
-                number_format($currentBalance, 3, '.', ''),
-                number_format($absQty, 3, '.', ''),
+                StockDecimal::quantity($currentBalance),
+                StockDecimal::quantity($absQty),
             ));
         }
 
@@ -136,7 +142,7 @@ final readonly class RecordWasteAction
             $waste = WasteRecord::query()->create([
                 'branch_id' => $branch->id,
                 'ingredient_id' => $ingredient->id,
-                'quantity' => number_format($absQty, 3, '.', ''),
+                'quantity' => StockDecimal::quantity($absQty),
                 'reason' => $reason->value,
                 'unit_at_set' => $ingredient->unit?->value,
                 // Freeze the cost at this moment so the "cost
@@ -157,7 +163,7 @@ final readonly class RecordWasteAction
                 ingredient: $ingredient,
                 type: StockMovementType::Waste,
                 // SIGNED — flip to negative for the ledger.
-                quantity: '-' . number_format($absQty, 3, '.', ''),
+                quantity: '-'.StockDecimal::quantity($absQty),
                 unitCostAtTime: (string) $ingredient->default_unit_cost,
                 referenceType: WasteRecord::class,
                 referenceId: $waste->id,
@@ -181,7 +187,7 @@ final readonly class RecordWasteAction
                 newValues: [
                     'ingredient_id' => $ingredient->id,
                     'ingredient_name' => $ingredient->name,
-                    'quantity' => number_format($absQty, 3, '.', ''),
+                    'quantity' => StockDecimal::quantity($absQty),
                     'reason' => $reason->value,
                     'unit_cost_at_time' => (string) $ingredient->default_unit_cost,
                     'total_cost' => number_format($absQty * (float) $ingredient->default_unit_cost, 3, '.', ''),

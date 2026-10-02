@@ -258,6 +258,13 @@
             "unit_each": "وحدة",
             "cost": "التكلفة",
             "distribute_now": "وزّع على الفروع الآن",
+            "unit": "الوحدة",
+            "unit_price": "سعر الوحدة",
+            "price_per_unit": "السعر لكل {unit}",
+            "line_total": "إجمالي البند",
+            "base_equivalent": "= {quantity} {unit} تدخل المخزون",
+            "cost_per_base": "{cost} لكل {unit}",
+            "split_in_unit": "كميات التوزيع بوحدة {unit}.",
             "distribute_hint": "وزّع هذا الصنف على الفروع. ما يتبقّى يبقى في المستودع المركزي.",
             "remainder": "توزيع {distributed} من {total} — يبقى {remainder} في المستودع",
             "needs_quantity": "أدخل كمية لهذا الصنف، أو احذف الصف.",
@@ -316,7 +323,10 @@
             "balance_after": "المتبقّي {amount}"
         },
         "show": {
-            "delivered_to": "سُلّمت إلى {branch}"
+            "delivered_to": "سُلّمت إلى {branch}",
+            "entered_as": "أُدخلت {quantity} {unit} بسعر {price} للوحدة",
+            "cost_per_base_unit": "التكلفة لكل {unit}: {cost}",
+            "piece_unit": "قطعة"
         }
     },
     "common": {
@@ -1559,7 +1569,10 @@
             "ml": "ملليلتر (مل)",
             "piece": "قطع",
             "pack": "علب",
-            "box": "صناديق"
+            "box": "صناديق",
+            "group_small": "وحدات صغيرة (موصى بها)",
+            "group_other": "وحدات أخرى",
+            "small_unit_hint": "احفظ المخزون بوحدة صغيرة (غ أو مل أو قطعة). يمكنك الشراء بالكيلو أو اللتر أو الصناديق: سند الاستلام يحوّل تلقائيًا."
         },
         "statuses": {
             "active": "نشط",
@@ -1585,11 +1598,28 @@
             "production_return": "إلغاء إنتاج",
             "received": "استلام المستودع",
             "allocation_out": "توزيع صادر",
-            "allocation_in": "توزيع وارد"
+            "allocation_in": "توزيع وارد",
+            "count_correction": "تصحيح جرد"
         },
         "empty_ingredients": "لا توجد مكونات بعد. أضف واحدًا لبدء تتبع المخزون.",
         "empty_suppliers": "لا يوجد موردون بعد. أضف واحدًا حتى تتمكن المكونات من الإشارة إليه.",
-        "empty_stock": "لا يوجد مخزون مسجل لهذا الفرع. استخدم زر التجديد أعلاه لتسجيل الرصيد الافتتاحي.",
+        "empty_stock": "لا توجد مكوّنات بعد. أضف المكوّنات ثم سجّل استلام البضائع.",
+        "stock": {
+            "all": "كل المكوّنات",
+            "low_filter": "مخزون منخفض",
+            "no_low": "لا يوجد ما هو تحت الصفر أو أقل من الحد الأدنى في هذا الفرع.",
+            "value": "القيمة",
+            "total_value": "قيمة المخزون (ر.ع)",
+            "negative_count": "{count} تحت الصفر",
+            "below_minimum_count": "{count} أقل من الحد الأدنى",
+            "minimum": "الحد الأدنى {quantity}",
+            "goods_received": "تسجيل استلام بضائع",
+            "status": {
+                "negative": "تحت الصفر",
+                "below_minimum": "أقل من الحد الأدنى",
+                "ok": "جيد"
+            }
+        },
         "empty_movements": "لا توجد حركات لهذا الفرع.",
         "delete_ingredient_blocked": "اضبط المخزون إلى صفر في جميع الفروع قبل حذف هذا المكون.",
         "delete_supplier_blocked": "أعد تعيين المكونات التي تشير إلى هذا المورد أو احذف الإشارة قبل الحذف.",
@@ -1745,6 +1775,7 @@
             "variance": "الفرق",
             "variance_value": "القيمة (ر.ع)",
             "success_clean": "تم الجرد - تطابقت جميع البنود ({lines}) مع الدفاتر تمامًا.",
+            "success_blind": "تم الجرد - سُجّل {lines} بندًا.",
             "success_with_variance": "تم الجرد - {variance} من {lines} بندًا فيها فرق؛ سُجلت الحركات.",
             "modal": {
                 "title": "جرد نهاية اليوم في {branch}",
@@ -1754,7 +1785,8 @@
                 "count_in": "عُدّ بوحدة {label}",
                 "skip_placeholder": "تخطٍ",
                 "filled": "{filled} من {total} معدود",
-                "no_stock": "لم يُسجل أي مخزون في هذا الفرع بعد.",
+                "no_stock": "أضف المكوّنات أولًا.",
+                "blind_hint": "عُدّ ما هو موجود على الرف. لا تُعرض الكمية المسجلة بالدفاتر؛ يظهر الفرق بعد الإرسال.",
                 "empty_error": "أدخل كمية معدودة واحدة على الأقل.",
                 "submit": "إرسال الجرد",
                 "submitting": "جارٍ المطابقة…"
@@ -3025,7 +3057,10 @@
         "orders": "الطلبات",
         "top_product_today": "أعلى منتج اليوم",
         "low_stock": "مكونات منخفضة المخزون",
-        "low_stock_subtitle": "المكونات التي رصيدها أقل من الحد الأدنى عبر كل الفروع.",
+        "low_stock_subtitle": "أرصدة المكونات تحت الصفر أو أقل من الحد الأدنى، لكل فرع.",
+        "low_stock_negative": "تحت الصفر",
+        "low_stock_below_minimum": "أقل من الحد الأدنى",
+        "low_stock_open": "افتح قائمة المخزون المنخفض",
         "recent_audit": "النشاط الأخير",
         "no_data": "لا توجد بيانات بعد.",
         "vs_yesterday": "مقابل أمس",

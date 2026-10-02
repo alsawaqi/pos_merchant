@@ -15,10 +15,15 @@ use App\Enums\ExpenseStatus;
 use App\Models\CompanySetting;
 use App\Models\Expense;
 use App\Models\Ingredient;
-use App\Models\PurchaseReceipt;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+// LAUNCH-P2 P2-4 — these tests exercise the stock-in entry points that
+// pos.inventory.single_stock_in hides for the pilot; the switch is off here.
+beforeEach(function (): void {
+    config(['pos.inventory.single_stock_in' => false]);
+});
 
 function ptIngredient(array $ctx, string $name = 'Tomato'): Ingredient
 {

@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Models\Concerns\BelongsToCompany;
+use App\Casts\ScaledDecimal;
 use App\Enums\IngredientUnit;
+use App\Models\Concerns\BelongsToCompany;
 use Database\Factories\IngredientFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -13,6 +14,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
@@ -24,8 +26,9 @@ use Illuminate\Support\Str;
  * what the ingredient is, its unit of measure, default cost
  * and minimum threshold for low-stock flagging.
  *
- * Money columns (default_unit_cost) cast as decimal:3 to
- * preserve OMR baisas precision through the JSON layer.
+ * default_unit_cost is the weighted-average cost per BASE unit (LAUNCH-P2:
+ * up to 6 decimals, so a gram can cost 0.00035) and quantities keep up to 4;
+ * both read back as strings with at least 3 decimals (ScaledDecimal cast).
  *
  * Schema owned by pos_admin's 2026_05_29_010100 migration.
  */
@@ -60,8 +63,8 @@ class Ingredient extends Model
             'unit' => IngredientUnit::class,
             'units_per_piece' => 'decimal:4',
             'allow_fractional_pieces' => 'boolean',
-            'default_unit_cost' => 'decimal:3',
-            'min_stock_threshold' => 'decimal:3',
+            'default_unit_cost' => ScaledDecimal::class.':3,6',
+            'min_stock_threshold' => ScaledDecimal::class.':3,4',
         ];
     }
 
@@ -92,9 +95,9 @@ class Ingredient extends Model
      * unique on company+ingredient and an ingredient belongs to exactly
      * one company). Absent row = never received centrally = 0 on hand.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\HasOne<IngredientStock, $this>
+     * @return HasOne<IngredientStock, $this>
      */
-    public function centralStock(): \Illuminate\Database\Eloquent\Relations\HasOne
+    public function centralStock(): HasOne
     {
         return $this->hasOne(IngredientStock::class);
     }

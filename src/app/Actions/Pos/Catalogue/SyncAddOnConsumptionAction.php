@@ -13,6 +13,8 @@ use App\Models\Ingredient;
 use App\Models\Product;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
+use App\Support\StockDecimal;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -125,7 +127,7 @@ final readonly class SyncAddOnConsumptionAction
      * product an option may consume, and the double-consumption trap.
      *
      * @param  array<int, array{ingredient_id: ?int, component_product_id: ?int, direction: string, quantity: string, unit: ?string}>  $resolved
-     * @param  \Illuminate\Support\Collection<string, Product>  $products
+     * @param  Collection<string, Product>  $products
      */
     private function assertLineKinds(array $resolved, $products, AddOn $addon): void
     {
@@ -169,7 +171,7 @@ final readonly class SyncAddOnConsumptionAction
      * the kind guards — those run in assertLineKinds after the no-op diff.
      *
      * @param  array<int, array<string, mixed>>  $lines
-     * @return array{0: array<int, array{ingredient_id: ?int, component_product_id: ?int, direction: string, quantity: string, unit: ?string}>, 1: \Illuminate\Support\Collection<string, Product>}
+     * @return array{0: array<int, array{ingredient_id: ?int, component_product_id: ?int, direction: string, quantity: string, unit: ?string}>, 1: Collection<string, Product>}
      */
     private function resolveLines(array $lines, int $companyId): array
     {
@@ -218,7 +220,8 @@ final readonly class SyncAddOnConsumptionAction
                     'ingredient_id' => (int) $ingredient->id,
                     'component_product_id' => null,
                     'direction' => $direction,
-                    'quantity' => number_format($qty, 3, '.', ''),
+                    // LAUNCH-P2 — ingredient amounts keep 4 decimals.
+                    'quantity' => StockDecimal::quantity($qty),
                     'unit' => $ingredient->unit?->value,
                 ];
             } else {

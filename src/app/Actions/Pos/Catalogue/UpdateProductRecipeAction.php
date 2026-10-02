@@ -13,6 +13,7 @@ use App\Models\ProductRecipe;
 use App\Models\ProductRecipeVersion;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
+use App\Support\StockDecimal;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -95,7 +96,9 @@ final readonly class UpdateProductRecipeAction
             /** @var Ingredient $ing */
             $ing = $ingredients[$l['ingredient_uuid']];
             $qty = $this->units->toBase($ing, $l['quantity'], $l['unit'] ?? null);
-            return [$ing->id => number_format($qty, 3, '.', '')];
+
+            // LAUNCH-P2 — recipe lines keep 4 decimals (0.3 g of a kg ingredient).
+            return [$ing->id => (string) StockDecimal::quantity($qty)];
         });
 
         $currentShape = $product->recipeLines()
@@ -147,7 +150,7 @@ final readonly class UpdateProductRecipeAction
                 ProductRecipe::query()->create([
                     'product_id' => $product->id,
                     'ingredient_id' => $ing->id,
-                    'quantity' => number_format($qty, 3, '.', ''),
+                    'quantity' => StockDecimal::quantity($qty),
                     // Denormalised — survives later unit edits
                     // on the ingredient master.
                     'unit_at_set' => $ing->unit?->value,
@@ -204,6 +207,7 @@ final readonly class UpdateProductRecipeAction
                 return false;
             }
         }
+
         return true;
     }
 

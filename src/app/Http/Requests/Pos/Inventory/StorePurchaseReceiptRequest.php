@@ -43,7 +43,14 @@ class StorePurchaseReceiptRequest extends FormRequest
             'lines.*.item_type' => ['required', 'string', 'in:ingredient,product'],
             'lines.*.item_uuid' => ['required', 'string', 'uuid'],
             'lines.*.quantity' => ['required', 'numeric', 'gt:0', 'max:999999.999'],
-            'lines.*.line_cost' => ['required', 'numeric', 'min:0', 'max:999999.999'],
+            // LAUNCH-P2 P2-3 — the unit the quantity and split are entered in
+            // (NULL = the base unit; kg/g, l/ml, an extra unit's name or
+            // '@piece') and the price PER THAT UNIT. With a unit price the
+            // server computes the line cost (quantity × price, 3dp); without
+            // one the typed line cost stands, as before.
+            'lines.*.unit' => ['nullable', 'string', 'max:40'],
+            'lines.*.unit_price' => ['nullable', 'numeric', 'min:0', 'max:999999999.999999'],
+            'lines.*.line_cost' => ['required_without:lines.*.unit_price', 'nullable', 'numeric', 'min:0', 'max:999999.999'],
             // PT — optional tax PAID on the line (on top of line_cost).
             'lines.*.tax_amount' => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
             'lines.*.tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
@@ -78,7 +85,8 @@ class StorePurchaseReceiptRequest extends FormRequest
             }
 
             // A line may not distribute more than it received (the action
-            // enforces this too, but a field-level error reads better).
+            // enforces this too, but a field-level error reads better). Both
+            // are in the line's entered unit, so they compare like for like.
             foreach ((array) $this->input('lines', []) as $i => $line) {
                 $qty = (float) ($line['quantity'] ?? 0);
                 $distributed = 0.0;

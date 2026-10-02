@@ -46,6 +46,7 @@ import {
 } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRoute } from 'vue-router';
 import BaseModal from '@/Components/BaseModal.vue';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import IngredientStockDialog from './IngredientStockDialog.vue';
@@ -67,6 +68,7 @@ import {
     deleteIngredientUnit,
     deleteSupplier,
     autoUnitNames,
+    getInventorySettings,
     ingredientUnitFactor,
     ingredientUnitOptions,
     listBranchStock,
@@ -88,6 +90,7 @@ import {
     updateIngredientUnit,
     updateRestockRequest,
     updateSupplier,
+    type BranchStockMeta,
     type BranchStockRow,
     type BranchTransfer,
     type BranchTransferLinePayload,
@@ -122,6 +125,7 @@ import { MerchantPermission } from '@/lib/permissions';
 
 const { t, locale } = useI18n();
 const { can } = usePermissions();
+const route = useRoute();
 
 const isArabic = computed(() => locale.value === 'ar');
 const canViewInventory = computed(() => can(MerchantPermission.InventoryView));
@@ -169,6 +173,13 @@ const physicalItemStockTarget = ref<PhysicalItem | null>(null);
 const physicalItemDeleteTarget = ref<PhysicalItem | null>(null);
 const physicalItemDeleting = ref(false);
 const branchStock = ref<BranchStockRow[]>([]);
+// LAUNCH-P2 P2-7 — every ingredient of the branch; 'low' keeps negative and
+// below-minimum rows only. meta = branch value + counts.
+const stockFilter = ref<'all' | 'low'>('all');
+const branchStockMeta = ref<BranchStockMeta | null>(null);
+// LAUNCH-P2 P2-4 — stock comes in through Goods received only while on:
+// the Restock / Purchase entry points stay hidden. Hidden until loaded.
+const singleStockIn = ref(true);
 const movements = ref<PaginatedMovements | null>(null);
 
 // Phase 5c — waste + restock-request state.
@@ -232,7 +243,7 @@ const ingForm = reactive<{
 }>({
     name: '',
     name_ar: '',
-    unit: 'kg',
+    unit: 'g',
     piece_unit_label: '',
     piece_unit_label_ar: '',
     units_per_piece: '',
@@ -244,6 +255,11 @@ const ingForm = reactive<{
 });
 
 const unitOptions: IngredientUnit[] = ['kg', 'g', 'l', 'ml', 'piece', 'pack', 'box'];
+// LAUNCH-P2 P2-1 — "buy big, use small": new ingredients are stocked in a
+// small unit (g, ml or piece) by default; kg, l, box and pack stay available
+// as purchase and recipe units through the converter.
+const smallUnitOptions: IngredientUnit[] = ['g', 'ml', 'piece'];
+const otherUnitOptions: IngredientUnit[] = ['kg', 'l', 'pack', 'box'];
 
 // =================== Alternate units (v2 #13) ====================
 // Sub-editor inside the ingredient EDIT modal. Each row maps to a
@@ -347,9 +363,10 @@ const countOpen = ref(false);
 const countBusy = ref(false);
 const countError = ref<string | null>(null);
 const countNote = ref('');
+// LAUNCH-P2 P2-6 — BLIND: a row is an ingredient to count, never the
+// system quantity.
 interface CountRow {
-    row: BranchStockRow;
-    ingredient: Ingredient | null;
+    ingredient: Ingredient;
     counted: string;
 }
 const countRows = ref<CountRow[]>([]);
@@ -592,8 +609,9 @@ async function fetchBranchStock(): Promise<void> {
         return;
     }
     try {
-        const response = await listBranchStock(selectedBranchUuid.value);
+        const response = await listBranchStock(selectedBranchUuid.value, stockFilter.value === 'low' ? 'low' : null);
         branchStock.value = response.data;
+        branchStockMeta.value = response.meta ?? null;
     } catch (err) {
         error.value = err instanceof Error ? err.message : 'Failed to load stock';
     }
@@ -668,13 +686,37 @@ async function fetchBranchTransfers(): Promise<void> {
     }
 }
 
+async function fetchInventorySettings(): Promise<void> {
+    try {
+        singleStockIn.value = (await getInventorySettings()).data.single_stock_in;
+    } catch {
+        singleStockIn.value = true;
+    }
+}
+
+/** LAUNCH-P2 — deep links (the dashboard's Low stock card): ?tab=stock&filter=low&branch=uuid. */
+function applyRouteQuery(): void {
+    const tab = String(route.query.tab ?? '');
+    if (tab === 'stock' || tab === 'stock_counts' || tab === 'movements') {
+        activeTab.value = tab;
+    }
+    if (route.query.filter === 'low') {
+        stockFilter.value = 'low';
+    }
+    const branch = String(route.query.branch ?? '');
+    if (branch !== '' && branches.value.some((b) => b.uuid === branch)) {
+        selectedBranchUuid.value = branch;
+    }
+}
+
 async function bootstrap(): Promise<void> {
     loading.value = true;
     error.value = null;
     // Restock requests aren't branch-scoped on the API — load
     // them eagerly so the count badge on the tab is accurate
     // even before the user clicks the tab.
-    await Promise.all([fetchBranches(), fetchIngredients(), fetchPhysicalItems(), fetchSuppliers(), fetchRestockRequests(), fetchBranchTransfers()]);
+    await Promise.all([fetchBranches(), fetchIngredients(), fetchPhysicalItems(), fetchSuppliers(), fetchRestockRequests(), fetchBranchTransfers(), fetchInventorySettings()]);
+    applyRouteQuery();
     if (selectedBranchUuid.value !== null) {
         await Promise.all([fetchBranchStock(), fetchMovements(), fetchWaste(), fetchStockCounts()]);
     }
@@ -696,6 +738,9 @@ watch(selectedBranchUuid, () => {
 
 // Phase A — stock-count pagination.
 watch(stockCountsPage, () => void fetchStockCounts());
+
+// LAUNCH-P2 P2-7 — the Low stock filter.
+watch(stockFilter, () => void fetchBranchStock());
 
 // Re-fetch movements when filters change.
 watch(
@@ -726,7 +771,7 @@ function openCreateIngredient(): void {
     ingModalTarget.value = null;
     ingForm.name = '';
     ingForm.name_ar = '';
-    ingForm.unit = 'kg';
+    ingForm.unit = 'g';
     ingForm.piece_unit_label = '';
     ingForm.piece_unit_label_ar = '';
     ingForm.units_per_piece = '';
@@ -1211,11 +1256,11 @@ async function submitPurchase(): Promise<void> {
 // =================== Phase A — day-end count flow ================
 
 function openCount(): void {
-    countRows.value = branchStock.value.map((row) => ({
-        row,
-        ingredient: ingredients.value.find((i) => i.id === row.ingredient_id) ?? null,
-        counted: '',
-    }));
+    // LAUNCH-P2 P2-6 — every active ingredient (not only those with a
+    // stock row), and never the quantity on the books.
+    countRows.value = ingredients.value
+        .filter((ingredient) => ingredient.status === 'active')
+        .map((ingredient) => ({ ingredient, counted: '' }));
     countNote.value = '';
     countError.value = null;
     countOpen.value = true;
@@ -1229,7 +1274,7 @@ async function submitCount(): Promise<void> {
     if (selectedBranchUuid.value === null) return;
     const lines: StockCountLinePayload[] = [];
     for (const r of countRows.value) {
-        if (String(r.counted).trim() === '' || r.ingredient === null) continue;
+        if (String(r.counted).trim() === '') continue;
         // Piece-tracked ingredients are counted in PIECES; everything
         // else directly in the base unit.
         if (pieceLabelFor(r.ingredient) !== null) {
@@ -1250,10 +1295,14 @@ async function submitCount(): Promise<void> {
             note: countNote.value.trim() || null,
         });
         countOpen.value = false;
-        const varianceLines = response.data.lines.filter((l) => Number(l.variance_units) !== 0).length;
-        success.value = varianceLines > 0
-            ? t('inventory.counts.success_with_variance', { lines: response.data.lines.length, variance: varianceLines })
-            : t('inventory.counts.success_clean', { lines: response.data.lines.length });
+        // P2-6 — the variance shows only after submit, and only to users
+        // who may see stock values.
+        const varianceLines = response.data.lines.filter((l) => l.variance_units !== undefined && Number(l.variance_units) !== 0).length;
+        success.value = response.data.shows_stock_values === false
+            ? t('inventory.counts.success_blind', { lines: response.data.lines.length })
+            : varianceLines > 0
+                ? t('inventory.counts.success_with_variance', { lines: response.data.lines.length, variance: varianceLines })
+                : t('inventory.counts.success_clean', { lines: response.data.lines.length });
         stockCountsPage.value = 1;
         await Promise.all([fetchBranchStock(), fetchMovements(), fetchWaste(), fetchStockCounts()]);
     } catch (err) {
@@ -1268,7 +1317,7 @@ async function submitCount(): Promise<void> {
 }
 
 /** Sum of a count's negative variance value (the shortfall cost), for the list row. */
-function countShortfallValue(count: { lines: { variance_value: string }[] }): number {
+function countShortfallValue(count: { lines: { variance_value?: string }[] }): number {
     return count.lines.reduce((sum, l) => {
         const v = Number(l.variance_value);
         return Number.isFinite(v) && v < 0 ? sum + v : sum;
@@ -1335,6 +1384,25 @@ function healthBadgeClass(level: string): string {
 
 function healthLabel(level: string): string {
     return t(`inventory.health.${level}`);
+}
+
+/** LAUNCH-P2 P2-7 — sell, but warn: negative red, below minimum amber. */
+function stockStatusBadgeClass(status: string): string {
+    if (status === 'negative') return 'bg-rose-100 text-rose-700';
+    if (status === 'below_minimum') return 'bg-amber-100 text-amber-700';
+    return 'bg-emerald-100 text-emerald-700';
+}
+
+function stockQuantityClass(status: string): string {
+    if (status === 'negative') return 'text-rose-600';
+    if (status === 'below_minimum') return 'text-amber-600';
+    return 'text-slate-950';
+}
+
+function stockRowClass(status: string): string {
+    if (status === 'negative') return 'bg-rose-50/60';
+    if (status === 'below_minimum') return 'bg-amber-50/60';
+    return '';
 }
 
 function movementTypeLabel(type: string): string {
@@ -2301,40 +2369,84 @@ async function submitSuggestions(): Promise<void> {
             </section>
 
             <section v-if="activeTab === 'stock' && branches.length > 0" class="space-y-4">
-                <div v-if="(canViewInventory || canManage) && ingredients.length > 0" class="flex flex-wrap justify-end gap-2">
-                    <button
-                        v-if="canViewInventory && selectedBranchUuid"
-                        type="button"
-                        class="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100"
-                        @click="openSuggestions"
-                    >
-                        <Lightbulb class="size-4" />
-                        {{ t('inventory.restock_suggestions.action') }}
-                    </button>
-                    <button
-                        v-if="canManage"
-                        type="button"
-                        class="inline-flex items-center gap-2 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-semibold text-teal-700 transition hover:bg-teal-100"
-                        @click="openRestock(null, ingredients[0])"
-                    >
-                        <Plus class="size-4" />
-                        {{ t('inventory.actions.restock') }}
-                    </button>
-                    <!-- Phase A — piece-aware purchase batch. -->
-                    <button
-                        v-if="canManage"
-                        type="button"
-                        class="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-100"
-                        @click="openPurchase(null, ingredients[0])"
-                    >
-                        <ShoppingCart class="size-4" />
-                        {{ t('inventory.actions.purchase') }}
-                    </button>
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <!-- LAUNCH-P2 P2-7 — every ingredient, or just the low ones. -->
+                    <div class="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm" role="group" data-test="stock-filter">
+                        <button
+                            type="button"
+                            class="rounded-md px-3 py-1.5 text-sm font-semibold transition"
+                            :class="stockFilter === 'all' ? 'bg-slate-950 text-white' : 'text-slate-600 hover:bg-slate-50'"
+                            @click="stockFilter = 'all'"
+                        >
+                            {{ t('inventory.stock.all') }}
+                        </button>
+                        <button
+                            type="button"
+                            class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-semibold transition"
+                            :class="stockFilter === 'low' ? 'bg-amber-600 text-white' : 'text-slate-600 hover:bg-slate-50'"
+                            @click="stockFilter = 'low'"
+                        >
+                            {{ t('inventory.stock.low_filter') }}
+                            <span v-if="branchStockMeta && (branchStockMeta.negative_count + branchStockMeta.below_minimum_count) > 0" class="rounded-full bg-white/80 px-1.5 text-[10px] font-bold text-amber-700">
+                                {{ branchStockMeta.negative_count + branchStockMeta.below_minimum_count }}
+                            </span>
+                        </button>
+                    </div>
+
+                    <div v-if="(canViewInventory || canManage) && ingredients.length > 0" class="flex flex-wrap justify-end gap-2">
+                        <button
+                            v-if="canViewInventory && selectedBranchUuid"
+                            type="button"
+                            class="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100"
+                            @click="openSuggestions"
+                        >
+                            <Lightbulb class="size-4" />
+                            {{ t('inventory.restock_suggestions.action') }}
+                        </button>
+                        <!-- LAUNCH-P2 P2-4 — one way in for the pilot: goods received. -->
+                        <RouterLink
+                            v-if="canManage && singleStockIn"
+                            :to="{ name: 'merchant.purchase-receipts.create' }"
+                            class="inline-flex items-center gap-2 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-semibold text-teal-700 transition hover:bg-teal-100"
+                            data-test="goods-received-link"
+                        >
+                            <Plus class="size-4" />
+                            {{ t('inventory.stock.goods_received') }}
+                        </RouterLink>
+                        <button
+                            v-if="canManage && !singleStockIn"
+                            type="button"
+                            class="inline-flex items-center gap-2 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-semibold text-teal-700 transition hover:bg-teal-100"
+                            data-test="restock-button"
+                            @click="openRestock(null, ingredients[0])"
+                        >
+                            <Plus class="size-4" />
+                            {{ t('inventory.actions.restock') }}
+                        </button>
+                        <!-- Phase A — piece-aware purchase batch. -->
+                        <button
+                            v-if="canManage && !singleStockIn"
+                            type="button"
+                            class="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-100"
+                            data-test="purchase-button"
+                            @click="openPurchase(null, ingredients[0])"
+                        >
+                            <ShoppingCart class="size-4" />
+                            {{ t('inventory.actions.purchase') }}
+                        </button>
+                    </div>
+                </div>
+
+                <!-- LAUNCH-P2 P2-7 — the branch's stock value and its warnings. -->
+                <div v-if="branchStockMeta" class="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm shadow-sm" data-test="stock-summary">
+                    <span class="text-slate-500">{{ t('inventory.stock.total_value') }}: <span class="font-semibold tabular-nums text-slate-900">{{ branchStockMeta.total_value }}</span></span>
+                    <span :class="branchStockMeta.negative_count > 0 ? 'font-semibold text-rose-600' : 'text-slate-400'">{{ t('inventory.stock.negative_count', { count: branchStockMeta.negative_count }) }}</span>
+                    <span :class="branchStockMeta.below_minimum_count > 0 ? 'font-semibold text-amber-600' : 'text-slate-400'">{{ t('inventory.stock.below_minimum_count', { count: branchStockMeta.below_minimum_count }) }}</span>
                 </div>
 
                 <div v-if="branchStock.length === 0" class="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">
                     <Package class="mx-auto size-10 text-slate-300" />
-                    <p class="mt-3 text-sm font-semibold text-slate-600">{{ t('inventory.empty_stock') }}</p>
+                    <p class="mt-3 text-sm font-semibold text-slate-600">{{ stockFilter === 'low' ? t('inventory.stock.no_low') : t('inventory.empty_stock') }}</p>
                 </div>
                 <div v-else class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                     <table class="min-w-full divide-y divide-slate-200">
@@ -2342,24 +2454,27 @@ async function submitSuggestions(): Promise<void> {
                             <tr>
                                 <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.table.name') }}</th>
                                 <th class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.table.quantity') }}</th>
+                                <th class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.stock.value') }}</th>
                                 <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.table.health') }}</th>
                                 <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.table.last_movement') }}</th>
                                 <th class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.table.actions') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 bg-white">
-                            <tr v-for="row in branchStock" :key="row.id" class="transition hover:bg-slate-50">
+                            <tr v-for="row in branchStock" :key="row.ingredient_id" class="transition hover:bg-slate-50" :class="stockRowClass(row.stock_status)" :data-stock-status="row.stock_status">
                                 <td class="px-5 py-4">
                                     <span class="block text-sm font-semibold text-slate-950">{{ row.ingredient?.name ?? '—' }}</span>
                                     <span v-if="row.ingredient?.name_ar" class="block text-xs text-slate-500" dir="rtl">{{ row.ingredient.name_ar }}</span>
                                 </td>
-                                <td class="px-5 py-4 text-end text-sm font-semibold tabular-nums text-slate-950">
+                                <td class="px-5 py-4 text-end text-sm font-semibold tabular-nums" :class="stockQuantityClass(row.stock_status)">
                                     {{ row.quantity }}
                                     <span class="ms-1 text-[10px] font-normal text-slate-400">{{ unitShort(row.ingredient?.unit ?? null) }}</span>
+                                    <span v-if="row.ingredient?.min_stock_threshold" class="block text-[10px] font-normal text-slate-400">{{ t('inventory.stock.minimum', { quantity: row.ingredient.min_stock_threshold }) }}</span>
                                 </td>
+                                <td class="px-5 py-4 text-end text-sm tabular-nums" :class="Number(row.stock_value) < 0 ? 'text-rose-600' : 'text-slate-700'">{{ row.stock_value }}</td>
                                 <td class="px-5 py-4">
-                                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider" :class="healthBadgeClass(row.health_level)">
-                                        {{ healthLabel(row.health_level) }}
+                                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider" :class="stockStatusBadgeClass(row.stock_status)">
+                                        {{ t(`inventory.stock.status.${row.stock_status}`) }}
                                     </span>
                                 </td>
                                 <td class="px-5 py-4 text-xs text-slate-500">{{ formatDate(row.last_movement_at) }}</td>
@@ -2368,10 +2483,10 @@ async function submitSuggestions(): Promise<void> {
                                         <button type="button" class="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50" @click="openAdjust(row)">
                                             <Minus class="size-3" /> {{ t('inventory.actions.adjust') }}
                                         </button>
-                                        <button type="button" class="inline-flex items-center gap-1 rounded border border-teal-200 bg-teal-50 px-2 py-1 text-[11px] font-semibold text-teal-700 transition hover:bg-teal-100" @click="openRestock(row)">
+                                        <button v-if="!singleStockIn" type="button" class="inline-flex items-center gap-1 rounded border border-teal-200 bg-teal-50 px-2 py-1 text-[11px] font-semibold text-teal-700 transition hover:bg-teal-100" @click="openRestock(row)">
                                             <Plus class="size-3" /> {{ t('inventory.actions.restock') }}
                                         </button>
-                                        <button type="button" class="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-100" @click="openPurchase(row)">
+                                        <button v-if="!singleStockIn" type="button" class="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-100" @click="openPurchase(row)">
                                             <ShoppingCart class="size-3" /> {{ t('inventory.actions.purchase') }}
                                         </button>
                                     </div>
@@ -2407,6 +2522,10 @@ async function submitSuggestions(): Promise<void> {
                             <option value="transfer_in">{{ t('inventory.movement_types.transfer_in') }}</option>
                             <option value="transfer_out">{{ t('inventory.movement_types.transfer_out') }}</option>
                             <option value="allocation_in">{{ t('inventory.movement_types.allocation_in') }}</option>
+                            <option value="production_consumption">{{ t('inventory.movement_types.production_consumption') }}</option>
+                            <option value="production_return">{{ t('inventory.movement_types.production_return') }}</option>
+                            <!-- LAUNCH-P2 P2-6 — late pre-count movements folded into a count. -->
+                            <option value="count_correction">{{ t('inventory.movement_types.count_correction') }}</option>
                         </select>
                     </label>
                 </div>
@@ -2842,8 +2961,21 @@ async function submitSuggestions(): Promise<void> {
                         <label class="block">
                             <span class="text-sm font-medium text-slate-700">{{ t('inventory.fields.unit') }} *</span>
                             <select v-model="ingForm.unit" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                                <option v-for="u in unitOptions" :key="u" :value="u">{{ unitLabel(u) }}</option>
+                                <!-- LAUNCH-P2 P2-1 — a NEW ingredient defaults to a small unit
+                                     (g / ml / piece); the others stay available. -->
+                                <template v-if="ingModalMode === 'create'">
+                                    <optgroup :label="t('inventory.units.group_small')">
+                                        <option v-for="u in smallUnitOptions" :key="u" :value="u">{{ unitLabel(u) }}</option>
+                                    </optgroup>
+                                    <optgroup :label="t('inventory.units.group_other')">
+                                        <option v-for="u in otherUnitOptions" :key="u" :value="u">{{ unitLabel(u) }}</option>
+                                    </optgroup>
+                                </template>
+                                <template v-else>
+                                    <option v-for="u in unitOptions" :key="u" :value="u">{{ unitLabel(u) }}</option>
+                                </template>
                             </select>
+                            <p v-if="ingModalMode === 'create'" class="mt-1 text-xs text-slate-500" data-test="small-unit-hint">{{ t('inventory.units.small_unit_hint') }}</p>
                             <!-- PD4 — the system already converts to/from these
                                  same-family metric units; no need to add them. -->
                             <p v-if="autoUnitNames(ingForm.unit).length" class="mt-1 text-xs text-slate-500">
@@ -3314,31 +3446,30 @@ async function submitSuggestions(): Promise<void> {
                 <div v-if="countRows.length === 0" class="rounded border border-dashed border-slate-200 p-6 text-center text-sm italic text-slate-500">
                     {{ t('inventory.counts.modal.no_stock') }}
                 </div>
-                <div v-else class="max-h-96 overflow-y-auto rounded-lg border border-slate-200">
+                <!-- LAUNCH-P2 P2-6 — a BLIND count: what is on the shelf, never the books. -->
+                <p v-if="countRows.length > 0" class="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600" data-test="blind-count-hint">{{ t('inventory.counts.modal.blind_hint') }}</p>
+                <div v-if="countRows.length > 0" class="max-h-96 overflow-y-auto rounded-lg border border-slate-200">
                     <table class="min-w-full divide-y divide-slate-200 text-sm">
                         <thead class="sticky top-0 bg-slate-50">
                             <tr>
                                 <th class="px-4 py-2 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.table.name') }}</th>
-                                <th class="px-4 py-2 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.counts.modal.on_book') }}</th>
                                 <th class="px-4 py-2 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.counts.modal.counted') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
-                            <tr v-for="(r, i) in countRows" :key="r.row.id">
+                            <tr v-for="(r, i) in countRows" :key="r.ingredient.uuid">
                                 <td class="px-4 py-2.5">
-                                    <span class="block font-medium text-slate-800">{{ r.ingredient ? (isArabic && r.ingredient.name_ar ? r.ingredient.name_ar : r.ingredient.name) : '—' }}</span>
+                                    <span class="block font-medium text-slate-800">{{ isArabic && r.ingredient.name_ar ? r.ingredient.name_ar : r.ingredient.name }}</span>
                                     <span v-if="pieceLabelFor(r.ingredient) !== null" class="block text-[11px] text-amber-700">
                                         {{ t('inventory.counts.modal.count_in', { label: pieceLabelFor(r.ingredient) ?? '' }) }}
                                     </span>
-                                </td>
-                                <td class="px-4 py-2.5 text-end tabular-nums text-slate-600">
-                                    {{ r.row.quantity }} <span class="text-[10px] text-slate-400">{{ unitShort(r.ingredient?.unit ?? null) }}</span>
+                                    <span v-else class="block text-[11px] text-slate-400">{{ t('inventory.counts.modal.count_in', { label: unitShort(r.ingredient.unit) }) }}</span>
                                 </td>
                                 <td class="px-4 py-2.5 text-end">
                                     <input
                                         v-model="countRows[i].counted"
                                         type="number"
-                                        :step="r.ingredient && pieceLabelFor(r.ingredient) !== null && r.ingredient.allow_fractional_pieces === false ? '1' : '0.001'"
+                                        :step="pieceLabelFor(r.ingredient) !== null && r.ingredient.allow_fractional_pieces === false ? '1' : 'any'"
                                         min="0"
                                         :placeholder="t('inventory.counts.modal.skip_placeholder')"
                                         class="w-32 rounded-lg border border-slate-200 px-2.5 py-1.5 text-end text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
@@ -4044,6 +4175,7 @@ async function submitSuggestions(): Promise<void> {
             :ingredient-uuid="warehouseDialogIngredient?.uuid ?? null"
             :ingredient-name="warehouseDialogIngredient?.name ?? ''"
             :can-manage="canManage"
+            :single-stock-in="singleStockIn"
             @close="warehouseDialogIngredient = null"
         />
     </MerchantLayout>

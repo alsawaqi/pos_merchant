@@ -16,6 +16,8 @@ use App\Models\IngredientPurchase;
 use App\Models\Supplier;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
+use App\Support\StockDecimal;
+use Brick\Math\RoundingMode;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -45,10 +47,15 @@ use RuntimeException;
  *   3. Expense row for EXACTLY total_paid (RestockAction derives
  *      qty × cost which can drift by rounding; a purchase knows the
  *      real money), category 'ingredients'. Skipped when 0.
- *   4. Ingredient updates: units_per_piece on a loose batch,
- *      default_unit_cost = total_paid ÷ units (§2.4 step 4) whenever
- *      money was paid.
+ *   4. Ingredient updates: units_per_piece on a loose batch. Whenever
+ *      money was paid, LAUNCH-P2 (M9) blends total_paid ÷ units (6dp)
+ *      into the weighted-average default_unit_cost before the stock
+ *      lands ({@see ApplyWeightedAverageCostAction}); it used to be
+ *      "last batch wins" at 3 decimals.
  *   5. Audit event inventory.purchase.recorded.
+ *
+ * LAUNCH-P2 — hidden for the pilot (pos.inventory.single_stock_in; the
+ * controller refuses it), kept correct for when it returns.
  */
 final readonly class RecordPurchaseAction
 {
@@ -56,14 +63,15 @@ final readonly class RecordPurchaseAction
         private WriteStockMovementAction $writeMovement,
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
+        private ApplyWeightedAverageCostAction $averageCost,
     ) {}
 
     /**
-     * @param  string|float|int|null  $pieces     Physical pieces received (bottles, crates…)
-     * @param  string|float|int|null  $units      Total PRIMARY units received. Required when
-     *                                            $pieces is null; for a piece purchase it marks
-     *                                            the batch LOOSE (weighed) and re-derives the ratio.
-     * @param  string|float|int       $totalPaid  Money paid for the whole batch (OMR)
+     * @param  string|float|int|null  $pieces  Physical pieces received (bottles, crates…)
+     * @param  string|float|int|null  $units  Total PRIMARY units received. Required when
+     *                                        $pieces is null; for a piece purchase it marks
+     *                                        the batch LOOSE (weighed) and re-derives the ratio.
+     * @param  string|float|int  $totalPaid  Money paid for the whole batch (OMR)
      */
     public function handle(
         Branch $branch,
@@ -135,7 +143,12 @@ final readonly class RecordPurchaseAction
             throw new RuntimeException('The received quantity exceeds the maximum storable amount of 999,999,999.999 base units.');
         }
 
-        $unitCost = $units > 0 ? $totalPaid / $units : 0.0;
+        $units = round($units, StockDecimal::QUANTITY_SCALE);
+        // Per base unit, 6 decimals (exact decimal division, never 3dp).
+        $unitCost = $units > 0
+            ? (string) StockDecimal::unitCost((string) ApplyWeightedAverageCostAction::decimal($totalPaid)
+                ->dividedBy(ApplyWeightedAverageCostAction::decimal($units), StockDecimal::UNIT_COST_SCALE, RoundingMode::HALF_UP))
+            : '0.000';
 
         return DB::transaction(function () use (
             $branch,
@@ -160,10 +173,10 @@ final readonly class RecordPurchaseAction
                 'branch_id' => $branch->id,
                 'ingredient_id' => $ingredient->id,
                 'supplier_id' => $supplier?->id,
-                'pieces_received' => $pieces !== null ? number_format($pieces, 3, '.', '') : null,
-                'units_received' => number_format($units, 3, '.', ''),
+                'pieces_received' => $pieces !== null ? StockDecimal::quantity($pieces) : null,
+                'units_received' => StockDecimal::quantity($units),
                 'total_paid' => number_format($totalPaid, 3, '.', ''),
-                'unit_cost' => number_format($unitCost, 6, '.', ''),
+                'unit_cost' => number_format((float) $unitCost, 6, '.', ''),
                 'units_per_piece_at_purchase' => $batchRatio !== null ? number_format($batchRatio, 4, '.', '') : null,
                 'is_loose' => $isLoose,
                 'note' => $note,
@@ -171,14 +184,23 @@ final readonly class RecordPurchaseAction
                 'occurred_at' => now(),
             ]);
 
+            // LAUNCH-P2 M9 — the paid price blends into the weighted-average
+            // cost BEFORE the stock lands (was: last batch wins, 3dp).
+            if ($totalPaid > 0) {
+                $this->averageCost->handle($ingredient, $units, $unitCost, $actor, [
+                    'source' => 'branch_purchase',
+                    'ingredient_purchase_id' => $purchase->id,
+                ]);
+            }
+
             // Step 2: the inflow movement (moves branch stock,
             // writes its own audit row).
             $movement = $this->writeMovement->handle(
                 branch: $branch,
                 ingredient: $ingredient,
                 type: StockMovementType::Restock,
-                quantity: number_format($units, 3, '.', ''),
-                unitCostAtTime: number_format($unitCost, 3, '.', ''),
+                quantity: StockDecimal::quantity($units),
+                unitCostAtTime: $unitCost,
                 referenceType: IngredientPurchase::class,
                 referenceId: $purchase->id,
                 actor: $actor,
@@ -192,15 +214,15 @@ final readonly class RecordPurchaseAction
                 $desc = $pieces !== null
                     ? trim(sprintf(
                         'Ingredient purchase: %s %s (%s %s) of %s',
-                        rtrim(rtrim(number_format($pieces, 3, '.', ''), '0'), '.'),
+                        StockDecimal::format($pieces, 0, 4),
                         $ingredient->piece_unit_label ?? 'piece(s)',
-                        rtrim(rtrim(number_format($units, 3, '.', ''), '0'), '.'),
+                        StockDecimal::format($units, 0, 4),
                         $unitLabel,
                         $ingredient->name,
                     ))
                     : trim(sprintf(
                         'Ingredient purchase: %s %s of %s',
-                        rtrim(rtrim(number_format($units, 3, '.', ''), '0'), '.'),
+                        StockDecimal::format($units, 0, 4),
                         $unitLabel,
                         $ingredient->name,
                     ));
@@ -216,13 +238,11 @@ final readonly class RecordPurchaseAction
                 ]);
             }
 
-            // Step 4: ingredient updates — last batch wins.
+            // Step 4: ingredient updates — the loose-batch piece ratio (last
+            // batch wins). The cost was averaged before step 2.
             $dirty = [];
             if ($isLoose && $batchRatio !== null && $ingredient->piece_unit_label !== null) {
                 $dirty['units_per_piece'] = number_format($batchRatio, 4, '.', '');
-            }
-            if ($totalPaid > 0) {
-                $dirty['default_unit_cost'] = number_format($unitCost, 3, '.', '');
             }
             if ($dirty !== []) {
                 $ingredient->forceFill($dirty)->save();
@@ -240,10 +260,10 @@ final readonly class RecordPurchaseAction
                 newValues: [
                     'ingredient_id' => $ingredient->id,
                     'ingredient_name' => $ingredient->name,
-                    'pieces_received' => $pieces !== null ? number_format($pieces, 3, '.', '') : null,
-                    'units_received' => number_format($units, 3, '.', ''),
+                    'pieces_received' => $pieces !== null ? StockDecimal::quantity($pieces) : null,
+                    'units_received' => StockDecimal::quantity($units),
                     'total_paid' => number_format($totalPaid, 3, '.', ''),
-                    'unit_cost' => number_format($unitCost, 6, '.', ''),
+                    'unit_cost' => number_format((float) $unitCost, 6, '.', ''),
                     'is_loose' => $isLoose,
                     'supplier_id' => $supplier?->id,
                 ],

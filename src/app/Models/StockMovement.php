@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Casts\ScaledDecimal;
 use App\Enums\StockMovementType;
 use Database\Factories\StockMovementFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -51,8 +52,8 @@ class StockMovement extends Model
     {
         return [
             'movement_type' => StockMovementType::class,
-            'quantity' => 'decimal:3',
-            'unit_cost_at_time' => 'decimal:3',
+            'quantity' => ScaledDecimal::class.':3,4',
+            'unit_cost_at_time' => ScaledDecimal::class.':3,6',
             'occurred_at' => 'datetime',
             'created_at' => 'datetime',
         ];
@@ -94,8 +95,6 @@ class StockMovement extends Model
      * Polymorphic link to the triggering entity — an Order
      * (Phase 8), a RestockRequest (Phase 5c), a Transfer
      * (Phase 5c), etc. NULL for manual adjustments.
-     *
-     * @return MorphTo
      */
     public function reference(): MorphTo
     {

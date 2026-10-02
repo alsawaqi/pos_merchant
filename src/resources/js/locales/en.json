@@ -258,6 +258,13 @@
             "unit_each": "each",
             "cost": "Cost",
             "distribute_now": "Distribute to branches now",
+            "unit": "Unit",
+            "unit_price": "Unit price",
+            "price_per_unit": "Price per {unit}",
+            "line_total": "Line total",
+            "base_equivalent": "= {quantity} {unit} into stock",
+            "cost_per_base": "{cost} per {unit}",
+            "split_in_unit": "Split quantities are in {unit}.",
             "distribute_hint": "Split this line across branches. Whatever you leave stays in the central warehouse.",
             "remainder": "Distributing {distributed} of {total} — {remainder} stays in the warehouse",
             "needs_quantity": "Enter a quantity for this item, or remove the row.",
@@ -316,7 +323,10 @@
             "balance_after": "balance {amount}"
         },
         "show": {
-            "delivered_to": "delivered to {branch}"
+            "delivered_to": "delivered to {branch}",
+            "entered_as": "Entered as {quantity} {unit} at {price} each",
+            "cost_per_base_unit": "Cost per {unit}: {cost}",
+            "piece_unit": "piece"
         }
     },
     "common": {
@@ -1559,7 +1569,10 @@
             "ml": "Millilitres (ml)",
             "piece": "Pieces",
             "pack": "Packs",
-            "box": "Boxes"
+            "box": "Boxes",
+            "group_small": "Small units (recommended)",
+            "group_other": "Other units",
+            "small_unit_hint": "Keep stock in a small unit (g, ml or piece). You can still buy in kg, l or boxes: goods received converts."
         },
         "statuses": {
             "active": "Active",
@@ -1585,11 +1598,28 @@
             "production_return": "Production cancelled",
             "received": "Warehouse receive",
             "allocation_out": "Allocated out",
-            "allocation_in": "Allocated in"
+            "allocation_in": "Allocated in",
+            "count_correction": "Count correction"
         },
         "empty_ingredients": "No ingredients yet. Add one to start tracking stock.",
         "empty_suppliers": "No suppliers yet. Add one so ingredients can reference them.",
-        "empty_stock": "No stock recorded at this branch yet. Use Restock above to log your opening inventory.",
+        "empty_stock": "No ingredients yet. Add ingredients, then record goods received.",
+        "stock": {
+            "all": "All ingredients",
+            "low_filter": "Low stock",
+            "no_low": "Nothing is below zero or below its minimum at this branch.",
+            "value": "Value",
+            "total_value": "Stock value (OMR)",
+            "negative_count": "{count} below zero",
+            "below_minimum_count": "{count} below minimum",
+            "minimum": "min {quantity}",
+            "goods_received": "Record goods received",
+            "status": {
+                "negative": "Below zero",
+                "below_minimum": "Below minimum",
+                "ok": "OK"
+            }
+        },
         "empty_movements": "No movements at this branch yet.",
         "delete_ingredient_blocked": "Adjust stock to zero in every branch before deleting this ingredient.",
         "delete_supplier_blocked": "Re-assign or clear ingredients that name this supplier before deleting.",
@@ -1745,6 +1775,7 @@
             "variance": "Variance",
             "variance_value": "Value (OMR)",
             "success_clean": "Count submitted - all {lines} lines matched the books exactly.",
+            "success_blind": "Count submitted - {lines} lines recorded.",
             "success_with_variance": "Count submitted - {variance} of {lines} lines had a variance; movements written.",
             "modal": {
                 "title": "Day-end count at {branch}",
@@ -1754,7 +1785,8 @@
                 "count_in": "Count in {label}",
                 "skip_placeholder": "skip",
                 "filled": "{filled} of {total} counted",
-                "no_stock": "No stock has ever been recorded at this branch.",
+                "no_stock": "Add ingredients first.",
+                "blind_hint": "Count what is on the shelf. The quantity on the books is not shown; the variance appears after you submit.",
                 "empty_error": "Enter at least one counted amount.",
                 "submit": "Submit count",
                 "submitting": "Reconciling…"
@@ -3025,7 +3057,10 @@
         "orders": "Orders",
         "top_product_today": "Top product today",
         "low_stock": "Low stock ingredients",
-        "low_stock_subtitle": "Ingredients with a balance below their minimum threshold across all branches.",
+        "low_stock_subtitle": "Ingredient balances below zero or below their minimum, per branch.",
+        "low_stock_negative": "below zero",
+        "low_stock_below_minimum": "below minimum",
+        "low_stock_open": "Open the low stock list",
         "recent_audit": "Recent activity",
         "no_data": "No data yet.",
         "vs_yesterday": "vs yesterday",

@@ -92,6 +92,14 @@ function trimQty(q: string | null): string {
     return q.includes('.') ? q.replace(/\.?0+$/, '') : q;
 }
 
+/** P2-3 — the unit a line was entered in ('@piece' = the piece unit). */
+function enteredUnit(line: { purchase_unit?: string | null; unit: string | null }): string {
+    if (!line.purchase_unit) {
+        return line.unit ?? t('purchase_receipts.form.unit_each');
+    }
+    return line.purchase_unit === '@piece' ? t('purchase_receipts.show.piece_unit') : line.purchase_unit;
+}
+
 function formatDate(iso: string | null): string {
     if (!iso) {
         return '—';
@@ -164,7 +172,16 @@ onMounted(async () => {
                         <tbody class="divide-y divide-slate-100">
                             <tr v-for="(line, idx) in receipt.lines ?? []" :key="idx">
                                 <td class="px-4 py-2.5 font-medium text-slate-900">{{ line.item_name }}</td>
-                                <td class="px-4 py-2.5 text-end tabular-nums text-slate-600">{{ trimQty(line.quantity) }} <span class="text-xs text-slate-400">{{ line.unit ?? '' }}</span></td>
+                                <td class="px-4 py-2.5 text-end tabular-nums text-slate-600">
+                                    {{ trimQty(line.quantity) }} <span class="text-xs text-slate-400">{{ line.unit ?? '' }}</span>
+                                    <!-- P2-3 — as entered: 25 kg at 0.350 per kg; the cost the stock carries. -->
+                                    <span v-if="line.purchase_quantity && line.unit_price !== null && line.unit_price !== undefined" class="block text-[11px] text-slate-400">
+                                        {{ t('purchase_receipts.show.entered_as', { quantity: trimQty(line.purchase_quantity), unit: enteredUnit(line), price: trimQty(line.unit_price) }) }}
+                                    </span>
+                                    <span v-if="line.unit_cost && line.unit" class="block text-[11px] text-slate-400">
+                                        {{ t('purchase_receipts.show.cost_per_base_unit', { unit: line.unit, cost: trimQty(line.unit_cost) }) }}
+                                    </span>
+                                </td>
                                 <td class="px-4 py-2.5 text-slate-600">{{ categoryLabel(line.expense_category) }}</td>
                                 <td class="px-4 py-2.5 text-slate-600">
                                     <template v-if="line.allocations.length > 0">

@@ -10,6 +10,8 @@ use App\Models\Ingredient;
 use App\Models\IngredientStock;
 use App\Models\StockMovement;
 use App\Models\User;
+use App\Support\StockDecimal;
+use DateTimeInterface;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -20,6 +22,10 @@ use RuntimeException;
  * writing paired allocation_out (central) + allocation_in (branch) ledger
  * rows. Fails if the requested total exceeds the central balance — the
  * warehouse never goes negative. Atomic across all branches.
+ *
+ * An allocation is an internal move, never a purchase: both legs carry the
+ * ingredient's current weighted-average cost. LAUNCH-P2 — a goods-received
+ * note passes its date and line reference so the legs read with the receipt.
  */
 final readonly class AllocateIngredientStockAction
 {
@@ -29,13 +35,16 @@ final readonly class AllocateIngredientStockAction
 
     /**
      * @param  list<array{branch: Branch, quantity: string|float|int}>  $lines
-     * @return list<StockMovement>  the allocation_in legs (one per branch)
+     * @return list<StockMovement> the allocation_in legs (one per branch)
      */
     public function handle(
         Ingredient $ingredient,
         array $lines,
         ?string $note,
         User $actor,
+        ?DateTimeInterface $occurredAt = null,
+        ?string $referenceType = null,
+        ?int $referenceId = null,
     ): array {
         if ($lines === []) {
             throw new RuntimeException('Choose at least one branch to allocate to.');
@@ -44,7 +53,7 @@ final readonly class AllocateIngredientStockAction
         $companyId = (int) $ingredient->company_id;
         $unitCost = $ingredient->default_unit_cost ?? 0;
 
-        return DB::transaction(function () use ($ingredient, $lines, $note, $actor, $companyId, $unitCost): array {
+        return DB::transaction(function () use ($ingredient, $lines, $note, $actor, $companyId, $unitCost, $occurredAt, $referenceType, $referenceId): array {
             // Lock the central balance row so two concurrent allocations
             // can't both pass the "enough stock" check and overdraw the pool.
             $central = IngredientStock::query()
@@ -68,9 +77,9 @@ final readonly class AllocateIngredientStockAction
 
             if ($total > $available + 1e-9) {
                 throw new RuntimeException(sprintf(
-                    'Not enough central stock: %.3f available, %.3f requested.',
-                    $available,
-                    $total,
+                    'Not enough central stock: %s available, %s requested.',
+                    StockDecimal::quantity($available),
+                    StockDecimal::quantity($total),
                 ));
             }
 
@@ -78,16 +87,19 @@ final readonly class AllocateIngredientStockAction
             foreach ($lines as $line) {
                 /** @var Branch $branch */
                 $branch = $line['branch'];
-                $q = $line['quantity'];
+                $q = (string) StockDecimal::quantity($line['quantity']);
 
                 $this->writeMovement->handle(
                     branch: null,
                     ingredient: $ingredient,
                     type: StockMovementType::AllocationOut,
-                    quantity: -(float) $q,
+                    quantity: '-'.$q,
                     unitCostAtTime: $unitCost,
+                    referenceType: $referenceType,
+                    referenceId: $referenceId,
                     actor: $actor,
                     note: $note,
+                    occurredAt: $occurredAt,
                 );
                 $allocationIns[] = $this->writeMovement->handle(
                     branch: $branch,
@@ -95,8 +107,11 @@ final readonly class AllocateIngredientStockAction
                     type: StockMovementType::AllocationIn,
                     quantity: $q,
                     unitCostAtTime: $unitCost,
+                    referenceType: $referenceType,
+                    referenceId: $referenceId,
                     actor: $actor,
                     note: $note,
+                    occurredAt: $occurredAt,
                 );
             }
 

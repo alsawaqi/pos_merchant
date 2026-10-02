@@ -125,7 +125,11 @@ final readonly class LossWasteReportAction
         $shortfall = DB::table('pos_stock_movements')
             ->join('pos_ingredients', 'pos_ingredients.id', '=', 'pos_stock_movements.ingredient_id')
             ->where('pos_ingredients.company_id', $companyId)
-            ->where('pos_stock_movements.quantity', '<', 0)
+            // LAUNCH-P2 P2-6 — a count correction (a late pre-count sale
+            // folded into its count) nets against the count's shortfall, so
+            // it counts whichever its sign.
+            ->where(fn ($q) => $q->where('pos_stock_movements.quantity', '<', 0)
+                ->orWhere('pos_stock_movements.movement_type', StockMovementType::CountCorrection->value))
             // P-G4 — branch operations only: central-warehouse rows
             // (branch_id NULL, e.g. allocation_out / a central adjust-down)
             // are pool moves, not branch depletion.

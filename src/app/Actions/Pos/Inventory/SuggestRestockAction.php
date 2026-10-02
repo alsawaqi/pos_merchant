@@ -9,6 +9,7 @@ use App\Enums\StockMovementType;
 use App\Models\Branch;
 use App\Models\Ingredient;
 use App\Support\MerchantTenantContext;
+use App\Support\StockDecimal;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -108,12 +109,12 @@ final readonly class SuggestRestockAction
                 'ingredient_uuid' => $ingredient->uuid,
                 'name' => $ingredient->name,
                 'unit' => $ingredient->unit->value,
-                'current_quantity' => number_format($current, 3, '.', ''),
-                'min_stock_threshold' => $hasThreshold ? number_format($threshold, 3, '.', '') : null,
-                'consumed_in_window' => number_format($consumed, 3, '.', ''),
-                'avg_daily_consumption' => number_format($daily, 3, '.', ''),
-                'target_level' => number_format($target, 3, '.', ''),
-                'suggested_quantity' => number_format($suggested, 3, '.', ''),
+                'current_quantity' => StockDecimal::quantity($current),
+                'min_stock_threshold' => $hasThreshold ? StockDecimal::quantity($threshold) : null,
+                'consumed_in_window' => StockDecimal::quantity($consumed),
+                'avg_daily_consumption' => StockDecimal::quantity($daily),
+                'target_level' => StockDecimal::quantity($target),
+                'suggested_quantity' => StockDecimal::quantity($suggested),
                 'reason' => $this->reason($hasThreshold && $current < $threshold, $current < $forecast),
             ];
         }

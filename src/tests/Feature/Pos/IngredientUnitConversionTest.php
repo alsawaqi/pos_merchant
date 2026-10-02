@@ -12,6 +12,7 @@ declare(strict_types=1);
  */
 
 use App\Actions\Pos\Inventory\IngredientUnitConverter;
+use App\Models\Branch;
 use App\Models\BranchStock;
 use App\Models\BranchTransferLine;
 use App\Models\Ingredient;
@@ -24,6 +25,12 @@ use App\Models\WasteRecord;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+// LAUNCH-P2 P2-4 — these tests exercise the stock-in entry points that
+// pos.inventory.single_stock_in hides for the pilot; the switch is off here.
+beforeEach(function (): void {
+    config(['pos.inventory.single_stock_in' => false]);
+});
 
 /** Ingredient (base = g) with a "kg" alt unit (factor 1000). */
 function gramIngredientWithKg(object $company): Ingredient
@@ -86,7 +93,7 @@ it('adjust converts a signed kg delta → base grams', function (): void {
 it('transfer converts kg → base grams (line + balances)', function (): void {
     $ctx = makeMerchantActor();
     $ing = gramIngredientWithKg($ctx['company']);
-    $dest = \App\Models\Branch::factory()->for($ctx['company'], 'company')->create();
+    $dest = Branch::factory()->for($ctx['company'], 'company')->create();
     BranchStock::factory()->for($ctx['branch'], 'branch')->for($ing, 'ingredient')->create(['quantity' => '5000.000']);
 
     $this->postJson("/api/branches/{$ctx['branch']->uuid}/transfers", [
@@ -165,7 +172,7 @@ it('refuses a non-positive factor at conversion time (no sign flip)', function (
         'company_id' => $ctx['company']->id, 'ingredient_id' => $ing->id, 'name' => 'bad', 'factor' => '-2',
     ]);
 
-    $converter = new IngredientUnitConverter();
+    $converter = new IngredientUnitConverter;
     expect(fn () => $converter->toBase($ing, 5, 'bad'))->toThrow(RuntimeException::class);
 });
 
@@ -173,7 +180,7 @@ it('refuses a non-positive factor at conversion time (no sign flip)', function (
 
 it('auto-converts metric siblings without an alternate unit defined', function (): void {
     $ctx = makeMerchantActor();
-    $converter = new IngredientUnitConverter();
+    $converter = new IngredientUnitConverter;
 
     $kg = Ingredient::factory()->for($ctx['company'], 'company')->create(['unit' => 'kg']);
     expect($converter->toBase($kg, 250, 'g'))->toBe(0.25);   // 250 g → 0.25 kg, no alt unit defined
@@ -191,7 +198,7 @@ it('auto-converts metric siblings without an alternate unit defined', function (
 
 it('does not auto-convert across families or for count units', function (): void {
     $ctx = makeMerchantActor();
-    $converter = new IngredientUnitConverter();
+    $converter = new IngredientUnitConverter;
 
     // kg (mass) does not accept ml (volume) — that needs density (a custom unit).
     $kg = Ingredient::factory()->for($ctx['company'], 'company')->create(['unit' => 'kg']);
@@ -204,7 +211,7 @@ it('does not auto-convert across families or for count units', function (): void
 
 it('lets a custom alternate unit coexist with the auto siblings', function (): void {
     $ctx = makeMerchantActor();
-    $converter = new IngredientUnitConverter();
+    $converter = new IngredientUnitConverter;
     $kg = Ingredient::factory()->for($ctx['company'], 'company')->create(['unit' => 'kg']);
     // scoop is non-metric → a legit custom unit alongside the auto 'g'.
     IngredientAltUnit::query()->create([

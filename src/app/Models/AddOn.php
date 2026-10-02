@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Actions\Pos\Catalogue\SyncAddOnConsumptionAction;
+use App\Casts\ScaledDecimal;
 use App\Models\Concerns\BelongsToCompany;
 use Database\Factories\AddOnFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -60,7 +62,7 @@ class AddOn extends Model
             'price_delta' => 'decimal:3',
             // Phase B — pre-selected in the POS customize sheet.
             'is_default' => 'boolean',
-            'ingredient_qty' => 'decimal:3',
+            'ingredient_qty' => ScaledDecimal::class.':3,4',
             'display_order' => 'integer',
         ];
     }
@@ -109,7 +111,7 @@ class AddOn extends Model
     /**
      * PD3b — the option's stock-usage lines (ingredient XOR product,
      * direction add|remove). Replaced wholesale by
-     * {@see \App\Actions\Pos\Catalogue\SyncAddOnConsumptionAction}.
+     * {@see SyncAddOnConsumptionAction}.
      *
      * @return HasMany<AddOnConsumption, $this>
      */

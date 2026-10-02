@@ -65,6 +65,13 @@ class PurchaseReceiptResource extends JsonResource
                     'tax_rate' => $line->tax_rate !== null ? (string) $line->tax_rate : null,
                     'expense_category' => $line->expense_category,
                     'allocations' => $line->allocations_json ?? [],
+                    // LAUNCH-P2 P2-3 — how the line was entered (NULL = base
+                    // unit) and the per-base-unit cost the stock was stamped
+                    // with ('@piece' = the ingredient's piece unit).
+                    'purchase_unit' => $line->purchase_unit,
+                    'purchase_quantity' => $line->purchase_quantity !== null ? (string) $line->purchase_quantity : null,
+                    'unit_price' => $line->unit_price !== null ? (string) $line->unit_price : null,
+                    'unit_cost' => $line->unit_cost !== null ? (string) $line->unit_cost : null,
                 ])->all()),
             'charges' => $this->whenLoaded('charges', fn (): array => $this->charges
                 ->map(fn (PurchaseReceiptCharge $charge): array => [

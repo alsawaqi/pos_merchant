@@ -13,6 +13,8 @@ use App\Models\Ingredient;
 use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Models\User;
+use App\Support\StockDecimal;
+use Brick\Math\RoundingMode;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -30,21 +32,28 @@ use RuntimeException;
  * (POS staff submits → merchant approves → fulfilment writes
  * the actual movement); this Action is the underlying
  * inflow primitive.
+ *
+ * LAUNCH-P2 — hidden for the pilot (pos.inventory.single_stock_in; the
+ * controller refuses it), but kept correct: a priced restock converts the
+ * per-entered-unit price to per base unit and updates the weighted-average
+ * cost like a goods-received note.
  */
 final readonly class RestockAction
 {
     public function __construct(
         private WriteStockMovementAction $writeMovement,
         private IngredientUnitConverter $units,
+        private ApplyWeightedAverageCostAction $averageCost,
     ) {}
 
     /**
-     * @param  string|float|int       $quantity   Positive only, in [$unit]
-     * @param  string|float|int|null  $unitCost   NULL = use ingredient's default_unit_cost
-     * @param  string|null            $unit       Entered unit (an alt-unit name, or
-     *                                            null = the ingredient's base unit).
-     *                                            The qty is converted to base before
-     *                                            it touches stock (#13).
+     * @param  string|float|int  $quantity  Positive only, in [$unit]
+     * @param  string|float|int|null  $unitCost  Price per ENTERED unit; NULL = at the
+     *                                           ingredient's average cost (no blend)
+     * @param  string|null  $unit  Entered unit (an alt-unit name, or
+     *                             null = the ingredient's base unit).
+     *                             The qty is converted to base before
+     *                             it touches stock (#13).
      */
     public function handle(
         Branch $branch,
@@ -58,7 +67,8 @@ final readonly class RestockAction
     ): StockMovement {
         // #13 — convert the entered quantity to the ingredient's base unit (the
         // unit ALL stock is stored in). Unknown unit ⇒ RuntimeException ⇒ 422.
-        $quantity = $this->units->toBase($ingredient, $quantity, $unit);
+        $factor = $this->units->factorFor($ingredient, $unit);
+        $quantity = round($this->units->toBase($ingredient, $quantity, $unit), StockDecimal::QUANTITY_SCALE);
 
         if ((float) $quantity <= 0) {
             throw new RuntimeException('Restock quantity must be positive.');
@@ -71,9 +81,24 @@ final readonly class RestockAction
             throw new RuntimeException('Supplier does not belong to your company.');
         }
 
-        $effectiveCost = $unitCost ?? $ingredient->default_unit_cost ?? 0;
+        // LAUNCH-P2 — the override is the price per ENTERED unit (a box), so
+        // per base unit it is divided by the unit's factor; a per-box price
+        // used to be multiplied up by the box size. 6 decimals, never 3.
+        $paidPerBase = ($unitCost !== null && $unitCost !== '')
+            ? ApplyWeightedAverageCostAction::decimal($unitCost)
+                ->dividedBy(ApplyWeightedAverageCostAction::decimal($factor), StockDecimal::UNIT_COST_SCALE, RoundingMode::HALF_UP)
+            : null;
 
-        return DB::transaction(function () use ($branch, $ingredient, $quantity, $effectiveCost, $supplier, $note, $actor): StockMovement {
+        return DB::transaction(function () use ($branch, $ingredient, $quantity, $paidPerBase, $supplier, $note, $actor): StockMovement {
+            // M9 — a priced restock is a purchase: blend the price into the
+            // weighted average before the stock lands. Unpriced = at average.
+            if ($paidPerBase !== null) {
+                $this->averageCost->handle($ingredient, $quantity, (string) $paidPerBase, $actor, ['source' => 'restock']);
+            }
+            $effectiveCost = $paidPerBase !== null
+                ? (string) StockDecimal::unitCost((string) $paidPerBase)
+                : ($ingredient->default_unit_cost ?? 0);
+
             $movement = $this->writeMovement->handle(
                 branch: $branch,
                 ingredient: $ingredient,

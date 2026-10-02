@@ -31,6 +31,15 @@ export interface PurchaseReceiptLine {
     tax_rate: string | null;
     expense_category: string | null;
     allocations: PurchaseReceiptLineAllocation[];
+    /**
+     * LAUNCH-P2 P2-3 — how the line was entered: the purchase unit (NULL =
+     * base unit, '@piece' = the ingredient's piece unit), the quantity in it,
+     * the price per it, and the cost per BASE unit the stock carries (6dp).
+     */
+    purchase_unit?: string | null;
+    purchase_quantity?: string | null;
+    unit_price?: string | null;
+    unit_cost?: string | null;
 }
 
 export interface PurchaseReceiptCharge {
@@ -102,8 +111,17 @@ export interface PaginatedPurchaseReceipts {
 export interface PurchaseReceiptLinePayload {
     item_type: 'ingredient' | 'product';
     item_uuid: string;
+    /** In the line's `unit` (the base unit when omitted). */
     quantity: string | number;
-    line_cost: string | number;
+    /**
+     * LAUNCH-P2 P2-3 — the unit the quantity and split are in (NULL = base;
+     * kg/g, l/ml, an extra unit's name or '@piece') and the price PER THAT
+     * UNIT. With a unit price the server computes the line cost.
+     */
+    unit?: string | null;
+    unit_price?: string | number | null;
+    /** Required when no unit_price is sent. */
+    line_cost?: string | number;
     /** PT — optional tax paid on the line (on top of line_cost). */
     tax_amount?: string | number | null;
     tax_rate?: string | number | null;

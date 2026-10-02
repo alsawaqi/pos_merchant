@@ -52,6 +52,12 @@ enum StockMovementType: string
     case Received = 'received';
     case AllocationOut = 'allocation_out';
     case AllocationIn = 'allocation_in';
+    // LAUNCH-P2 P2-6 — a movement dated BEFORE a stock count that reached
+    // the books only after the count (an offline sale synced late, a
+    // back-dated receipt) is folded into that count: this row, dated at the
+    // count and signed opposite to the late movement, keeps the balance
+    // after the count equal to what was counted. Written by pos_api too.
+    case CountCorrection = 'count_correction';
 
     /**
      * @return list<string>

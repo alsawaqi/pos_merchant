@@ -8,8 +8,8 @@ declare(strict_types=1);
  * Covers:
  *   - Headline total_cost = SUM(quantity * unit_cost_at_time)
  *     for Restock movements in window
- *   - by_supplier grouping derived from
- *     ingredient.primary_supplier_id (Unassigned bucket for null)
+ *   - by_supplier grouping by the supplier ON THE PURCHASE
+ *     (LAUNCH-P2 P2-5; Unassigned bucket for null)
  *   - by_branch grouping
  *   - top_purchased ingredients (limit 20) sorted by cost
  *   - Date window scopes the data
@@ -65,11 +65,15 @@ it('breaks down cost by supplier with Unassigned bucket for null', function (): 
         'primary_supplier_id' => null,
     ]);
 
-    // 10.000 OMR via the assigned supplier.
+    // 10.000 OMR bought from the supplier (LAUNCH-P2 P2-5: the supplier ON
+    // the purchase — a restock records it as its reference — not the
+    // ingredient's main supplier).
     StockMovement::factory()->for($ctx['branch'], 'branch')->for($milk, 'ingredient')->create([
         'movement_type' => StockMovementType::Restock->value,
         'quantity' => '5.000',
         'unit_cost_at_time' => '2.000',
+        'reference_type' => Supplier::class,
+        'reference_id' => $sup->id,
         'occurred_at' => '2026-06-05 12:00:00',
     ]);
     // 3.000 OMR with no supplier.

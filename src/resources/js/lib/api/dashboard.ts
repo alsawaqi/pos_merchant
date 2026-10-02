@@ -43,6 +43,16 @@ export interface DashboardSummaryPayload {
     mtd: DashboardSnapshot;
     top_product_today: TopProductToday | null;
     low_stock_count: number;
+    /**
+     * LAUNCH-P2 P2-7 — the Low stock card: ingredient balances below zero and
+     * below their minimum, per branch in the user's scope (only branches with
+     * something to show).
+     */
+    low_stock?: {
+        negative: number;
+        below_minimum: number;
+        branches: { branch_uuid: string; branch_name: string; negative: number; below_minimum: number }[];
+    };
     recent_audit_events: DashboardAuditEvent[];
     // v2 graphs (§5.2): trailing-14-day trend + MTD top-N breakdowns.
     sales_trend: SalesTrendPoint[];

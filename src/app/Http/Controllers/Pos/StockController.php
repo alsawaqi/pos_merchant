@@ -21,6 +21,9 @@ use App\Models\Ingredient;
 use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Support\MerchantTenantContext;
+use App\Support\SingleStockIn;
+use Brick\Math\BigDecimal;
+use Brick\Math\RoundingMode;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -48,10 +51,15 @@ class StockController extends Controller
     ) {}
 
     /**
-     * GET /api/branches/{branch:uuid}/stock
+     * GET /api/branches/{branch:uuid}/stock[?filter=low]
      *
-     * Returns one row per ingredient that has EVER had a
-     * balance at this branch. Sort: lowest qty first so the
+     * LAUNCH-P2 P2-7 — sell, but warn. One row per ingredient OF THE
+     * BRANCH: every active ingredient of the company plus any other one the
+     * branch holds a balance of; an ingredient the branch never stocked
+     * shows 0 (id NULL). Each row carries its stock value (quantity ×
+     * weighted-average cost) and status (negative / below_minimum / ok).
+     * ?filter=low keeps only negative and below-minimum rows. meta carries
+     * the branch total value and both counts. Sort: lowest qty first so the
      * UI surfaces restock priorities at the top.
      */
     public function index(Request $request, Branch $branch): AnonymousResourceCollection
@@ -59,13 +67,54 @@ class StockController extends Controller
         $this->ensure($request, MerchantPermission::InventoryView);
         $this->refuseIfBranchNotInTenant($branch);
 
-        $rows = BranchStock::query()
+        $balances = BranchStock::query()
             ->where('branch_id', $branch->id)
-            ->with('ingredient')
-            ->orderBy('quantity')
+            ->get()
+            ->keyBy('ingredient_id');
+
+        $ingredients = Ingredient::query()
+            ->where('company_id', $this->tenant->requiredId())
+            ->where(fn ($q) => $q->where('status', 'active')->orWhereIn('id', $balances->keys()->all()))
             ->get();
 
-        return BranchStockResource::collection($rows);
+        $rows = $ingredients
+            ->map(function (Ingredient $ingredient) use ($balances, $branch): BranchStock {
+                $row = $balances->get($ingredient->id) ?? new BranchStock([
+                    'branch_id' => $branch->id,
+                    'ingredient_id' => $ingredient->id,
+                    'quantity' => '0',
+                ]);
+                $row->setRelation('ingredient', $ingredient);
+
+                return $row;
+            })
+            ->sortBy([
+                static fn (BranchStock $a, BranchStock $b): int => (float) $a->quantity <=> (float) $b->quantity,
+                static fn (BranchStock $a, BranchStock $b): int => strcasecmp((string) $a->ingredient?->name, (string) $b->ingredient?->name),
+            ])
+            ->values();
+
+        $negative = $rows->filter(static fn (BranchStock $r): bool => $r->stockStatus() === BranchStock::STATUS_NEGATIVE)->count();
+        $belowMinimum = $rows->filter(static fn (BranchStock $r): bool => $r->stockStatus() === BranchStock::STATUS_BELOW_MINIMUM)->count();
+        $totalValue = $rows->reduce(
+            static fn (BigDecimal $sum, BranchStock $r): BigDecimal => $sum->plus(
+                BigDecimal::of((string) $r->quantity)->multipliedBy((string) ($r->ingredient?->default_unit_cost ?? '0')),
+            ),
+            BigDecimal::zero(),
+        );
+
+        if ($request->query('filter') === 'low') {
+            $rows = $rows
+                ->filter(static fn (BranchStock $r): bool => $r->stockStatus() !== BranchStock::STATUS_OK)
+                ->values();
+        }
+
+        return BranchStockResource::collection($rows)->additional(['meta' => [
+            'total_value' => (string) $totalValue->toScale(3, RoundingMode::HALF_UP),
+            'negative_count' => $negative,
+            'below_minimum_count' => $belowMinimum,
+            'filter' => $request->query('filter') === 'low' ? 'low' : null,
+        ]]);
     }
 
     /**
@@ -112,6 +161,10 @@ class StockController extends Controller
     {
         $this->ensure($request, MerchantPermission::InventoryManage);
         $this->refuseIfBranchNotInTenant($branch);
+        // LAUNCH-P2 P2-4 — stock comes in through Goods received only.
+        if (($refusal = SingleStockIn::refusal()) !== null) {
+            return $refusal;
+        }
 
         $ingredient = $this->resolveIngredient($request->input('ingredient_uuid'));
         if ($ingredient === null) {
@@ -163,6 +216,10 @@ class StockController extends Controller
     {
         $this->ensure($request, MerchantPermission::InventoryManage);
         $this->refuseIfBranchNotInTenant($branch);
+        // LAUNCH-P2 P2-4 — stock comes in through Goods received only.
+        if (($refusal = SingleStockIn::refusal()) !== null) {
+            return $refusal;
+        }
 
         $ingredient = $this->resolveIngredient($request->input('ingredient_uuid'));
         if ($ingredient === null) {
@@ -253,6 +310,7 @@ class StockController extends Controller
         if ($uuid === null || $uuid === '') {
             return null;
         }
+
         return Ingredient::query()
             ->where('company_id', $this->tenant->requiredId())
             ->where('uuid', $uuid)

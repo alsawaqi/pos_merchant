@@ -318,7 +318,7 @@ return new class extends Migration
             // Phase B — pre-selected option in the POS customize sheet.
             $table->boolean('is_default')->default(false);
             $table->unsignedBigInteger('ingredient_id')->nullable();
-            $table->decimal('ingredient_qty', 10, 3)->nullable();
+            $table->decimal('ingredient_qty', 14, 4)->nullable();
             $table->string('ingredient_unit', 16)->nullable();
             // P-G3 — the add-on IS this product (consumes its real stock).
             $table->unsignedBigInteger('linked_product_id')->nullable();
@@ -522,8 +522,8 @@ return new class extends Migration
             $table->string('piece_unit_label_ar', 32)->nullable();
             $table->decimal('units_per_piece', 14, 4)->nullable();
             $table->boolean('allow_fractional_pieces')->default(true);
-            $table->decimal('default_unit_cost', 12, 3)->default(0);
-            $table->decimal('min_stock_threshold', 12, 3)->nullable();
+            $table->decimal('default_unit_cost', 15, 6)->default(0);
+            $table->decimal('min_stock_threshold', 14, 4)->nullable();
             $table->foreignId('primary_supplier_id')->nullable()->constrained('pos_suppliers')->nullOnDelete();
             $table->string('status', 32)->default('active');
             $table->timestamps();
@@ -550,7 +550,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
             $table->foreignId('ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
-            $table->decimal('quantity', 12, 3)->default(0);
+            $table->decimal('quantity', 14, 4)->default(0);
             $table->timestamp('last_movement_at')->nullable();
             $table->timestamps();
             $table->unique(['branch_id', 'ingredient_id'], 'pos_branch_stock_branch_ingredient_unique');
@@ -563,7 +563,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
             $table->foreignId('ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
-            $table->decimal('quantity', 12, 3)->default(0);
+            $table->decimal('quantity', 14, 4)->default(0);
             $table->timestamp('last_movement_at')->nullable();
             $table->timestamps();
             $table->unique(['company_id', 'ingredient_id'], 'pos_ingredient_stock_company_ingredient_unique');
@@ -575,8 +575,8 @@ return new class extends Migration
             $table->foreignId('branch_id')->nullable()->constrained('pos_branches')->cascadeOnDelete();
             $table->foreignId('ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
             $table->string('movement_type', 32);
-            $table->decimal('quantity', 12, 3);
-            $table->decimal('unit_cost_at_time', 12, 3)->default(0);
+            $table->decimal('quantity', 14, 4);
+            $table->decimal('unit_cost_at_time', 15, 6)->default(0);
             $table->string('reference_type')->nullable();
             $table->unsignedBigInteger('reference_id')->nullable();
             $table->foreignId('recorded_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
@@ -597,10 +597,10 @@ return new class extends Migration
             $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
             $table->foreignId('ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
             $table->foreignId('supplier_id')->nullable()->constrained('pos_suppliers')->nullOnDelete();
-            $table->decimal('pieces_received', 12, 3)->nullable();
-            $table->decimal('units_received', 12, 3);
+            $table->decimal('pieces_received', 14, 4)->nullable();
+            $table->decimal('units_received', 14, 4);
             $table->decimal('total_paid', 12, 3)->default(0);
-            $table->decimal('unit_cost', 12, 6)->default(0);
+            $table->decimal('unit_cost', 15, 6)->default(0);
             $table->decimal('units_per_piece_at_purchase', 14, 4)->nullable();
             $table->boolean('is_loose')->default(false);
             $table->foreignId('stock_movement_id')->nullable()->constrained('pos_stock_movements')->nullOnDelete();
@@ -629,12 +629,15 @@ return new class extends Migration
             $table->id();
             $table->foreignId('stock_count_id')->constrained('pos_stock_counts')->cascadeOnDelete();
             $table->foreignId('ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
-            $table->decimal('counted_pieces', 12, 3)->nullable();
-            $table->decimal('counted_units', 12, 3);
-            $table->decimal('expected_units', 12, 3);
-            $table->decimal('variance_units', 12, 3);
-            $table->decimal('unit_cost_at_time', 12, 3)->default(0);
+            $table->decimal('counted_pieces', 14, 4)->nullable();
+            $table->decimal('counted_units', 14, 4);
+            $table->decimal('expected_units', 14, 4);
+            $table->decimal('variance_units', 14, 4);
+            $table->decimal('unit_cost_at_time', 15, 6)->default(0);
             $table->foreignId('stock_movement_id')->nullable()->constrained('pos_stock_movements')->nullOnDelete();
+            // pos_admin 2026_10_02_000003: late pre-count movements folded in + the line's waste record.
+            $table->decimal('late_movement_units', 14, 4)->default(0);
+            $table->unsignedBigInteger('waste_record_id')->nullable();
             $table->unique(['stock_count_id', 'ingredient_id'], 'pos_stock_count_lines_count_ingredient_unique');
         });
 
@@ -645,7 +648,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('product_id')->constrained('pos_products')->cascadeOnDelete();
             $table->foreignId('ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
-            $table->decimal('quantity', 12, 3);
+            $table->decimal('quantity', 14, 4);
             $table->string('unit_at_set', 16);
             $table->unsignedSmallInteger('sort_order')->default(0);
             $table->timestamps();
@@ -686,7 +689,7 @@ return new class extends Migration
             $table->foreignId('ingredient_id')->nullable()->constrained('pos_ingredients')->cascadeOnDelete();
             $table->foreignId('component_product_id')->nullable()->constrained('pos_products')->cascadeOnDelete();
             $table->string('direction', 8)->default('add');
-            $table->decimal('quantity', 12, 3);
+            $table->decimal('quantity', 14, 4);
             $table->string('unit', 16)->nullable();
             $table->unsignedSmallInteger('display_order')->default(0);
             $table->timestamps();
@@ -715,7 +718,7 @@ return new class extends Migration
             // Product wastage (folds in 2026_07_27_010000): reason + frozen cost.
             $table->string('reason', 32)->nullable();
             $table->decimal('quantity', 12, 3);
-            $table->decimal('unit_cost', 12, 3)->nullable();
+            $table->decimal('unit_cost', 15, 6)->nullable();
             $table->string('reference_type')->nullable();
             $table->unsignedBigInteger('reference_id')->nullable();
             $table->foreignId('recorded_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
@@ -769,7 +772,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('production_id')->constrained('pos_productions')->cascadeOnDelete();
             $table->foreignId('ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
-            $table->decimal('quantity', 12, 3);
+            $table->decimal('quantity', 14, 4);
             $table->string('unit_at_time', 16);
             $table->boolean('is_extra')->default(false);
             $table->timestamps();
@@ -789,10 +792,10 @@ return new class extends Migration
             $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
             $table->foreignId('ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
             // Always POSITIVE here; the mirrored stock_movement is signed-negative.
-            $table->decimal('quantity', 12, 3);
+            $table->decimal('quantity', 14, 4);
             $table->string('reason', 32);
             $table->string('unit_at_set', 16);
-            $table->decimal('unit_cost_at_time', 12, 3)->default(0);
+            $table->decimal('unit_cost_at_time', 15, 6)->default(0);
             $table->text('notes')->nullable();
             $table->foreignId('recorded_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
             $table->timestamp('occurred_at')->useCurrent();
@@ -826,8 +829,8 @@ return new class extends Migration
             $table->id();
             $table->foreignId('restock_request_id')->constrained('pos_restock_requests')->cascadeOnDelete();
             $table->foreignId('ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
-            $table->decimal('quantity_requested', 12, 3);
-            $table->decimal('quantity_allocated', 12, 3)->default(0);
+            $table->decimal('quantity_requested', 14, 4);
+            $table->decimal('quantity_allocated', 14, 4)->default(0);
             $table->string('unit_at_set', 16);
             $table->text('note')->nullable();
             $table->unsignedSmallInteger('sort_order')->default(0);
@@ -854,9 +857,9 @@ return new class extends Migration
             $table->id();
             $table->foreignId('branch_transfer_id')->constrained('pos_branch_transfers')->cascadeOnDelete();
             $table->foreignId('ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
-            $table->decimal('quantity', 12, 3);
+            $table->decimal('quantity', 14, 4);
             $table->string('unit_at_set', 16);
-            $table->decimal('unit_cost_at_time', 12, 3)->default(0);
+            $table->decimal('unit_cost_at_time', 15, 6)->default(0);
             $table->timestamps();
             $table->unique(['branch_transfer_id', 'ingredient_id'], 'pos_branch_transfer_lines_transfer_ingredient_unique');
         });
@@ -1686,11 +1689,16 @@ return new class extends Migration
             $table->foreignId('ingredient_id')->nullable()->constrained('pos_ingredients')->nullOnDelete();
             $table->foreignId('product_id')->nullable()->constrained('pos_products')->nullOnDelete();
             $table->string('item_name');
-            $table->decimal('quantity', 12, 3);
+            $table->decimal('quantity', 14, 4);
             $table->string('unit', 16)->nullable();
             $table->decimal('line_cost', 12, 3)->default(0);
             $table->decimal('tax_amount', 12, 3)->default(0);
             $table->decimal('tax_rate', 5, 2)->nullable();
+            // pos_admin 2026_10_02_000002: how the line was entered (unit picker).
+            $table->string('purchase_unit', 40)->nullable();
+            $table->decimal('purchase_quantity', 14, 4)->nullable();
+            $table->decimal('unit_price', 15, 6)->nullable();
+            $table->decimal('unit_cost', 15, 6)->nullable();
             $table->string('expense_category', 32)->nullable();
             $table->json('allocations_json')->nullable();
             $table->foreignId('expense_id')->nullable()->constrained('pos_expenses')->nullOnDelete();

@@ -24,12 +24,18 @@ import {
 } from '@/lib/api/ingredientStock';
 import { listTaxes, type Tax } from '@/lib/api/taxes';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
     open: boolean;
     ingredientUuid: string | null;
     ingredientName: string;
     canManage: boolean;
-}>();
+    /**
+     * LAUNCH-P2 P2-4 — stock comes in through Goods received only: the
+     * warehouse Receive and Receive & distribute tabs are hidden (and the
+     * server refuses them). Allocate, transfer and adjust stay.
+     */
+    singleStockIn?: boolean;
+}>(), { singleStockIn: true });
 
 const emit = defineEmits<{ (e: 'close'): void }>();
 
@@ -52,7 +58,9 @@ const isBranchRestricted = computed(() => Array.isArray(authState.user?.branch_s
 const availableActions = computed<Action[]>(() =>
     isBranchRestricted.value
         ? ['transfer', 'adjust']
-        : ['distribute', 'receive', 'allocate', 'transfer', 'adjust'],
+        : props.singleStockIn
+            ? ['allocate', 'transfer', 'adjust']
+            : ['distribute', 'receive', 'allocate', 'transfer', 'adjust'],
 );
 
 // Quantity fields are bound to type="number" inputs: Vue's v-model stores a

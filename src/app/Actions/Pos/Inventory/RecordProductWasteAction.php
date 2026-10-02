@@ -91,7 +91,7 @@ final readonly class RecordProductWasteAction
         $costPrice = (float) $product->cost_price;
         $unitCost = $costPrice > 0
             ? number_format($costPrice, 3, '.', '')
-            : $product->theoreticalCost();
+            : $product->theoreticalCost(perUnitPrecision: true);
 
         $occurredAt = $occurredAt instanceof DateTimeInterface
             ? Carbon::instance($occurredAt)
@@ -129,7 +129,7 @@ final readonly class RecordProductWasteAction
                 branch: $branch,
                 type: ProductStockMovementType::Waste,
                 // SIGNED — negative for the ledger / shelf decrement.
-                quantity: '-' . number_format($absQty, 3, '.', ''),
+                quantity: '-'.number_format($absQty, 3, '.', ''),
                 actor: $actor,
                 note: $notes,
                 reason: $reason->value,

@@ -28,6 +28,7 @@ use App\Enums\StockMovementType;
 use App\Models\Branch;
 use App\Models\BranchStock;
 use App\Models\Company;
+use App\Models\Expense;
 use App\Models\Ingredient;
 use App\Models\StockMovement;
 use App\Models\Supplier;
@@ -35,6 +36,12 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
+
+// LAUNCH-P2 P2-4 — these tests exercise the stock-in entry points that
+// pos.inventory.single_stock_in hides for the pilot; the switch is off here.
+beforeEach(function (): void {
+    config(['pos.inventory.single_stock_in' => false]);
+});
 
 // =================== LIST STOCK ===================
 
@@ -220,7 +227,7 @@ it('does not create an expense for a zero-cost restock', function (): void {
         'quantity' => '10.000',
     ])->assertCreated();
 
-    expect(\App\Models\Expense::query()->count())->toBe(0);
+    expect(Expense::query()->count())->toBe(0);
 });
 
 it('rejects a restock with negative quantity', function (): void {

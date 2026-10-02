@@ -24,9 +24,16 @@ use App\Models\BranchStock;
 use App\Models\Ingredient;
 use App\Models\IngredientPurchase;
 use App\Models\StockMovement;
+use App\Support\MerchantTenantContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+// LAUNCH-P2 P2-4 — these tests exercise the stock-in entry points that
+// pos.inventory.single_stock_in hides for the pilot; the switch is off here.
+beforeEach(function (): void {
+    config(['pos.inventory.single_stock_in' => false]);
+});
 
 // =================== FIXED-RATIO PURCHASE ===================
 
@@ -119,11 +126,12 @@ it('records a loose batch (pieces + weighed units) and the batch ratio becomes t
     // unit cost 10.500 ÷ 10000 = 0.00105 — survives at 6dp.
     expect((string) $purchase->unit_cost)->toBe('0.001050');
 
-    // LAST BATCH WINS on the ingredient.
+    // LAST BATCH WINS on the ingredient's piece ratio.
     $fresh = $tomato->fresh();
     expect((string) $fresh->units_per_piece)->toBe('1428.5714');
-    // …while default_unit_cost is the (12,3) rounding of the batch cost.
-    expect((string) $fresh->default_unit_cost)->toBe('0.001');
+    // LAUNCH-P2 — default_unit_cost is the weighted average at 6 decimals
+    // (nothing was on hand, so it is the price paid), no longer rounded to 3.
+    expect((string) $fresh->default_unit_cost)->toBe('0.00105');
 
     $balance = BranchStock::query()
         ->where('branch_id', $ctx['branch']->id)
@@ -222,7 +230,7 @@ it('refuses a cross-tenant ingredient (422) and a cross-tenant branch (404)', fu
     $ctx = makeMerchantActor();
     $other = makeMerchantActor();
     // Re-pin OUR tenant (makeMerchantActor pins the latest one).
-    app(\App\Support\MerchantTenantContext::class)->set($ctx['company']->id);
+    app(MerchantTenantContext::class)->set($ctx['company']->id);
     $this->actingAs($ctx['user']);
 
     $foreignIngredient = Ingredient::factory()->for($other['company'], 'company')->create(['name' => 'Foreign']);

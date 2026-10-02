@@ -95,6 +95,8 @@ final readonly class DashboardSummaryAction
             'mtd' => $this->salesSnapshot($companyId, $branchIds, $monthStart, $todayEnd),
             'top_product_today' => $this->topProductInWindow($companyId, $branchIds, $todayStart, $todayEnd),
             'low_stock_count' => $this->lowStockCount($companyId, $branchIds),
+            // LAUNCH-P2 P2-7 — negative / below-minimum counts per branch.
+            'low_stock' => $this->lowStock($companyId, $branchIds),
             'recent_audit_events' => $this->recentAuditEvents($companyId, $branchIds),
             // §5.2 tiles: tender split + charity round-up for today,
             // plus the live device fleet snapshot.
@@ -530,6 +532,62 @@ final readonly class DashboardSummaryAction
         return $balances
             ->filter(static fn ($r): bool => (float) $r->balance < (float) $r->threshold)
             ->count();
+    }
+
+    /**
+     * LAUNCH-P2 P2-7 — the "Low stock" card: how many ingredient balances
+     * are below zero (red) and how many are under the ingredient's minimum
+     * (amber), per branch in the actor's scope, counted exactly like the
+     * branch stock page (every active ingredient of the company plus any
+     * the branch holds; a branch that never stocked one holds 0).
+     * Each branch entry links to that page's Low stock filter.
+     *
+     * @param  list<int>|null  $branchIds
+     * @return array{negative: int, below_minimum: int, branches: list<array{branch_uuid: string, branch_name: string, negative: int, below_minimum: int}>}
+     */
+    private function lowStock(int $companyId, ?array $branchIds): array
+    {
+        $qty = 'COALESCE(pos_branch_stock.quantity, 0)';
+        $rows = DB::table('pos_branches')
+            ->crossJoin('pos_ingredients')
+            ->leftJoin('pos_branch_stock', function ($join): void {
+                $join->on('pos_branch_stock.branch_id', '=', 'pos_branches.id')
+                    ->on('pos_branch_stock.ingredient_id', '=', 'pos_ingredients.id');
+            })
+            ->where('pos_branches.company_id', $companyId)
+            ->where('pos_branches.status', 'active')
+            ->whereNull('pos_branches.deleted_at')
+            ->when($branchIds !== null, fn ($q) => $q->whereIn('pos_branches.id', $branchIds))
+            ->where('pos_ingredients.company_id', $companyId)
+            ->whereNull('pos_ingredients.deleted_at')
+            ->where(fn ($q) => $q->where('pos_ingredients.status', 'active')->orWhereNotNull('pos_branch_stock.id'))
+            ->selectRaw("
+                pos_branches.uuid AS branch_uuid,
+                pos_branches.name AS branch_name,
+                SUM(CASE WHEN {$qty} < 0 THEN 1 ELSE 0 END) AS negative,
+                SUM(CASE WHEN {$qty} >= 0 AND pos_ingredients.min_stock_threshold IS NOT NULL
+                    AND {$qty} < pos_ingredients.min_stock_threshold THEN 1 ELSE 0 END) AS below_minimum
+            ")
+            ->groupBy('pos_branches.id', 'pos_branches.uuid', 'pos_branches.name')
+            ->orderBy('pos_branches.name')
+            ->get();
+
+        $branches = $rows
+            ->map(static fn ($r): array => [
+                'branch_uuid' => (string) $r->branch_uuid,
+                'branch_name' => (string) $r->branch_name,
+                'negative' => (int) $r->negative,
+                'below_minimum' => (int) $r->below_minimum,
+            ])
+            ->filter(static fn (array $b): bool => $b['negative'] > 0 || $b['below_minimum'] > 0)
+            ->values()
+            ->all();
+
+        return [
+            'negative' => array_sum(array_column($branches, 'negative')),
+            'below_minimum' => array_sum(array_column($branches, 'below_minimum')),
+            'branches' => $branches,
+        ];
     }
 
     /**

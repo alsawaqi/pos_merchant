@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Pos;
 
 use App\Actions\Pos\Inventory\CreatePurchaseReceiptAction;
+use App\Actions\Pos\Inventory\ResolvePurchaseLineUnitAction;
 use App\Actions\Pos\Inventory\WriteReceiptPaymentAction;
 use App\Enums\ExpenseCategory;
 use App\Enums\MerchantPermission;
@@ -43,6 +44,7 @@ class PurchaseReceiptController extends Controller
         private readonly MerchantTenantContext $tenant,
         private readonly CreatePurchaseReceiptAction $create,
         private readonly WriteReceiptPaymentAction $writePayment,
+        private readonly ResolvePurchaseLineUnitAction $lineUnits,
     ) {}
 
     public function index(Request $request): AnonymousResourceCollection
@@ -269,11 +271,24 @@ class PurchaseReceiptController extends Controller
             $allocations[] = ['branch' => $branch, 'quantity' => $alloc['quantity']];
         }
 
-        $resolved['quantity'] = $row['quantity'];
-        $resolved['line_cost'] = $row['line_cost'];
+        // LAUNCH-P2 P2-3 — the line may be entered in a purchase unit with a
+        // price per that unit: convert quantity + split to base units and the
+        // price to a per-base-unit cost (the stock side stores base units).
+        try {
+            $units = $this->lineUnits->handle($resolved['ingredient'], $row, $allocations);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        $resolved['quantity'] = $units['quantity'];
+        $resolved['line_cost'] = $units['line_cost'];
         $resolved['tax_amount'] = $row['tax_amount'] ?? null;
         $resolved['tax_rate'] = $row['tax_rate'] ?? null;
-        $resolved['allocations'] = $allocations;
+        $resolved['allocations'] = $units['allocations'];
+        $resolved['purchase_unit'] = $units['purchase_unit'];
+        $resolved['purchase_quantity'] = $units['purchase_quantity'];
+        $resolved['unit_price'] = $units['unit_price'];
+        $resolved['paid_unit_cost'] = $units['paid_unit_cost'];
 
         return $resolved;
     }

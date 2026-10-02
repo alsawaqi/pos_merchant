@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Enums\ProductStatus;
 use App\Models\Concerns\BelongsToCompany;
+use App\Support\StockDecimal;
 use Database\Factories\ProductFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -334,6 +335,7 @@ class Product extends Model
         if ($this->relationLoaded('recipeLines')) {
             return $this->recipeLines->isNotEmpty();
         }
+
         return $this->recipeLines()->exists();
     }
 
@@ -353,7 +355,7 @@ class Product extends Model
      * Returns a string with 3 decimals to keep precision
      * parity with base_price / cost_price.
      */
-    public function theoreticalCost(): string
+    public function theoreticalCost(bool $perUnitPrecision = false): string
     {
         $lines = $this->relationLoaded('recipeLines')
             ? $this->recipeLines
@@ -366,6 +368,11 @@ class Product extends Model
             $total += $qty * $cost;
         }
 
-        return number_format($total, 3, '.', '');
+        // LAUNCH-P2 — a frozen per-piece cost (product waste) keeps 6
+        // decimals so it is never rounded before it is multiplied; the
+        // displayed cost stays at OMR baisa.
+        return $perUnitPrecision
+            ? (string) StockDecimal::unitCost($total)
+            : number_format($total, 3, '.', '');
     }
 }

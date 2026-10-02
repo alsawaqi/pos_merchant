@@ -7,9 +7,10 @@
  *   - {@link \App\Http\Controllers\Pos\SuppliersController}
  *   - {@link \App\Http\Controllers\Pos\StockController}
  *
- * Money + quantity columns come back as strings (Laravel
- * decimal:3 cast). Frontend treats them as opaque strings —
- * never parseFloat() because OMR-baisas precision matters.
+ * Money + quantity columns come back as strings: at least 3
+ * decimals, up to 4 for ingredient quantities and up to 6 for
+ * per-base-unit costs (LAUNCH-P2). Frontend treats them as opaque
+ * strings — never parseFloat() for round-tripping.
  */
 
 import { apiDelete, apiGet, apiPatch, apiPost, type JsonValue } from '@/lib/api';
@@ -33,7 +34,13 @@ export type StockMovementType =
     // allocation_in is the branch-side leg shown in branch ledgers).
     | 'received'
     | 'allocation_out'
-    | 'allocation_in';
+    | 'allocation_in'
+    // P-G1 kitchen production legs (written by pos_api).
+    | 'production_consumption'
+    | 'production_return'
+    // LAUNCH-P2 P2-6 — a movement dated before a stock count that reached
+    // the books after it, folded into that count.
+    | 'count_correction';
 
 // ---- Domain types -----------------------------------------------
 
@@ -88,7 +95,7 @@ export interface Ingredient {
     /** decimal(14,4) string — keep opaque. */
     units_per_piece: string | null;
     allow_fractional_pieces: boolean;
-    /** OMR with 3-decimal precision — string for safety. */
+    /** OMR per BASE unit, weighted average, up to 6 decimals (LAUNCH-P2) — string for safety. */
     default_unit_cost: string;
     min_stock_threshold: string | null;
     primary_supplier_id: number | null;
@@ -185,13 +192,21 @@ export function autoUnitNames(baseUnit: IngredientUnit | null | undefined): stri
     }
 }
 
+/** LAUNCH-P2 P2-7 — sell, but warn: negative (red), below minimum (amber). */
+export type StockStatus = 'negative' | 'below_minimum' | 'ok';
+
 export interface BranchStockRow {
-    id: number;
+    /** NULL when the branch never stocked the ingredient (quantity reads 0). */
+    id: number | null;
     branch_id: number;
     ingredient_id: number;
     quantity: string;
     last_movement_at: string | null;
     health_level: StockHealthLevel;
+    stock_status: StockStatus;
+    /** quantity × weighted-average cost, OMR 3dp. */
+    stock_value: string;
+    has_stock_row: boolean;
     ingredient?: {
         id: number;
         uuid: string;
@@ -411,8 +426,34 @@ export function deleteSupplier(uuid: string): Promise<void> {
 
 // ---- Per-branch stock + movements ------------------------------
 
-export function listBranchStock(branchUuid: string): Promise<{ data: BranchStockRow[] }> {
-    return apiGet<{ data: BranchStockRow[] }>(`/api/branches/${branchUuid}/stock`);
+export interface BranchStockMeta {
+    total_value: string;
+    negative_count: number;
+    below_minimum_count: number;
+    filter: 'low' | null;
+}
+
+/**
+ * LAUNCH-P2 P2-7 — every ingredient of the branch (missing stock = 0), with
+ * value + status; filter 'low' keeps negative and below-minimum rows only.
+ */
+export function listBranchStock(
+    branchUuid: string,
+    filter?: 'low' | null,
+): Promise<{ data: BranchStockRow[]; meta?: BranchStockMeta }> {
+    return apiGet<{ data: BranchStockRow[]; meta?: BranchStockMeta }>(
+        `/api/branches/${branchUuid}/stock${filter === 'low' ? '?filter=low' : ''}`,
+    );
+}
+
+/** LAUNCH-P2 P2-4 — the portal's inventory switches. */
+export interface InventorySettings {
+    /** Stock comes in through Goods received only (other entry points hidden). */
+    single_stock_in: boolean;
+}
+
+export function getInventorySettings(): Promise<{ data: InventorySettings }> {
+    return apiGet<{ data: InventorySettings }>('/api/inventory/settings');
 }
 
 export function adjustStock(
@@ -923,11 +964,17 @@ export interface StockCountLine {
     } | null;
     counted_pieces: string | null;
     counted_units: string;
-    expected_units: string;
-    variance_units: string;
-    unit_cost_at_time: string;
+    /**
+     * LAUNCH-P2 P2-6 — the book side (counts are blind): present only for
+     * users who may see stock values (inventory.view).
+     */
+    expected_units?: string;
+    variance_units?: string;
+    /** Movements dated before the count that reached the books after it. */
+    late_movement_units?: string;
+    unit_cost_at_time?: string;
     /** variance_units × unit_cost_at_time, server-computed. */
-    variance_value: string;
+    variance_value?: string;
 }
 
 export interface StockCount {
@@ -937,6 +984,8 @@ export interface StockCount {
     note: string | null;
     counted_at: string | null;
     recorded_by: string | null;
+    /** LAUNCH-P2 P2-6 — whether the lines carry the book side. */
+    shows_stock_values?: boolean;
     lines: StockCountLine[];
     created_at: string | null;
 }

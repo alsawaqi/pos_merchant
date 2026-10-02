@@ -32,6 +32,7 @@ use App\Http\Controllers\Pos\FloorsController;
 use App\Http\Controllers\Pos\IngredientsController;
 use App\Http\Controllers\Pos\IngredientStockController;
 use App\Http\Controllers\Pos\IngredientUnitsController;
+use App\Http\Controllers\Pos\InventorySettingsController;
 use App\Http\Controllers\Pos\KitchenPositionsSettingController;
 use App\Http\Controllers\Pos\LoyaltyController;
 use App\Http\Controllers\Pos\ManagerApprovalSettingController;
@@ -505,6 +506,9 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // All gated by inventory.{view,manage}. Branch-nested
         // stock endpoints take the branch by uuid + verify
         // tenant ownership; movement ledger is paginated.
+        // LAUNCH-P2 P2-4 — the portal's inventory switches (single stock-in).
+        Route::get('inventory/settings', [InventorySettingsController::class, 'show'])
+            ->name('inventory.settings');
         Route::get('ingredients', [IngredientsController::class, 'index'])
             ->name('ingredients.index');
         Route::post('ingredients', [IngredientsController::class, 'store'])

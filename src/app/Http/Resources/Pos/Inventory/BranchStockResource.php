@@ -19,10 +19,12 @@ class BranchStockResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
+            // NULL when the branch has never stocked the ingredient
+            // (LAUNCH-P2: the list shows every ingredient, missing = 0).
             'id' => $this->id,
             'branch_id' => $this->branch_id,
             'ingredient_id' => $this->ingredient_id,
-            // Quantity as string (decimal:3) for OMR-baisas
+            // Quantity as string (up to 4 decimals since LAUNCH-P2) for
             // precision parity through the JSON layer.
             'quantity' => (string) $this->quantity,
             'last_movement_at' => $this->last_movement_at?->toIso8601String(),
@@ -31,6 +33,12 @@ class BranchStockResource extends JsonResource
             // threshold. Cached here so the UI doesn't have to
             // duplicate the math.
             'health_level' => $this->healthLevel(),
+            // LAUNCH-P2 P2-7 — sell, but warn: negative (red) /
+            // below_minimum (amber) / ok, and the stock value at the
+            // weighted-average cost (quantity × cost, 3dp).
+            'stock_status' => $this->stockStatus(),
+            'stock_value' => $this->stockValue(),
+            'has_stock_row' => $this->exists,
             // Ingredient summary inlined so the list view
             // doesn't need a second round-trip per row.
             'ingredient' => $this->whenLoaded('ingredient', fn (): array => [

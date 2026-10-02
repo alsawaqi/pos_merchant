@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Casts\ScaledDecimal;
 use App\Models\Concerns\BelongsToCompany;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
@@ -55,8 +56,8 @@ class IngredientPurchase extends Model
     protected function casts(): array
     {
         return [
-            'pieces_received' => 'decimal:3',
-            'units_received' => 'decimal:3',
+            'pieces_received' => ScaledDecimal::class.':3,4',
+            'units_received' => ScaledDecimal::class.':3,4',
             'total_paid' => 'decimal:3',
             'unit_cost' => 'decimal:6',
             'units_per_piece_at_purchase' => 'decimal:4',

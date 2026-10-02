@@ -15,6 +15,7 @@ use App\Models\PurchaseReceiptCharge;
 use App\Models\PurchaseReceiptLine;
 use App\Models\Supplier;
 use App\Models\User;
+use App\Support\StockDecimal;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -41,6 +42,17 @@ use Illuminate\Support\Facades\DB;
  * whole receipt back (the inner receives nest via savepoints). The receipt's
  * received_at is threaded as the expense accounting date so a back-dated
  * delivery books into the right period of the cash-model P&L.
+ *
+ * LAUNCH-P2 — the one way stock comes in for the pilot:
+ *   - P2-2 every ingredient line stamps its stock movement with the price
+ *     actually paid per base unit and updates the weighted-average cost; a
+ *     back-dated receipt dates its movements (receive + allocations) at the
+ *     receipt date; the received movement points at its receipt line, so the
+ *     purchasing report credits the receipt's supplier.
+ *   - P2-3 a line may be entered in a purchase unit (kg, box, the piece unit)
+ *     with a price per that unit; the controller converts to base units and
+ *     the line keeps how it was entered (purchase_unit / purchase_quantity /
+ *     unit_price) plus the per-base-unit cost (unit_cost).
  */
 final readonly class CreatePurchaseReceiptAction
 {
@@ -77,6 +89,13 @@ final readonly class CreatePurchaseReceiptAction
         ?Branch $destinationBranch = null,
     ): PurchaseReceipt {
         $at = $receivedAt ?? now();
+        // LAUNCH-P2 P2-2 — when the stock arrived: a back-dated receipt dates
+        // its movements at the receipt date; a receipt dated today (or later)
+        // lands now, so a count earlier today never mistakes it for stock that
+        // was already on the shelf.
+        $movementAt = ($receivedAt === null || $receivedAt->isToday() || $receivedAt->isFuture())
+            ? now()
+            : $receivedAt->copy();
 
         // Phase B — direct-to-branch delivery (owner scenario 3: the supplier
         // van drops the goods at the branch). Every line auto-allocates its
@@ -98,7 +117,7 @@ final readonly class CreatePurchaseReceiptAction
         }
 
         return DB::transaction(function () use (
-            $companyId, $supplier, $reference, $at, $note, $lines, $charges, $actor, $isCredit, $dueDate, $destinationBranch
+            $companyId, $supplier, $reference, $at, $movementAt, $note, $lines, $charges, $actor, $isCredit, $dueDate, $destinationBranch
         ): PurchaseReceipt {
             $receipt = PurchaseReceipt::query()->create([
                 'company_id' => $companyId,
@@ -126,7 +145,7 @@ final readonly class CreatePurchaseReceiptAction
             $taxTotal = 0.0;
             $order = 0;
             foreach ($lines as $line) {
-                $r = $this->writeLine($receipt, $line, $note, $actor, $at, $order++);
+                $r = $this->writeLine($receipt, $line, $note, $actor, $at, $movementAt, $order++);
                 $itemsTotal += $r['cost'];
                 $taxTotal += $r['tax'];
             }
@@ -174,6 +193,10 @@ final readonly class CreatePurchaseReceiptAction
      *     tax_amount?: string|float|int|null,
      *     tax_rate?: string|float|int|null,
      *     allocations: list<array{branch: Branch, quantity: string|float|int}>,
+     *     purchase_unit?: string|null,
+     *     purchase_quantity?: string|float|int|null,
+     *     unit_price?: string|float|int|null,
+     *     paid_unit_cost?: string|null,
      * }  $line
      * @return array{cost: float, tax: float}
      */
@@ -183,6 +206,7 @@ final readonly class CreatePurchaseReceiptAction
         ?string $note,
         User $actor,
         Carbon $at,
+        Carbon $movementAt,
         int $order,
     ): array {
         $cost = (float) $line['line_cost'];
@@ -199,7 +223,34 @@ final readonly class CreatePurchaseReceiptAction
             $line['allocations'],
         );
 
-        if ($line['item_type'] === 'ingredient') {
+        $isIngredient = $line['item_type'] === 'ingredient';
+
+        // LAUNCH-P2 — the line row exists FIRST so the received movement can
+        // point at it: the purchasing report credits a receipt's spend to the
+        // receipt's supplier through this link.
+        /** @var PurchaseReceiptLine $receiptLine */
+        $receiptLine = PurchaseReceiptLine::query()->create([
+            'purchase_receipt_id' => $receipt->id,
+            'item_type' => $line['item_type'],
+            'ingredient_id' => $isIngredient ? (int) $line['ingredient']->id : null,
+            'product_id' => $isIngredient ? null : (int) $line['product']->id,
+            'item_name' => (string) ($isIngredient ? $line['ingredient']->name : $line['product']->name),
+            'quantity' => $isIngredient ? StockDecimal::quantity($line['quantity']) : (string) $line['quantity'],
+            'unit' => $isIngredient ? $line['ingredient']->unit?->value : null,
+            'line_cost' => number_format($cost, 3, '.', ''),
+            'tax_amount' => number_format($tax, 3, '.', ''),
+            'tax_rate' => $taxRate,
+            'expense_category' => null,
+            'allocations_json' => $this->snapshotAllocations($line['allocations']),
+            'expense_id' => null,
+            'display_order' => $order,
+            'purchase_unit' => $line['purchase_unit'] ?? null,
+            'purchase_quantity' => isset($line['purchase_quantity']) ? StockDecimal::quantity($line['purchase_quantity']) : null,
+            'unit_price' => isset($line['unit_price']) ? StockDecimal::unitCost($line['unit_price']) : null,
+        ]);
+
+        $paidUnitCost = null;
+        if ($isIngredient) {
             /** @var Ingredient $ingredient */
             $ingredient = $line['ingredient'];
             $result = $this->receiveIngredient->handle(
@@ -213,12 +264,19 @@ final readonly class CreatePurchaseReceiptAction
                 $at,
                 taxAmount: $tax > 0 ? $tax : null,
                 taxRate: $taxRate,
+                movementAt: $movementAt,
+                paidUnitCost: $line['paid_unit_cost'] ?? null,
+                referenceType: PurchaseReceiptLine::class,
+                referenceId: (int) $receiptLine->id,
+                costContext: [
+                    'purchase_receipt_id' => (int) $receipt->id,
+                    'purchase_receipt_uuid' => (string) $receipt->uuid,
+                    'purchase_receipt_line_id' => (int) $receiptLine->id,
+                    'supplier_id' => $receipt->supplier_id,
+                ],
             );
-            $movement = $result['received'];
-            $itemName = (string) $ingredient->name;
-            $unit = $ingredient->unit?->value;
-            $ingredientId = (int) $ingredient->id;
-            $productId = null;
+            $expenseId = $result['expense']?->id;
+            $paidUnitCost = $result['unit_cost'];
             $category = ExpenseCategory::Ingredients->value;
         } else {
             /** @var Product $product */
@@ -236,35 +294,19 @@ final readonly class CreatePurchaseReceiptAction
                 taxRate: $taxRate,
             );
             $movement = $result['received'];
-            $itemName = (string) $product->name;
-            $unit = null;
-            $ingredientId = null;
-            $productId = (int) $product->id;
+            $expenseId = ($movement->reference_type === Expense::class)
+                ? (int) $movement->reference_id
+                : null;
             $category = $product->is_internal
                 ? ExpenseCategory::PhysicalItems->value
                 : ExpenseCategory::StockPurchases->value;
         }
 
-        $expenseId = ($movement->reference_type === Expense::class)
-            ? (int) $movement->reference_id
-            : null;
-
-        PurchaseReceiptLine::query()->create([
-            'purchase_receipt_id' => $receipt->id,
-            'item_type' => $line['item_type'],
-            'ingredient_id' => $ingredientId,
-            'product_id' => $productId,
-            'item_name' => $itemName,
-            'quantity' => (string) $line['quantity'],
-            'unit' => $unit,
-            'line_cost' => number_format($cost, 3, '.', ''),
-            'tax_amount' => number_format($tax, 3, '.', ''),
-            'tax_rate' => $taxRate,
+        $receiptLine->forceFill([
             'expense_category' => $cost > 0 ? $category : null,
-            'allocations_json' => $this->snapshotAllocations($line['allocations']),
             'expense_id' => $expenseId,
-            'display_order' => $order,
-        ]);
+            'unit_cost' => $paidUnitCost,
+        ])->save();
 
         return ['cost' => $cost, 'tax' => $tax];
     }

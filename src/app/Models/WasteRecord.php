@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Casts\ScaledDecimal;
 use App\Enums\IngredientUnit;
 use App\Enums\WasteReason;
 use Database\Factories\WasteRecordFactory;
@@ -55,10 +56,10 @@ class WasteRecord extends Model
     protected function casts(): array
     {
         return [
-            'quantity' => 'decimal:3',
+            'quantity' => ScaledDecimal::class.':3,4',
             'reason' => WasteReason::class,
             'unit_at_set' => IngredientUnit::class,
-            'unit_cost_at_time' => 'decimal:3',
+            'unit_cost_at_time' => ScaledDecimal::class.':3,6',
             'occurred_at' => 'datetime',
         ];
     }
@@ -113,6 +114,7 @@ class WasteRecord extends Model
         // that PHP's native multiplication is fine when both
         // sides are bounded by decimal(12,3).
         $cost = ((float) $this->quantity) * ((float) $this->unit_cost_at_time);
+
         return number_format($cost, 3, '.', '');
     }
 }

@@ -15,6 +15,7 @@ use App\Models\PosStaff;
 use App\Models\StockMovement;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
+use App\Support\StockDecimal;
 use DateTimeInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -54,16 +55,17 @@ final readonly class WriteStockMovementAction
     public function __construct(
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
+        private FoldLateMovementIntoCountAction $foldLateMovement,
     ) {}
 
     /**
-     * @param  string|float|int  $quantity         Signed: positive inflow, negative outflow
-     * @param  string|float|int  $unitCostAtTime   Unit cost at this moment (OMR/unit)
-     * @param  string|null       $referenceType    Polymorphic FK (Order::class, etc.)
-     * @param  int|null          $referenceId      Polymorphic FK id
-     * @param  User|PosStaff|null $actor           Who triggered the movement
-     * @param  string|null       $note             Free-text reason (required by callers on Adjustment / Waste)
-     * @param  DateTimeInterface|null $occurredAt  When the movement happened (defaults to now)
+     * @param  string|float|int  $quantity  Signed: positive inflow, negative outflow
+     * @param  string|float|int  $unitCostAtTime  Unit cost at this moment (OMR/unit)
+     * @param  string|null  $referenceType  Polymorphic FK (Order::class, etc.)
+     * @param  int|null  $referenceId  Polymorphic FK id
+     * @param  User|PosStaff|null  $actor  Who triggered the movement
+     * @param  string|null  $note  Free-text reason (required by callers on Adjustment / Waste)
+     * @param  DateTimeInterface|null  $occurredAt  When the movement happened (defaults to now)
      */
     public function handle(
         ?Branch $branch,
@@ -95,6 +97,12 @@ final readonly class WriteStockMovementAction
             ? Carbon::instance($occurredAt)
             : now();
 
+        // LAUNCH-P2 P2-1 — ledger precision: quantities 4dp, unit costs 6dp,
+        // rounded ONCE here so the movement row and the balance delta are the
+        // same value (never a float drift between them).
+        $quantity = (string) StockDecimal::quantity($quantity);
+        $unitCostAtTime = (string) StockDecimal::unitCost($unitCostAtTime);
+
         $actorUserId = $actor instanceof User ? $actor->getKey() : null;
         $actorStaffId = $actor instanceof PosStaff ? $actor->getKey() : null;
 
@@ -111,7 +119,6 @@ final readonly class WriteStockMovementAction
             $note,
             $occurredAt,
             $companyId,
-            $actor,
         ): StockMovement {
             // Step 1: append the ledger row. Never updated, never
             // deleted — corrections are NEW Adjustment rows.
@@ -147,7 +154,7 @@ final readonly class WriteStockMovementAction
                         'quantity' => '0.000',
                     ],
                 );
-                $central->increment('quantity', (float) $quantity);
+                $central->increment('quantity', $quantity);
                 $central->forceFill(['last_movement_at' => $occurredAt])->save();
             } else {
                 /** @var BranchStock $balance */
@@ -165,8 +172,37 @@ final readonly class WriteStockMovementAction
                 // which is safe under concurrent writes because the
                 // outer DB::transaction wraps it (Postgres' default
                 // READ COMMITTED gives us per-row consistency).
-                $balance->increment('quantity', (float) $quantity);
+                $balance->increment('quantity', $quantity);
                 $balance->forceFill(['last_movement_at' => $occurredAt])->save();
+
+                // LAUNCH-P2 P2-6 — a movement dated before a stock count of
+                // this branch that only now reaches the books (a back-dated
+                // receipt or waste) is folded into that count.
+                $folded = $type === StockMovementType::CountCorrection ? null : $this->foldLateMovement->handle(
+                    (int) $branch->id,
+                    (int) $ingredient->id,
+                    $quantity,
+                    $unitCostAtTime,
+                    $occurredAt,
+                    $actorUserId !== null ? (int) $actorUserId : null,
+                    $actorStaffId !== null ? (int) $actorStaffId : null,
+                );
+                if ($folded !== null) {
+                    $this->writeAuditLog->handle(new AuditLogData(
+                        event: 'inventory.stock_count.late_movement_folded',
+                        actorUserId: $actorUserId,
+                        companyId: $companyId,
+                        branchId: $branch->id,
+                        auditableType: StockMovement::class,
+                        auditableId: $folded['correction_id'],
+                        newValues: [
+                            'late_movement_id' => $movement->id,
+                            'stock_count_line_id' => $folded['stock_count_line_id'],
+                            'expected_units' => $folded['expected_units'],
+                            'variance_units' => $folded['variance_units'],
+                        ],
+                    ));
+                }
             }
 
             // Step 3: audit row. Distinct from the stock_movement

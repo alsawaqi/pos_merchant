@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Models\Concerns\BelongsToCompany;
+use App\Casts\ScaledDecimal;
 use App\Enums\ProductStockMovementType;
+use App\Models\Concerns\BelongsToCompany;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -49,7 +50,7 @@ class ProductStockMovement extends Model
     {
         return [
             'quantity' => 'decimal:3',
-            'unit_cost' => 'decimal:3',
+            'unit_cost' => ScaledDecimal::class.':3,6',
             'occurred_at' => 'datetime',
             'created_at' => 'datetime',
             'movement_type' => ProductStockMovementType::class,

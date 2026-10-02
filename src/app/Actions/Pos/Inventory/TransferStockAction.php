@@ -13,6 +13,7 @@ use App\Models\BranchTransferLine;
 use App\Models\Ingredient;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
+use App\Support\StockDecimal;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -81,7 +82,7 @@ final readonly class TransferStockAction
 
             // #13 — convert the entered quantity to base units before the
             // positivity + available-stock checks (so both compare base-to-base).
-            $quantity = $this->units->toBase($ingredient, $line['quantity'], $line['unit'] ?? null);
+            $quantity = round($this->units->toBase($ingredient, $line['quantity'], $line['unit'] ?? null), StockDecimal::QUANTITY_SCALE);
             if ($quantity <= 0) {
                 throw new RuntimeException('Transfer quantity for "'.$ingredient->name.'" must be positive.');
             }
@@ -91,8 +92,8 @@ final readonly class TransferStockAction
                 throw new RuntimeException(sprintf(
                     'Not enough "%s" at the source branch: have %s, transferring %s.',
                     $ingredient->name,
-                    rtrim(rtrim(number_format($available, 3, '.', ''), '0'), '.'),
-                    rtrim(rtrim(number_format($quantity, 3, '.', ''), '0'), '.'),
+                    StockDecimal::format($available, 0, 4),
+                    StockDecimal::format($quantity, 0, 4),
                 ));
             }
 

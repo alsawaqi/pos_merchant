@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Actions\Pos\Inventory;
 
 use App\Models\Branch;
+use App\Models\Expense;
 use App\Models\Ingredient;
 use App\Models\StockMovement;
 use App\Models\User;
+use App\Support\StockDecimal;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -25,6 +27,10 @@ use RuntimeException;
  * over-distribution writes nothing. The inner Allocate still enforces its own
  * "<= central balance" guard under a row lock, which holds trivially here
  * since the receive credits exactly `total` first.
+ *
+ * LAUNCH-P2 — the receive stamps the price paid and updates the weighted
+ * average; the allocation legs move at the NEW average and carry the same
+ * date and reference as the receive (a back-dated receipt dates every leg).
  */
 final readonly class ReceiveAndDistributeIngredientStockAction
 {
@@ -35,7 +41,8 @@ final readonly class ReceiveAndDistributeIngredientStockAction
 
     /**
      * @param  list<array{branch: Branch, quantity: string|float|int}>  $lines
-     * @return array{received: StockMovement, allocations: list<StockMovement>}
+     * @param  array<string, mixed>  $costContext
+     * @return array{received: StockMovement, allocations: list<StockMovement>, expense: Expense|null, unit_cost: string}
      */
     public function handle(
         Ingredient $ingredient,
@@ -51,6 +58,12 @@ final readonly class ReceiveAndDistributeIngredientStockAction
         // PT — tax paid on the item cost, forwarded to the receive.
         string|float|int|null $taxAmount = null,
         string|float|int|null $taxRate = null,
+        // LAUNCH-P2 — see ReceiveIngredientStockAction::receive().
+        ?Carbon $movementAt = null,
+        string|float|int|null $paidUnitCost = null,
+        ?string $referenceType = null,
+        ?int $referenceId = null,
+        array $costContext = [],
     ): array {
         $totalQty = (float) $total;
         if ($totalQty <= 0) {
@@ -63,22 +76,42 @@ final readonly class ReceiveAndDistributeIngredientStockAction
         }
         if ($distributed > $totalQty + 1e-9) {
             throw new RuntimeException(sprintf(
-                'You are distributing %.3f but only received %.3f. Distribute at most the received total.',
-                $distributed,
-                $totalQty,
+                'You are distributing %s but only received %s. Distribute at most the received total.',
+                StockDecimal::quantity($distributed),
+                StockDecimal::quantity($totalQty),
             ));
         }
 
-        return DB::transaction(function () use ($ingredient, $total, $lines, $note, $actor, $totalCost, $deliveryCost, $occurredAt, $taxAmount, $taxRate): array {
+        return DB::transaction(function () use (
+            $ingredient, $total, $lines, $note, $actor, $totalCost, $deliveryCost, $occurredAt, $taxAmount, $taxRate,
+            $movementAt, $paidUnitCost, $referenceType, $referenceId, $costContext
+        ): array {
             // PD5 — the cost/delivery ride the single receive into the central
             // warehouse (one purchase = one expense pair); the allocations are
             // pure internal movement, no expense.
-            $received = $this->receive->handle($ingredient, $total, $note, $actor, $totalCost, $deliveryCost, $occurredAt, $taxAmount, $taxRate);
+            $received = $this->receive->receive(
+                $ingredient, $total, $note, $actor, $totalCost, $deliveryCost, $occurredAt, $taxAmount, $taxRate,
+                movementAt: $movementAt,
+                paidUnitCost: $paidUnitCost,
+                referenceType: $referenceType,
+                referenceId: $referenceId,
+                costContext: $costContext,
+            );
             $allocations = $lines === []
                 ? []
-                : $this->allocate->handle($ingredient, $lines, $note, $actor);
+                : $this->allocate->handle(
+                    $ingredient, $lines, $note, $actor,
+                    occurredAt: $movementAt ?? $occurredAt,
+                    referenceType: $referenceType,
+                    referenceId: $referenceId,
+                );
 
-            return ['received' => $received, 'allocations' => $allocations];
+            return [
+                'received' => $received['movement'],
+                'allocations' => $allocations,
+                'expense' => $received['expense'],
+                'unit_cost' => $received['unit_cost'],
+            ];
         });
     }
 }

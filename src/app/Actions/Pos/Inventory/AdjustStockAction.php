@@ -9,6 +9,8 @@ use App\Models\Branch;
 use App\Models\Ingredient;
 use App\Models\StockMovement;
 use App\Models\User;
+use App\Support\StockDecimal;
+use DateTimeInterface;
 use RuntimeException;
 
 /**
@@ -38,10 +40,10 @@ final readonly class AdjustStockAction
 
     /**
      * @param  string|float|int  $signedQuantity  Required; signed delta in [$unit]
-     * @param  string            $note            Required; reason for the adjustment
-     * @param  string|null       $unit            Entered unit (alt-unit name, or null
-     *                                            = base); the signed delta is converted
-     *                                            to base before it touches stock (#13).
+     * @param  string  $note  Required; reason for the adjustment
+     * @param  string|null  $unit  Entered unit (alt-unit name, or null
+     *                             = base); the signed delta is converted
+     *                             to base before it touches stock (#13).
      */
     public function handle(
         Branch $branch,
@@ -50,14 +52,17 @@ final readonly class AdjustStockAction
         string $note,
         User $actor,
         ?string $unit = null,
+        // LAUNCH-P2 P2-6 — a count's overage is dated at the count moment.
+        ?DateTimeInterface $occurredAt = null,
     ): StockMovement {
         $note = trim($note);
         if ($note === '') {
             throw new RuntimeException('Adjustment note is required — explain why the stock count changed.');
         }
 
-        // #13 — convert the signed delta to base units (sign preserved; factor > 0).
-        $signedQuantity = $this->units->toBase($ingredient, $signedQuantity, $unit);
+        // #13 — convert the signed delta to base units (sign preserved; factor > 0),
+        // at ledger precision (4dp).
+        $signedQuantity = round($this->units->toBase($ingredient, $signedQuantity, $unit), StockDecimal::QUANTITY_SCALE);
 
         if ((float) $signedQuantity === 0.0) {
             throw new RuntimeException('Adjustment quantity cannot be zero.');
@@ -71,6 +76,7 @@ final readonly class AdjustStockAction
             unitCostAtTime: $ingredient->default_unit_cost ?? 0,
             actor: $actor,
             note: $note,
+            occurredAt: $occurredAt,
         );
     }
 }

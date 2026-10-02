@@ -54,6 +54,20 @@ const forbidden = ref<boolean>(false);
 
 const canSeeAudit = computed(() => can(MerchantPermission.AuditLogView));
 
+// LAUNCH-P2 P2-7 — the Low stock card links to the stock page's Low stock
+// filter, opened on the branch with the most to look at.
+const canViewInventory = computed(() => can(MerchantPermission.InventoryView));
+const lowStockTotal = computed(() => (summary.value?.low_stock?.negative ?? 0) + (summary.value?.low_stock?.below_minimum ?? 0));
+const lowStockLink = computed(() => {
+    const branches = [...(summary.value?.low_stock?.branches ?? [])]
+        .sort((a, b) => (b.negative - a.negative) || (b.below_minimum - a.below_minimum));
+    const query: Record<string, string> = { tab: 'stock', filter: 'low' };
+    if (branches.length > 0) {
+        query.branch = branches[0].branch_uuid;
+    }
+    return { name: 'merchant.inventory', query };
+});
+
 async function load(): Promise<void> {
     loading.value = true;
     error.value = null;
@@ -362,17 +376,30 @@ const paymentMixChart = computed(() => {
                     <div v-else class="mt-3 text-sm text-slate-400">{{ t('dashboard_widgets.no_data') }}</div>
                 </div>
 
-                <!-- Low-stock count -->
-                <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm card-hover">
+                <!-- LAUNCH-P2 P2-7 — Low stock: below zero (red) and below the
+                     minimum (amber), linking to the stock page's Low stock filter. -->
+                <component
+                    :is="canViewInventory ? 'RouterLink' : 'div'"
+                    :to="canViewInventory ? lowStockLink : undefined"
+                    class="block rounded-2xl border border-slate-200 bg-white p-5 shadow-sm card-hover"
+                    data-test="low-stock-card"
+                >
                     <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        <AlertTriangle class="size-3.5" :class="summary.low_stock_count > 0 ? 'text-rose-500' : 'text-slate-400'" />
+                        <AlertTriangle class="size-3.5" :class="lowStockTotal > 0 ? 'text-rose-500' : 'text-slate-400'" />
                         {{ t('dashboard_widgets.low_stock') }}
                     </div>
-                    <div class="mt-2 text-3xl font-bold tabular-nums" :class="summary.low_stock_count > 0 ? 'text-rose-700' : 'text-slate-950'">
-                        {{ summary.low_stock_count }}
+                    <div class="mt-2 flex items-baseline gap-4">
+                        <div>
+                            <div class="text-3xl font-bold tabular-nums" :class="(summary.low_stock?.negative ?? 0) > 0 ? 'text-rose-700' : 'text-slate-950'">{{ summary.low_stock?.negative ?? 0 }}</div>
+                            <div class="text-[11px] font-medium text-rose-600">{{ t('dashboard_widgets.low_stock_negative') }}</div>
+                        </div>
+                        <div>
+                            <div class="text-3xl font-bold tabular-nums" :class="(summary.low_stock?.below_minimum ?? 0) > 0 ? 'text-amber-600' : 'text-slate-950'">{{ summary.low_stock?.below_minimum ?? 0 }}</div>
+                            <div class="text-[11px] font-medium text-amber-600">{{ t('dashboard_widgets.low_stock_below_minimum') }}</div>
+                        </div>
                     </div>
-                    <div class="mt-1 text-xs text-slate-500">{{ t('dashboard_widgets.low_stock_subtitle') }}</div>
-                </div>
+                    <div class="mt-1 text-xs text-slate-500">{{ lowStockTotal > 0 && canViewInventory ? t('dashboard_widgets.low_stock_open') : t('dashboard_widgets.low_stock_subtitle') }}</div>
+                </component>
 
                 <!-- Round-up donations today (§5.2) -->
                 <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm card-hover">

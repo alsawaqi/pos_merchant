@@ -13,6 +13,7 @@ use App\Models\RestockRequest;
 use App\Models\RestockRequestLine;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
+use App\Support\StockDecimal;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -107,7 +108,7 @@ final readonly class CreateRestockRequestAction
                 RestockRequestLine::query()->create([
                     'restock_request_id' => $request->id,
                     'ingredient_id' => $ing->id,
-                    'quantity_requested' => number_format($qty, 3, '.', ''),
+                    'quantity_requested' => StockDecimal::quantity($qty),
                     'quantity_allocated' => '0.000',
                     'unit_at_set' => $ing->unit?->value,
                     'note' => $line['note'] ?? null,

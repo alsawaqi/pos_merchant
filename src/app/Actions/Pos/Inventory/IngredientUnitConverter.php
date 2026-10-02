@@ -14,29 +14,39 @@ use RuntimeException;
  *
  * The whole unit-conversion design is "convert-at-entry, store-in-base": every
  * place a human types a quantity (restock / recipe line / adjust / transfer /
- * waste / restock request) may name a unit; this turns it into base units so the
- * rest of the system (device availability, pos_api consumption, reports) keeps
- * working unchanged in base units.
+ * waste / restock request / goods received) may name a unit; this turns it
+ * into base units so the rest of the system (device availability, pos_api
+ * consumption, reports) keeps working unchanged in base units.
  *
  *   $unit === null OR the ingredient's base unit  → factor 1 (already base)
+ *   '@piece' (LAUNCH-P2)                          → × the ingredient's piece ratio
  *   an alt unit's name                            → × that unit's factor
+ *   kg↔g / l↔ml                                   → × the metric factor
  *   anything else                                 → RuntimeException (422)
  */
 final readonly class IngredientUnitConverter
 {
     /**
-     * Every base-unit quantity column (pos_branch_stock, pos_stock_movements,
-     * pos_product_recipes, restock-request lines) is decimal(12,3) → it can hold
-     * at most ±999,999,999.999. A large factor × a large entered quantity can
-     * exceed that, so we reject the conversion rather than let the DB overflow /
-     * silently truncate the value.
+     * LAUNCH-P2 P2-3 — the token that names an ingredient's PIECE unit (its
+     * piece_unit_label × units_per_piece, or the base unit 'piece' itself).
+     * A token rather than the free-text label, so it can never collide with
+     * an alternate unit's name.
      */
-    private const MAX_BASE_QUANTITY = 999999999.999;
+    public const PIECE_UNIT = '@piece';
+
+    /**
+     * Every base-unit quantity column (pos_branch_stock, pos_stock_movements,
+     * pos_product_recipes, restock-request lines, …) is numeric(14,4) since
+     * LAUNCH-P2. A large factor × a large entered quantity can still exceed
+     * what the business should ever hold, so the conversion keeps the
+     * historical 9-integer-digit bound rather than let the DB overflow.
+     */
+    private const MAX_BASE_QUANTITY = 999999999.9999;
 
     /**
      * @param  float|int|string  $quantity  the quantity as entered
      * @param  string|null  $unit  the unit it was entered in (null = base unit)
-     * @return float  the equivalent quantity in the ingredient's base unit
+     * @return float the equivalent quantity in the ingredient's base unit
      */
     public function toBase(Ingredient $ingredient, float|int|string $quantity, ?string $unit = null): float
     {
@@ -44,8 +54,8 @@ final readonly class IngredientUnitConverter
 
         if (abs($result) > self::MAX_BASE_QUANTITY) {
             throw new RuntimeException(sprintf(
-                'The converted quantity (%s) exceeds the maximum storable amount of 999,999,999.999 in the base unit — use a smaller quantity or unit.',
-                rtrim(rtrim(number_format($result, 3, '.', ''), '0'), '.'),
+                'The converted quantity (%s) exceeds the maximum storable amount of 999,999,999.9999 in the base unit — use a smaller quantity or unit.',
+                rtrim(rtrim(number_format($result, 4, '.', ''), '0'), '.'),
             ));
         }
 
@@ -55,15 +65,24 @@ final readonly class IngredientUnitConverter
     /**
      * Base units per ONE of [$unit]. 1.0 for the base unit (or null).
      *
-     * Resolution order: base passthrough → custom alternate unit (explicit
-     * merchant data wins) → PD4 system-provided metric sibling (kg<->g,
-     * l<->ml) → unknown = 422.
+     * Resolution order: base passthrough → the piece token → custom alternate
+     * unit (explicit merchant data wins) → PD4 system-provided metric sibling
+     * (kg<->g, l<->ml) → unknown = 422.
      */
     public function factorFor(Ingredient $ingredient, ?string $unit): float
     {
         $base = $ingredient->unit?->value;
         if ($unit === null || $unit === '' || $unit === $base) {
             return 1.0;
+        }
+
+        if ($unit === self::PIECE_UNIT) {
+            $ratio = $ingredient->unitsPerPiece();
+            if ($ratio === null || $ratio <= 0) {
+                throw new RuntimeException('This ingredient has no piece unit — set its piece unit first, or use another unit.');
+            }
+
+            return $ratio;
         }
 
         $alt = IngredientAltUnit::query()

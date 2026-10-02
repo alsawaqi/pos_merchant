@@ -12,6 +12,7 @@ use App\Models\RestockRequest;
 use App\Models\RestockRequestLine;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
+use App\Support\StockDecimal;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -84,7 +85,8 @@ final readonly class UpdateRestockRequestAction
             /** @var Ingredient $ing */
             $ing = $ingredients[$l['ingredient_uuid']];
             $qty = $this->units->toBase($ing, $l['quantity_requested'], $l['unit'] ?? null);
-            return [$ing->id => number_format($qty, 3, '.', '')];
+
+            return [$ing->id => (string) StockDecimal::quantity($qty)];
         });
         $currentShape = $request->lines()
             ->get(['ingredient_id', 'quantity_requested'])
@@ -125,7 +127,7 @@ final readonly class UpdateRestockRequestAction
                 RestockRequestLine::query()->create([
                     'restock_request_id' => $request->id,
                     'ingredient_id' => $ing->id,
-                    'quantity_requested' => number_format($qty, 3, '.', ''),
+                    'quantity_requested' => StockDecimal::quantity($qty),
                     'quantity_allocated' => '0.000',
                     'unit_at_set' => $ing->unit?->value,
                     'note' => $line['note'] ?? null,
@@ -171,6 +173,7 @@ final readonly class UpdateRestockRequestAction
                 return false;
             }
         }
+
         return true;
     }
 }
