@@ -125,15 +125,67 @@ export interface ProductRecipeLine {
     /** Denormalised from ingredient at line-set time. */
     unit_at_set: string;
     sort_order: number;
+    /**
+     * LAUNCH-P3 P3-1 — how the line was typed ('g', 'box', '@piece' …) and
+     * the quantity in that unit; null when it was typed in the base unit or
+     * no longer converts to the stored base quantity.
+     */
+    entered_unit?: string | null;
+    entered_quantity?: string | null;
     ingredient?: {
         id: number;
         uuid: string;
         name: string;
         name_ar: string | null;
         unit: string;
-        /** Current default cost — used by the live cost preview. */
+        /** Current cost per base unit (a prep item: derived from its recipe). */
         default_unit_cost: string;
+        /** LAUNCH-P3 P3-4 — a prep item (sauce, dough). */
+        is_prep?: boolean;
+        piece_unit_label?: string | null;
+        piece_unit_label_ar?: string | null;
     };
+}
+
+// ---- LAUNCH-P3 P3-2 — recipe history ----------------------------
+
+export interface RecipeLineChange {
+    ingredient_id: number;
+    ingredient: string;
+    change: 'added' | 'removed' | 'changed';
+    /** "150 g" — in the unit the line was entered in. */
+    before: string | null;
+    after: string | null;
+    before_base: string | null;
+    after_base: string | null;
+}
+
+export interface RecipeHistoryVersion {
+    version: number;
+    /** Prep items: the creation is 'created', every later change 'changed'. */
+    event?: 'created' | 'changed';
+    edited_at: string | null;
+    edited_by: { id: number; name: string } | null;
+    note: string | null;
+    /** Prep items only. */
+    yield_before?: string | null;
+    yield_after?: string | null;
+    changes: RecipeLineChange[];
+}
+
+export interface RecipeHistory {
+    current: {
+        version: number;
+        prep_yield_quantity?: string;
+        unit?: string | null;
+        lines: { ingredient_id: number; ingredient: string; is_prep: boolean; amount: string; base: string }[];
+    };
+    /** Newest first. */
+    versions: RecipeHistoryVersion[];
+}
+
+export function getProductRecipeHistory(productUuid: string): Promise<{ data: RecipeHistory }> {
+    return apiGet<{ data: RecipeHistory }>(`/api/products/${productUuid}/recipe-history`);
 }
 
 export interface RecipeLinePayload {
@@ -179,7 +231,10 @@ export interface AddOnConsumptionLine {
     /** Ingredient lines: base-unit quantity. Product lines: pieces. */
     quantity: string;
     unit: string | null;
-    ingredient: { uuid: string; name: string; unit: string | null } | null;
+    /** LAUNCH-P3 P3-1 — ingredient lines: how they were typed (null = base). */
+    entered_unit?: string | null;
+    entered_quantity?: string | null;
+    ingredient: { uuid: string; name: string; unit: string | null; is_prep?: boolean } | null;
     product: { uuid: string; name: string; stock_mode: string | null; is_internal: boolean } | null;
 }
 

@@ -1,4 +1,79 @@
 {
+    "recipe_units": {
+        "too_small": "{amount} is too small to record: it rounds to 0 {base} (stock keeps 4 decimals). Enter at least {minimum}, or use a smaller base unit.",
+        "too_many_decimals": "Use at most 4 decimal places."
+    },
+    "recipe_permission": {
+        "readonly_hint": "You can see this recipe but not change it: that needs the \"Edit recipes\" permission (ask an owner to add it to your role).",
+        "not_sent_hint": "The recipe is not saved from this account: it needs the \"Edit recipes\" permission."
+    },
+    "recipe_history": {
+        "title": "Recipe history",
+        "version": "Version {n}",
+        "show": "Show",
+        "hide": "Hide",
+        "empty": "No recipe changes recorded yet.",
+        "load_failed": "Could not load the recipe history.",
+        "unknown_user": "Unknown user",
+        "note": "Note",
+        "note_field": "Note for this change (optional)",
+        "note_placeholder": "e.g. smaller portion, new supplier",
+        "yield": "Yield",
+        "added": "Added",
+        "removed": "Removed",
+        "changed": "Changed",
+        "created": "created",
+        "no_line_changes": "No ingredient changes."
+    },
+    "prep_items": {
+        "optgroup": "Prep items",
+        "subtitle": "A prep item (a sauce, a dough) has its own recipe and yield. Dishes, cooked products and add-on options use it like an ingredient; when a dish sells, the raw ingredients behind it come off stock automatically. Prep items have no stock of their own.",
+        "new": "New prep item",
+        "empty": "No prep items yet.",
+        "load_failed": "Could not load the prep items.",
+        "level": "Level {n}",
+        "used_products": "{n} product recipe(s)",
+        "used_addons": "{n} add-on option line(s)",
+        "used_preps": "{n} prep recipe(s)",
+        "unused": "Not used yet",
+        "view": "View",
+        "columns": {
+            "name": "Prep item",
+            "yield": "Yield per batch",
+            "unit_cost": "Cost per unit",
+            "batch_cost": "Cost per batch",
+            "used_by": "Used by"
+        },
+        "back": "Back to prep items",
+        "create_title": "New prep item",
+        "edit_title": "Prep item",
+        "editor_hint": "A name, a small base unit, what one batch makes, and the recipe of that batch. Ingredients or other prep items (up to 3 levels) can be used. A prep item has no stock: its ingredients are received, counted and moved instead.",
+        "fields": {
+            "name": "Name",
+            "name_ar": "Arabic name",
+            "unit": "Base unit",
+            "yield": "One batch makes"
+        },
+        "units": {
+            "g": "Gram (g)",
+            "ml": "Millilitre (ml)",
+            "piece": "Piece"
+        },
+        "unit_hint": "Use a small unit: g, ml or piece.",
+        "unit_locked": "The unit cannot change while recipes use this prep item.",
+        "yield_hint": "Typed in the base unit, e.g. 2000 for 2 litres of a sauce kept in ml.",
+        "recipe_title": "Recipe of one batch",
+        "recipe_hint": "Each line in any unit the ingredient knows; it reopens exactly as typed.",
+        "batch_cost": "Cost per batch",
+        "unit_cost": "Cost per {unit}",
+        "save_failed": "Could not save the prep item.",
+        "delete_failed": "Could not delete the prep item.",
+        "not_found": "Prep item not found.",
+        "delete": "Delete",
+        "delete_title": "Delete this prep item?",
+        "delete_body": "{name} will be removed. It can only be deleted when no recipe uses it.",
+        "waste_hint": "A prep item has no stock: wasting it records the waste of the ingredients it is made from, at their current cost, as one event."
+    },
     "rule_time": {
         "validity_start": "Starts at (Oman time)",
         "validity_end": "Ends at (Oman time)",
@@ -1075,6 +1150,7 @@
             "multi": "Multi (checkbox)"
         },
         "consumption": {
+            "none": "No stock usage.",
             "section_title": "Stock usage (optional)",
             "section_hint": "What picking this option uses from stock — or removes from the product's own usage (e.g. \"no salad\"). Removals never push consumption below zero at sale time.",
             "new_option_title": "Stock usage for the new option (optional)",
@@ -1490,6 +1566,7 @@
             }
         },
         "tabs": {
+            "prep_items": "Prep items",
             "ingredients": "Ingredients",
             "physical_items": "Physical Items",
             "suppliers": "Suppliers",
@@ -2525,6 +2602,7 @@
             "fetch_failed": "Could not load the report."
         },
         "shared": {
+            "cogs_scope_hint": "Cost of goods: each sale's recipe as it was at the sale (prep items included), cooked products at their batch cost, packaging, add-on options and add-ons that are products.",
             "window": "Window",
             "headline": "Headline",
             "by_branch": "By branch",
@@ -2855,8 +2933,12 @@
             "top_addons": "Top add-ons"
         },
         "recipe_cost": {
+            "filters_hint": "Theoretical cost is today's recipe at today's ingredient costs (company-wide; prep items costed through their recipes). The dates and branches apply to what was sold: the units, and the actual recipe cost per unit when it was sold (cooked products: the batch cost).",
             "page_title": "Recipe & Cost Report",
             "columns": {
+                "cost_change_per_unit": "Actual − theoretical",
+                "actual_cost_per_unit": "Actual cost / unit",
+                "units_sold": "Units sold",
                 "product": "Product",
                 "base_price": "Base price",
                 "theoretical_cost": "Theoretical cost",

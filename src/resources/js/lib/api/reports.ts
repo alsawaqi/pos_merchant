@@ -226,18 +226,30 @@ export function fetchProductPerformanceReport(filter: ReportFilter): Promise<{ d
 // Recipe & Cost Report (§5.11.4)
 // ============================================================
 
+/**
+ * LAUNCH-P3 P3-5 — theoretical_cost is TODAY's recipe at today's costs (prep
+ * items costed through their recipes; recipes are company-wide, so the
+ * filters do not change it). The date + branch filters apply to the sold
+ * columns: units_sold / revenue of the paid lines in the window, and
+ * actual_cost_per_unit = what those lines' own recipe cost when sold (frozen
+ * recipe copy; cooked: the batch cost) — null when none were sold.
+ */
 export interface RecipeCostReportPayload {
-    window: { from: string; to: string; consolidated: boolean };
+    window: { from: string; to: string; consolidated: boolean; branch_ids?: number[] | null };
     rows: {
         product_id: number;
         product_name: string;
+        stock_mode?: string;
         base_price: string;
         theoretical_cost: string;
         profit_per_unit: string;
         margin_pct: number;
         recipe_line_count: number;
+        units_sold: string;
+        revenue: string;
+        actual_cost_per_unit: string | null;
+        cost_change_per_unit: string | null;
     }[];
-    _phase?: { trend_stub?: string };
 }
 
 export function fetchRecipeCostReport(filter: ReportFilter): Promise<{ data: RecipeCostReportPayload }> {

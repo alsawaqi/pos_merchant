@@ -25,6 +25,7 @@ import FloorPlanIndex from '@/Pages/Merchant/FloorPlan/Index.vue';
 import TablesIndex from '@/Pages/Merchant/Tables/Index.vue';
 import TablesShow from '@/Pages/Merchant/Tables/Show.vue';
 import InventoryIndex from '@/Pages/Merchant/Inventory/Index.vue';
+import PrepItemEditor from '@/Pages/Merchant/Inventory/PrepItemEditor.vue';
 import PurchaseReceiptsIndex from '@/Pages/Merchant/Inventory/PurchaseReceipts/Index.vue';
 import PurchaseReceiptsCreate from '@/Pages/Merchant/Inventory/PurchaseReceipts/Create.vue';
 import PurchaseReceiptsShow from '@/Pages/Merchant/Inventory/PurchaseReceipts/Show.vue';
@@ -264,6 +265,21 @@ const routes: RouteRecordRaw[] = [
         path: '/inventory',
         name: 'merchant.inventory',
         component: InventoryIndex,
+        meta: { requiresAuth: true },
+    },
+    {
+        // LAUNCH-P3 P3-4 — prep items (sauce, dough): create / edit the
+        // recipe + yield. Server gates: read catalogue.view or inventory.view,
+        // write "Edit recipes" (catalogue.recipes.manage).
+        path: '/inventory/prep-items/new',
+        name: 'merchant.prep-items.create',
+        component: PrepItemEditor,
+        meta: { requiresAuth: true },
+    },
+    {
+        path: '/inventory/prep-items/:uuid',
+        name: 'merchant.prep-items.edit',
+        component: PrepItemEditor,
         meta: { requiresAuth: true },
     },
     {

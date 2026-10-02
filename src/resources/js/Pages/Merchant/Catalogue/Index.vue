@@ -52,6 +52,7 @@ import {
 } from '@/lib/api/catalogue';
 import AddonConsumptionEditor from '@/Pages/Merchant/Catalogue/AddonConsumptionEditor.vue';
 import { listIngredients, type Ingredient } from '@/lib/api/inventory';
+import { lineEntry } from '@/lib/recipeUnits';
 import { listBranches, type Branch as BranchLite } from '@/lib/api/branches';
 import {
     createDeliveryProvider,
@@ -69,6 +70,9 @@ const router = useRouter();
 
 const isArabic = computed(() => locale.value === 'ar');
 const canManage = computed(() => can(MerchantPermission.CatalogueManage));
+// LAUNCH-P3 P3-3 — "Edit recipes": an option's stock usage is read-only
+// (and never sent) without it.
+const canEditRecipes = computed(() => can(MerchantPermission.CatalogueRecipesManage));
 
 type TabKey = 'categories' | 'products' | 'addons' | 'providers';
 const activeTab = ref<TabKey>('categories');
@@ -283,7 +287,8 @@ async function fetchAddonLinkOptions(): Promise<void> {
     // ingredients list is inventory.view-gated while this page only needs
     // catalogue rights - a 403 there must not wipe the product picker too.
     await Promise.all([
-        listIngredients()
+        // LAUNCH-P3 P3-4 — prep items are picked like ingredients.
+        listIngredients({ includePrep: true })
             .then((r) => { consumptionIngredients.value = r.data; })
             .catch(() => { consumptionIngredients.value = []; }),
         listComponentOptions()
@@ -561,20 +566,24 @@ async function confirmDeleteAddOnGroup(): Promise<void> {
 // PD3b — the modal's stock-usage lines (editor write-shape).
 const aoConsumption = ref<ConsumptionLinePayload[]>([]);
 
-/** Read-shape → editor write-shape. Stored ingredient quantities are
- * already BASE-unit, so unit stays '' (base) on the round-trip; names ride
- * along so refs missing from the picker lists still render. */
+/** Read-shape → editor write-shape. LAUNCH-P3 P3-1 — an ingredient line
+ * reopens in the unit it was typed in (entered_unit / entered_quantity),
+ * else in its base unit; names ride along so refs missing from the picker
+ * lists still render. */
 function consumptionToPayload(lines: AddOnConsumptionLine[] | undefined): ConsumptionLinePayload[] {
-    return (lines ?? []).map((l) => ({
-        type: l.type,
-        ingredient_uuid: l.ingredient?.uuid ?? '',
-        product_uuid: l.product?.uuid ?? '',
-        direction: l.direction,
-        quantity: l.quantity,
-        unit: '',
-        ingredient_label: l.ingredient?.name,
-        product_label: l.product?.name,
-    }));
+    return (lines ?? []).map((l) => {
+        const entry = l.type === 'ingredient' ? lineEntry(l, l.ingredient?.unit) : { quantity: l.quantity, unit: '' };
+        return {
+            type: l.type,
+            ingredient_uuid: l.ingredient?.uuid ?? '',
+            product_uuid: l.product?.uuid ?? '',
+            direction: l.direction,
+            quantity: entry.quantity,
+            unit: entry.unit,
+            ingredient_label: l.ingredient?.name,
+            product_label: l.product?.name,
+        };
+    });
 }
 
 /** Drop rows the user left half-filled (no ref, no quantity, or zero). */
@@ -675,7 +684,9 @@ async function submitAddOn(): Promise<void> {
             display_order: aoForm.display_order,
             // PD3b — key always present: the modal owns the full line
             // set, so an emptied editor clears the stored lines too.
-            consumption: completeConsumptionLines(aoConsumption.value),
+            // LAUNCH-P3 P3-3 — but only for a user who may edit recipes;
+            // otherwise the key is left out and the lines stay as they are.
+            ...(canEditRecipes.value ? { consumption: completeConsumptionLines(aoConsumption.value) } : {}),
         };
         if (aoModalMode.value === 'create' && aoModalParentGroup.value) {
             await createAddOn(aoModalParentGroup.value.uuid, payload);
@@ -1653,6 +1664,7 @@ async function performProviderDelete(): Promise<void> {
                         :ingredients="consumptionIngredients"
                         :products="consumptionProductOptions"
                         :disabled="aoModalBusy"
+                        :readonly="!canEditRecipes"
                     />
                     <p v-if="aoConsumptionError" class="mt-1 text-xs text-rose-600">{{ aoConsumptionError }}</p>
                 </div>

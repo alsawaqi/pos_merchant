@@ -34,6 +34,10 @@ export const MerchantPermission = {
     // future price lists share the same key.
     CatalogueView: 'catalogue.view',
     CatalogueManage: 'catalogue.manage',
+    // LAUNCH-P3 P3-3 — "Edit recipes": product recipes, prep items (recipe
+    // + yield) and add-on stock usage. catalogue.manage alone no longer
+    // changes them; without it the editors show the recipe read-only.
+    CatalogueRecipesManage: 'catalogue.recipes.manage',
     // Phase 5a — inventory (ingredients, suppliers, branch
     // stock, movements). Single gate for all four because in
     // practice nobody manages stock without seeing ingredients

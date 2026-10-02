@@ -42,6 +42,7 @@ import {
     deleteAddOnGroup,
     getProduct,
     getProductAddOnGroups,
+    getProductRecipeHistory,
     listAddOnGroups,
     listAddonLinkOptions,
     listCategories,
@@ -72,7 +73,9 @@ import {
     type WizardOwnedOptionPayload,
 } from '@/lib/api/catalogue';
 import AddonConsumptionEditor from '@/Pages/Merchant/Catalogue/AddonConsumptionEditor.vue';
-import { ingredientUnitFactor, ingredientUnitOptions, listIngredients, type Ingredient } from '@/lib/api/inventory';
+import RecipeHistoryPanel from '@/Pages/Merchant/Catalogue/RecipeHistoryPanel.vue';
+import { listIngredients, type Ingredient } from '@/lib/api/inventory';
+import { lineEntry, recipeLineProblem, recipeUnitFactor, recipeUnitName, recipeUnitOptions, wireRecipeUnit } from '@/lib/recipeUnits';
 import { listBranches, type Branch as BranchLite } from '@/lib/api/branches';
 import {
     listDeliveryProviders,
@@ -90,6 +93,9 @@ const { t } = useI18n();
 const { can } = usePermissions();
 
 const canManage = computed(() => can(MerchantPermission.CatalogueManage));
+// LAUNCH-P3 P3-3 — "Edit recipes": without it the recipe and the options'
+// stock usage are shown read-only and never sent (the server 403s them).
+const canEditRecipes = computed(() => can(MerchantPermission.CatalogueRecipesManage));
 
 // Edit mode when the route carries a uuid (/catalogue/products/:uuid/edit).
 const editUuid = route.name === 'merchant.catalogue.product-edit' ? String(route.params.uuid) : null;
@@ -154,6 +160,8 @@ const form = reactive<{
     component_rows: { component_uuid: string; quantity: string }[];
     addon_group_uuids: string[];
     recipe_lines: { ingredient_uuid: string; quantity: string; unit: string }[];
+    /** LAUNCH-P3 P3-2 — optional note saved with the recipe change. */
+    recipe_note: string;
     branch_all: boolean;
     branch_rows: { branch_id: number; selected: boolean; stock_qty: string | number }[];
 }>({
@@ -180,6 +188,7 @@ const form = reactive<{
     component_rows: [],
     addon_group_uuids: [],
     recipe_lines: [],
+    recipe_note: '',
     branch_all: true,
     branch_rows: [],
 });
@@ -317,8 +326,9 @@ async function addOwnedOption(key: string, persistedGroupUuid: string | null, dr
         price_delta: String(formRow.price_delta ?? '').trim() === '' ? '0' : String(formRow.price_delta).trim(),
         is_default: formRow.is_default,
         linked_product_uuid: formRow.linked_product_uuid || null,
-        // PD3b — only fully-specified stock-usage lines ride along.
-        consumption: completeConsumptionLines(formRow.consumption),
+        // PD3b — only fully-specified stock-usage lines ride along
+        // (LAUNCH-P3 P3-3: and only for a user who may edit recipes).
+        consumption: canEditRecipes.value ? completeConsumptionLines(formRow.consumption) : [],
     };
 
     if (draftIndex !== null) {
@@ -482,20 +492,24 @@ function completeConsumptionLines(lines: ConsumptionLinePayload[]): ConsumptionL
         }));
 }
 
-/** Read-shape → editor write-shape. Stored ingredient quantities are
- * already BASE-unit, so unit stays '' (base) on the round-trip; names ride
- * along so refs missing from the picker lists still render. */
+/** Read-shape → editor write-shape. LAUNCH-P3 P3-1 — an ingredient line
+ * reopens in the unit it was typed in (entered_unit / entered_quantity),
+ * else in its base unit; names ride along so refs missing from the picker
+ * lists still render. */
 function consumptionToPayload(lines: AddOnConsumptionLine[] | undefined): ConsumptionLinePayload[] {
-    return (lines ?? []).map((l) => ({
-        type: l.type,
-        ingredient_uuid: l.ingredient?.uuid ?? '',
-        product_uuid: l.product?.uuid ?? '',
-        direction: l.direction,
-        quantity: l.quantity,
-        unit: '',
-        ingredient_label: l.ingredient?.name,
-        product_label: l.product?.name,
-    }));
+    return (lines ?? []).map((l) => {
+        const entry = l.type === 'ingredient' ? lineEntry(l, l.ingredient?.unit) : { quantity: l.quantity, unit: '' };
+        return {
+            type: l.type,
+            ingredient_uuid: l.ingredient?.uuid ?? '',
+            product_uuid: l.product?.uuid ?? '',
+            direction: l.direction,
+            quantity: entry.quantity,
+            unit: entry.unit,
+            ingredient_label: l.ingredient?.name,
+            product_label: l.product?.name,
+        };
+    });
 }
 
 /** The option editor's product source: packaging + prepared (cooked) from
@@ -539,6 +553,7 @@ function toggleOptionStock(option: AddOn | DraftOption): void {
 }
 
 async function saveOptionStock(uuid: string): Promise<void> {
+    if (!canEditRecipes.value) return;
     ownedBusy.value = true;
     ownedError.value = null;
     try {
@@ -566,19 +581,37 @@ function ingredientByUuid(uuid: string): Ingredient | null {
     return ingredients.value.find((i) => i.uuid === uuid) ?? null;
 }
 
-function ingredientUnitLabel(uuid: string): string {
-    return ingredientByUuid(uuid)?.unit ?? '';
-}
-
 function wireUnit(selected: string): string | null {
-    return selected.trim() === '' ? null : selected;
+    return wireRecipeUnit(selected);
 }
 
 function toBaseUnits(qty: number, ingredient: Ingredient | null | undefined, selected: string): number {
-    // PD4 — ingredientUnitFactor resolves base + custom alt + auto metric
-    // sibling (kg<->g, l<->ml) to a base factor; unknown = 1.
-    return qty * ingredientUnitFactor(ingredient, selected);
+    // LAUNCH-P3 P3-1 — base, extra unit, metric pair or the piece unit;
+    // unknown = 1 (the server re-validates).
+    return qty * recipeUnitFactor(ingredient, selected);
 }
+
+// LAUNCH-P3 P3-4 — prep items are picked like ingredients (own group).
+const rawIngredients = computed(() => ingredients.value.filter((i) => !i.is_prep));
+const prepIngredients = computed(() => ingredients.value.filter((i) => i.is_prep));
+
+/** LAUNCH-P3 P3-1 — an amount that would round to 0 in the base unit (or > 4 decimals), per line. */
+function recipeLineMessage(line: { ingredient_uuid: string; quantity: string; unit: string }): string | null {
+    const problem = recipeLineProblem(ingredientByUuid(line.ingredient_uuid), line.unit, line.quantity);
+    return problem === null ? null : t(problem.key, problem.params);
+}
+
+const recipeHasProblems = computed<boolean>(() => hasRecipeStep.value && canEditRecipes.value
+    && form.recipe_lines.some((l) => l.ingredient_uuid !== '' && recipeLineMessage(l) !== null));
+
+/** Read-only recipe line ("150 g Flour"). */
+function recipeLineText(line: { ingredient_uuid: string; quantity: string; unit: string }): string {
+    const ingredient = ingredientByUuid(line.ingredient_uuid);
+    return `${line.quantity} ${recipeUnitName(ingredient, line.unit)} ${ingredient?.name ?? '—'}`;
+}
+
+const historyKey = ref(0);
+const loadRecipeHistory = () => getProductRecipeHistory(editUuid!);
 
 const recipeLiveCost = computed<string>(() => {
     let total = 0;
@@ -794,7 +827,8 @@ function ownedGroupsPayload(): WizardOwnedGroupPayload[] {
             price_delta: o.price_delta === '' ? '0' : o.price_delta,
             is_default: o.is_default,
             linked_product_uuid: o.linked_product_uuid || null,
-            consumption: completeConsumptionLines(o.consumption),
+            // LAUNCH-P3 P3-3 — stock usage only from a user who may edit recipes.
+            consumption: canEditRecipes.value ? completeConsumptionLines(o.consumption) : [],
         })),
     }));
 }
@@ -825,11 +859,18 @@ function confirmNoRecipe(): void {
 }
 
 async function submit(): Promise<void> {
-    if (hasRecipeStep.value && recipePayload().length === 0 && !noRecipeConfirmed) {
+    // LAUNCH-P3 P3-1 — an amount that rounds to 0 is refused before it is sent.
+    if (recipeHasProblems.value) {
+        step.value = 2;
+        return;
+    }
+    if (canEditRecipes.value && hasRecipeStep.value && recipePayload().length === 0 && !noRecipeConfirmed) {
         noRecipeConfirmOpen.value = true;
         return;
     }
     noRecipeConfirmed = false; // one-shot: a later edit asks again
+
+    const recipeNote = form.recipe_note.trim() === '' ? null : form.recipe_note.trim();
 
     submitting.value = true;
     submitError.value = null;
@@ -840,7 +881,10 @@ async function submit(): Promise<void> {
                 product: productPayload(),
                 addon_group_uuids: form.addon_group_uuids,
                 owned_groups: ownedGroupsPayload(),
-                recipe_lines: recipePayload(),
+                // LAUNCH-P3 P3-3 — no "Edit recipes": the product is created without one.
+                recipe_lines: canEditRecipes.value ? recipePayload() : [],
+                // LAUNCH-P3 P3-2 — the editor sends the note.
+                recipe_note: canEditRecipes.value ? recipeNote : null,
                 component_lines: componentsPayload(),
                 branches: branchesPayload(),
                 delivery_prices: deliveryPricesPayload(),
@@ -850,8 +894,12 @@ async function submit(): Promise<void> {
             await updateProduct(uuid, { ...productPayload(), status: form.status });
             await syncProductAddOnGroups(uuid, form.addon_group_uuids)
                 .catch((e) => remapSectionErrors(e, 'group_uuids', 'addon_group_uuids'));
-            await updateProductRecipe(uuid, { lines: recipePayload() })
-                .catch((e) => remapSectionErrors(e, 'lines', 'recipe_lines'));
+            // LAUNCH-P3 P3-3 — the recipe is only sent by a user who may edit
+            // it; P3-2 — with the optional note.
+            if (canEditRecipes.value) {
+                await updateProductRecipe(uuid, { lines: recipePayload(), note: recipeNote })
+                    .catch((e) => remapSectionErrors(e, 'lines', 'recipe_lines'));
+            }
             await updateProductComponents(uuid, componentsPayload())
                 .catch((e) => remapSectionErrors(e, 'lines', 'component_lines'));
             const branchSync = branchesPayload();
@@ -898,7 +946,8 @@ async function loadReferenceData(): Promise<void> {
     await Promise.all([
         listCategories().then((r) => { categories.value = r.data; }).catch(() => { categories.value = []; }),
         listAddOnGroups().then((r) => { addOnGroups.value = r.data; }).catch(() => { addOnGroups.value = []; }),
-        listIngredients().then((r) => { ingredients.value = r.data; }).catch(() => { ingredients.value = []; }),
+        // LAUNCH-P3 P3-4 — prep items are picked like ingredients.
+        listIngredients({ includePrep: true }).then((r) => { ingredients.value = r.data; }).catch(() => { ingredients.value = []; }),
         listComponentOptions().then((r) => { componentOptions.value = r.data; }).catch(() => { componentOptions.value = []; }),
         listAddonLinkOptions().then((r) => { addonLinkOptions.value = r.data; }).catch(() => { addonLinkOptions.value = []; }),
         listDeliveryProviders().then((r) => { deliveryProviders.value = r.data; }).catch(() => { deliveryProviders.value = []; }),
@@ -941,11 +990,13 @@ function prefillFromProduct(product: Product): void {
     form.addon_group_uuids = (product.addon_groups ?? [])
         .filter((g) => g.owner_product_id === null && !g.is_global)
         .map((g) => g.uuid);
+    // LAUNCH-P3 P3-1 — each line reopens exactly as it was typed ("5 g",
+    // "2 loaves"), or in its base unit when it was typed there / predates P3.
     form.recipe_lines = (product.recipe_lines ?? []).map((line) => ({
         ingredient_uuid: line.ingredient?.uuid ?? '',
-        quantity: line.quantity,
-        unit: '',
+        ...lineEntry(line, line.ingredient?.unit),
     }));
+    form.recipe_note = '';
     form.branch_all = (product.branches ?? []).length === 0;
     form.branch_rows = buildBranchRows(product.branches);
 }
@@ -1474,10 +1525,11 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                                     :ingredients="ingredients"
                                                     :products="consumptionProductOptions"
                                                     :disabled="ownedBusy"
+                                                    :readonly="!canEditRecipes"
                                                 />
                                                 <div class="mt-2 flex justify-end gap-2">
                                                     <button type="button" class="rounded border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50" @click="optionStockOpen[persistedUuid(option)] = false">{{ t('common.cancel') }}</button>
-                                                    <button type="button" :disabled="ownedBusy" class="rounded border border-teal-200 bg-teal-50 px-2.5 py-1 text-[11px] font-semibold text-teal-700 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-50" @click="saveOptionStock(persistedUuid(option))">{{ t('common.save') }}</button>
+                                                    <button v-if="canEditRecipes" type="button" :disabled="ownedBusy" class="rounded border border-teal-200 bg-teal-50 px-2.5 py-1 text-[11px] font-semibold text-teal-700 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-50" @click="saveOptionStock(persistedUuid(option))">{{ t('common.save') }}</button>
                                                 </div>
                                             </div>
                                             <!-- PD3b — stock-usage editor for an already-added DRAFT option
@@ -1489,6 +1541,7 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                                     :model-value="(option as DraftOption).consumption"
                                                     :ingredients="ingredients"
                                                     :products="consumptionProductOptions"
+                                                    :readonly="!canEditRecipes"
                                                     @update:model-value="(option as DraftOption).consumption = $event"
                                                 />
                                                 <div class="mt-2 flex justify-end">
@@ -1545,6 +1598,7 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                             :ingredients="ingredients"
                                             :products="consumptionProductOptions"
                                             :disabled="ownedBusy"
+                                            :readonly="!canEditRecipes"
                                         />
                                     </div>
                                 </article>
@@ -1589,7 +1643,7 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                         </section>
 
                         <!-- Recipe — made-to-order + cooked ONLY -->
-                        <section v-if="hasRecipeStep" class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                        <section v-if="hasRecipeStep" class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-test="recipe-section">
                             <h2 class="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
                                 <Beaker class="size-4 text-amber-600" />
                                 {{ t('catalogue.recipe.section_title') }}
@@ -1597,7 +1651,16 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                             <p class="mt-0.5 text-xs text-slate-500">{{ t('catalogue.recipe.section_hint') }}</p>
                             <p v-if="fieldError('recipe_lines')" class="mt-2 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700">{{ fieldError('recipe_lines') }}</p>
 
-                            <div v-if="ingredients.length === 0" class="mt-3 rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
+                            <!-- LAUNCH-P3 P3-3 — without "Edit recipes" the recipe is read-only. -->
+                            <div v-if="!canEditRecipes" class="mt-3 space-y-1" data-test="recipe-readonly">
+                                <p class="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800">{{ t('recipe_permission.readonly_hint') }}</p>
+                                <p v-if="form.recipe_lines.length === 0" class="text-xs italic text-slate-500">{{ t('catalogue.recipe.no_lines') }}</p>
+                                <ul v-else class="space-y-1">
+                                    <li v-for="(line, idx) in form.recipe_lines" :key="idx" class="text-sm text-slate-700">{{ recipeLineText(line) }}</li>
+                                </ul>
+                                <p v-if="form.recipe_lines.length > 0" class="text-xs text-amber-800">{{ t('catalogue.recipe.live_cost') }}: <strong class="tabular-nums">{{ recipeLiveCost }}</strong> OMR</p>
+                            </div>
+                            <div v-else-if="ingredients.length === 0" class="mt-3 rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
                                 {{ t('catalogue.recipe.no_ingredients_hint') }}
                             </div>
                             <template v-else>
@@ -1610,23 +1673,28 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                             <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.fields.ingredient') }}</span>
                                             <select v-model="line.ingredient_uuid" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" @change="line.unit = ''">
                                                 <option value="">{{ t('catalogue.recipe.pick_ingredient') }}</option>
-                                                <option v-for="ing in ingredients" :key="ing.id" :value="ing.uuid">{{ ing.name }} ({{ ing.unit }})</option>
+                                                <option v-for="ing in rawIngredients" :key="ing.id" :value="ing.uuid">{{ ing.name }} ({{ ing.unit }})</option>
+                                                <!-- LAUNCH-P3 P3-4 — prep items are picked like ingredients. -->
+                                                <optgroup v-if="prepIngredients.length > 0" :label="t('prep_items.optgroup')">
+                                                    <option v-for="ing in prepIngredients" :key="ing.id" :value="ing.uuid">{{ ing.name }} ({{ ing.unit }})</option>
+                                                </optgroup>
                                             </select>
                                         </label>
                                         <label class="block w-28">
                                             <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.recipe.quantity') }}</span>
-                                            <input v-model="line.quantity" type="number" step="0.001" min="0.001" placeholder="0.000" class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                                            <input v-model="line.quantity" type="number" step="0.0001" min="0" placeholder="0" data-test="recipe-line-quantity" class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
                                         </label>
-                                        <label class="block w-24">
+                                        <label class="block w-36">
                                             <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.recipe.unit') }}</span>
-                                            <select v-model="line.unit" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
-                                                <!-- PD4 — base + custom alt + auto metric siblings. -->
-                                                <option v-for="u in ingredientUnitOptions(ingredientByUuid(line.ingredient_uuid))" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
+                                            <select v-model="line.unit" data-test="recipe-line-unit" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                                                <!-- LAUNCH-P3 P3-1 — base + extra units + metric pair + the piece unit. -->
+                                                <option v-for="u in recipeUnitOptions(ingredientByUuid(line.ingredient_uuid))" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
                                             </select>
                                         </label>
                                         <button type="button" class="grid size-9 place-items-center rounded-lg border border-rose-200 text-rose-700 transition hover:bg-rose-50" :title="t('catalogue.recipe.remove_line')" @click="removeRecipeLine(idx)">
                                             <Minus class="size-4" />
                                         </button>
+                                        <p v-if="recipeLineMessage(line)" class="basis-full text-xs font-semibold text-rose-700" data-test="recipe-line-problem">{{ recipeLineMessage(line) }}</p>
                                     </li>
                                 </ul>
                                 <button type="button" class="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100" @click="addRecipeLine">
@@ -1646,8 +1714,16 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                         <p class="text-base font-semibold tabular-nums text-emerald-900">{{ recipeLiveMargin }}<span class="text-[10px] font-normal text-emerald-600">%</span></p>
                                     </div>
                                 </div>
+                                <!-- LAUNCH-P3 P3-2 — an optional note, saved with this change in the history. -->
+                                <label class="mt-3 block">
+                                    <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('recipe_history.note_field') }}</span>
+                                    <input v-model="form.recipe_note" type="text" maxlength="1000" data-test="recipe-note" :placeholder="t('recipe_history.note_placeholder')" class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                                </label>
                             </template>
                         </section>
+
+                        <!-- LAUNCH-P3 P3-2 — the recipe's visible history (edit mode). -->
+                        <RecipeHistoryPanel v-if="isEdit && hasRecipeStep" :load="loadRecipeHistory" :refresh-key="historyKey" />
 
                         <!-- Physical items (hidden for internal items) -->
                         <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -1799,13 +1875,15 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                 <ul v-else class="mt-3 space-y-1 text-sm">
                                     <li v-for="(line, i) in reviewRecipeLines" :key="i" class="flex justify-between text-slate-700">
                                         <span>{{ ingredientName(line.ingredient_uuid) }}</span>
-                                        <span class="tabular-nums">{{ line.quantity }} {{ line.unit || ingredientUnitLabel(line.ingredient_uuid) }}</span>
+                                        <span class="tabular-nums">{{ line.quantity }} {{ recipeUnitName(ingredientByUuid(line.ingredient_uuid), line.unit) }}</span>
                                     </li>
                                 </ul>
                                 <div v-if="reviewRecipeLines.length > 0" class="mt-3 flex gap-4 border-t border-slate-100 pt-2 text-xs">
                                     <span class="text-amber-700">{{ t('catalogue.recipe.live_cost') }}: <strong class="tabular-nums">{{ recipeLiveCost }}</strong> OMR</span>
                                     <span v-if="recipeLiveMargin !== null" class="text-emerald-700">{{ t('catalogue.recipe.margin') }}: <strong class="tabular-nums">{{ recipeLiveMargin }}%</strong></span>
                                 </div>
+                                <p v-if="canEditRecipes && form.recipe_note.trim() !== ''" class="mt-2 text-xs text-slate-600">{{ t('recipe_history.note') }}: {{ form.recipe_note }}</p>
+                                <p v-if="!canEditRecipes" class="mt-2 text-xs text-amber-700">{{ t('recipe_permission.not_sent_hint') }}</p>
                             </template>
                         </section>
 

@@ -136,6 +136,8 @@ type ApexSeries = { name: string; data: number[] }[];
                     { label: t('reports.sales.headline_labels.average_ticket'), value: payload.headline.avg_ticket },
                 ]"
             />
+            <!-- LAUNCH-P3 P3-5 — what the cost of goods covers. -->
+            <p class="text-xs text-slate-500" data-test="cogs-scope-hint">{{ t('reports.shared.cogs_scope_hint') }}</p>
 
             <!-- v2 charts: lead with the visuals, exact-figure tables follow below -->
             <ReportChart

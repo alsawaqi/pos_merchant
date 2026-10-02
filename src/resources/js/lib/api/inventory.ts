@@ -110,6 +110,13 @@ export interface Ingredient {
      * dropdown alongside alt_units (custom wins on a name clash).
      */
     auto_units?: AutoUnit[];
+    /**
+     * LAUNCH-P3 P3-4 — a prep item (sauce, dough): no stock, a recipe and a
+     * yield; default_unit_cost is then DERIVED from its recipe. Only listed
+     * when asked for (listIngredients({ includePrep: true })).
+     */
+    is_prep?: boolean;
+    prep_yield_quantity?: string | null;
     created_at: string | null;
     updated_at: string | null;
 }
@@ -319,8 +326,13 @@ export interface RestockPayload {
 
 // ---- Ingredients ------------------------------------------------
 
-export function listIngredients(): Promise<{ data: Ingredient[] }> {
-    return apiGet<{ data: Ingredient[] }>('/api/ingredients');
+/**
+ * LAUNCH-P3 P3-4 — prep items have no stock, so the plain list (every stock
+ * screen) leaves them out; the recipe editors pass includePrep to pick them
+ * like ingredients.
+ */
+export function listIngredients(options: { includePrep?: boolean } = {}): Promise<{ data: Ingredient[] }> {
+    return apiGet<{ data: Ingredient[] }>('/api/ingredients', options.includePrep ? { query: { include_prep: 1 } } : {});
 }
 
 export function createIngredient(payload: CreateIngredientPayload): Promise<{ data: Ingredient }> {

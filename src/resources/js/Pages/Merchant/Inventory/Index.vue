@@ -25,6 +25,7 @@ import {
     Boxes,
     Building2,
     Check,
+    ChefHat,
     CheckCircle2,
     ClipboardCheck,
     ClipboardList,
@@ -50,6 +51,7 @@ import { useRoute } from 'vue-router';
 import BaseModal from '@/Components/BaseModal.vue';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import IngredientStockDialog from './IngredientStockDialog.vue';
+import PrepItemsTab from './PrepItemsTab.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
 import { listBranches, type Branch } from '@/lib/api/branches';
@@ -136,7 +138,7 @@ const canManage = computed(() => can(MerchantPermission.InventoryManage));
 const canCreateRestock = computed(() => can(MerchantPermission.RestockRequestCreate));
 const canReviewRestock = computed(() => can(MerchantPermission.RestockRequestReview));
 
-type TabKey = 'ingredients' | 'physical_items' | 'suppliers' | 'stock' | 'movements' | 'waste' | 'stock_counts' | 'restock_requests' | 'transfers';
+type TabKey = 'ingredients' | 'physical_items' | 'prep_items' | 'suppliers' | 'stock' | 'movements' | 'waste' | 'stock_counts' | 'restock_requests' | 'transfers';
 const activeTab = ref<TabKey>('ingredients');
 
 // =================== Shared data =================================
@@ -145,6 +147,10 @@ const branches = ref<Branch[]>([]);
 const selectedBranchUuid = ref<string | null>(null);
 
 const ingredients = ref<Ingredient[]>([]);
+// LAUNCH-P3 P3-4 — prep items: no stock (never on the stock screens), but a
+// sauce can still be thrown away: the waste picker offers them, and the
+// server records the waste of their raw ingredients.
+const prepIngredients = ref<Ingredient[]>([]);
 const suppliers = ref<Supplier[]>([]);
 
 // PD3a — physical items: things that CANNOT be eaten (cups, boxes,
@@ -503,6 +509,15 @@ async function fetchIngredients(): Promise<void> {
     }
 }
 
+/** LAUNCH-P3 P3-4 — prep items for the waste picker only (soft-fail). */
+async function fetchPrepIngredients(): Promise<void> {
+    try {
+        prepIngredients.value = (await listIngredients({ includePrep: true })).data.filter((i) => i.is_prep);
+    } catch {
+        prepIngredients.value = [];
+    }
+}
+
 async function fetchPhysicalItems(): Promise<void> {
     try {
         const response = await listPhysicalItems();
@@ -697,7 +712,7 @@ async function fetchInventorySettings(): Promise<void> {
 /** LAUNCH-P2 — deep links (the dashboard's Low stock card): ?tab=stock&filter=low&branch=uuid. */
 function applyRouteQuery(): void {
     const tab = String(route.query.tab ?? '');
-    if (tab === 'stock' || tab === 'stock_counts' || tab === 'movements') {
+    if (tab === 'stock' || tab === 'stock_counts' || tab === 'movements' || tab === 'prep_items') {
         activeTab.value = tab;
     }
     if (route.query.filter === 'low') {
@@ -715,7 +730,7 @@ async function bootstrap(): Promise<void> {
     // Restock requests aren't branch-scoped on the API — load
     // them eagerly so the count badge on the tab is accurate
     // even before the user clicks the tab.
-    await Promise.all([fetchBranches(), fetchIngredients(), fetchPhysicalItems(), fetchSuppliers(), fetchRestockRequests(), fetchBranchTransfers(), fetchInventorySettings()]);
+    await Promise.all([fetchBranches(), fetchIngredients(), fetchPrepIngredients(), fetchPhysicalItems(), fetchSuppliers(), fetchRestockRequests(), fetchBranchTransfers(), fetchInventorySettings()]);
     applyRouteQuery();
     if (selectedBranchUuid.value !== null) {
         await Promise.all([fetchBranchStock(), fetchMovements(), fetchWaste(), fetchStockCounts()]);
@@ -1445,6 +1460,8 @@ const selectedBranchName = computed<string>(() => {
 // in the Record Waste modal.
 const wasteCurrentBalance = computed<string>(() => {
     if (!wasteForm.ingredient_uuid) return '—';
+    // A prep item holds no stock: its raw ingredients are checked by the server.
+    if (wasteIsPrep.value) return '—';
     const ing = ingredients.value.find((i) => i.uuid === wasteForm.ingredient_uuid);
     if (!ing) return '—';
     const row = branchStock.value.find((r) => r.ingredient_id === ing.id);
@@ -1452,6 +1469,7 @@ const wasteCurrentBalance = computed<string>(() => {
 });
 
 const wasteInsufficient = computed<boolean>(() => {
+    if (wasteIsPrep.value) return false;
     const balance = parseFloat(wasteCurrentBalance.value);
     // The balance is in BASE units — convert the entered amount (which
     // may be in an alt unit) to base before comparing.
@@ -1498,8 +1516,13 @@ watch(
 // The currently-picked waste ingredient (full object, for alt_units).
 const wasteIngredient = computed<Ingredient | null>(() => {
     if (!wasteForm.ingredient_uuid) return null;
-    return ingredients.value.find((i) => i.uuid === wasteForm.ingredient_uuid) ?? null;
+    return ingredients.value.find((i) => i.uuid === wasteForm.ingredient_uuid)
+        ?? prepIngredients.value.find((i) => i.uuid === wasteForm.ingredient_uuid)
+        ?? null;
 });
+
+/** LAUNCH-P3 P3-4 — the picked waste item is a prep item (its raw ingredients are wasted). */
+const wasteIsPrep = computed<boolean>(() => wasteIngredient.value?.is_prep === true);
 
 async function submitRecordWaste(): Promise<void> {
     if (selectedBranchUuid.value === null) return;
@@ -2070,6 +2093,18 @@ async function submitSuggestions(): Promise<void> {
                     {{ t('inventory.tabs.physical_items') }}
                     <span class="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">{{ physicalItems.length }}</span>
                 </button>
+                <!-- LAUNCH-P3 P3-4 — prep items: a recipe and a yield, no stock. -->
+                <button
+                    type="button"
+                    data-test="prep-items-tab-button"
+                    class="flex-1 min-w-max inline-flex items-center justify-center gap-2 rounded px-3 py-2 text-sm font-semibold transition"
+                    :class="activeTab === 'prep_items' ? 'bg-slate-950 text-white shadow' : 'text-slate-700 hover:bg-slate-50'"
+                    @click="activeTab = 'prep_items'"
+                >
+                    <ChefHat class="size-4" />
+                    {{ t('inventory.tabs.prep_items') }}
+                    <span class="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">{{ prepIngredients.length }}</span>
+                </button>
                 <button
                     type="button"
                     class="flex-1 min-w-max inline-flex items-center justify-center gap-2 rounded px-3 py-2 text-sm font-semibold transition"
@@ -2224,6 +2259,9 @@ async function submitSuggestions(): Promise<void> {
                     </table>
                 </div>
             </section>
+
+            <!-- ============ LAUNCH-P3 P3-4 — PREP ITEMS TAB ============ -->
+            <PrepItemsTab v-if="activeTab === 'prep_items'" />
 
             <!-- ============ PD3a — PHYSICAL ITEMS TAB ============ -->
             <section v-if="activeTab === 'physical_items'" class="space-y-4">
@@ -3551,10 +3589,15 @@ async function submitSuggestions(): Promise<void> {
                         <select v-model="wasteForm.ingredient_uuid" required class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                             <option value="">{{ t('inventory.waste.modal.ingredient_placeholder') }}</option>
                             <option v-for="i in ingredients" :key="i.uuid" :value="i.uuid">{{ isArabic && i.name_ar ? i.name_ar : i.name }} ({{ i.unit }})</option>
+                            <!-- LAUNCH-P3 P3-4 — a prep item's waste is the waste of its raw ingredients. -->
+                            <optgroup v-if="prepIngredients.length > 0" :label="t('prep_items.optgroup')" data-test="waste-prep-items">
+                                <option v-for="i in prepIngredients" :key="i.uuid" :value="i.uuid">{{ isArabic && i.name_ar ? i.name_ar : i.name }} ({{ i.unit }})</option>
+                            </optgroup>
                         </select>
                         <p v-if="wasteErrors.ingredient_uuid" class="mt-1 text-xs text-rose-600">{{ wasteErrors.ingredient_uuid[0] }}</p>
                     </label>
-                    <div v-if="wasteForm.ingredient_uuid" class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                    <p v-if="wasteIsPrep" class="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-800" data-test="waste-prep-hint">{{ t('prep_items.waste_hint') }}</p>
+                    <div v-if="wasteForm.ingredient_uuid && !wasteIsPrep" class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                         {{ t('inventory.waste.modal.current_balance') }}:
                         <span class="font-semibold text-slate-900">{{ wasteCurrentBalance }}</span>
                     </div>

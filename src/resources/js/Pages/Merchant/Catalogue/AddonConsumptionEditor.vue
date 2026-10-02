@@ -2,19 +2,25 @@
 // PD3b — per-option stock-usage line editor, shared by the product
 // wizard's owned-group option forms and the Add-ons tab option modal.
 // Each line: direction (uses / removes) + ingredient XOR item + qty
-// (+ unit for ingredient lines: the ingredient's base or an alt unit;
-// the server converts-at-entry and stores base).
+// (+ unit for ingredient lines: the ingredient's base, its metric pair, an
+// extra unit or — LAUNCH-P3 P3-1 — its piece unit; the server converts-at-
+// entry, stores base AND the entered unit, and refuses an amount that rounds
+// to 0). LAUNCH-P3: prep items are picked like ingredients (P3-4), and
+// without "Edit recipes" (P3-3) the lines are shown read-only.
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Plus, Trash2 } from 'lucide-vue-next';
 import type { ComponentOption, ConsumptionLinePayload } from '@/lib/api/catalogue';
-import { ingredientUnitOptions, type Ingredient } from '@/lib/api/inventory';
+import type { Ingredient } from '@/lib/api/inventory';
+import { recipeLineProblem, recipeUnitName, recipeUnitOptions } from '@/lib/recipeUnits';
 
 const props = defineProps<{
     modelValue: ConsumptionLinePayload[];
     ingredients: Ingredient[];
     products: ComponentOption[];
     disabled?: boolean;
+    /** LAUNCH-P3 P3-3 — no "Edit recipes": show the lines, change nothing. */
+    readonly?: boolean;
 }>();
 
 const emit = defineEmits<{ (e: 'update:modelValue', lines: ConsumptionLinePayload[]): void }>();
@@ -78,13 +84,36 @@ const extraProductRefs = computed(() => {
     return out;
 });
 
-/** Base + custom alt + auto metric siblings (PD4) for the picked ingredient;
- * the base option is relabelled "(base)". */
+/** Base + extra units + metric pair + (LAUNCH-P3) the piece unit for the
+ * picked ingredient; the base option is relabelled "(base)". */
 function unitsFor(ingredientUuid: string | undefined): { value: string; label: string }[] {
     const ingredient = props.ingredients.find((i) => i.uuid === ingredientUuid);
     if (!ingredient) return [];
-    return ingredientUnitOptions(ingredient).map((u) =>
-        u.value === '' ? { value: '', label: `${u.label} (${t('catalogue.consumption.base_unit')})` } : u);
+    return recipeUnitOptions(ingredient).map((u) =>
+        u.value === '' ? { value: '', label: `${u.label} (${t('catalogue.consumption.base_unit')})` } : { value: u.value, label: u.label });
+}
+
+const rawIngredients = computed(() => props.ingredients.filter((i) => !i.is_prep));
+const prepIngredients = computed(() => props.ingredients.filter((i) => i.is_prep));
+
+/** LAUNCH-P3 P3-1 — an amount that would round to 0 (or more than 4 decimals), per line. */
+function lineProblem(line: ConsumptionLinePayload): string | null {
+    if (line.type !== 'ingredient') return null;
+    const ingredient = props.ingredients.find((i) => i.uuid === line.ingredient_uuid);
+    const problem = recipeLineProblem(ingredient, line.unit ?? '', line.quantity);
+    return problem === null ? null : t(problem.key, problem.params);
+}
+
+/** Read-only rendering of one line ("Uses 9 g Beans"). */
+function readonlyText(line: ConsumptionLinePayload): string {
+    const direction = line.direction === 'remove' ? t('catalogue.consumption.removes') : t('catalogue.consumption.uses');
+    if (line.type === 'ingredient') {
+        const ingredient = props.ingredients.find((i) => i.uuid === line.ingredient_uuid);
+        const name = ingredient?.name ?? line.ingredient_label ?? '—';
+        return `${direction} ${line.quantity} ${recipeUnitName(ingredient, line.unit ?? '')} ${name}`;
+    }
+    const product = props.products.find((p) => p.uuid === line.product_uuid);
+    return `${direction} ${line.quantity} × ${product?.name ?? line.product_label ?? '—'}`;
 }
 
 function productLabel(option: ComponentOption): string {
@@ -95,7 +124,13 @@ function productLabel(option: ComponentOption): string {
 </script>
 
 <template>
-    <div class="space-y-2">
+    <!-- LAUNCH-P3 P3-3 — read-only without "Edit recipes". -->
+    <div v-if="readonly" class="space-y-1" data-test="consumption-readonly">
+        <p v-if="modelValue.length === 0" class="text-xs italic text-slate-500">{{ t('catalogue.consumption.none') }}</p>
+        <p v-for="(line, idx) in modelValue" :key="idx" class="text-xs text-slate-700">{{ readonlyText(line) }}</p>
+        <p class="text-[11px] text-amber-700">{{ t('recipe_permission.readonly_hint') }}</p>
+    </div>
+    <div v-else class="space-y-2">
         <div
             v-for="(line, idx) in modelValue"
             :key="idx"
@@ -137,7 +172,11 @@ function productLabel(option: ComponentOption): string {
                     @change="patch(idx, { ingredient_uuid: ($event.target as HTMLSelectElement).value, unit: '' })"
                 >
                     <option value="">—</option>
-                    <option v-for="ing in ingredients" :key="ing.uuid" :value="ing.uuid">{{ ing.name }}</option>
+                    <option v-for="ing in rawIngredients" :key="ing.uuid" :value="ing.uuid">{{ ing.name }}</option>
+                    <!-- LAUNCH-P3 P3-4 — prep items are used like ingredients. -->
+                    <optgroup v-if="prepIngredients.length > 0" :label="t('prep_items.optgroup')">
+                        <option v-for="ing in prepIngredients" :key="ing.uuid" :value="ing.uuid">{{ ing.name }}</option>
+                    </optgroup>
                     <!-- A stored ref missing from the picker (re-purposed /
                          filtered / past the cap) stays visible + selected. -->
                     <option v-for="extra in extraIngredientRefs" :key="extra.uuid" :value="extra.uuid">{{ extra.label }}</option>
@@ -160,8 +199,9 @@ function productLabel(option: ComponentOption): string {
                     :value="line.quantity"
                     :disabled="disabled"
                     type="number"
-                    step="0.001"
-                    min="0.001"
+                    step="0.0001"
+                    min="0"
+                    data-test="consumption-quantity"
                     class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
                     @input="patch(idx, { quantity: ($event.target as HTMLInputElement).value })"
                 >
@@ -188,6 +228,7 @@ function productLabel(option: ComponentOption): string {
             >
                 <Trash2 class="size-3.5" />
             </button>
+            <p v-if="lineProblem(line)" class="col-span-full text-[11px] font-semibold text-rose-700" data-test="consumption-line-problem">{{ lineProblem(line) }}</p>
         </div>
 
         <button
