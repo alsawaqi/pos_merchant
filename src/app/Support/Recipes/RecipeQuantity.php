@@ -64,9 +64,9 @@ final readonly class RecipeQuantity
         }
 
         $base = $exact->toScale(StockDecimal::QUANTITY_SCALE, RoundingMode::HALF_UP);
+        // The smallest step the base unit records (0.0001 of it), in the entered unit.
+        $step = BigDecimal::of('0.0001')->dividedBy($factor, StockDecimal::QUANTITY_SCALE, RoundingMode::UP);
         if ($base->isZero() && ! $entered->isZero()) {
-            // The smallest amount that still records 0.0001 of the base unit.
-            $minimum = BigDecimal::of('0.00005')->dividedBy($factor, StockDecimal::QUANTITY_SCALE, RoundingMode::UP);
             throw new RuntimeException(sprintf(
                 '%s: %s %s is too small to record — it rounds to 0 %s (stock is kept in %s to 4 decimals). Enter at least %s %s, or use a smaller base unit for this ingredient.',
                 $ingredient->name,
@@ -74,7 +74,24 @@ final readonly class RecipeQuantity
                 $this->label($ingredient, $token),
                 $this->baseUnit($ingredient),
                 $this->baseUnit($ingredient),
-                self::trim($minimum),
+                self::trim($step),
+                $this->label($ingredient, $token),
+            ));
+        }
+        // Rounding to the base unit's 4 decimals may not move the amount by
+        // more than 1% (0.05 g of a kg ingredient would be stored as 0.1 g —
+        // double — while the editor reopened "0.05 g"). A long extra-unit
+        // factor (a 236.5882 ml cup) moves it by far less and is accepted.
+        if ($base->minus($exact)->abs()->multipliedBy(100)->isGreaterThan($exact->abs())) {
+            throw new RuntimeException(sprintf(
+                '%s: %s %s cannot be recorded accurately — stock is kept in %s to 4 decimals, so it would become %s %s. Enter it in steps of %s %s, or use a smaller base unit for this ingredient.',
+                $ingredient->name,
+                self::trim($entered),
+                $this->label($ingredient, $token),
+                $this->baseUnit($ingredient),
+                self::trim($base),
+                $this->baseUnit($ingredient),
+                self::trim($step),
                 $this->label($ingredient, $token),
             ));
         }

@@ -39,16 +39,19 @@ final readonly class DeletePrepItemAction
             abort(404);
         }
 
-        $usage = PrepUsage::of($prep);
-        if ($usage->total() > 0) {
-            throw new RuntimeException(sprintf(
-                'Cannot delete prep item "%s" — %s still use it. Edit those first.',
-                $prep->name,
-                $usage->describe(),
-            ));
-        }
-
         DB::transaction(function () use ($prep, $actor, $companyId): void {
+            // Serialised with prep recipe saves (SavePrepItemAction locks the
+            // same row), so no save can start using it while it goes.
+            DB::table('pos_companies')->where('id', $companyId)->lockForUpdate()->first(['id']);
+            $usage = PrepUsage::of($prep);
+            if ($usage->total() > 0) {
+                throw new RuntimeException(sprintf(
+                    'Cannot delete prep item "%s" — %s still use it. Edit those first.',
+                    $prep->name,
+                    $usage->describe(),
+                ));
+            }
+
             $prep->delete();
 
             $this->writeAuditLog->handle(new AuditLogData(

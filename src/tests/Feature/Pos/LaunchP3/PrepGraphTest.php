@@ -139,3 +139,24 @@ it('loads one company graph from the tables, never another company\'s', function
         ->and($graph->unitCost($sauce->id))->toBe('0.0015')
         ->and($graph->unitCost($foreign->id))->toBe('0.000');
 });
+
+it('never lets a deleted prep item block the validation of a live one', function (): void {
+    // Pizza box (40) was deleted while it still used Pizza kit; its lines are kept for old recipes.
+    $chain = [
+        30 => ['yield' => '1', 'lines' => [20 => '1']],
+        40 => ['yield' => '1', 'lines' => [30 => '1']],
+    ];
+    $withDeleted = new PrepGraph($chain + [
+        10 => ['yield' => '2000', 'lines' => [1 => '1500']],
+        20 => ['yield' => '10', 'lines' => [10 => '500']],
+    ], [1 => '0.002'], [], [40]);
+    $withDeleted->assertValid();
+    // Still exploded and costed (an old version may name it).
+    expect($withDeleted->explode([40 => '1']))->toBe([1 => '37.500']);
+
+    $live = new PrepGraph($chain + [
+        10 => ['yield' => '2000', 'lines' => [1 => '1500']],
+        20 => ['yield' => '10', 'lines' => [10 => '500']],
+    ], [1 => '0.002']);
+    expect(fn () => $live->assertValid())->toThrow(PrepRecipeException::class);
+});

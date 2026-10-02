@@ -191,3 +191,23 @@ it('applies the Recipe & Cost report\'s date and branch filters to what was sold
         ->and($none['actual_cost_per_unit'])->toBeNull()
         ->and($none['theoretical_cost'])->toBe('0.300');
 });
+
+it("costs an untracked add-on product at its cost price and an old line's packaging from the live components", function (): void {
+    $ctx = makeMerchantActor();
+    $cup = Product::factory()->for($ctx['company'], 'company')->create(['name' => 'Cup', 'stock_mode' => 'unit', 'is_internal' => true, 'internal_purpose' => 'packaging', 'cost_price' => '0.050']);
+    $sauce = Product::factory()->for($ctx['company'], 'company')->create(['name' => 'Dip', 'stock_mode' => 'untracked', 'cost_price' => '0.120']);
+    $tea = Product::factory()->for($ctx['company'], 'company')->create(['name' => 'Tea', 'stock_mode' => 'ingredient']);
+    DB::table('pos_product_components')->insert(['product_id' => $tea->id, 'component_product_id' => $cup->id, 'quantity' => '1.000', 'created_at' => now(), 'updated_at' => now()]);
+
+    // A line from before the component copy existed (NULL): the cup still left stock.
+    $line = p3Line(p3Sale($ctx, $ctx['branch'], '2026-06-15 12:00:00'), $tea, '2.000', [
+        'recipe_snapshot_json' => [['ingredient_id' => 1, 'qty' => 1, 'unit' => 'g', 'unit_cost' => 0.1]],
+        'component_snapshot_json' => null,
+    ]);
+    p3Addon($line, ['linked_product_id' => $sauce->id, 'product_snapshot_json' => [
+        'product_id' => $sauce->id, 'stock_mode' => 'untracked', 'recipe' => null, 'components' => null,
+    ]]);
+
+    // Per tea: recipe 0.100 + cup 0.050 + dip 0.120 = 0.270 × 2.
+    expect($this->getJson('/api/reports/sales?date_from=2026-06-01&date_to=2026-06-30')->assertOk()->json('data.headline.cogs'))->toBe('0.540');
+});

@@ -56,14 +56,24 @@ test('P3-1 an amount that rounds to 0 in the base unit is caught, with the small
     assert.equal(roundsToZero(0.001, '0.05'), false);
     assert.equal(toBaseQuantity(0.001, '0.05'), 0.0001);
     assert.equal(toBaseQuantity(0.001, '5'), 0.005);
-    assert.equal(smallestEntry(0.001), '0.05');
+    assert.equal(smallestEntry(0.001), '0.1');
     assert.equal(hasTooManyDecimals('1.23456'), true);
     assert.equal(hasTooManyDecimals('1.2340'), false);
     const problem = recipeLineProblem(saffron, 'g', '0.04');
     assert.equal(problem.key, 'recipe_units.too_small');
     assert.equal(problem.params.amount, '0.04 g');
-    assert.equal(problem.params.minimum, '0.05 g');
+    assert.equal(problem.params.minimum, '0.1 g');
     assert.equal(recipeLineProblem(saffron, 'g', '5'), null);
+    // More than 1% lost to the base unit's 4 decimals is refused too (0.05 g → 0.1 g).
+    const { roundsInaccurately } = recipeUnits();
+    assert.equal(roundsInaccurately(0.001, '0.05'), true);
+    assert.equal(roundsInaccurately(0.001, '0.15'), true);
+    assert.equal(roundsInaccurately(0.001, '0.1'), false);
+    assert.equal(roundsInaccurately(236.5882, '0.333'), false);
+    const imprecise = recipeLineProblem(saffron, 'g', '0.15');
+    assert.equal(imprecise.key, 'recipe_units.too_imprecise');
+    assert.equal(imprecise.params.stored, '0.0002 kg');
+    assert.equal(imprecise.params.step, '0.1 g');
     assert.equal(recipeLineProblem(saffron, '', '1.23456').key, 'recipe_units.too_many_decimals');
 });
 

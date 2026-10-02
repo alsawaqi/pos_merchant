@@ -70,15 +70,20 @@ final readonly class SavePrepItemAction
         $resolved = $this->resolveLines($attributes['lines'], $companyId, null);
         $name = trim((string) $attributes['name']);
 
-        // A brand-new prep item cannot be in a loop yet; its depth can be too great.
-        PrepGraph::load($companyId)
-            ->withRecipe(0, $yield, self::graphLines($resolved), $name)
-            ->assertValid();
-
         $after = RecipeLineChanges::fromResolved($resolved, $this->quantities);
         $note = self::note($attributes['note'] ?? null);
 
         $prep = DB::transaction(function () use ($attributes, $companyId, $unit, $yield, $resolved, $name, $after, $note, $actor): Ingredient {
+            // One prep save per company at a time, validated on the graph as
+            // it is NOW: two concurrent saves could otherwise each pass and
+            // together write a loop. A brand-new prep item cannot be in a
+            // loop yet; its depth can be too great.
+            self::lockCompany($companyId);
+            self::assertComponentsLive($resolved);
+            PrepGraph::load($companyId)
+                ->withRecipe(0, $yield, self::graphLines($resolved), $name)
+                ->assertValid();
+
             /** @var Ingredient $prep */
             $prep = Ingredient::query()->create([
                 'company_id' => $companyId,
@@ -129,7 +134,7 @@ final readonly class SavePrepItemAction
             abort(404);
         }
 
-        $oldYield = (string) StockDecimal::format((string) $prep->getRawOriginal('prep_yield_quantity'), 0, 4);
+        $oldYield = (string) (StockDecimal::format((string) ($prep->getRawOriginal('prep_yield_quantity') ?? ''), 0, 4) ?? '0');
         $yield = array_key_exists('prep_yield_quantity', $attributes) ? self::yield($attributes['prep_yield_quantity']) : $oldYield;
 
         $currentLines = $prep->prepRecipeLines()->with('ingredient')->get();
@@ -164,18 +169,23 @@ final readonly class SavePrepItemAction
             return $prep->fresh(['prepRecipeLines.ingredient']);
         }
 
-        if ($recipeChanged) {
-            $graphLines = $resolved !== null
-                ? self::graphLines($resolved)
-                : array_map(static fn (array $l): string => $l['quantity'], $after);
-            PrepGraph::load($companyId)
-                ->withRecipe((int) $prep->id, $yield, $graphLines, $scalars['name'] ?? $prep->name)
-                ->assertValid((int) $prep->id);
-        }
-
         $note = self::note($attributes['note'] ?? null);
 
         $saved = DB::transaction(function () use ($prep, $scalars, $recipeChanged, $resolved, $yield, $oldYield, $before, $after, $note, $actor, $companyId): Ingredient {
+            if ($recipeChanged) {
+                // Serialised per company and checked on the current graph (see create()).
+                self::lockCompany($companyId);
+                if ($resolved !== null) {
+                    self::assertComponentsLive($resolved);
+                }
+                $graphLines = $resolved !== null
+                    ? self::graphLines($resolved)
+                    : array_map(static fn (array $l): string => $l['quantity'], $after);
+                PrepGraph::load($companyId)
+                    ->withRecipe((int) $prep->id, $yield, $graphLines, $scalars['name'] ?? $prep->name)
+                    ->assertValid((int) $prep->id);
+            }
+
             $oldScalars = [];
             foreach (array_keys($scalars) as $field) {
                 $oldScalars[$field] = $field === 'unit' ? $prep->unit?->value : $prep->{$field};
@@ -307,6 +317,25 @@ final readonly class SavePrepItemAction
         }
 
         return $out;
+    }
+
+    /**
+     * Under the company lock: no component was deleted since it was resolved.
+     *
+     * @param  list<array{ingredient: Ingredient}>  $resolved
+     */
+    private static function assertComponentsLive(array $resolved): void
+    {
+        $ids = array_map(static fn (array $l): int => (int) $l['ingredient']->id, $resolved);
+        if (Ingredient::query()->whereIn('id', $ids)->count() !== count($ids)) {
+            throw new RuntimeException('An ingredient in the prep recipe was just deleted — reload and try again.');
+        }
+    }
+
+    /** Row lock on the company: prep recipe saves of one company run one at a time (no-op on SQLite). */
+    private static function lockCompany(int $companyId): void
+    {
+        DB::table('pos_companies')->where('id', $companyId)->lockForUpdate()->first(['id']);
     }
 
     private static function yield(string|int|float $value): string

@@ -277,6 +277,11 @@ final readonly class SyncAddOnConsumptionAction
                 if ((float) $line['quantity'] <= 0) {
                     throw new RuntimeException('Stock-usage quantities must be positive.');
                 }
+                // LAUNCH-P3 P3-1 — pieces keep 3 decimals: refuse a finer
+                // amount rather than store it rounded (or as 0).
+                if (round((float) $line['quantity'], 3) != (float) $line['quantity']) {
+                    throw new RuntimeException(sprintf('"%s": pieces keep at most 3 decimal places.', $product->name));
+                }
                 $key = 'p:'.$product->id.':'.$direction;
                 $entry = [
                     'ingredient_id' => null,

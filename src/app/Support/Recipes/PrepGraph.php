@@ -46,11 +46,14 @@ final class PrepGraph
      * @param  array<int, array{yield: string|null, lines: array<int, string>}>  $prep  prep id => yield + [component id => quantity per batch]
      * @param  array<int, string>  $costs  ingredient id => default_unit_cost (raw ingredients; prep entries ignored)
      * @param  array<int, string>  $names  ingredient id => name (messages only)
+     * @param  list<int>  $deleted  soft-deleted prep items: still exploded and costed (an old
+     *                              recipe version may name one) but never validated as a root
      */
     public function __construct(
         private array $prep,
         private readonly array $costs = [],
         private readonly array $names = [],
+        private readonly array $deleted = [],
     ) {}
 
     /**
@@ -82,15 +85,19 @@ final class PrepGraph
     {
         $rows = DB::table('pos_ingredients')
             ->where('company_id', $companyId)
-            ->get(['id', 'name', 'default_unit_cost', 'is_prep', 'prep_yield_quantity']);
+            ->get(['id', 'name', 'default_unit_cost', 'is_prep', 'prep_yield_quantity', 'deleted_at']);
 
         $prep = [];
         $costs = [];
         $names = [];
+        $deleted = [];
         foreach ($rows as $row) {
             $id = (int) $row->id;
             $names[$id] = (string) $row->name;
             if ((bool) $row->is_prep) {
+                if ($row->deleted_at !== null) {
+                    $deleted[] = $id;
+                }
                 $prep[$id] = [
                     'yield' => $row->prep_yield_quantity !== null ? (string) $row->prep_yield_quantity : null,
                     'lines' => [],
@@ -111,7 +118,7 @@ final class PrepGraph
             }
         }
 
-        return new self($prep, $costs, $names);
+        return new self($prep, $costs, $names, $deleted);
     }
 
     public function isPrep(int $ingredientId): bool
@@ -153,7 +160,7 @@ final class PrepGraph
             $names[$prepId] = $name;
         }
 
-        return new self($prep, $this->costs, $names);
+        return new self($prep, $this->costs, $names, $this->deleted);
     }
 
     /**
@@ -241,10 +248,13 @@ final class PrepGraph
         if ($startAt !== null && $this->isPrep($startAt)) {
             $this->depthOf($startAt, []);
         }
-        foreach (array_keys($this->prep) as $prepId) {
+        // Only LIVE prep items are roots: a deleted one (hidden, not editable)
+        // must never block an edit of a live item it once used.
+        $live = array_values(array_diff(array_keys($this->prep), $this->deleted));
+        foreach ($live as $prepId) {
             $this->depthOf($prepId, []);
         }
-        foreach (array_keys($this->prep) as $prepId) {
+        foreach ($live as $prepId) {
             $depth = $this->depthOf($prepId, []);
             if ($depth > self::MAX_DEPTH) {
                 throw new PrepRecipeException(sprintf(

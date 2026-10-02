@@ -47,7 +47,10 @@ use Illuminate\Support\Facades\DB;
  *
  * A line of a cooked or bought-in product carries no recipe copy; its own
  * piece is costed the same way. A made-to-order line with a recipe copy is
- * costed from that copy only (never also as a piece).
+ * costed from that copy only (never also as a piece). An untracked product
+ * (on its own or as an add-on) consumes nothing: its cost price, when set.
+ * A line written before the component copy existed (NULL) uses the product's
+ * live components, like the stock deduction does for it.
  *
  * Amounts are exact decimals, multiplied by the line quantity and rounded
  * ONCE per line to baisas (1 OMR = 1000), like {@see RecipeSnapshotCost}.
@@ -64,6 +67,9 @@ final class OrderLineCost
 
     /** @var array<int, BigDecimal> */
     private array $fallbackMemo = [];
+
+    /** @var array<int, list<array{product_id: int, qty: string}>> product id => LIVE components (legacy lines only) */
+    private array $liveComponents = [];
 
     public function __construct(private readonly int $companyId) {}
 
@@ -118,6 +124,12 @@ final class OrderLineCost
             $ingredients[$id]['base'] = ($ingredients[$id]['base'] ?? BigDecimal::zero())->plus(self::dec($line['qty'] ?? 0));
             $ingredients[$id]['unit_cost'] = self::dec($line['unit_cost'] ?? 0);
         }
+        // A line written before the component copy existed (NULL) is costed
+        // with the product's live components — the same fallback the stock
+        // deduction (pos_api ConsumeInventoryAction) uses for it.
+        if (! is_array($components) && $item->product_id !== null) {
+            $components = $this->liveComponents[(int) $item->product_id] ?? [];
+        }
         $products = [];
         foreach (is_array($components) ? $components : [] as $component) {
             if (! is_array($component) || ! isset($component['product_id'])) {
@@ -158,14 +170,18 @@ final class OrderLineCost
             $linked = self::json($addon->product_snapshot_json);
             if (is_array($linked) && isset($linked['product_id'])) {
                 $mode = (string) ($linked['stock_mode'] ?? '');
-                if ($mode === 'ingredient') {
-                    foreach ((array) ($linked['recipe'] ?? []) as $line) {
-                        if (is_array($line)) {
-                            $extra = $extra->plus(self::dec($line['qty'] ?? 0)->multipliedBy(self::dec($line['unit_cost'] ?? 0)));
-                        }
+                $linkedRecipe = array_values(array_filter((array) ($linked['recipe'] ?? []), 'is_array'));
+                if ($mode === 'ingredient' && $linkedRecipe !== []) {
+                    foreach ($linkedRecipe as $line) {
+                        $extra = $extra->plus(self::dec($line['qty'] ?? 0)->multipliedBy(self::dec($line['unit_cost'] ?? 0)));
                     }
-                } elseif ($mode !== '' && $mode !== 'untracked') {
+                } elseif ($mode === 'cooked' || $mode === 'unit') {
                     $extra = $extra->plus($this->pieceCost((int) $linked['product_id'], $branchId, $soldAt, $mode));
+                } else {
+                    // Untracked, or made-to-order without a recipe: nothing
+                    // left stock — its cost price, when set, like the same
+                    // product sold on its own.
+                    $extra = $extra->plus($this->costPrice((int) $linked['product_id']));
                 }
                 foreach ((array) ($linked['components'] ?? []) as $component) {
                     if (is_array($component) && isset($component['product_id'])) {
@@ -221,7 +237,14 @@ final class OrderLineCost
         if ($product->stock_mode === 'cooked') {
             return $this->pieceCost($productId, $branchId, $soldAt, 'cooked');
         }
-        $costPrice = self::dec($product->cost_price ?? 0);
+
+        return $this->costPrice($productId);
+    }
+
+    /** The product's cost price when set, else 0. */
+    private function costPrice(int $productId): BigDecimal
+    {
+        $costPrice = self::dec($this->products[$productId]->cost_price ?? 0);
 
         return $costPrice->isPositive() ? $costPrice : BigDecimal::zero();
     }
@@ -289,9 +312,13 @@ final class OrderLineCost
     private function load(Collection $items, Collection $addons): void
     {
         $ids = [];
+        $legacy = [];
         foreach ($items as $item) {
             if ($item->product_id !== null) {
                 $ids[] = (int) $item->product_id;
+                if (self::json($item->component_snapshot_json) === null) {
+                    $legacy[] = (int) $item->product_id;
+                }
             }
             foreach ((array) (self::json($item->component_snapshot_json) ?? []) as $component) {
                 if (is_array($component) && isset($component['product_id'])) {
@@ -313,6 +340,12 @@ final class OrderLineCost
                         $ids[] = (int) $component['product_id'];
                     }
                 }
+            }
+        }
+        foreach (array_chunk(array_values(array_unique($legacy)), 1000) as $chunk) {
+            foreach (DB::table('pos_product_components')->whereIn('product_id', $chunk)->get(['product_id', 'component_product_id', 'quantity']) as $row) {
+                $this->liveComponents[(int) $row->product_id][] = ['product_id' => (int) $row->component_product_id, 'qty' => (string) $row->quantity];
+                $ids[] = (int) $row->component_product_id;
             }
         }
         $ids = array_values(array_unique($ids));

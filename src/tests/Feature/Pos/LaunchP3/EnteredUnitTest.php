@@ -79,15 +79,39 @@ it('refuses an amount that would round to 0 in the base unit instead of saving 0
     ])->assertStatus(422);
 
     expect($response->json('message'))->toContain('Saffron: 0.04 g is too small to record')
-        ->toContain('Enter at least 0.05 g');
+        ->toContain('Enter at least 0.1 g');
     expect(ProductRecipe::query()->where('product_id', $product->id)->count())->toBe(0)
         ->and(ProductRecipeVersion::query()->where('product_id', $product->id)->count())->toBe(0);
 
-    // 0.05 g is the smallest amount that records (0.0001 kg).
+    // 0.1 g is the smallest amount the kg stock records exactly (0.0001 kg).
     $this->putJson("/api/products/{$product->uuid}/recipe", [
-        'lines' => [['ingredient_uuid' => $saffron->uuid, 'quantity' => '0.05', 'unit' => 'g']],
+        'lines' => [['ingredient_uuid' => $saffron->uuid, 'quantity' => '0.1', 'unit' => 'g']],
     ])->assertOk();
     expect((string) ProductRecipe::query()->where('product_id', $product->id)->value('quantity'))->toBe('0.0001');
+});
+
+it('refuses an amount the base unit cannot hold within 1% instead of rounding it silently', function (): void {
+    $ctx = makeMerchantActor();
+    $saffron = p3Ingredient($ctx['company'], 'Saffron', 'kg', '1200.000');
+    $milk = p3Ingredient($ctx['company'], 'Milk', 'ml', '0.0005');
+    IngredientAltUnit::query()->create(['company_id' => $ctx['company']->id, 'ingredient_id' => $milk->id, 'name' => 'cup', 'factor' => '236.5882']);
+    $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'ingredient']);
+
+    // 0.05 g would be stored as 0.0001 kg (0.1 g, double) and 0.15 g as 0.2 g.
+    foreach (['0.05' => '0.0001', '0.15' => '0.0002'] as $typed => $stored) {
+        $response = $this->putJson("/api/products/{$product->uuid}/recipe", [
+            'lines' => [['ingredient_uuid' => $saffron->uuid, 'quantity' => $typed, 'unit' => 'g']],
+        ])->assertStatus(422);
+        expect($response->json('message'))->toBe("Saffron: {$typed} g cannot be recorded accurately — stock is kept in kg to 4 decimals, so it would become {$stored} kg. Enter it in steps of 0.1 g, or use a smaller base unit for this ingredient.");
+    }
+    expect(ProductRecipe::query()->where('product_id', $product->id)->count())->toBe(0);
+
+    // A long extra-unit factor moves the amount by far less than 1%: accepted, reopens as typed.
+    $this->putJson("/api/products/{$product->uuid}/recipe", [
+        'lines' => [['ingredient_uuid' => $milk->uuid, 'quantity' => '0.333', 'unit' => 'cup']],
+    ])->assertOk()->assertJsonPath('data.recipe_lines.0.entered_quantity', '0.333');
+    // 0.333 × 236.5882 = 78.7838706 ml → 78.7839 ml.
+    expect((string) ProductRecipe::query()->where('product_id', $product->id)->value('quantity'))->toBe('78.7839');
 });
 
 it('refuses more than 4 decimal places so the line can reopen as typed', function (): void {
@@ -188,4 +212,17 @@ it('keeps the entered unit on prep recipe lines', function (): void {
     expect((string) $line->quantity)->toBe('1500.000')
         ->and($line->entered_unit)->toBe('kg');
     $this->getJson("/api/prep-items/{$uuid}")->assertOk()->assertJsonPath('data.lines.0.entered_unit', 'kg');
+});
+
+it('refuses an add-on piece line finer than 3 decimals instead of rounding it', function (): void {
+    $ctx = makeMerchantActor();
+    $group = AddOnGroup::factory()->for($ctx['company'], 'company')->create(['name' => 'Packs']);
+    $cup = Product::factory()->for($ctx['company'], 'company')->create(['name' => 'Cup', 'stock_mode' => 'unit', 'is_internal' => true, 'internal_purpose' => 'packaging']);
+
+    $response = $this->postJson("/api/addon-groups/{$group->uuid}/addons", [
+        'name' => 'Takeaway',
+        'consumption' => [['type' => 'product', 'product_uuid' => $cup->uuid, 'direction' => 'add', 'quantity' => '0.0004']],
+    ])->assertStatus(422);
+    expect($response->json('message'))->toBe('"Cup": pieces keep at most 3 decimal places.')
+        ->and(AddOnConsumption::query()->count())->toBe(0);
 });

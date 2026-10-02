@@ -116,11 +116,24 @@ export function roundsToZero(factor: number, quantity: string | number): boolean
     return round(qty * factor, QUANTITY_DECIMALS) === 0;
 }
 
-/** The smallest amount in the selected unit that still records (0.0001 of the base unit). */
+/** The smallest step in the selected unit that the base unit records exactly (0.0001 of the base unit). */
 export function smallestEntry(factor: number): string {
     if (!(factor > 0)) return '';
-    const minimum = Math.ceil((0.00005 / factor) * 10 ** QUANTITY_DECIMALS - 1e-9) / 10 ** QUANTITY_DECIMALS;
+    const minimum = Math.ceil((0.0001 / factor) * 10 ** QUANTITY_DECIMALS - 1e-9) / 10 ** QUANTITY_DECIMALS;
     return trim(minimum, QUANTITY_DECIMALS);
+}
+
+/**
+ * Rounding to the base unit's 4 decimals would move the amount by more than
+ * 1% (0.05 g of a kg ingredient would be stored as 0.1 g) — refused, like on
+ * the server. A long extra-unit factor moves it by far less and is fine.
+ */
+export function roundsInaccurately(factor: number, quantity: string | number): boolean {
+    const qty = typeof quantity === 'number' ? quantity : parseFloat(String(quantity ?? '').trim());
+    if (!Number.isFinite(qty) || qty <= 0 || !(factor > 0)) return false;
+    const exact = qty * factor;
+    const stored = round(exact, QUANTITY_DECIMALS);
+    return stored !== 0 && Math.abs(stored - exact) > exact * 0.01 + 1e-12;
 }
 
 /** What a stored line reopens as: the entered unit + quantity when the server returned them, else the base. */
@@ -159,14 +172,16 @@ export function recipeLineProblem(
         return { key: 'recipe_units.too_many_decimals', params: {} };
     }
     const factor = recipeUnitFactor(ingredient, unit);
+    const amount = `${trimQuantity(quantity)} ${recipeUnitName(ingredient, unit)}`;
+    const step = `${smallestEntry(factor)} ${recipeUnitName(ingredient, unit)}`;
     if (roundsToZero(factor, quantity)) {
+        return { key: 'recipe_units.too_small', params: { amount, base: ingredient?.unit ?? '', minimum: step } };
+    }
+    if (roundsInaccurately(factor, quantity)) {
+        const stored = toBaseQuantity(factor, quantity);
         return {
-            key: 'recipe_units.too_small',
-            params: {
-                amount: `${trimQuantity(quantity)} ${recipeUnitName(ingredient, unit)}`,
-                base: ingredient?.unit ?? '',
-                minimum: `${smallestEntry(factor)} ${recipeUnitName(ingredient, unit)}`,
-            },
+            key: 'recipe_units.too_imprecise',
+            params: { amount, stored: `${trimQuantity(stored ?? 0)} ${ingredient?.unit ?? ''}`, step },
         };
     }
     return null;

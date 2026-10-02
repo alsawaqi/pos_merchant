@@ -1,6 +1,7 @@
 {
     "recipe_units": {
         "too_small": "{amount} is too small to record: it rounds to 0 {base} (stock keeps 4 decimals). Enter at least {minimum}, or use a smaller base unit.",
+        "too_imprecise": "{amount} cannot be recorded accurately: the stock unit keeps 4 decimals, so it would become {stored}. Enter it in steps of {step}, or use a smaller base unit.",
         "too_many_decimals": "Use at most 4 decimal places."
     },
     "recipe_permission": {
