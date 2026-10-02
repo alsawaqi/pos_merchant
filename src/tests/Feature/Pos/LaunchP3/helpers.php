@@ -11,7 +11,6 @@ declare(strict_types=1);
 use App\Models\Branch;
 use App\Models\Company;
 use App\Models\Ingredient;
-use App\Models\IngredientRecipe;
 use Illuminate\Support\Facades\DB;
 
 if (! function_exists('p3Ingredient')) {
@@ -39,19 +38,22 @@ if (! function_exists('p3Ingredient')) {
             'unit' => $unit,
             'default_unit_cost' => '0',
             'min_stock_threshold' => null,
-            'is_prep' => true,
-            'prep_yield_quantity' => $yield,
         ]);
+        // Table-level writes (not the models) so the fixture means the same
+        // whatever application code runs — the fail-before run uses launch-p2.
+        DB::table('pos_ingredients')->where('id', $prep->id)->update(['is_prep' => true, 'prep_yield_quantity' => $yield]);
         foreach ($lines as $i => [$ingredient, $quantity]) {
-            IngredientRecipe::query()->create([
+            DB::table('pos_ingredient_recipes')->insert([
                 'prep_ingredient_id' => $prep->id,
                 'ingredient_id' => $ingredient->id,
                 'quantity' => $quantity,
                 'sort_order' => $i,
+                'created_at' => now(),
+                'updated_at' => now(),
             ]);
         }
 
-        return $prep;
+        return $prep->fresh();
     }
 
     /** Put a balance on a branch the way the ledger would (one movement + the balance row). */
