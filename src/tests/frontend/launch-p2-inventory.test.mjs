@@ -142,3 +142,25 @@ test('every LAUNCH-P2 string exists in English and Arabic', () => {
         assert.notEqual(get(ar, key), get(en, key), `ar ${key} is translated`);
     }
 });
+
+test('P2-1 inventory inputs accept 6-decimal unit costs and 4-decimal quantities', () => {
+    // Found in the browser 2026-10-02: after goods received the average cost
+    // is e.g. 0.015328, and the ingredient editor's step="0.001" made that a
+    // browser-invalid value, so the ingredient could not be saved without
+    // rounding the average away.
+    const { template } = sfc('resources/js/Pages/Merchant/Inventory/Index.vue');
+    const inputFor = (model) => {
+        const escaped = model.replace(/[.[\]()]/g, '\$&');
+        const match = template.match(new RegExp(`<input[^>]*v-model="${escaped}"[^>]*>`));
+        assert.ok(match, `input for ${model}`);
+        return match[0];
+    };
+    for (const model of ['ingForm.default_unit_cost', 'restockForm.unit_cost']) {
+        assert.match(inputFor(model), /step="0\.000001"/, `${model} keeps 6 decimals`);
+    }
+    for (const model of ['ingForm.min_stock_threshold', 'adjustForm.signed_quantity', 'restockForm.quantity', 'purchaseForm.units', 'wasteForm.quantity']) {
+        const input = inputFor(model);
+        assert.match(input, /step="0\.0001"/, `${model} keeps 4 decimals`);
+        assert.doesNotMatch(input, /min="0\.001"/, `${model} does not refuse 0.0005`);
+    }
+});

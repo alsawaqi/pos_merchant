@@ -2984,11 +2984,11 @@ async function submitSuggestions(): Promise<void> {
                         </label>
                         <label class="block">
                             <span class="text-sm font-medium text-slate-700">{{ t('inventory.fields.default_unit_cost') }} (OMR)</span>
-                            <input v-model="ingForm.default_unit_cost" type="number" step="0.001" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                            <input v-model="ingForm.default_unit_cost" type="number" step="0.000001" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                         </label>
                         <label class="block">
                             <span class="text-sm font-medium text-slate-700">{{ t('inventory.fields.min_stock_threshold') }}</span>
-                            <input v-model="ingForm.min_stock_threshold" type="number" step="0.001" min="0" placeholder="—" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                            <input v-model="ingForm.min_stock_threshold" type="number" step="0.0001" min="0" placeholder="—" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                             <p class="mt-1 text-xs text-slate-500">{{ t('inventory.fields.min_stock_threshold_hint') }}</p>
                         </label>
                     </div>
@@ -3260,7 +3260,7 @@ async function submitSuggestions(): Promise<void> {
                             {{ t('inventory.fields.signed_quantity') }} *
                         </span>
                         <div class="mt-1 flex gap-2">
-                            <input v-model="adjustForm.signed_quantity" required type="number" step="0.001" class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                            <input v-model="adjustForm.signed_quantity" required type="number" step="0.0001" class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                             <select v-model="adjustForm.unit" :title="t('inventory.fields.unit')" class="shrink-0 rounded-lg border border-slate-200 px-2 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                                 <!-- PD4 — base + custom alt + auto metric siblings. -->
                                 <option v-for="u in ingredientUnitOptions(adjustTarget.ingredient)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
@@ -3312,7 +3312,7 @@ async function submitSuggestions(): Promise<void> {
                         <label class="block">
                             <span class="text-sm font-medium text-slate-700">{{ t('inventory.fields.quantity') }} *</span>
                             <div class="mt-1 flex gap-2">
-                                <input v-model="restockForm.quantity" required type="number" step="0.001" min="0.001" class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                                <input v-model="restockForm.quantity" required type="number" step="0.0001" min="0.0001" class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                                 <select v-model="restockForm.unit" :title="t('inventory.fields.unit')" class="shrink-0 rounded-lg border border-slate-200 px-2 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                                     <!-- PD4 — base + custom alt + auto metric siblings. -->
                                     <option v-for="u in ingredientUnitOptions(restockTarget.ingredient)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
@@ -3323,7 +3323,7 @@ async function submitSuggestions(): Promise<void> {
                         </label>
                         <label class="block">
                             <span class="text-sm font-medium text-slate-700">{{ t('inventory.fields.unit_cost_override') }}</span>
-                            <input v-model="restockForm.unit_cost" type="number" step="0.001" min="0" :placeholder="restockTarget.ingredient?.default_unit_cost ?? '—'" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                            <input v-model="restockForm.unit_cost" type="number" step="0.000001" min="0" :placeholder="restockTarget.ingredient?.default_unit_cost ?? '—'" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                             <p class="mt-1 text-xs text-slate-500">{{ t('inventory.fields.unit_cost_hint') }}</p>
                         </label>
                     </div>
@@ -3380,12 +3380,12 @@ async function submitSuggestions(): Promise<void> {
                                 ? t('inventory.purchase_modal.pieces', { label: pieceLabelFor(purchaseTarget.ingredient) ?? '' })
                                 : t('inventory.purchase_modal.pieces_generic') }}
                         </span>
-                        <input v-model="purchaseForm.pieces" type="number" :step="purchaseTarget.ingredient?.allow_fractional_pieces === false ? '1' : '0.001'" min="0" placeholder="—" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <input v-model="purchaseForm.pieces" type="number" :step="purchaseTarget.ingredient?.allow_fractional_pieces === false ? '1' : '0.0001'" min="0" placeholder="—" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                         <p v-if="purchaseErrors.pieces" class="mt-1 text-xs text-rose-600">{{ purchaseErrors.pieces[0] }}</p>
                     </label>
                     <label class="block">
                         <span class="text-sm font-medium text-slate-700">{{ t('inventory.purchase_modal.units', { unit: unitShort(purchaseTarget.ingredient?.unit ?? null) }) }}</span>
-                        <input v-model="purchaseForm.units" type="number" step="0.001" min="0" placeholder="—" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <input v-model="purchaseForm.units" type="number" step="0.0001" min="0" placeholder="—" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                         <p class="mt-1 text-xs text-slate-500">{{ t('inventory.purchase_modal.units_hint') }}</p>
                         <p v-if="purchaseErrors.units" class="mt-1 text-xs text-rose-600">{{ purchaseErrors.units[0] }}</p>
                     </label>
@@ -3562,7 +3562,7 @@ async function submitSuggestions(): Promise<void> {
                         <label class="block">
                             <span class="text-sm font-medium text-slate-700">{{ t('inventory.waste.modal.quantity') }} *</span>
                             <div class="mt-1 flex gap-2">
-                                <input v-model="wasteForm.quantity" type="number" step="0.001" min="0.001" required class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                                <input v-model="wasteForm.quantity" type="number" step="0.0001" min="0.0001" required class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                                 <select v-model="wasteForm.unit" :title="t('inventory.fields.unit')" class="shrink-0 rounded-lg border border-slate-200 px-2 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                                     <!-- PD4 — base + custom alt + auto metric siblings. -->
                                     <option v-for="u in ingredientUnitOptions(wasteIngredient)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
@@ -3643,7 +3643,7 @@ async function submitSuggestions(): Promise<void> {
                                     <option value="">{{ t('inventory.restock.create_modal.ingredient_placeholder') }}</option>
                                     <option v-for="i in ingredients" :key="i.uuid" :value="i.uuid">{{ isArabic && i.name_ar ? i.name_ar : i.name }} ({{ i.unit }})</option>
                                 </select>
-                                <input v-model="line.quantity" type="number" step="0.001" min="0.001" :placeholder="t('inventory.restock.create_modal.quantity')" class="sm:col-span-2 rounded-lg border border-slate-200 px-2 py-2 text-sm tabular-nums">
+                                <input v-model="line.quantity" type="number" step="0.0001" min="0.0001" :placeholder="t('inventory.restock.create_modal.quantity')" class="sm:col-span-2 rounded-lg border border-slate-200 px-2 py-2 text-sm tabular-nums">
                                 <select v-model="line.unit" :title="t('inventory.fields.unit')" class="sm:col-span-2 rounded-lg border border-slate-200 px-2 py-2 text-sm">
                                     <!-- PD4 — base + custom alt + auto metric siblings. -->
                                     <option v-for="u in ingredientUnitOptions(ingredientByUuid(line.ingredient_uuid))" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
@@ -3717,7 +3717,7 @@ async function submitSuggestions(): Promise<void> {
                                     <option value="">{{ t('inventory.transfers.create_modal.ingredient_placeholder') }}</option>
                                     <option v-for="i in ingredients" :key="i.uuid" :value="i.uuid">{{ isArabic && i.name_ar ? i.name_ar : i.name }} ({{ i.unit }})</option>
                                 </select>
-                                <input v-model="line.quantity" type="number" step="0.001" min="0.001" :placeholder="t('inventory.transfers.create_modal.quantity')" class="sm:col-span-3 rounded-lg border border-slate-200 px-2 py-2 text-sm tabular-nums">
+                                <input v-model="line.quantity" type="number" step="0.0001" min="0.0001" :placeholder="t('inventory.transfers.create_modal.quantity')" class="sm:col-span-3 rounded-lg border border-slate-200 px-2 py-2 text-sm tabular-nums">
                                 <select v-model="line.unit" :title="t('inventory.fields.unit')" class="sm:col-span-2 rounded-lg border border-slate-200 px-2 py-2 text-sm">
                                     <!-- PD4 — base + custom alt + auto metric siblings. -->
                                     <option v-for="u in ingredientUnitOptions(ingredientByUuid(line.ingredient_uuid))" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
@@ -3900,7 +3900,7 @@ async function submitSuggestions(): Promise<void> {
                                     {{ l.ingredient?.central_quantity ?? '—' }}
                                 </td>
                                 <td class="px-3 py-2 text-end">
-                                    <input v-model="allocateOverrides[String(l.id)]" type="number" step="0.001" min="0" :max="l.quantity_requested" class="w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-sm tabular-nums text-end">
+                                    <input v-model="allocateOverrides[String(l.id)]" type="number" step="0.0001" min="0" :max="l.quantity_requested" class="w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-sm tabular-nums text-end">
                                 </td>
                             </tr>
                         </tbody>
@@ -4024,7 +4024,7 @@ async function submitSuggestions(): Promise<void> {
                                     </span>
                                 </td>
                                 <td class="px-3 py-2 text-end">
-                                    <input v-model="row.qty" :disabled="!row.include" type="number" step="0.001" min="0" class="w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-sm tabular-nums text-end focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100 disabled:bg-slate-50 disabled:text-slate-400">
+                                    <input v-model="row.qty" :disabled="!row.include" type="number" step="0.0001" min="0" class="w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-sm tabular-nums text-end focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100 disabled:bg-slate-50 disabled:text-slate-400">
                                 </td>
                             </tr>
                         </tbody>
