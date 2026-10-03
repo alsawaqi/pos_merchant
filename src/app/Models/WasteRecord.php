@@ -42,6 +42,10 @@ use Illuminate\Support\Str;
     'notes',
     'recorded_by_user_id',
     'occurred_at',
+    // LAUNCH-P3 fix order 1, K4 — the prep item wasted, and the group of
+    // records that make one waste event (pos_admin 2026_10_02_100005).
+    'prep_ingredient_id',
+    'waste_group_uuid',
 ])]
 class WasteRecord extends Model
 {
@@ -92,6 +96,17 @@ class WasteRecord extends Model
     public function ingredient(): BelongsTo
     {
         return $this->belongsTo(Ingredient::class);
+    }
+
+    /**
+     * LAUNCH-P3 K4 — the prep item this record is part of (NULL = a plain
+     * ingredient waste). Soft-deleted prep items still name old waste.
+     *
+     * @return BelongsTo<Ingredient, $this>
+     */
+    public function prepItem(): BelongsTo
+    {
+        return $this->belongsTo(Ingredient::class, 'prep_ingredient_id')->withTrashed();
     }
 
     /**

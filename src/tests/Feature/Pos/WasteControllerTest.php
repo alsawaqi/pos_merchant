@@ -146,10 +146,12 @@ it('returns 422 when reason is other but notes is empty', function (): void {
     expect(StockMovement::query()->count())->toBe(0);
 });
 
-it('returns 422 when waste quantity exceeds the current branch_stock balance', function (): void {
+// LAUNCH-P3 fix order 1, K3 — waste follows sell-but-warn (owner decision
+// 2026-10-02): a waste larger than the balance is recorded, with a warning.
+it('records a waste larger than the current branch_stock balance and warns', function (): void {
     $ctx = makeMerchantActor();
     $ingredient = Ingredient::factory()->for($ctx['company'], 'company')->create();
-    // Only 2.000 on hand; trying to waste 3.000.
+    // Only 2.000 on hand; wasting 3.000.
     BranchStock::factory()
         ->for($ctx['branch'], 'branch')
         ->for($ingredient, 'ingredient')
@@ -159,11 +161,12 @@ it('returns 422 when waste quantity exceeds the current branch_stock balance', f
         'ingredient_uuid' => $ingredient->uuid,
         'quantity' => '3.000',
         'reason' => WasteReason::Spoiled->value,
-    ])->assertStatus(422);
-    expect($response->json('message'))->toContain('Not enough stock');
+    ])->assertCreated();
+    expect($response->json('warning'))->toContain('is now below zero at this branch');
 
-    expect(WasteRecord::query()->count())->toBe(0);
-    expect(StockMovement::query()->count())->toBe(0);
+    expect(WasteRecord::query()->count())->toBe(1);
+    expect(StockMovement::query()->count())->toBe(1);
+    expect((float) BranchStock::query()->where('ingredient_id', $ingredient->id)->value('quantity'))->toBe(-1.0);
 });
 
 it('returns 422 when waste quantity is zero or negative', function (): void {

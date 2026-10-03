@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Models\WasteRecord;
 use App\Support\MerchantTenantContext;
 use App\Support\StockDecimal;
+use Brick\Math\BigDecimal;
 use DateTimeInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -44,10 +45,12 @@ use RuntimeException;
  *     way to keep the audit trail useful when the categorisation
  *     escape hatch is used)
  *   - branch + ingredient both in actor's tenant
- *   - branch_stock for this ingredient must currently hold
- *     ENOUGH to absorb the waste (we don't go negative — the
- *     merchant should record an Adjustment first if the
- *     accounting balance is wrong)
+ *
+ * LAUNCH-P3 fix order 1, K3 — waste follows the selling rule (owner
+ * decision 2026-10-02): recording waste is NEVER refused on the stock
+ * numbers. A waste larger than the branch balance is recorded and the
+ * balance goes below zero; {@see record()} returns a warning saying so,
+ * and the manager sees the negative balance like any oversold stock.
  *
  * Audit event: inventory.waste.recorded with full snapshot.
  *
@@ -79,6 +82,29 @@ final readonly class RecordWasteAction
         ?DateTimeInterface $occurredAt = null,
         ?string $unit = null,
     ): WasteRecord {
+        return $this->record($branch, $ingredient, $quantity, $reason, $actor, $notes, $occurredAt, $unit)['record'];
+    }
+
+    /**
+     * {@see handle()}, plus the branch balance around the waste and — when the
+     * waste took it below zero — a warning for the person recording it.
+     *
+     * @param  int|null  $prepIngredientId  fix order 1, K4: the prep item this record is part of
+     * @param  string|null  $wasteGroupUuid  fix order 1, K4: shared by every record of one waste event
+     * @return array{record: WasteRecord, balance_before: string, balance_after: string, warning: ?string}
+     */
+    public function record(
+        Branch $branch,
+        Ingredient $ingredient,
+        string|float|int $quantity,
+        WasteReason $reason,
+        User $actor,
+        ?string $notes = null,
+        ?DateTimeInterface $occurredAt = null,
+        ?string $unit = null,
+        ?int $prepIngredientId = null,
+        ?string $wasteGroupUuid = null,
+    ): array {
         $companyId = $this->tenant->requiredId();
 
         if ((int) $branch->company_id !== $companyId) {
@@ -102,24 +128,9 @@ final readonly class RecordWasteAction
             throw new RuntimeException("Notes are required when reason is 'other'.");
         }
 
-        // Defensive sufficient-stock check. Phase 5a's
-        // adjust-down flow has the same rule; we replicate it
-        // here rather than letting the ledger go negative.
-        // LAUNCH-P2 P2-6 — a count's reconciliation shortfall is measured
-        // against the balance AT THE COUNT MOMENT, which later movements
-        // (or sell-but-warn negative stock) may have pushed below it: that
-        // shortfall is a fact the count observed and is always booked.
-        $currentBalance = (float) DB::table('pos_branch_stock')
-            ->where('branch_id', $branch->id)
-            ->where('ingredient_id', $ingredient->id)
-            ->value('quantity') ?? 0.0;
-        if ($reason !== WasteReason::ReconciliationVariance && $currentBalance < $absQty) {
-            throw new RuntimeException(sprintf(
-                'Not enough stock to waste — branch holds %s but waste is %s.',
-                StockDecimal::quantity($currentBalance),
-                StockDecimal::quantity($absQty),
-            ));
-        }
+        // LAUNCH-P3 K3 — no sufficient-stock refusal any more (sell-but-warn,
+        // like a sale): the waste is a fact. (LAUNCH-P2 P2-6 already booked a
+        // count's reconciliation shortfall whatever the balance.)
 
         $occurredAt = $occurredAt instanceof DateTimeInterface
             ? Carbon::instance($occurredAt)
@@ -134,7 +145,17 @@ final readonly class RecordWasteAction
             $notes,
             $occurredAt,
             $companyId,
-        ): WasteRecord {
+            $prepIngredientId,
+            $wasteGroupUuid,
+        ): array {
+            // The balance this waste starts from, read under the row lock the
+            // ledger write takes next (no row yet = 0).
+            $before = (string) StockDecimal::quantity((string) (DB::table('pos_branch_stock')
+                ->where('branch_id', $branch->id)
+                ->where('ingredient_id', $ingredient->id)
+                ->lockForUpdate()
+                ->value('quantity') ?? '0'));
+
             // Step 1: insert the waste record. quantity stored
             // POSITIVE; the stock movement below is the signed
             // counterpart.
@@ -151,6 +172,9 @@ final readonly class RecordWasteAction
                 'notes' => $notes,
                 'recorded_by_user_id' => $actor->getKey(),
                 'occurred_at' => $occurredAt,
+                // LAUNCH-P3 K4 — the records of one prep waste are one event.
+                'prep_ingredient_id' => $prepIngredientId,
+                'waste_group_uuid' => $wasteGroupUuid,
             ]);
 
             // Step 2: matching stock movement (signed-negative).
@@ -195,7 +219,27 @@ final readonly class RecordWasteAction
                 ],
             ));
 
-            return $waste->fresh(['ingredient', 'branch']);
+            $after = (string) StockDecimal::quantity((string) BigDecimal::of($before)->minus((string) StockDecimal::quantity($absQty)));
+            $unit = (string) ($ingredient->unit?->value ?? '');
+            $warning = $reason !== WasteReason::ReconciliationVariance && BigDecimal::of($after)->isNegative()
+                ? sprintf(
+                    'Recorded. %s is now below zero at this branch: it held %s %s and %s %s was wasted, so the balance is %s %s. Count it or receive stock to correct it.',
+                    $ingredient->name,
+                    $before,
+                    $unit,
+                    StockDecimal::quantity($absQty),
+                    $unit,
+                    $after,
+                    $unit,
+                )
+                : null;
+
+            return [
+                'record' => $waste->fresh(['ingredient', 'branch']),
+                'balance_before' => $before,
+                'balance_after' => $after,
+                'warning' => $warning,
+            ];
         });
     }
 }

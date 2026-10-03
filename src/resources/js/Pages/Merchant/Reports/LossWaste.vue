@@ -138,6 +138,24 @@ type ApexSeries = { name: string; data: number[] }[];
                 </section>
             </div>
 
+            <!-- LAUNCH-P3 fix order 1, K4 — a prep waste is ONE event that names the prep item. -->
+            <section v-if="payload.prep_wastes?.length" class="rounded-xl border border-slate-200 bg-white shadow-sm" data-test="loss-waste-prep-items">
+                <h2 class="border-b border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700">{{ t('reports.loss_waste.prep_wastes.title') }}</h2>
+                <p class="px-5 pt-2 text-xs text-slate-500">{{ t('reports.loss_waste.prep_wastes.hint') }}</p>
+                <table class="w-full text-sm">
+                    <thead class="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                        <tr><th class="px-5 py-2 text-start">{{ t('reports.loss_waste.prep_wastes.prep_item') }}</th><th class="px-5 py-2 text-end">{{ t('reports.shared.value') }}</th><th class="px-5 py-2 text-end">{{ t('reports.shared.event_count') }}</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="r in payload.prep_wastes" :key="r.prep_ingredient_id" class="border-b border-slate-100 last:border-0">
+                            <td class="px-5 py-2 font-medium text-slate-900">{{ r.prep_name }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ r.value }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ r.event_count }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
             <section v-if="payload.top_wasted.length" class="rounded-xl border border-slate-200 bg-white shadow-sm">
                 <h2 class="border-b border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700">{{ t('reports.loss_waste.top_wasted') }}</h2>
                 <table class="w-full text-sm">

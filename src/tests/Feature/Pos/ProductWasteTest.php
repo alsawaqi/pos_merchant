@@ -6,7 +6,7 @@ declare(strict_types=1);
  * Product wastage — record waste of a COOKED or READY/BOUGHT-IN product at a
  * branch (the product-units parallel of ingredient waste). Covers: the shelf
  * decrement + waste movement with reason + frozen cost; cooked cost falls back
- * to the recipe cost; the negative-shelf guard; 'other' requires notes; the
+ * to the recipe cost; sell-but-warn (LAUNCH-P3 K3); 'other' requires notes; the
  * stock-mode guard; tenant isolation; NO expense; and the Loss/Waste report
  * surfacing it valued at the frozen cost.
  */
@@ -83,17 +83,31 @@ it('values a cooked product waste at its recipe cost when cost_price is unset', 
     expect((string) $m->unit_cost)->toBe('0.080');
 });
 
-it('cannot waste more than the branch holds', function (): void {
+// LAUNCH-P3 fix order 1, K3 — waste follows sell-but-warn (owner decision
+// 2026-10-02): wasting more than the shelf shows is recorded, with a warning.
+it('records a waste larger than the shelf and warns that it is below zero', function (): void {
     $ctx = makeMerchantActor();
     $cola = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'unit', 'cost_price' => '0.200']);
     seedBranchShelf($ctx['branch']->id, $cola->id, '2.000');
 
-    $this->postJson("/api/products/{$cola->uuid}/stock/waste", [
+    $response = $this->postJson("/api/products/{$cola->uuid}/stock/waste", [
         'branch_uuid' => $ctx['branch']->uuid, 'quantity' => '5', 'reason' => 'dropped',
-    ])->assertStatus(422);
+    ])->assertOk();
 
-    expect(ProductStockMovement::query()->where('product_id', $cola->id)->where('movement_type', 'waste')->exists())->toBeFalse();
-    expect(shelfQty($ctx['branch']->id, $cola->id))->toBe('2.000');
+    expect($response->json('warning'))->toContain('below zero');
+    expect(ProductStockMovement::query()->where('product_id', $cola->id)->where('movement_type', 'waste')->exists())->toBeTrue();
+    expect(shelfQty($ctx['branch']->id, $cola->id))->toBe('-3.000');
+});
+
+it('refuses a branch that keeps no shelf count for the product (it would change where it is offered)', function (): void {
+    $ctx = makeMerchantActor();
+    $cola = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'unit', 'cost_price' => '0.200', 'name' => 'Cola']);
+
+    $this->postJson("/api/products/{$cola->uuid}/stock/waste", [
+        'branch_uuid' => $ctx['branch']->uuid, 'quantity' => '1', 'reason' => 'dropped',
+    ])->assertStatus(422)->assertJsonPath('message', '"Cola" has no shelf count at this branch — nothing has been received or produced here to waste.');
+
+    expect(DB::table('pos_branch_product')->where('product_id', $cola->id)->exists())->toBeFalse();
 });
 
 it('requires notes when the reason is other', function (): void {

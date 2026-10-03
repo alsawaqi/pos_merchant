@@ -95,6 +95,8 @@ export function adjustProductStock(
 export function recordProductWaste(
     uuid: string,
     payload: { branch_uuid: string; quantity: string | number; reason: string; notes?: string | null },
-): Promise<{ data: ProductStockSummary }> {
-    return apiPost<{ data: ProductStockSummary }>(`/api/products/${uuid}/stock/waste`, payload as unknown as JsonValue);
+): Promise<{ data: ProductStockSummary; warning?: string | null }> {
+    // LAUNCH-P3 fix order 1, K3 — never refused on the shelf number; `warning`
+    // says when the waste took the shelf below zero.
+    return apiPost<{ data: ProductStockSummary; warning?: string | null }>(`/api/products/${uuid}/stock/waste`, payload as unknown as JsonValue);
 }

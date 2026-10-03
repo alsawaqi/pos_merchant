@@ -177,20 +177,24 @@ it('explodes nested prep items when wasting', function (): void {
         ->toBe([$flour->id => '200.000', $fx['tomato']->id => '75.000', $fx['oil']->id => '5.000']);
 });
 
-it('refuses a prep waste the raw stock cannot absorb, naming the ingredient, and writes nothing', function (): void {
+// LAUNCH-P3 fix order 1, K3 — a prep waste follows sell-but-warn (owner
+// decision 2026-10-02): a short component goes below zero with a warning.
+it('records a prep waste the raw stock cannot absorb, warning about the ingredient, but refuses a count reason', function (): void {
     $ctx = makeMerchantActor();
     $fx = p3SauceFixture($ctx);
     p3Stock($ctx['branch'], $fx['tomato'], '5000');
     p3Stock($ctx['branch'], $fx['oil'], '10');
 
     $this->postJson("/api/branches/{$ctx['branch']->uuid}/waste", [
-        'ingredient_uuid' => $fx['sauce']->uuid, 'quantity' => '1000', 'reason' => 'spoiled',
-    ])->assertStatus(422)->assertJsonPath('message', 'Not enough Oil to waste 1000 ml of Tomato sauce: the branch holds 10.000 ml but the prep item needs 50.000 ml.');
-
-    $this->postJson("/api/branches/{$ctx['branch']->uuid}/waste", [
         'ingredient_uuid' => $fx['sauce']->uuid, 'quantity' => '10', 'reason' => 'reconciliation_variance',
     ])->assertStatus(422);
+    expect(WasteRecord::query()->count())->toBe(0);
 
-    expect(WasteRecord::query()->count())->toBe(0)
-        ->and((string) BranchStock::query()->where('ingredient_id', $fx['tomato']->id)->value('quantity'))->toBe('5000.000');
+    $this->postJson("/api/branches/{$ctx['branch']->uuid}/waste", [
+        'ingredient_uuid' => $fx['sauce']->uuid, 'quantity' => '1000', 'reason' => 'spoiled',
+    ])->assertCreated()->assertJsonPath('warning', 'Recorded. Below zero at this branch now: Oil held 10.000 ml and this waste used 50.000 ml, so it is now -40.000 ml. Count them or receive stock to correct it.');
+
+    expect(WasteRecord::query()->count())->toBe(2)
+        ->and((string) BranchStock::query()->where('ingredient_id', $fx['tomato']->id)->value('quantity'))->toBe('4250.000')
+        ->and((string) BranchStock::query()->where('ingredient_id', $fx['oil']->id)->value('quantity'))->toBe('-40.000');
 });

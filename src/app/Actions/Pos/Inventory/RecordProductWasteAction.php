@@ -37,9 +37,14 @@ use RuntimeException;
  *
  * Guards: quantity > 0; reason in WasteReason ('other' requires notes); the
  * product is cooked or unit (made-to-order/untracked have no branch shelf);
- * branch + product in the actor's tenant; and the branch shelf must hold enough
- * to absorb the waste (it can never be driven negative — record a positive
- * adjustment first if the accounting balance is wrong).
+ * branch + product in the actor's tenant; and the branch keeps a shelf count
+ * for the product (a pos_branch_product row with a stock_qty) — writing one
+ * here would also change where the product is offered.
+ *
+ * LAUNCH-P3 fix order 1, K3 — waste follows the selling rule (owner decision
+ * 2026-10-02): it is NEVER refused on the shelf number. Wasting more than the
+ * shelf shows is recorded, the shelf goes below zero, and {@see record()}
+ * returns a warning saying so.
  *
  * Audit event: inventory.product_waste.recorded.
  */
@@ -63,6 +68,23 @@ final readonly class RecordProductWasteAction
         ?string $notes = null,
         ?DateTimeInterface $occurredAt = null,
     ): ProductStockMovement {
+        return $this->record($branch, $product, $quantity, $reason, $actor, $notes, $occurredAt)['movement'];
+    }
+
+    /**
+     * {@see handle()}, plus a warning when the waste took the shelf below zero.
+     *
+     * @return array{movement: ProductStockMovement, warning: ?string}
+     */
+    public function record(
+        Branch $branch,
+        Product $product,
+        string|float|int $quantity,
+        WasteReason $reason,
+        User $actor,
+        ?string $notes = null,
+        ?DateTimeInterface $occurredAt = null,
+    ): array {
         $companyId = $this->tenant->requiredId();
 
         if ((int) $branch->company_id !== $companyId) {
@@ -107,22 +129,25 @@ final readonly class RecordProductWasteAction
             $notes,
             $occurredAt,
             $companyId,
-        ): ProductStockMovement {
-            // Lock the branch shelf row INSIDE the transaction so the
-            // sufficient-stock check and the decrement are serialised against a
-            // concurrent waste / sale — waste can never drive the shelf negative.
-            $currentBalance = (float) (DB::table('pos_branch_product')
+        ): array {
+            // Lock the branch shelf row INSIDE the transaction so the balance
+            // the warning reports and the decrement are serialised against a
+            // concurrent waste / sale.
+            $shelf = DB::table('pos_branch_product')
                 ->where('branch_id', $branch->id)
                 ->where('product_id', $product->id)
                 ->lockForUpdate()
-                ->value('stock_qty') ?? 0.0);
-            if ($currentBalance < $absQty) {
+                ->value('stock_qty');
+            if ($shelf === null) {
+                // Not a stock-number refusal: the branch keeps no shelf count
+                // for it (nothing was received or produced there), and
+                // creating one would change where the product is offered.
                 throw new RuntimeException(sprintf(
-                    'Not enough stock to waste — branch holds %s but waste is %s.',
-                    number_format($currentBalance, 3, '.', ''),
-                    number_format($absQty, 3, '.', ''),
+                    '"%s" has no shelf count at this branch — nothing has been received or produced here to waste.',
+                    $product->name,
                 ));
             }
+            $currentBalance = (float) $shelf;
 
             $movement = $this->writeMovement->handle(
                 product: $product,
@@ -155,7 +180,20 @@ final readonly class RecordProductWasteAction
                 ],
             ));
 
-            return $movement->fresh(['product', 'branch']);
+            // LAUNCH-P3 K3 — sell-but-warn: recorded, and said when it went below zero.
+            $after = round($currentBalance - $absQty, 3);
+            $warning = $after < 0
+                ? sprintf(
+                    'Recorded. %s is now below zero on this branch\'s shelf: it showed %s and %s %s wasted, so it shows %s. Count it to correct it.',
+                    $product->name,
+                    number_format($currentBalance, 3, '.', ''),
+                    number_format($absQty, 3, '.', ''),
+                    $absQty == 1.0 ? 'was' : 'were',
+                    number_format($after, 3, '.', ''),
+                )
+                : null;
+
+            return ['movement' => $movement->fresh(['product', 'branch']), 'warning' => $warning];
         });
     }
 }

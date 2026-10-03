@@ -386,6 +386,8 @@ const wasteOpen = ref(false);
 const wasteBusy = ref(false);
 const wasteError = ref<string | null>(null);
 const wasteErrors = ref<Record<string, string[]>>({});
+/** LAUNCH-P3 fix order 1, K3 — the last waste took a balance below zero (it was still recorded). */
+const wasteWarning = ref<string | null>(null);
 const wasteForm = reactive<{
     ingredient_uuid: string;
     quantity: string;
@@ -1529,8 +1531,9 @@ async function submitRecordWaste(): Promise<void> {
     wasteBusy.value = true;
     wasteErrors.value = {};
     wasteError.value = null;
+    wasteWarning.value = null;
     try {
-        await recordWaste(selectedBranchUuid.value, {
+        const response = await recordWaste(selectedBranchUuid.value, {
             ingredient_uuid: wasteForm.ingredient_uuid,
             quantity: wasteForm.quantity,
             reason: wasteForm.reason,
@@ -1538,6 +1541,9 @@ async function submitRecordWaste(): Promise<void> {
             occurred_at: wasteForm.occurred_at.trim() || null,
             unit: wireUnit(wasteForm.unit),
         });
+        // LAUNCH-P3 fix order 1, K3 — never refused on stock numbers: the
+        // server warns when the waste took a balance below zero.
+        wasteWarning.value = response.warning ?? null;
         wasteOpen.value = false;
         // Three things change on waste: the waste list, the
         // branch stock balance (decremented), and the movement
@@ -2654,6 +2660,10 @@ async function submitSuggestions(): Promise<void> {
                     </button>
                 </div>
 
+                <!-- LAUNCH-P3 fix order 1, K3 — sell-but-warn: the waste was
+                     recorded; the server says what it took below zero. -->
+                <p v-if="wasteWarning" class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800" data-test="waste-warning">{{ wasteWarning }}</p>
+
                 <div v-if="!selectedBranchUuid" class="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">
                     <Trash class="mx-auto size-10 text-slate-300" />
                     <p class="mt-3 text-sm font-semibold text-slate-600">{{ t('inventory.waste.no_branch') }}</p>
@@ -2680,6 +2690,8 @@ async function submitSuggestions(): Promise<void> {
                                 <td class="px-5 py-3 text-sm text-slate-600">{{ formatDate(w.occurred_at) }}</td>
                                 <td class="px-5 py-3 text-sm font-medium text-slate-900">
                                     {{ w.ingredient ? (isArabic && w.ingredient.name_ar ? w.ingredient.name_ar : w.ingredient.name) : '—' }}
+                                    <!-- LAUNCH-P3 K4 — one record of a prep item's waste. -->
+                                    <span v-if="w.prep_item" class="ms-1 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700" data-test="waste-prep-item">{{ t('inventory.waste.from_prep', { name: isArabic && w.prep_item.name_ar ? w.prep_item.name_ar : w.prep_item.name }) }}</span>
                                 </td>
                                 <td class="px-5 py-3 text-end text-sm font-semibold tabular-nums text-rose-700">
                                     -{{ w.quantity }} <span class="text-[10px] text-slate-500">{{ w.unit_at_set }}</span>
@@ -3637,7 +3649,8 @@ async function submitSuggestions(): Promise<void> {
                         <p class="mt-0.5 text-base font-bold tabular-nums text-amber-900">{{ wasteCostPreview }} <span class="text-[10px] font-normal text-amber-700">OMR</span></p>
                         <p class="mt-0.5 text-[10px] text-amber-700">{{ t('inventory.waste.modal.cost_preview_hint') }}</p>
                     </div>
-                    <div v-if="wasteInsufficient" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+                    <!-- LAUNCH-P3 fix order 1, K3 — sell-but-warn: a warning, never a block. -->
+                    <div v-if="wasteInsufficient" class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800" data-test="waste-insufficient">
                         <AlertTriangle class="me-1 inline size-3.5" />
                         {{ t('inventory.waste.modal.insufficient_warning') }}
                     </div>
@@ -3647,7 +3660,7 @@ async function submitSuggestions(): Promise<void> {
                     <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="wasteOpen = false">
                         {{ t('inventory.waste.modal.cancel') }}
                     </button>
-                    <button type="submit" form="waste-modal-form" :disabled="wasteBusy || wasteInsufficient" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60">
+                    <button type="submit" form="waste-modal-form" :disabled="wasteBusy" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60">
                         {{ wasteBusy ? t('inventory.waste.modal.submitting') : t('inventory.waste.modal.submit') }}
                     </button>
                 </div>

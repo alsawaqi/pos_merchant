@@ -1787,6 +1787,7 @@
             "filter_reason_all": "All reasons",
             "filter_ingredient": "Filter by ingredient",
             "filter_ingredient_all": "All ingredients",
+            "from_prep": "from {name}",
             "reasons": {
                 "expired": "Expired",
                 "spoiled": "Spoiled",
@@ -1809,7 +1810,7 @@
                 "cost_preview": "Estimated cost",
                 "cost_preview_hint": "Quantity × current unit cost — server freezes this at record time.",
                 "current_balance": "Current branch balance",
-                "insufficient_warning": "Not enough stock at this branch to absorb this waste — adjust first.",
+                "insufficient_warning": "The branch holds less than this. The waste is still recorded and the balance goes below zero — count or receive stock to correct it.",
                 "submit": "Record waste",
                 "submitting": "Recording…",
                 "cancel": "Cancel"
@@ -2983,6 +2984,11 @@
                 "event_count": "Events"
             },
             "by_reason": "By reason",
+            "prep_wastes": {
+                "title": "Prep items wasted",
+                "hint": "One event per prep waste, valued at the raw ingredients it was made of (those also appear under top wasted ingredients).",
+                "prep_item": "Prep item"
+            },
             "top_wasted": "Top wasted ingredients",
             "shortfall": {
                 "title": "Portion-control variance",

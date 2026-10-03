@@ -54,7 +54,7 @@ class WasteController extends Controller
 
         $query = WasteRecord::query()
             ->where('branch_id', $branch->id)
-            ->with(['ingredient', 'recordedBy']);
+            ->with(['ingredient', 'recordedBy', 'prepItem']);
 
         if ($request->filled('ingredient')) {
             $ingredientUuid = (string) $request->query('ingredient');
@@ -139,18 +139,21 @@ class WasteController extends Controller
                 return response()->json(['message' => $e->getMessage()], 422);
             }
 
-            $records = $result['records']->each(fn (WasteRecord $r) => $r->load(['ingredient', 'branch', 'recordedBy']));
+            $records = $result['records']->each(fn (WasteRecord $r) => $r->load(['ingredient', 'branch', 'recordedBy', 'prepItem']));
 
             return response()->json([
                 'data' => (new WasteRecordResource($records->first()))->resolve($request),
                 'records' => WasteRecordResource::collection($records)->resolve($request),
                 'prep_item' => ['uuid' => $ingredient->uuid, 'name' => $ingredient->name, 'quantity' => $result['quantity'], 'unit' => $ingredient->unit?->value],
                 'total_cost' => $result['total_cost'],
+                'waste_group_uuid' => $result['waste_group_uuid'],
+                // Fix order 1, K3 — sell-but-warn: never refused on stock numbers.
+                'warning' => $result['warning'],
             ], 201);
         }
 
         try {
-            $waste = $this->record->handle(
+            $result = $this->record->record(
                 branch: $branch,
                 ingredient: $ingredient,
                 quantity: $request->input('quantity'),
@@ -164,10 +167,14 @@ class WasteController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $waste->load(['ingredient', 'branch', 'recordedBy']);
+        $waste = $result['record'];
+        $waste->load(['ingredient', 'branch', 'recordedBy', 'prepItem']);
 
         return response()->json([
             'data' => (new WasteRecordResource($waste))->resolve($request),
+            // Fix order 1, K3 — sell-but-warn: a waste the branch balance
+            // cannot cover is recorded, and this says it is now below zero.
+            'warning' => $result['warning'],
         ], 201);
     }
 

@@ -49,23 +49,28 @@ final readonly class LossWasteReportAction
             $wasteBase->whereIn('pos_waste_records.branch_id', $branchScope);
         }
 
+        // LAUNCH-P3 fix order 1, K4 — ONE waste event per group: a prep waste
+        // writes one record per raw ingredient, all sharing waste_group_uuid;
+        // any other record is its own event.
+        $events = "COUNT(DISTINCT COALESCE(CAST(pos_waste_records.waste_group_uuid AS TEXT), 'r' || pos_waste_records.id))";
+
         // ---- Headline ----
         $headline = (clone $wasteBase)
-            ->selectRaw('
+            ->selectRaw("
                 COALESCE(SUM(pos_waste_records.quantity * pos_waste_records.unit_cost_at_time), 0) AS total_value,
                 COALESCE(SUM(pos_waste_records.quantity), 0) AS total_qty,
-                COUNT(*) AS event_count
-            ')
+                {$events} AS event_count
+            ")
             ->first();
 
         // ---- By branch ----
         $byBranch = (clone $wasteBase)
-            ->selectRaw('
+            ->selectRaw("
                 pos_waste_records.branch_id AS branch_id,
                 pos_branches.name AS branch_name,
                 COALESCE(SUM(pos_waste_records.quantity * pos_waste_records.unit_cost_at_time), 0) AS value,
-                COUNT(*) AS event_count
-            ')
+                {$events} AS event_count
+            ")
             ->groupBy('pos_waste_records.branch_id', 'pos_branches.name')
             ->orderByDesc('value')
             ->get()
@@ -78,16 +83,40 @@ final readonly class LossWasteReportAction
 
         // ---- By reason ----
         $byReason = (clone $wasteBase)
-            ->selectRaw('
+            ->selectRaw("
                 pos_waste_records.reason AS reason,
                 COALESCE(SUM(pos_waste_records.quantity * pos_waste_records.unit_cost_at_time), 0) AS value,
-                COUNT(*) AS event_count
-            ')
+                {$events} AS event_count
+            ")
             ->groupBy('pos_waste_records.reason')
             ->orderByDesc('value')
             ->get()
             ->map(static fn ($r): array => [
                 'reason' => (string) $r->reason,
+                'value' => number_format((float) $r->value, 3, '.', ''),
+                'event_count' => (int) $r->event_count,
+            ])->all();
+
+        // ---- LAUNCH-P3 K4 — prep items wasted, by name ----
+        // ("1 L of tomato sauce thrown away": one event, valued at the raw
+        // ingredients it was made of; those still show in top_wasted.)
+        $prepWastes = (clone $wasteBase)
+            ->join('pos_ingredients as prep', 'prep.id', '=', 'pos_waste_records.prep_ingredient_id')
+            ->where('prep.company_id', $companyId)
+            ->selectRaw("
+                prep.id AS prep_ingredient_id,
+                prep.name AS prep_name,
+                prep.unit AS unit,
+                COALESCE(SUM(pos_waste_records.quantity * pos_waste_records.unit_cost_at_time), 0) AS value,
+                {$events} AS event_count
+            ")
+            ->groupBy('prep.id', 'prep.name', 'prep.unit')
+            ->orderByDesc('value')
+            ->get()
+            ->map(static fn ($r): array => [
+                'prep_ingredient_id' => (int) $r->prep_ingredient_id,
+                'prep_name' => (string) $r->prep_name,
+                'unit' => (string) $r->unit,
                 'value' => number_format((float) $r->value, 3, '.', ''),
                 'event_count' => (int) $r->event_count,
             ])->all();
@@ -265,6 +294,7 @@ final readonly class LossWasteReportAction
             ],
             'by_branch' => $byBranch,
             'by_reason' => $byReason,
+            'prep_wastes' => $prepWastes,
             'top_wasted' => $topWasted,
             'shortfall' => $shortfall,
             // P-G1.5 — day-end product waste + give-aways (pieces).

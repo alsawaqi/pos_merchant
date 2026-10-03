@@ -823,6 +823,10 @@ return new class extends Migration
             $table->foreignId('recorded_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
             $table->timestamp('occurred_at')->useCurrent();
             $table->timestamps();
+            // LAUNCH-P3 fix order 1, K4 (pos_admin 2026_10_02_100005) — the
+            // prep item wasted and the group of records of one waste event.
+            $table->foreignId('prep_ingredient_id')->nullable()->constrained('pos_ingredients')->nullOnDelete();
+            $table->uuid('waste_group_uuid')->nullable()->index();
         });
 
         Schema::create('pos_restock_requests', function (Blueprint $table): void {

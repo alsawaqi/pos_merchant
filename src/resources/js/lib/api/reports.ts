@@ -361,6 +361,8 @@ export interface LossWasteReportPayload {
     headline: { total_value: string; total_qty: string; event_count: number };
     by_branch: { branch_id: number; branch_name: string; value: string; event_count: number }[];
     by_reason: { reason: string; value: string; event_count: number }[];
+    /** LAUNCH-P3 K4 — prep items wasted, one event per prep waste (optional: older servers omit it). */
+    prep_wastes?: { prep_ingredient_id: number; prep_name: string; unit: string; value: string; event_count: number }[];
     top_wasted: { ingredient_id: number; ingredient_name: string; unit: string; total_qty: string; value: string }[];
     /**
      * Portion-control variance (Additions §1.2): theoretical consumption

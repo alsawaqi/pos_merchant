@@ -42,6 +42,7 @@ const busy = ref(false);
 const error = ref<string | null>(null);
 const actionError = ref<string | null>(null);
 const actionOk = ref<string | null>(null);
+const actionWarning = ref<string | null>(null);
 const summary = ref<ProductStockSummary | null>(null);
 const action = ref<Action>('distribute');
 
@@ -168,6 +169,7 @@ async function load(): Promise<void> {
     error.value = null;
     actionError.value = null;
     actionOk.value = null;
+    actionWarning.value = null;
     try {
         const res = await getProductStock(uuid);
         // The dialog may have been closed and reopened for ANOTHER product
@@ -201,12 +203,13 @@ watch(
     { immediate: true },
 );
 
-async function run(fn: () => Promise<{ data: ProductStockSummary }>, okMsg: string): Promise<void> {
+async function run(fn: () => Promise<{ data: ProductStockSummary; warning?: string | null }>, okMsg: string): Promise<void> {
     if (!props.canManage) return;
     const uuid = props.productUuid;
     busy.value = true;
     actionError.value = null;
     actionOk.value = null;
+    actionWarning.value = null;
     try {
         const res = await fn();
         // Discard a late response when the dialog has moved on to a
@@ -216,6 +219,9 @@ async function run(fn: () => Promise<{ data: ProductStockSummary }>, okMsg: stri
         summary.value = res.data;
         resetForms();
         actionOk.value = okMsg;
+        // LAUNCH-P3 fix order 1, K3 — waste is never refused on the shelf
+        // number; the server says when it took the shelf below zero.
+        actionWarning.value = res.warning ?? null;
     } catch (e) {
         if (props.productUuid !== uuid) return;
         actionError.value = e instanceof ApiError ? e.message : 'Action failed.';
@@ -383,12 +389,13 @@ function fmtType(t: string): string {
                                 type="button"
                                 class="rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition"
                                 :class="action === a ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'"
-                                @click="action = a; actionError = null; actionOk = null"
+                                @click="action = a; actionError = null; actionOk = null; actionWarning = null"
                             >{{ actionLabel(a) }}</button>
                         </div>
 
                         <p v-if="actionError" class="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{{ actionError }}</p>
                         <p v-if="actionOk" class="mb-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">{{ actionOk }}</p>
+                        <p v-if="actionWarning" class="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800" data-test="product-waste-warning">{{ actionWarning }}</p>
 
                         <!-- Receive & Distribute -->
                         <form v-if="action === 'distribute'" class="space-y-3" @submit.prevent="doDistribute">

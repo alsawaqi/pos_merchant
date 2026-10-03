@@ -293,7 +293,7 @@ class ProductStockController extends Controller
             : null;
 
         try {
-            $this->recordWaste->handle(
+            $result = $this->recordWaste->record(
                 $branch,
                 $product,
                 $request->input('quantity'),
@@ -306,7 +306,13 @@ class ProductStockController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        return $this->show($request, $product);
+        // LAUNCH-P3 fix order 1, K3 — sell-but-warn: the stock view, plus a
+        // warning when the waste took the shelf below zero.
+        $response = $this->show($request, $product);
+        $payload = $response->getData(true);
+        $payload['warning'] = $result['warning'];
+
+        return $response->setData($payload);
     }
 
     public function movements(Request $request, Product $product): LengthAwarePaginator

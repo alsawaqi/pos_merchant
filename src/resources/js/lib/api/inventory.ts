@@ -553,6 +553,10 @@ export interface WasteRecord {
     notes: string | null;
     occurred_at: string | null;
     created_at: string | null;
+    /** LAUNCH-P3 K4 — shared by every record of one prep waste (null = its own event). */
+    waste_group_uuid?: string | null;
+    /** LAUNCH-P3 K4 — the prep item this record is part of. */
+    prep_item?: { uuid: string; name: string; name_ar: string | null } | null;
     ingredient?: {
         id: number;
         uuid: string;
@@ -718,8 +722,10 @@ export function listWaste(
 export function recordWaste(
     branchUuid: string,
     payload: RecordWastePayload,
-): Promise<{ data: WasteRecord }> {
-    return apiPost<{ data: WasteRecord }>(
+): Promise<{ data: WasteRecord; warning?: string | null }> {
+    // LAUNCH-P3 fix order 1, K3 — waste is never refused on the stock
+    // numbers; `warning` says when it took a balance below zero.
+    return apiPost<{ data: WasteRecord; warning?: string | null }>(
         `/api/branches/${branchUuid}/waste`,
         payload as unknown as JsonValue,
     );

@@ -33,6 +33,14 @@ class WasteRecordResource extends JsonResource
             // money on the client (decimal-string is the contract).
             'total_cost' => $this->totalCost(),
             'notes' => $this->notes,
+            // LAUNCH-P3 fix order 1, K4 — the records of one prep waste share
+            // a group and name the prep item.
+            'waste_group_uuid' => $this->waste_group_uuid,
+            'prep_item' => $this->whenLoaded('prepItem', fn (): ?array => $this->prepItem === null ? null : [
+                'uuid' => $this->prepItem->uuid,
+                'name' => $this->prepItem->name,
+                'name_ar' => $this->prepItem->name_ar,
+            ]),
             'occurred_at' => $this->occurred_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
             'ingredient' => $this->whenLoaded('ingredient', fn (): ?array => $this->ingredient === null ? null : [

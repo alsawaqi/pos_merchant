@@ -14,13 +14,13 @@ use App\Models\WasteRecord;
 use App\Support\MerchantTenantContext;
 use App\Support\Recipes\PrepGraph;
 use App\Support\Recipes\RecipeQuantity;
-use App\Support\StockDecimal;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use DateTimeInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -36,12 +36,17 @@ use RuntimeException;
  * as ONE event naming the prep item:
  *
  *   - every record's notes start "Prep item: <name>, <amount>" (+ the notes);
+ *   - fix order 1, K4: every record carries the prep item and one shared
+ *     waste_group_uuid, so Loss & Waste counts ONE event naming the prep;
  *   - one `inventory.waste.prep_recorded` audit row lists the prep item, the
  *     amount, every exploded line and the total cost.
  *
- * Like any waste it is refused when a raw ingredient's branch stock cannot
- * absorb it (the message names the ingredient). A stock-count reconciliation
- * reason is refused: counts never include prep items.
+ * Fix order 1, K3 — like every waste it follows the selling rule (owner
+ * decision 2026-10-02): it is never refused on the stock numbers. A raw
+ * ingredient the branch does not hold enough of (or never received: water,
+ * salt) goes below zero, and the response carries a warning naming each one.
+ * A stock-count reconciliation reason is refused: counts never include prep
+ * items.
  */
 final readonly class RecordPrepWasteAction
 {
@@ -53,7 +58,7 @@ final readonly class RecordPrepWasteAction
     ) {}
 
     /**
-     * @return array{records: Collection<int, WasteRecord>, total_cost: string, quantity: string}
+     * @return array{records: Collection<int, WasteRecord>, total_cost: string, quantity: string, waste_group_uuid: string, warning: ?string}
      */
     public function handle(
         Branch $branch,
@@ -94,42 +99,20 @@ final readonly class RecordPrepWasteAction
 
         $amount = $entered['entered_quantity'].' '.$this->quantities->label($prep, $entered['entered_unit']);
 
-        // The same "do not waste what the books do not hold" rule as an
-        // ingredient waste — checked up front so the message names the
-        // ingredient and nothing is half-written.
-        $balances = DB::table('pos_branch_stock')
-            ->where('branch_id', $branch->id)
-            ->whereIn('ingredient_id', array_keys($raw))
-            ->pluck('quantity', 'ingredient_id');
-        foreach ($raw as $ingredientId => $qty) {
-            $held = (string) ($balances[$ingredientId] ?? '0');
-            if (BigDecimal::of($held)->isLessThan($qty)) {
-                $ingredient = $ingredients->get($ingredientId);
-                throw new RuntimeException(sprintf(
-                    'Not enough %s to waste %s of %s: the branch holds %s %s but the prep item needs %s %s.',
-                    $ingredient?->name ?? '#'.$ingredientId,
-                    $amount,
-                    $prep->name,
-                    StockDecimal::quantity($held),
-                    $ingredient?->unit?->value ?? '',
-                    $qty,
-                    $ingredient?->unit?->value ?? '',
-                ));
-            }
-        }
-
         $label = sprintf('Prep item: %s, %s', $prep->name, $amount);
         $combinedNotes = trim((string) $notes) !== '' ? $label.' — '.trim((string) $notes) : $label;
         $occurredAt = $occurredAt instanceof DateTimeInterface ? Carbon::instance($occurredAt) : now();
+        $group = (string) Str::uuid();
 
-        return DB::transaction(function () use ($branch, $prep, $raw, $ingredients, $reason, $actor, $combinedNotes, $occurredAt, $entered, $amount, $notes, $companyId): array {
+        return DB::transaction(function () use ($branch, $prep, $raw, $ingredients, $reason, $actor, $combinedNotes, $occurredAt, $entered, $amount, $notes, $companyId, $group): array {
             $records = collect();
             $lines = [];
+            $short = [];
             $total = BigDecimal::zero();
             foreach ($raw as $ingredientId => $qty) {
                 /** @var Ingredient $ingredient */
                 $ingredient = $ingredients->get($ingredientId);
-                $record = $this->recordWaste->handle(
+                $written = $this->recordWaste->record(
                     branch: $branch,
                     ingredient: $ingredient,
                     quantity: $qty,
@@ -137,7 +120,14 @@ final readonly class RecordPrepWasteAction
                     actor: $actor,
                     notes: $combinedNotes,
                     occurredAt: $occurredAt,
+                    prepIngredientId: (int) $prep->id,
+                    wasteGroupUuid: $group,
                 );
+                $record = $written['record'];
+                if (BigDecimal::of($written['balance_after'])->isNegative()) {
+                    $unit = (string) ($ingredient->unit?->value ?? '');
+                    $short[] = sprintf('%s held %s %s and this waste used %s %s, so it is now %s %s', $ingredient->name, $written['balance_before'], $unit, $qty, $unit, $written['balance_after'], $unit);
+                }
                 $records->push($record);
                 $cost = BigDecimal::of((string) $record->quantity)->multipliedBy((string) $record->unit_cost_at_time);
                 $total = $total->plus($cost);
@@ -170,10 +160,16 @@ final readonly class RecordPrepWasteAction
                     'notes' => $notes,
                     'lines' => $lines,
                     'total_cost' => $totalCost,
+                    'waste_group_uuid' => $group,
                 ],
             ));
 
-            return ['records' => $records, 'total_cost' => $totalCost, 'quantity' => $entered['quantity']];
+            $warning = $short === [] ? null : sprintf(
+                'Recorded. Below zero at this branch now: %s. Count them or receive stock to correct it.',
+                implode('; ', $short),
+            );
+
+            return ['records' => $records, 'total_cost' => $totalCost, 'quantity' => $entered['quantity'], 'waste_group_uuid' => $group, 'warning' => $warning];
         });
     }
 }
