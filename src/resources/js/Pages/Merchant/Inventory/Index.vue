@@ -123,6 +123,7 @@ import {
     type PhysicalItemPurpose,
 } from '@/lib/api/physicalItems';
 import ProductStockDialog from '@/Pages/Merchant/Catalogue/ProductStockDialog.vue';
+import { ITEM_KINDS, kindOfUnit, storedUnitForKind, type ItemKind } from '@/lib/itemKind';
 import { MerchantPermission } from '@/lib/permissions';
 
 const { t, locale } = useI18n();
@@ -237,7 +238,8 @@ const ingModalError = ref<string | null>(null);
 const ingForm = reactive<{
     name: string;
     name_ar: string;
-    unit: IngredientUnit;
+    /** '' until the kind question is answered on a new ingredient. */
+    unit: IngredientUnit | '';
     piece_unit_label: string;
     piece_unit_label_ar: string;
     units_per_piece: string;
@@ -261,11 +263,17 @@ const ingForm = reactive<{
 });
 
 const unitOptions: IngredientUnit[] = ['kg', 'g', 'l', 'ml', 'piece', 'pack', 'box'];
-// LAUNCH-P2 P2-1 — "buy big, use small": new ingredients are stocked in a
-// small unit (g, ml or piece) by default; kg, l, box and pack stay available
-// as purchase and recipe units through the converter.
-const smallUnitOptions: IngredientUnit[] = ['g', 'ml', 'piece'];
-const otherUnitOptions: IngredientUnit[] = ['kg', 'l', 'pack', 'box'];
+
+// LAUNCH item kind (owner decision 2026-10-03) — a new ingredient is asked
+// what KIND of item it is, never a base unit: Weighed is stored in g, Liquid
+// in ml, Counted in pieces ("buy big, use small", LAUNCH-P2 P2-1). kg, l and
+// pack sizes stay available wherever an amount is typed.
+const ingKind = computed<ItemKind | null>(() => (ingForm.unit === '' ? null : kindOfUnit(ingForm.unit)));
+
+function chooseKind(kind: ItemKind): void {
+    // Back to the ingredient's own kind keeps its stored unit (an older kg stays kg).
+    ingForm.unit = storedUnitForKind(kind, ingModalTarget.value?.unit ?? null) as IngredientUnit;
+}
 
 // =================== Alternate units (v2 #13) ====================
 // Sub-editor inside the ingredient EDIT modal. Each row maps to a
@@ -788,7 +796,8 @@ function openCreateIngredient(): void {
     ingModalTarget.value = null;
     ingForm.name = '';
     ingForm.name_ar = '';
-    ingForm.unit = 'g';
+    // No kind until the person picks one: milk must never be saved as Weighed by default.
+    ingForm.unit = '';
     ingForm.piece_unit_label = '';
     ingForm.piece_unit_label_ar = '';
     ingForm.units_per_piece = '';
@@ -827,14 +836,20 @@ function openEditIngredient(ingredient: Ingredient): void {
 }
 
 async function submitIngredient(): Promise<void> {
-    ingModalBusy.value = true;
     ingModalErrors.value = {};
     ingModalError.value = null;
+    if (ingForm.unit === '') {
+        ingModalErrors.value = { unit: [t('item_kind.choose')] };
+        ingModalError.value = t('inventory.validation_summary');
+        return;
+    }
+    const unit: IngredientUnit = ingForm.unit;
+    ingModalBusy.value = true;
     try {
         const payload = {
             name: ingForm.name.trim(),
             name_ar: ingForm.name_ar.trim() || null,
-            unit: ingForm.unit,
+            unit,
             // Phase A — piece config travels as a pair (server enforces
             // both-or-neither); blanks become null = "not piece-tracked".
             piece_unit_label: ingForm.piece_unit_label.trim() || null,
@@ -1343,7 +1358,7 @@ function countShortfallValue(count: { lines: { variance_value?: string }[] }): n
 
 // =================== Helpers =====================================
 
-function unitLabel(unit: IngredientUnit | null): string {
+function unitLabel(unit: IngredientUnit | '' | null): string {
     if (!unit) return '';
     return t(`inventory.units.${unit}`);
 }
@@ -3007,33 +3022,43 @@ async function submitSuggestions(): Promise<void> {
                             <input v-model="ingForm.name_ar" type="text" dir="rtl" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                         </label>
                     </div>
-                    <div class="grid gap-3 sm:grid-cols-3">
-                        <label class="block">
+                    <!-- LAUNCH item kind — a new ingredient is asked what KIND of
+                         item it is (stored in g, ml or piece), never a base unit. -->
+                    <fieldset v-if="ingModalMode === 'create'" data-test="item-kind">
+                        <legend class="text-sm font-medium text-slate-700">{{ t('item_kind.question') }} *</legend>
+                        <div class="mt-1 grid gap-2 sm:grid-cols-3">
+                            <label
+                                v-for="k in ITEM_KINDS"
+                                :key="k"
+                                class="flex cursor-pointer flex-col rounded-lg border px-3 py-2.5 transition"
+                                :class="ingKind === k ? 'border-teal-500 bg-teal-50 ring-2 ring-teal-100' : 'border-slate-200 hover:bg-slate-50'"
+                                :data-test="`item-kind-${k}`"
+                            >
+                                <span class="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
+                                    <input type="radio" name="ing-kind" :value="k" :checked="ingKind === k" class="size-4 border-slate-300 text-teal-600 focus:ring-teal-500" @change="chooseKind(k)">
+                                    {{ t(`item_kind.kinds.${k}`) }}
+                                </span>
+                                <span class="mt-0.5 ps-6 text-xs text-slate-500">{{ t(`item_kind.examples.${k}`) }}</span>
+                            </label>
+                        </div>
+                        <p v-if="ingKind" class="mt-1 text-xs text-slate-500" data-test="item-kind-units">{{ t(`item_kind.entered_in.${ingKind}`) }}</p>
+                        <p v-if="ingModalErrors.unit" class="mt-1 text-xs text-rose-600">{{ ingModalErrors.unit[0] }}</p>
+                    </fieldset>
+                    <div class="grid gap-3" :class="ingModalMode === 'create' ? 'sm:grid-cols-2' : 'sm:grid-cols-3'">
+                        <label v-if="ingModalMode !== 'create'" class="block">
                             <span class="text-sm font-medium text-slate-700">{{ t('inventory.fields.unit') }} *</span>
                             <select v-model="ingForm.unit" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                                <!-- LAUNCH-P2 P2-1 — a NEW ingredient defaults to a small unit
-                                     (g / ml / piece); the others stay available. -->
-                                <template v-if="ingModalMode === 'create'">
-                                    <optgroup :label="t('inventory.units.group_small')">
-                                        <option v-for="u in smallUnitOptions" :key="u" :value="u">{{ unitLabel(u) }}</option>
-                                    </optgroup>
-                                    <optgroup :label="t('inventory.units.group_other')">
-                                        <option v-for="u in otherUnitOptions" :key="u" :value="u">{{ unitLabel(u) }}</option>
-                                    </optgroup>
-                                </template>
-                                <template v-else>
-                                    <option v-for="u in unitOptions" :key="u" :value="u">{{ unitLabel(u) }}</option>
-                                </template>
+                                <option v-for="u in unitOptions" :key="u" :value="u">{{ unitLabel(u) }}</option>
                             </select>
-                            <p v-if="ingModalMode === 'create'" class="mt-1 text-xs text-slate-500" data-test="small-unit-hint">{{ t('inventory.units.small_unit_hint') }}</p>
                             <!-- PD4 — the system already converts to/from these
                                  same-family metric units; no need to add them. -->
-                            <p v-if="autoUnitNames(ingForm.unit).length" class="mt-1 text-xs text-slate-500">
+                            <p v-if="ingForm.unit !== '' && autoUnitNames(ingForm.unit).length" class="mt-1 text-xs text-slate-500">
                                 {{ t('inventory.alt_units.auto_provided', { units: autoUnitNames(ingForm.unit).join(', ') }) }}
                             </p>
                         </label>
                         <label class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('inventory.fields.default_unit_cost') }} (OMR)</span>
+                            <!-- The cost is per stored unit: say which, now that no unit is picked on screen. -->
+                            <span class="text-sm font-medium text-slate-700">{{ ingForm.unit !== '' ? t('item_kind.cost_per', { unit: ingForm.unit }) : t('inventory.fields.default_unit_cost') }} (OMR)</span>
                             <input v-model="ingForm.default_unit_cost" type="number" step="0.000001" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                         </label>
                         <label class="block">

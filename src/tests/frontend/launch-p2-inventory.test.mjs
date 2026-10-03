@@ -113,11 +113,14 @@ test('P2-7 the stock page flags negative red and below minimum amber, with a Low
     assert.match(dashboard.script, /\{ tab: 'stock', filter: 'low' \}/);
 });
 
-test('P2-1 a new ingredient defaults to a small unit', () => {
+test('P2-1 a new ingredient is stored in a small unit', () => {
+    // LAUNCH item kind (owner decision 2026-10-03): the small unit now comes
+    // from the kind question — Weighed g, Liquid ml, Counted piece — instead
+    // of a preselected small base unit.
     const { script, template } = sfc('resources/js/Pages/Merchant/Inventory/Index.vue');
-    assert.match(script, /const smallUnitOptions: IngredientUnit\[\] = \['g', 'ml', 'piece'\];/);
-    assert.match(script, /ingForm\.name_ar = '';\s*ingForm\.unit = 'g';/);
-    assert.match(template, /data-test="small-unit-hint"/);
+    assert.match(read('resources/js/lib/itemKind.ts'), /KIND_STORED_UNIT: Record<ItemKind, 'g' \| 'ml' \| 'piece'> = \{\s*weighed: 'g',\s*liquid: 'ml',\s*counted: 'piece',\s*\}/);
+    assert.match(script, /ingForm\.unit = storedUnitForKind\(kind, /);
+    assert.match(template, /data-test="item-kind"/);
 });
 
 test('every LAUNCH-P2 string exists in English and Arabic', () => {

@@ -1,0 +1,89 @@
+// LAUNCH — item kind for ingredients (work order LAUNCH-P23, Part A).
+//   A1 the create form asks what KIND of item it is (Weighed / Liquid /
+//      Counted → stored in g / ml / piece), never a base unit;
+//   every new string exists in English AND Arabic.
+// Run: node --test tests/frontend/launch-p3-kind.test.mjs
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import test from 'node:test';
+import { runInNewContext } from 'node:vm';
+import { parse } from '@vue/compiler-sfc';
+import ts from 'typescript';
+
+const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
+
+function sfc(path) {
+    const parsed = parse(read(path));
+    assert.deepEqual(parsed.errors, [], path);
+    return { script: parsed.descriptor.scriptSetup?.content ?? '', template: parsed.descriptor.template?.content ?? '' };
+}
+
+/** Load a lib/*.ts file as a plain module (exports collected from `export`). */
+function lib(name) {
+    const { outputText } = ts.transpileModule(read(`resources/js/lib/${name}.ts`), {
+        compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+    });
+    const module = { exports: {} };
+    runInNewContext(outputText, { module, exports: module.exports, Math, Number, String, Set, parseFloat });
+    return module.exports;
+}
+
+const en = JSON.parse(read('resources/js/locales/en.json'));
+const ar = JSON.parse(read('resources/js/locales/ar.json'));
+const get = (tree, key) => key.split('.').reduce((node, part) => node?.[part], tree);
+const leaves = (tree, prefix) => Object.entries(tree).flatMap(([k, v]) => (typeof v === 'object' ? leaves(v, `${prefix}.${k}`) : [`${prefix}.${k}`]));
+
+/** The ingredient create / edit form of the Inventory page. */
+function ingredientForm() {
+    const { script, template } = sfc('resources/js/Pages/Merchant/Inventory/Index.vue');
+    const start = template.indexOf('id="ing-modal-form"');
+    assert.ok(start > 0, 'ingredient form');
+    return { script, form: template.slice(start, template.indexOf('</form>', start)) };
+}
+
+test('A1 a new ingredient is asked what kind of item it is and is stored in g, ml or piece', () => {
+    const { ITEM_KINDS, KIND_STORED_UNIT, kindOfUnit, storedUnitForKind } = lib('itemKind');
+    assert.deepEqual([...ITEM_KINDS], ['weighed', 'liquid', 'counted']);
+    assert.deepEqual({ ...KIND_STORED_UNIT }, { weighed: 'g', liquid: 'ml', counted: 'piece' });
+    // Existing data is not converted: the kind is read from the stored unit.
+    for (const [unit, kind] of [['g', 'weighed'], ['kg', 'weighed'], ['ml', 'liquid'], ['l', 'liquid'], ['piece', 'counted'], ['pack', 'counted'], ['box', 'counted']]) {
+        assert.equal(kindOfUnit(unit), kind, unit);
+    }
+    assert.equal(storedUnitForKind('liquid', null), 'ml');
+    assert.equal(storedUnitForKind('counted', 'g'), 'piece');
+    // Back to an older ingredient's own kind keeps its stored unit.
+    assert.equal(storedUnitForKind('weighed', 'kg'), 'kg');
+
+    const { script, form } = ingredientForm();
+    assert.match(form, /<fieldset v-if="ingModalMode === 'create'" data-test="item-kind">/);
+    assert.match(form, /item_kind\.question/);
+    assert.match(form, /v-for="k in ITEM_KINDS"/);
+    assert.match(form, /item_kind\.kinds\.\$\{k\}/);
+    assert.match(form, /item_kind\.examples\.\$\{k\}/);
+    assert.match(form, /@change="chooseKind\(k\)"/);
+    // The create form has no base-unit dropdown any more.
+    assert.doesNotMatch(form, /smallUnitOptions|otherUnitOptions|group_small|small_unit_hint/);
+    assert.match(script, /ingForm\.unit = storedUnitForKind\(kind, ingModalTarget\.value\?\.unit \?\? null\) as IngredientUnit;/);
+    // Nothing is preselected, and nothing is saved before a kind is chosen.
+    assert.match(script, /ingForm\.name_ar = '';\s*\/\/[^\n]*\n\s*ingForm\.unit = '';/);
+    assert.match(script, /if \(ingForm\.unit === ''\) \{\s*ingModalErrors\.value = \{ unit: \[t\('item_kind\.choose'\)\] \};/);
+    // The cost says which unit it is per.
+    assert.match(form, /t\('item_kind\.cost_per', \{ unit: ingForm\.unit \}\)/);
+
+    assert.equal(en.item_kind.examples.weighed, 'Rice, cheese, coffee beans');
+    assert.equal(en.item_kind.examples.liquid, 'Milk, oil, syrup');
+    assert.equal(en.item_kind.examples.counted, 'Eggs, cups, buns');
+    for (const key of leaves(en.item_kind, 'item_kind')) {
+        assert.doesNotMatch(get(en, key), /base unit/i, `${key} has no "base unit" wording`);
+    }
+});
+
+test('every item-kind string exists in English and Arabic', () => {
+    const keys = leaves(en.item_kind, 'item_kind');
+    assert.ok(keys.length >= 10, `${keys.length} keys`);
+    for (const key of keys) {
+        assert.equal(typeof get(en, key), 'string', `en ${key}`);
+        assert.equal(typeof get(ar, key), 'string', `ar ${key}`);
+        assert.notEqual(get(ar, key), get(en, key), `ar ${key} is translated`);
+    }
+});
