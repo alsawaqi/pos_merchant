@@ -14,7 +14,7 @@
  */
 
 import { apiDelete, apiGet, apiPatch, apiPost, type JsonValue } from '@/lib/api';
-import type { ItemKind } from '@/lib/itemKind';
+import { entryUnitFactor, entryUnitOptions, type ItemKind } from '@/lib/itemKind';
 
 export type IngredientUnit = 'kg' | 'g' | 'l' | 'ml' | 'piece' | 'pack' | 'box';
 export type InventoryStatus = 'active' | 'inactive';
@@ -132,55 +132,35 @@ export interface AutoUnit {
     factor: string;
 }
 
-type UnitSource = Pick<Ingredient, 'unit' | 'alt_units' | 'auto_units'>;
+type UnitSource = Pick<Ingredient, 'unit' | 'alt_units' | 'auto_units'>
+    & Partial<Pick<Ingredient, 'piece_unit_label' | 'piece_unit_label_ar' | 'units_per_piece'>>;
 
 /**
  * PD4 — the unit dropdown options for an ingredient: base (value '') + custom
  * alternate units + system metric siblings, deduped by name with CUSTOM winning
  * (legacy data may define a name the system now auto-provides). The single
  * source every unit <select> should use.
+ *
+ * LAUNCH item kind, A7 — and the count container ('@piece', "bottle (1.5 l)"),
+ * with each pack size saying what it holds ("crate (12 l)"); see
+ * entryUnitOptions in lib/itemKind.
  */
 export function ingredientUnitOptions(
     ingredient: UnitSource | null | undefined,
+    locale?: string | null,
 ): { value: string; label: string }[] {
-    if (!ingredient) return [];
-    const base: string = ingredient.unit ?? '';
-    const options: { value: string; label: string }[] = [{ value: '', label: base }];
-    const seen = new Set<string>([base]);
-    for (const au of ingredient.alt_units ?? []) {
-        if (seen.has(au.name)) continue;
-        seen.add(au.name);
-        options.push({ value: au.name, label: au.name });
-    }
-    for (const a of ingredient.auto_units ?? []) {
-        if (seen.has(a.name)) continue;
-        seen.add(a.name);
-        options.push({ value: a.name, label: a.name });
-    }
-    return options;
+    return entryUnitOptions(ingredient, locale).map(({ value, label }) => ({ value, label }));
 }
 
 /**
  * PD4 — resolve a selected unit NAME to its base-unit factor: '' or the base
- * unit = 1; a custom alt unit wins over a metric sibling of the same name; an
- * unknown unit = 1 (the server re-validates and rejects). Used by the live
+ * unit = 1; a custom alt unit wins over a metric sibling of the same name; the
+ * count container ('@piece') is its ratio; an unknown unit or a non-positive
+ * factor = 1 (the server re-validates and rejects). Used by the live
  * cost/quantity previews.
  */
 export function ingredientUnitFactor(ingredient: UnitSource | null | undefined, selected: string): number {
-    if (!ingredient || selected.trim() === '' || selected === ingredient.unit) return 1;
-    const alt = (ingredient.alt_units ?? []).find((u) => u.name === selected);
-    if (alt) {
-        const factor = parseFloat(alt.factor);
-        // Mirror the backend's factor>0 guard (a non-positive factor would
-        // flip a signed preview); fall back to base on anything off.
-        return Number.isFinite(factor) && factor > 0 ? factor : 1;
-    }
-    const auto = (ingredient.auto_units ?? []).find((u) => u.name === selected);
-    if (auto) {
-        const factor = parseFloat(auto.factor);
-        return Number.isFinite(factor) && factor > 0 ? factor : 1;
-    }
-    return 1;
+    return entryUnitFactor(ingredient, selected);
 }
 
 /**
@@ -1042,6 +1022,11 @@ export interface StockCountLinePayload {
     counted_pieces?: string | number | null;
     /** Primary units counted directly (non-piece ingredients). */
     counted_units?: string | number | null;
+    /**
+     * LAUNCH item kind, A7 — the unit counted_units was counted in (kg, l, a
+     * pack size, '@piece'); null/omit = the stored unit. Server converts.
+     */
+    unit?: string | null;
 }
 
 export interface SubmitStockCountPayload {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Pos;
 
+use App\Actions\Pos\Inventory\IngredientUnitConverter;
 use App\Actions\Pos\Inventory\SubmitStockCountAction;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
@@ -31,6 +32,7 @@ class StockCountsController extends Controller
     public function __construct(
         private readonly MerchantTenantContext $tenant,
         private readonly SubmitStockCountAction $submit,
+        private readonly IngredientUnitConverter $units,
     ) {}
 
     public function index(Request $request, Branch $branch): AnonymousResourceCollection
@@ -79,10 +81,28 @@ class StockCountsController extends Controller
                     return response()->json(['message' => $e->getMessage()], 422);
                 }
             }
+            $countedPieces = $line['counted_pieces'] ?? null;
+            $countedUnits = $line['counted_units'] ?? null;
+            // LAUNCH item kind, A7 — counted in another unit of the item: 2.5 l
+            // of a ml item, 3 crates, or containers ('@piece', which counts
+            // as pieces so the line keeps them). Pieces sent win, as before.
+            $unit = $line['unit'] ?? null;
+            if (is_string($unit) && $unit !== '' && $countedUnits !== null && $countedPieces === null) {
+                if ($unit === IngredientUnitConverter::PIECE_UNIT) {
+                    $countedPieces = $countedUnits;
+                    $countedUnits = null;
+                } else {
+                    try {
+                        $countedUnits = $this->units->toBase($ingredient, $countedUnits, $unit);
+                    } catch (RuntimeException $e) {
+                        return response()->json(['message' => $e->getMessage()], 422);
+                    }
+                }
+            }
             $lines[] = [
                 'ingredient' => $ingredient,
-                'counted_pieces' => $line['counted_pieces'] ?? null,
-                'counted_units' => $line['counted_units'] ?? null,
+                'counted_pieces' => $countedPieces,
+                'counted_units' => $countedUnits,
             ];
         }
 

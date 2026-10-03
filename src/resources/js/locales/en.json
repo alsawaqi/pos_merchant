@@ -28,6 +28,7 @@
             "counted": "Patties, dumplings, pizza bases"
         },
         "prep_locked": "The kind cannot change while recipes use this prep item.",
+        "count_unit": "Counted in",
         "prep_yield_hint": "Type it in any unit of the kind, e.g. one batch makes 2 l.",
         "container": {
             "title": "Count container (optional)",
@@ -1928,7 +1929,7 @@
             "success_with_variance": "Count submitted - {variance} of {lines} lines had a variance; movements written.",
             "modal": {
                 "title": "Day-end count at {branch}",
-                "subtitle": "Count what is physically on the shelf. Piece-tracked ingredients are counted in pieces; leave a row blank to skip it. Shortfalls are written as waste (count variance), overages as adjustments.",
+                "subtitle": "Count what is physically on the shelf, in any unit of the item, a pack size or its container; leave a row blank to skip it. Shortfalls are written as waste (count variance), overages as adjustments.",
                 "on_book": "On book",
                 "counted": "Counted",
                 "count_in": "Count in {label}",

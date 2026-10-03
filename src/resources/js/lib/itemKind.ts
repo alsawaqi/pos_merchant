@@ -115,6 +115,74 @@ export function toStoredAmount(amount: string | number | null | undefined, unit:
     return stored > 0 ? stored : null;
 }
 
+/** The token that names an ingredient's count container (its piece unit) on the wire. */
+export const PIECE_UNIT = '@piece';
+
+/** What the amount pickers need from an ingredient (a subset of the API shape). */
+export interface EntryUnitSource {
+    unit: string;
+    alt_units?: { name: string; factor: string }[];
+    auto_units?: { name: string; factor: string }[];
+    piece_unit_label?: string | null;
+    piece_unit_label_ar?: string | null;
+    units_per_piece?: string | null;
+}
+
+export interface EntryUnitOption {
+    /** '' = the stored unit; otherwise the unit name (or '@piece') sent to the server. */
+    value: string;
+    label: string;
+    /** Stored units in ONE of this unit. */
+    factor: number;
+}
+
+function positiveNumber(value: string | null | undefined): number | null {
+    const n = parseFloat(String(value ?? ''));
+    return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * A7 — every unit an amount of this ingredient can be typed in (waste,
+ * adjust, transfers, restock requests, counts): the stored unit, its pack
+ * sizes ("crate (12 l)"), the other unit of its kind (kg ↔ g, l ↔ ml) and its
+ * count container ("bottle (1.5 l)"). A pack size wins over a metric unit of
+ * the same name, as on the server (IngredientUnitConverter).
+ */
+export function entryUnitOptions(ingredient: EntryUnitSource | null | undefined, locale?: string | null): EntryUnitOption[] {
+    if (!ingredient) return [];
+    const base = ingredient.unit;
+    const holds = (factor: number): string => {
+        const friendly = friendlyAmount(factor, base);
+        return `${friendly.amount} ${friendly.unit}`;
+    };
+    const options: EntryUnitOption[] = [{ value: '', label: base, factor: 1 }];
+    const seen = new Set<string>([base]);
+    for (const pack of ingredient.alt_units ?? []) {
+        const factor = positiveNumber(pack.factor);
+        if (seen.has(pack.name) || factor === null) continue;
+        seen.add(pack.name);
+        options.push({ value: pack.name, label: `${pack.name} (${holds(factor)})`, factor });
+    }
+    for (const auto of ingredient.auto_units ?? []) {
+        const factor = positiveNumber(auto.factor);
+        if (seen.has(auto.name) || factor === null) continue;
+        seen.add(auto.name);
+        options.push({ value: auto.name, label: auto.name, factor });
+    }
+    const perPiece = positiveNumber(ingredient.units_per_piece);
+    if (ingredient.piece_unit_label && perPiece !== null && !(base === 'piece' && perPiece === 1)) {
+        const label = locale === 'ar' && ingredient.piece_unit_label_ar ? ingredient.piece_unit_label_ar : ingredient.piece_unit_label;
+        options.push({ value: PIECE_UNIT, label: `${label} (${holds(perPiece)})`, factor: perPiece });
+    }
+    return options;
+}
+
+/** Stored units per one of the selected unit (1 when unknown — the server re-validates). */
+export function entryUnitFactor(ingredient: EntryUnitSource | null | undefined, value: string): number {
+    if (!ingredient || value.trim() === '' || value === ingredient.unit) return 1;
+    return entryUnitOptions(ingredient).find((o) => o.value === value)?.factor ?? 1;
+}
+
 /** The stored unit for a kind choice: the item's own unit when it is already of that kind, else g / ml / piece. */
 export function storedUnitForKind(kind: ItemKind, currentUnit?: string | null): string {
     if (currentUnit && kindOfUnit(currentUnit) === kind) return currentUnit;

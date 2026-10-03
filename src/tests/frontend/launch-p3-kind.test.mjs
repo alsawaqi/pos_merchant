@@ -9,6 +9,8 @@
 //      with the same holds input and no factor field;
 //   A5 the count container (piece unit) is typed as "bottle holds 1.5 l";
 //   A6 the prep item form asks the kind; the yield is typed in its units;
+//   A7 every amount picker offers the kind's units, the pack sizes and the
+//      count container; the portal count gets a unit per row;
 //   every new string exists in English AND Arabic.
 // Run: node --test tests/frontend/launch-p3-kind.test.mjs
 import assert from 'node:assert/strict';
@@ -215,6 +217,49 @@ test('A6 the prep item form asks the kind and takes the yield in the kind\'s uni
     assert.match(script, /const batch = holdsEntry\(item\.data\.prep_yield_quantity, item\.data\.unit\);/);
     assert.doesNotMatch(en.prep_items.editor_hint, /base unit/);
     assert.doesNotMatch(template, /prep_items\.yield_hint|prep_items\.unit_hint|prep_items\.fields\.unit/);
+});
+
+test('A7 waste, adjust, transfers, restock requests and the count offer the kind\'s units, pack sizes and the container', () => {
+    const { entryUnitOptions, entryUnitFactor, PIECE_UNIT } = lib('itemKind');
+    const milk = {
+        unit: 'ml',
+        auto_units: [{ name: 'l', factor: '1000' }],
+        alt_units: [{ name: 'crate', factor: '12000.0000' }],
+        piece_unit_label: 'bottle',
+        piece_unit_label_ar: 'زجاجة',
+        units_per_piece: '1500.0000',
+    };
+    const options = entryUnitOptions(milk, 'en');
+    assert.deepEqual([...options.map((o) => o.value)], ['', 'crate', 'l', PIECE_UNIT]);
+    assert.deepEqual([...options.map((o) => o.label)], ['ml', 'crate (12 l)', 'l', 'bottle (1.5 l)']);
+    assert.equal(entryUnitOptions(milk, 'ar')[3].label, 'زجاجة (1.5 l)');
+    assert.equal(entryUnitFactor(milk, PIECE_UNIT), 1500);
+    assert.equal(entryUnitFactor(milk, 'crate'), 12000);
+    assert.equal(entryUnitFactor(milk, 'l'), 1000);
+    assert.equal(entryUnitFactor(milk, ''), 1);
+    // A piece-stored item whose "container" is one piece has no separate container option.
+    assert.deepEqual([...entryUnitOptions({ unit: 'piece', piece_unit_label: 'egg', units_per_piece: '1' }).map((o) => o.value)], ['']);
+
+    const inventoryApi = read('resources/js/lib/api/inventory.ts');
+    assert.match(inventoryApi, /return entryUnitOptions\(ingredient, locale\)\.map\(\(\{ value, label \}\) => \(\{ value, label \}\)\);/);
+    assert.match(inventoryApi, /return entryUnitFactor\(ingredient, selected\);/);
+    assert.match(inventoryApi, /unit\?: string \| null;\s*\}\s*\n\s*export interface SubmitStockCountPayload/);
+
+    const { script, template } = sfc('resources/js/Pages/Merchant/Inventory/Index.vue');
+    for (const source of ['adjustTarget\\.ingredient', 'restockTarget\\.ingredient', 'wasteIngredient', 'ingredientByUuid\\(line\\.ingredient_uuid\\)']) {
+        assert.match(template, new RegExp(`ingredientUnitOptions\\(${source}, locale\\)`), source);
+    }
+    assert.doesNotMatch(template, /ingredientUnitOptions\([^,)]*\)"/, 'every picker passes the locale');
+    // The count: a unit per row (the container first when there is one).
+    const count = template.slice(template.indexOf('id="count-modal-form"'), template.indexOf('</form>', template.indexOf('id="count-modal-form"')));
+    assert.match(count, /<select v-model="countRows\[i\]\.unit"[^>]*data-test="count-unit"[^>]*>\s*<option v-for="u in ingredientUnitOptions\(r\.ingredient, locale\)"/);
+    assert.match(script, /\.map\(\(ingredient\) => \(\{ ingredient, counted: '', unit: defaultCountUnit\(ingredient\) \}\)\);/);
+    assert.match(script, /if \(countsPieces\(r\)\) return \{ ingredient_uuid: r\.ingredient\.uuid, counted_pieces: r\.counted \};/);
+    assert.match(script, /: \{ ingredient_uuid: r\.ingredient\.uuid, counted_units: r\.counted, unit: r\.unit \};/);
+    // The minimum stock is typed in a unit of the kind too.
+    const { form } = ingredientForm();
+    assert.match(form, /<select v-model="ingForm\.min_stock_unit"[^>]*data-test="min-stock-unit"[^>]*>\s*<option v-for="u in holdUnits"/);
+    assert.match(script, /min_stock_threshold: minimumInStoredUnit\(unit\),/);
 });
 
 test('every item-kind string exists in English and Arabic', () => {

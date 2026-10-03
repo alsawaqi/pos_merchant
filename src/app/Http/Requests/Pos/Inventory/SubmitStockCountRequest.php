@@ -30,6 +30,11 @@ class SubmitStockCountRequest extends FormRequest
             'lines.*.ingredient_uuid' => ['required', 'string', 'uuid', 'distinct'],
             'lines.*.counted_pieces' => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
             'lines.*.counted_units' => ['nullable', 'numeric', 'min:0', 'max:999999999.999'],
+            // LAUNCH item kind, A7 — counted_units may be counted in any unit
+            // the ingredient knows (kg/l, a pack size, '@piece' = the count
+            // container); null = the stored unit. Converted like every other
+            // entry (IngredientUnitConverter).
+            'lines.*.unit' => ['nullable', 'string', 'max:32'],
         ];
     }
 

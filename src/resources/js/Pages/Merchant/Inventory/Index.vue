@@ -129,6 +129,7 @@ import {
     isLegacyStoredUnit,
     kindOfUnit,
     kindUnits,
+    PIECE_UNIT,
     storedUnitForKind,
     toStoredAmount,
     trimAmount,
@@ -259,6 +260,8 @@ const ingForm = reactive<{
     allow_fractional_pieces: boolean;
     default_unit_cost: string;
     min_stock_threshold: string;
+    /** A7 — the unit of the kind the minimum is typed in (sent in the stored unit). */
+    min_stock_unit: string;
     primary_supplier_id: number | null;
     status: InventoryStatus;
 }>({
@@ -272,6 +275,7 @@ const ingForm = reactive<{
     allow_fractional_pieces: true,
     default_unit_cost: '0.000',
     min_stock_threshold: '',
+    min_stock_unit: '',
     primary_supplier_id: null,
     status: 'active',
 });
@@ -337,14 +341,31 @@ watch(
     },
 );
 
-// A5 — the count container's unit follows the kind too.
+// A5 — the count container's unit follows the kind too (A7: and the minimum's).
 watch(
     () => ingForm.unit,
     () => {
         const allowed = holdUnits.value.map((u) => u.value);
         if (!allowed.includes(ingForm.container_unit)) ingForm.container_unit = allowed[0] ?? '';
+        if (!allowed.includes(ingForm.min_stock_unit)) ingForm.min_stock_unit = allowed[0] ?? '';
     },
 );
+
+/**
+ * A7 — the minimum stock in the stored unit: "5" kg on a g item → "5000".
+ * Blank = no minimum; 0 stays 0; anything that does not convert goes as
+ * typed (the server explains).
+ */
+function minimumInStoredUnit(storedUnit: string): string | null {
+    const text = String(ingForm.min_stock_threshold ?? '').trim();
+    if (text === '') return null;
+    const stored = toStoredAmount(text, ingForm.min_stock_unit, storedUnit);
+    if (stored === null) return text;
+    // Unchanged on edit: send the saved value back as it was (no audit noise).
+    const saved = ingModalTarget.value?.min_stock_threshold ?? null;
+    if (saved !== null && ingModalTarget.value?.unit === storedUnit && parseFloat(saved) === stored) return saved;
+    return trimAmount(stored);
+}
 
 /**
  * A5 — what the count container holds, in the stored unit (units_per_piece):
@@ -489,6 +510,11 @@ const countNote = ref('');
 interface CountRow {
     ingredient: Ingredient;
     counted: string;
+    /**
+     * LAUNCH item kind, A7 — what the amount is counted in: '' = the stored
+     * unit, kg/l, a pack size, or '@piece' = the count container.
+     */
+    unit: string;
 }
 const countRows = ref<CountRow[]>([]);
 // =================== Phase 5c modals ============================
@@ -912,6 +938,7 @@ function openCreateIngredient(): void {
     ingForm.allow_fractional_pieces = true;
     ingForm.default_unit_cost = '0.000';
     ingForm.min_stock_threshold = '';
+    ingForm.min_stock_unit = '';
     ingForm.primary_supplier_id = null;
     ingForm.status = 'active';
     ingModalErrors.value = {};
@@ -935,7 +962,10 @@ function openEditIngredient(ingredient: Ingredient): void {
     ingForm.container_unit = holds.amount !== '' ? holds.unit : (kindUnits(ingredient.unit)[0]?.value ?? '');
     ingForm.allow_fractional_pieces = ingredient.allow_fractional_pieces;
     ingForm.default_unit_cost = ingredient.default_unit_cost;
-    ingForm.min_stock_threshold = ingredient.min_stock_threshold ?? '';
+    // A7 — a 5000 g minimum reopens as 5 kg (exactly, or in the stored unit).
+    const minimum = holdsEntry(ingredient.min_stock_threshold, ingredient.unit);
+    ingForm.min_stock_threshold = ingredient.min_stock_threshold === null ? '' : (minimum.amount === '' ? trimAmount(parseFloat(ingredient.min_stock_threshold)) : minimum.amount);
+    ingForm.min_stock_unit = minimum.amount === '' ? ingredient.unit : minimum.unit;
     ingForm.primary_supplier_id = ingredient.primary_supplier_id;
     ingForm.status = ingredient.status;
     ingModalErrors.value = {};
@@ -973,9 +1003,8 @@ async function submitIngredient(): Promise<void> {
             // The bound input is type="number", so Vue casts this to a
             // number as soon as the user types — String() keeps the
             // empty-check safe for both the number and blank-string cases.
-            min_stock_threshold: String(ingForm.min_stock_threshold).trim() === ''
-                ? null
-                : ingForm.min_stock_threshold,
+            // A7 — typed in a unit of the kind, sent in the stored unit.
+            min_stock_threshold: minimumInStoredUnit(unit),
             primary_supplier_id: ingForm.primary_supplier_id ?? null,
         };
         if (ingModalMode.value === 'create') {
@@ -1426,10 +1455,36 @@ function openCount(): void {
     // stock row), and never the quantity on the books.
     countRows.value = ingredients.value
         .filter((ingredient) => ingredient.status === 'active')
-        .map((ingredient) => ({ ingredient, counted: '' }));
+        .map((ingredient) => ({ ingredient, counted: '', unit: defaultCountUnit(ingredient) }));
     countNote.value = '';
     countError.value = null;
     countOpen.value = true;
+}
+
+/**
+ * A7 — a row starts in the count container when the ingredient has one
+ * (staff count bottles, as before), else in the stored unit; the person can
+ * pick any unit the ingredient knows.
+ */
+function defaultCountUnit(ingredient: Ingredient): string {
+    return ingredientUnitOptions(ingredient).some((u) => u.value === PIECE_UNIT) ? PIECE_UNIT : '';
+}
+
+/** Whether a row is counted in whole pieces (the container, or a piece-stored item in pieces). */
+function countsPieces(r: CountRow): boolean {
+    return r.unit === PIECE_UNIT || (r.unit === '' && r.ingredient.unit === 'piece');
+}
+
+/**
+ * A7 — one count line: containers (and a piece-stored item counted in
+ * pieces) go as counted_pieces, as before; any other unit goes as
+ * counted_units + the unit, converted by the server (2.5 l → 2500 ml).
+ */
+function countLinePayload(r: CountRow): StockCountLinePayload {
+    if (countsPieces(r)) return { ingredient_uuid: r.ingredient.uuid, counted_pieces: r.counted };
+    return r.unit === ''
+        ? { ingredient_uuid: r.ingredient.uuid, counted_units: r.counted }
+        : { ingredient_uuid: r.ingredient.uuid, counted_units: r.counted, unit: r.unit };
 }
 
 const countFilledRows = computed<number>(() =>
@@ -1441,13 +1496,7 @@ async function submitCount(): Promise<void> {
     const lines: StockCountLinePayload[] = [];
     for (const r of countRows.value) {
         if (String(r.counted).trim() === '') continue;
-        // Piece-tracked ingredients are counted in PIECES; everything
-        // else directly in the base unit.
-        if (pieceLabelFor(r.ingredient) !== null) {
-            lines.push({ ingredient_uuid: r.ingredient.uuid, counted_pieces: r.counted });
-        } else {
-            lines.push({ ingredient_uuid: r.ingredient.uuid, counted_units: r.counted });
-        }
+        lines.push(countLinePayload(r));
     }
     if (lines.length === 0) {
         countError.value = t('inventory.counts.modal.empty_error');
@@ -3196,8 +3245,15 @@ async function submitSuggestions(): Promise<void> {
                         </label>
                         <label class="block">
                             <span class="text-sm font-medium text-slate-700">{{ t('inventory.fields.min_stock_threshold') }}</span>
-                            <input v-model="ingForm.min_stock_threshold" type="number" step="0.0001" min="0" placeholder="—" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                            <!-- A7 — typed in any unit of the kind (5 kg), kept in the stored unit. -->
+                            <div class="mt-1 flex gap-2">
+                                <input v-model="ingForm.min_stock_threshold" type="number" step="0.0001" min="0" placeholder="—" class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                                <select v-model="ingForm.min_stock_unit" :disabled="holdUnits.length === 0" :title="t('item_kind.pack_sizes.unit')" data-test="min-stock-unit" class="w-24 shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100 disabled:bg-slate-50">
+                                    <option v-for="u in holdUnits" :key="u.value" :value="u.value">{{ holdUnitLabel(u.value) }}</option>
+                                </select>
+                            </div>
                             <p class="mt-1 text-xs text-slate-500">{{ t('inventory.fields.min_stock_threshold_hint') }}</p>
+                            <p v-if="ingModalErrors.min_stock_threshold" class="mt-1 text-xs text-rose-600">{{ ingModalErrors.min_stock_threshold[0] }}</p>
                         </label>
                     </div>
                     <!-- Phase A — piece unit (Additions §2.3), now the COUNT
@@ -3537,7 +3593,7 @@ async function submitSuggestions(): Promise<void> {
                             <input v-model="adjustForm.signed_quantity" required type="number" step="0.0001" class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                             <select v-model="adjustForm.unit" :title="t('inventory.fields.unit')" class="shrink-0 rounded-lg border border-slate-200 px-2 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                                 <!-- PD4 — base + custom alt + auto metric siblings. -->
-                                <option v-for="u in ingredientUnitOptions(adjustTarget.ingredient)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
+                                <option v-for="u in ingredientUnitOptions(adjustTarget.ingredient, locale)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
                             </select>
                         </div>
                         <p class="mt-1 text-xs text-slate-500">{{ t('inventory.fields.signed_quantity_hint') }}</p>
@@ -3589,7 +3645,7 @@ async function submitSuggestions(): Promise<void> {
                                 <input v-model="restockForm.quantity" required type="number" step="0.0001" min="0.0001" class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                                 <select v-model="restockForm.unit" :title="t('inventory.fields.unit')" class="shrink-0 rounded-lg border border-slate-200 px-2 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                                     <!-- PD4 — base + custom alt + auto metric siblings. -->
-                                    <option v-for="u in ingredientUnitOptions(restockTarget.ingredient)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
+                                    <option v-for="u in ingredientUnitOptions(restockTarget.ingredient, locale)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
                                 </select>
                             </div>
                             <p v-if="restockErrors.quantity" class="mt-1 text-xs text-rose-600">{{ restockErrors.quantity[0] }}</p>
@@ -3734,20 +3790,23 @@ async function submitSuggestions(): Promise<void> {
                             <tr v-for="(r, i) in countRows" :key="r.ingredient.uuid">
                                 <td class="px-4 py-2.5">
                                     <span class="block font-medium text-slate-800">{{ isArabic && r.ingredient.name_ar ? r.ingredient.name_ar : r.ingredient.name }}</span>
-                                    <span v-if="pieceLabelFor(r.ingredient) !== null" class="block text-[11px] text-amber-700">
-                                        {{ t('inventory.counts.modal.count_in', { label: pieceLabelFor(r.ingredient) ?? '' }) }}
-                                    </span>
-                                    <span v-else class="block text-[11px] text-slate-400">{{ t('inventory.counts.modal.count_in', { label: unitShort(r.ingredient.unit) }) }}</span>
                                 </td>
                                 <td class="px-4 py-2.5 text-end">
-                                    <input
-                                        v-model="countRows[i].counted"
-                                        type="number"
-                                        :step="pieceLabelFor(r.ingredient) !== null && r.ingredient.allow_fractional_pieces === false ? '1' : 'any'"
-                                        min="0"
-                                        :placeholder="t('inventory.counts.modal.skip_placeholder')"
-                                        class="w-32 rounded-lg border border-slate-200 px-2.5 py-1.5 text-end text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
-                                    >
+                                    <!-- LAUNCH item kind, A7 — counted in any unit the item knows:
+                                         kg/g or l/ml, a pack size, or the count container. -->
+                                    <div class="inline-flex items-center gap-2">
+                                        <input
+                                            v-model="countRows[i].counted"
+                                            type="number"
+                                            :step="countsPieces(r) && r.ingredient.allow_fractional_pieces === false ? '1' : 'any'"
+                                            min="0"
+                                            :placeholder="t('inventory.counts.modal.skip_placeholder')"
+                                            class="w-28 rounded-lg border border-slate-200 px-2.5 py-1.5 text-end text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                                        >
+                                        <select v-model="countRows[i].unit" :title="t('item_kind.count_unit')" data-test="count-unit" class="w-36 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                                            <option v-for="u in ingredientUnitOptions(r.ingredient, locale)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
+                                        </select>
+                                    </div>
                                 </td>
                             </tr>
                         </tbody>
@@ -3844,7 +3903,7 @@ async function submitSuggestions(): Promise<void> {
                                 <input v-model="wasteForm.quantity" type="number" step="0.0001" min="0.0001" required class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                                 <select v-model="wasteForm.unit" :title="t('inventory.fields.unit')" class="shrink-0 rounded-lg border border-slate-200 px-2 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                                     <!-- PD4 — base + custom alt + auto metric siblings. -->
-                                    <option v-for="u in ingredientUnitOptions(wasteIngredient)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
+                                    <option v-for="u in ingredientUnitOptions(wasteIngredient, locale)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
                                 </select>
                             </div>
                             <p v-if="wasteErrors.quantity" class="mt-1 text-xs text-rose-600">{{ wasteErrors.quantity[0] }}</p>
@@ -3926,7 +3985,7 @@ async function submitSuggestions(): Promise<void> {
                                 <input v-model="line.quantity" type="number" step="0.0001" min="0.0001" :placeholder="t('inventory.restock.create_modal.quantity')" class="sm:col-span-2 rounded-lg border border-slate-200 px-2 py-2 text-sm tabular-nums">
                                 <select v-model="line.unit" :title="t('inventory.fields.unit')" class="sm:col-span-2 rounded-lg border border-slate-200 px-2 py-2 text-sm">
                                     <!-- PD4 — base + custom alt + auto metric siblings. -->
-                                    <option v-for="u in ingredientUnitOptions(ingredientByUuid(line.ingredient_uuid))" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
+                                    <option v-for="u in ingredientUnitOptions(ingredientByUuid(line.ingredient_uuid), locale)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
                                 </select>
                                 <input v-model="line.note" type="text" :placeholder="t('inventory.restock.create_modal.line_note')" class="sm:col-span-3 rounded-lg border border-slate-200 px-2 py-2 text-sm">
                                 <button type="button" :title="t('inventory.restock.create_modal.remove_line')" class="sm:col-span-1 inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-2 py-2 text-rose-700 transition hover:bg-rose-100" @click="removeRestockLine(idx)">
@@ -4000,7 +4059,7 @@ async function submitSuggestions(): Promise<void> {
                                 <input v-model="line.quantity" type="number" step="0.0001" min="0.0001" :placeholder="t('inventory.transfers.create_modal.quantity')" class="sm:col-span-3 rounded-lg border border-slate-200 px-2 py-2 text-sm tabular-nums">
                                 <select v-model="line.unit" :title="t('inventory.fields.unit')" class="sm:col-span-2 rounded-lg border border-slate-200 px-2 py-2 text-sm">
                                     <!-- PD4 — base + custom alt + auto metric siblings. -->
-                                    <option v-for="u in ingredientUnitOptions(ingredientByUuid(line.ingredient_uuid))" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
+                                    <option v-for="u in ingredientUnitOptions(ingredientByUuid(line.ingredient_uuid), locale)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
                                 </select>
                                 <button type="button" :title="t('inventory.transfers.create_modal.remove_line')" class="sm:col-span-1 inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-2 py-2 text-rose-700 transition hover:bg-rose-100" @click="removeTransferLine(idx)">
                                     <Minus class="size-4" />

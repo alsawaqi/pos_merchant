@@ -15,13 +15,15 @@ declare(strict_types=1);
  *      (the unit-change rule, worked out up front for the edit form);
  *   A3 optional pack sizes on create ("crate holds 12 l"), saved in the same
  *      request and transaction, with the factor worked out, never typed;
- *   A4 the pack-size endpoints take what a pack holds (amount + unit).
+ *   A4 the pack-size endpoints take what a pack holds (amount + unit);
+ *   A7 a portal stock count can be typed in any unit the item knows.
  */
 
 use App\Actions\Pos\Inventory\CreateIngredientAction;
 use App\Models\BranchStock;
 use App\Models\Ingredient;
 use App\Models\IngredientAltUnit;
+use App\Models\StockCountLine;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -179,4 +181,36 @@ it('A4 refuses a pack size in a unit outside the kind, or named like a unit of t
         ->assertStatus(422)
         ->assertJsonPath('message', "'l' is already a unit of this item — give the pack its own name (crate, sack, box).");
     expect(IngredientAltUnit::query()->where('ingredient_id', $milk->id)->count())->toBe(0);
+});
+
+it('A7 a portal count is typed in any unit the item knows: kg, a pack size or the count container', function (): void {
+    $ctx = makeMerchantActor();
+    $rice = p3Ingredient($ctx['company'], 'Rice', 'g', '0.0005');
+    $milk = p3Ingredient($ctx['company'], 'Milk', 'ml', '0.0004');
+    $this->postJson("/api/ingredients/{$milk->uuid}/units", ['name' => 'crate', 'amount' => '12', 'unit' => 'l'])->assertCreated();
+    $syrup = p3Ingredient($ctx['company'], 'Syrup', 'ml', '0.002', ['piece_unit_label' => 'bottle', 'units_per_piece' => '1500']);
+
+    $this->postJson("/api/branches/{$ctx['branch']->uuid}/stock-counts", ['lines' => [
+        ['ingredient_uuid' => $rice->uuid, 'counted_units' => '2.5', 'unit' => 'kg'],
+        ['ingredient_uuid' => $milk->uuid, 'counted_units' => '3', 'unit' => 'crate'],
+        ['ingredient_uuid' => $syrup->uuid, 'counted_units' => '2', 'unit' => '@piece'],
+    ]])->assertCreated();
+
+    $line = fn (Ingredient $i) => StockCountLine::query()->where('ingredient_id', $i->id)->firstOrFail();
+    expect((float) $line($rice)->counted_units)->toBe(2500.0);
+    expect((float) $line($milk)->counted_units)->toBe(36000.0);
+    // Containers are kept as pieces, as when counted in pieces.
+    expect((float) $line($syrup)->counted_pieces)->toBe(2.0);
+    expect((float) $line($syrup)->counted_units)->toBe(3000.0);
+    expect((float) BranchStock::query()->where('branch_id', $ctx['branch']->id)->where('ingredient_id', $milk->id)->value('quantity'))->toBe(36000.0);
+});
+
+it('A7 a count in a unit the item does not know is refused, and nothing is counted', function (): void {
+    $ctx = makeMerchantActor();
+    $milk = p3Ingredient($ctx['company'], 'Milk', 'ml', '0.0004');
+
+    $this->postJson("/api/branches/{$ctx['branch']->uuid}/stock-counts", ['lines' => [
+        ['ingredient_uuid' => $milk->uuid, 'counted_units' => '3', 'unit' => 'kg'],
+    ]])->assertStatus(422)->assertJsonPath('message', "Unit 'kg' is not defined for this ingredient.");
+    expect(StockCountLine::query()->count())->toBe(0);
 });
