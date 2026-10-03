@@ -14,6 +14,7 @@ import { usePermissions } from '@/composables/usePermissions';
 import { MerchantPermission } from '@/lib/permissions';
 import { ApiError } from '@/lib/api';
 import { getPurchaseReceipt, recordReceiptPayment, type PurchaseReceipt, type ReceiptPaymentStatus } from '@/lib/api/purchaseReceipts';
+import { friendlyAmount, friendlyCost } from '@/lib/itemKind';
 
 const { t, locale } = useI18n();
 const route = useRoute();
@@ -90,6 +91,13 @@ function trimQty(q: string | null): string {
         return '—';
     }
     return q.includes('.') ? q.replace(/\.?0+$/, '') : q;
+}
+
+/** F3 — a branch's share as people read it: "36 l" (a product line keeps its bare count). */
+function allocationText(quantity: string | number | null | undefined, unit: string | null): string {
+    if (!unit) return trimQty(quantity === null || quantity === undefined ? null : String(quantity));
+    const friendly = friendlyAmount(quantity, unit);
+    return `${friendly.amount} ${friendly.unit}`;
 }
 
 /** P2-3 — the unit a line was entered in ('@piece' = the piece unit). */
@@ -173,20 +181,22 @@ onMounted(async () => {
                             <tr v-for="(line, idx) in receipt.lines ?? []" :key="idx">
                                 <td class="px-4 py-2.5 font-medium text-slate-900">{{ line.item_name }}</td>
                                 <td class="px-4 py-2.5 text-end tabular-nums text-slate-600">
-                                    {{ trimQty(line.quantity) }} <span class="text-xs text-slate-400">{{ line.unit ?? '' }}</span>
+                                    <!-- F3 — "36 l", not "36000 ml". -->
+                                    <span data-test="receipt-line-quantity">{{ friendlyAmount(line.quantity, line.unit).amount }}</span> <span class="text-xs text-slate-400">{{ friendlyAmount(line.quantity, line.unit).unit }}</span>
                                     <!-- P2-3 — as entered: 25 kg at 0.350 per kg; the cost the stock carries. -->
                                     <span v-if="line.purchase_quantity && line.unit_price !== null && line.unit_price !== undefined" class="block text-[11px] text-slate-400">
                                         {{ t('purchase_receipts.show.entered_as', { quantity: trimQty(line.purchase_quantity), unit: enteredUnit(line), price: trimQty(line.unit_price) }) }}
                                     </span>
-                                    <span v-if="line.unit_cost && line.unit" class="block text-[11px] text-slate-400">
-                                        {{ t('purchase_receipts.show.cost_per_base_unit', { unit: line.unit, cost: trimQty(line.unit_cost) }) }}
+                                    <!-- F3 — "Cost per l: 0.150", not "Cost per ml: 0.00015". -->
+                                    <span v-if="line.unit_cost && line.unit" class="block text-[11px] text-slate-400" data-test="receipt-line-cost">
+                                        {{ t('purchase_receipts.show.cost_per_base_unit', { unit: friendlyCost(line.unit_cost, line.unit).unit, cost: friendlyCost(line.unit_cost, line.unit).amount }) }}
                                     </span>
                                 </td>
                                 <td class="px-4 py-2.5 text-slate-600">{{ categoryLabel(line.expense_category) }}</td>
                                 <td class="px-4 py-2.5 text-slate-600">
                                     <template v-if="line.allocations.length > 0">
                                         <span v-for="(a, i) in line.allocations" :key="i" class="me-1 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
-                                            {{ a.branch_name }}: {{ trimQty(a.quantity) }}
+                                            {{ a.branch_name }}: <span data-test="receipt-allocation">{{ allocationText(a.quantity, line.unit) }}</span>
                                         </span>
                                     </template>
                                     <span v-else class="text-xs italic text-slate-400">{{ t('purchase_receipts.kept_central') }}</span>

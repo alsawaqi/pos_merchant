@@ -16,6 +16,7 @@
 // Follow-up fixes (browser check of d75a3bd):
 //   F1 a Weighed / Liquid cost is typed and shown per kg / l;
 //   F2 goods received: pack sizes first, kg / l before g / ml, friendly preview;
+//   F3 the receipt detail shows quantities, splits and costs the friendly way;
 //   every new string exists in English AND Arabic.
 // Run: node --test tests/frontend/launch-p3-kind.test.mjs
 import assert from 'node:assert/strict';
@@ -382,6 +383,21 @@ test('F2 goods received offers pack sizes first, then kg / l, g / ml, the contai
     assert.match(script, /line\.unit = defaultPurchaseUnit\(lineIngredient\(line\)\);/);
     assert.match(script, /t\('purchase_receipts\.form\.base_equivalent', friendlyQuantity\(base, ing\.unit\)\)/);
     assert.match(script, /t\('purchase_receipts\.form\.cost_per_base', friendlyCostPer\(cost, ing\.unit\)\)/);
+});
+
+test('F3 the receipt detail reads "36 l", "Kaldi athaiba: 36 l", "Cost per l: 0.150" and keeps "Entered as 3 crate"', () => {
+    const { friendlyAmount, friendlyCost } = lib('itemKind');
+    assert.deepEqual({ ...friendlyAmount('36000.000', 'ml') }, { amount: '36', unit: 'l' });
+    assert.deepEqual({ ...friendlyCost('0.000150', 'ml') }, { amount: '0.150', unit: 'l' });
+
+    const { script, template } = sfc('resources/js/Pages/Merchant/Inventory/PurchaseReceipts/Show.vue');
+    assert.match(template, /data-test="receipt-line-quantity">\{\{ friendlyAmount\(line\.quantity, line\.unit\)\.amount \}\}<\/span> <span class="text-xs text-slate-400">\{\{ friendlyAmount\(line\.quantity, line\.unit\)\.unit \}\}/);
+    assert.match(template, /\{\{ a\.branch_name \}\}: <span data-test="receipt-allocation">\{\{ allocationText\(a\.quantity, line\.unit\) \}\}/);
+    assert.match(template, /t\('purchase_receipts\.show\.cost_per_base_unit', \{ unit: friendlyCost\(line\.unit_cost, line\.unit\)\.unit, cost: friendlyCost\(line\.unit_cost, line\.unit\)\.amount \}\)/);
+    // As entered stays as entered.
+    assert.match(template, /t\('purchase_receipts\.show\.entered_as', \{ quantity: trimQty\(line\.purchase_quantity\), unit: enteredUnit\(line\), price: trimQty\(line\.unit_price\) \}\)/);
+    assert.match(script, /const friendly = friendlyAmount\(quantity, unit\);\s*return `\$\{friendly\.amount\} \$\{friendly\.unit\}`;/);
+    assert.doesNotMatch(template, /\{\{ trimQty\(line\.quantity\) \}\}|\{\{ trimQty\(a\.quantity\) \}\}/);
 });
 
 test('every item-kind string exists in English and Arabic', () => {
