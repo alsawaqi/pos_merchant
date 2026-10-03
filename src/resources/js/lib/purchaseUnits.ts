@@ -52,15 +52,44 @@ function holdsText(factor: number, base: string): string {
     return `${trimNumber(factor, 4)} ${base}`;
 }
 
+/** F2 — a stored quantity as people read it ({ quantity: '36', unit: 'l' }, not 36000 ml). */
+export function friendlyQuantity(quantity: number, base: string): { quantity: string; unit: string } {
+    if ((base === 'g' || base === 'ml') && Math.abs(quantity) >= 1000) {
+        return { quantity: trimNumber(quantity / 1000, 4), unit: base === 'g' ? 'kg' : 'l' };
+    }
+    return { quantity: trimNumber(quantity, 4), unit: base };
+}
+
+/** A cost (OMR) with at least 3 decimals and at most 6 ("0.150", "0.00035"). */
+function costText(value: number): string {
+    const fixed = (Math.round(value * 1e6) / 1e6).toFixed(6);
+    const dot = fixed.indexOf('.');
+    const decimals = fixed.slice(dot + 1).replace(/0+$/, '');
+    return `${fixed.slice(0, dot)}.${decimals.padEnd(3, '0')}`;
+}
+
 /**
- * The picker options: base first, then the metric pair, the extra units and
- * the piece unit. A custom extra unit wins over a metric pair of the same
- * name (the server resolves the same way).
+ * F2 — the cost per stored unit as people read it: per kg / l for a g / ml
+ * item ("0.150 per l", not "0.00015 per ml"). Kept in step with friendlyCost
+ * in lib/itemKind (each lib loads on its own in the node tests).
+ */
+export function friendlyCostPer(costPerBase: number, base: string): { cost: string; unit: string } {
+    if (base === 'g' || base === 'ml') {
+        return { cost: costText(costPerBase * 1000), unit: base === 'g' ? 'kg' : 'l' };
+    }
+    return { cost: costText(costPerBase), unit: base };
+}
+
+/**
+ * The picker options — F2: what people buy in first: the pack sizes, then
+ * the larger unit of the kind (kg / l), the smaller (g / ml), then the count
+ * container. ('' = the stored unit, wherever it falls.) A custom extra unit
+ * wins over a metric pair of the same name (the server resolves the same way).
  */
 export function purchaseUnitOptions(ingredient: PurchaseUnitSource | null | undefined): PurchaseUnitOption[] {
     if (!ingredient) return [];
     const base = ingredient.unit;
-    const options: PurchaseUnitOption[] = [{ value: '', label: base, factor: 1 }];
+    const options: PurchaseUnitOption[] = [];
     const seen = new Set<string>([base]);
     for (const alt of ingredient.alt_units ?? []) {
         const factor = positive(alt.factor);
@@ -68,12 +97,16 @@ export function purchaseUnitOptions(ingredient: PurchaseUnitSource | null | unde
         seen.add(alt.name);
         options.push({ value: alt.name, label: `${alt.name} (${holdsText(factor, base)})`, factor });
     }
+    const metric: PurchaseUnitOption[] = [{ value: '', label: base, factor: 1 }];
     for (const auto of ingredient.auto_units ?? []) {
         const factor = positive(auto.factor);
         if (seen.has(auto.name) || factor === null) continue;
         seen.add(auto.name);
-        options.push({ value: auto.name, label: auto.name, factor });
+        metric.push({ value: auto.name, label: auto.name, factor });
     }
+    // Larger first: kg before g, l before ml.
+    metric.sort((a, b) => b.factor - a.factor);
+    options.push(...metric);
     const perPiece = positive(ingredient.units_per_piece);
     if (ingredient.piece_unit_label && perPiece !== null && !(base === 'piece' && perPiece === 1)) {
         options.push({
@@ -83,6 +116,11 @@ export function purchaseUnitOptions(ingredient: PurchaseUnitSource | null | unde
         });
     }
     return options;
+}
+
+/** F2 — a new line starts in the first pack size, else the larger unit (kg / l), else the stored unit. */
+export function defaultPurchaseUnit(ingredient: PurchaseUnitSource | null | undefined): string {
+    return purchaseUnitOptions(ingredient)[0]?.value ?? '';
 }
 
 /** Base units per one of the selected unit (1 when unknown — the server re-validates). */

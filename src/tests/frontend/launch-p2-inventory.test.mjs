@@ -44,13 +44,14 @@ test('P2-3 the unit picker offers base, metric pair, extra units and the piece u
     };
     const options = purchaseUnitOptions(milk);
     // (Values built in the VM realm: copy before a strict structural compare.)
-    assert.deepEqual([...options.map((o) => o.value)], ['', 'box', 'l', PIECE_UNIT]);
+    // LAUNCH item kind F2: pack sizes first, then l, then the stored ml, then the container.
+    assert.deepEqual([...options.map((o) => o.value)], ['box', 'l', '', PIECE_UNIT]);
     assert.equal(purchaseUnitFactor(options, 'l'), 1000);
     assert.equal(purchaseUnitFactor(options, 'box'), 12000);
     assert.equal(purchaseUnitFactor(options, PIECE_UNIT), 1000);
     // LAUNCH item kind, A8: 1000 ml and above reads in l.
     assert.equal(options[3].label, 'bottle (1 l)');
-    assert.equal(options[1].label, 'box (12 l)');
+    assert.equal(options[0].label, 'box (12 l)');
     assert.equal(PIECE_UNIT, '@piece');
 });
 

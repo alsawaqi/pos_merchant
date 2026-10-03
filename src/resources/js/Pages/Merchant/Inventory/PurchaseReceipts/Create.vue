@@ -32,11 +32,13 @@ import { listPhysicalItems, type PhysicalItem } from '@/lib/api/physicalItems';
 import { listTaxes, type Tax } from '@/lib/api/taxes';
 import { createPurchaseReceipt, type CreatePurchaseReceiptPayload } from '@/lib/api/purchaseReceipts';
 import {
+    defaultPurchaseUnit,
+    friendlyCostPer,
+    friendlyQuantity,
     purchaseLinePreview,
     purchaseUnitFactor,
     purchaseUnitName,
     purchaseUnitOptions,
-    trimNumber,
     type PurchaseLinePreview,
     type PurchaseUnitOption,
 } from '@/lib/purchaseUnits';
@@ -111,9 +113,9 @@ function addLine(): void {
     lines.value.push({ id: nextRowId(), itemKey: '', unit: '', quantity: '', unit_price: '', tax: { tax_amount: 0, tax_rate: null }, showAllocations: false, allocations: blankAllocations() });
 }
 
-/** A new item starts in its base unit. */
+/** F2 — a new item starts in its first pack size, else the larger unit (kg / l). */
 function onItemChange(line: LineRow): void {
-    line.unit = '';
+    line.unit = defaultPurchaseUnit(lineIngredient(line));
 }
 
 function removeLine(idx: number): void {
@@ -168,24 +170,27 @@ function lineCost(line: LineRow): number {
     return linePreview(line).lineCost ?? 0;
 }
 
-/** "= 25000 g" — shown when the chosen unit is not the base unit. */
+/**
+ * "= 36 l into stock" — shown when the chosen unit is not the stored unit.
+ * F2 — 1000 g / ml and above reads in kg / l ("36 l", not "36000 ml").
+ */
 function lineBaseEquivalent(line: LineRow): string | null {
     const ing = lineIngredient(line);
     if (!ing || line.unit === '' || line.unit === ing.unit) {
         return null;
     }
     const base = linePreview(line).baseQuantity;
-    return base === null ? null : t('purchase_receipts.form.base_equivalent', { quantity: trimNumber(base, 4), unit: ing.unit });
+    return base === null ? null : t('purchase_receipts.form.base_equivalent', friendlyQuantity(base, ing.unit));
 }
 
-/** "0.00035 per g" — the cost the stock will carry. */
+/** "0.150 per l" — the cost the stock will carry (F2: per kg / l for a g / ml item). */
 function lineCostPerBase(line: LineRow): string | null {
     const ing = lineIngredient(line);
     const cost = linePreview(line).costPerBase;
     if (!ing || cost === null || line.unit === '' || line.unit === ing.unit) {
         return null;
     }
-    return t('purchase_receipts.form.cost_per_base', { cost: trimNumber(cost, 6), unit: ing.unit });
+    return t('purchase_receipts.form.cost_per_base', friendlyCostPer(cost, ing.unit));
 }
 
 function branchName(uuid: string): string {

@@ -15,6 +15,7 @@
 //      in kg / l ("24 l", not "24000.000 ml");
 // Follow-up fixes (browser check of d75a3bd):
 //   F1 a Weighed / Liquid cost is typed and shown per kg / l;
+//   F2 goods received: pack sizes first, kg / l before g / ml, friendly preview;
 //   every new string exists in English AND Arabic.
 // Run: node --test tests/frontend/launch-p3-kind.test.mjs
 import assert from 'node:assert/strict';
@@ -350,6 +351,37 @@ test('F1 a Weighed / Liquid cost is typed and shown per kg / l, kept per stored 
     const prep = sfc('resources/js/Pages/Merchant/Inventory/PrepItemEditor.vue').template;
     assert.match(prep, /t\('prep_items\.unit_cost', \{ unit: costUnit\(form\.unit\) \}\)/);
     assert.match(prep, /friendlyCost\(unitCost, form\.unit\)\.amount/);
+});
+
+test('F2 goods received offers pack sizes first, then kg / l, g / ml, the container; the preview reads "= 36 l · 0.150 per l"', () => {
+    const { purchaseUnitOptions, defaultPurchaseUnit, purchaseUnitFactor, purchaseLinePreview, friendlyQuantity, friendlyCostPer, PIECE_UNIT } = lib('purchaseUnits');
+    const milk = {
+        unit: 'ml',
+        auto_units: [{ name: 'l', factor: '1000' }],
+        alt_units: [{ name: 'crate', factor: '12000.0000' }],
+        piece_unit_label: 'bottle',
+        units_per_piece: '1500.0000',
+    };
+    assert.deepEqual([...purchaseUnitOptions(milk).map((o) => o.label)], ['crate (12 l)', 'l', 'ml', 'bottle (1.5 l)']);
+    assert.equal(defaultPurchaseUnit(milk), 'crate');
+    // No pack size: the larger unit first, also for an older kg item.
+    assert.equal(defaultPurchaseUnit({ unit: 'g', auto_units: [{ name: 'kg', factor: '1000' }] }), 'kg');
+    assert.deepEqual([...purchaseUnitOptions({ unit: 'kg', auto_units: [{ name: 'g', factor: '0.001' }] }).map((o) => o.label)], ['kg', 'g']);
+    assert.equal(defaultPurchaseUnit({ unit: 'kg', auto_units: [{ name: 'g', factor: '0.001' }] }), '');
+    assert.equal(defaultPurchaseUnit({ unit: 'piece', alt_units: [], auto_units: [] }), '');
+    assert.equal(defaultPurchaseUnit({ unit: 'piece', alt_units: [{ name: 'box', factor: '24' }], auto_units: [] }), 'box');
+
+    // 3 crates at 1.800 each → 36 l into stock at 0.150 per l.
+    const preview = purchaseLinePreview(purchaseUnitFactor(purchaseUnitOptions(milk), 'crate'), '3', '1.800');
+    assert.equal(preview.baseQuantity, 36000);
+    assert.deepEqual({ ...friendlyQuantity(preview.baseQuantity, 'ml') }, { quantity: '36', unit: 'l' });
+    assert.deepEqual({ ...friendlyCostPer(preview.costPerBase, 'ml') }, { cost: '0.150', unit: 'l' });
+    assert.deepEqual({ ...friendlyCostPer(0.05, 'piece') }, { cost: '0.050', unit: 'piece' });
+
+    const { script } = sfc('resources/js/Pages/Merchant/Inventory/PurchaseReceipts/Create.vue');
+    assert.match(script, /line\.unit = defaultPurchaseUnit\(lineIngredient\(line\)\);/);
+    assert.match(script, /t\('purchase_receipts\.form\.base_equivalent', friendlyQuantity\(base, ing\.unit\)\)/);
+    assert.match(script, /t\('purchase_receipts\.form\.cost_per_base', friendlyCostPer\(cost, ing\.unit\)\)/);
 });
 
 test('every item-kind string exists in English and Arabic', () => {
