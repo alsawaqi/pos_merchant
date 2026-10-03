@@ -1,6 +1,8 @@
 // LAUNCH — item kind for ingredients (work order LAUNCH-P23, Part A).
 //   A1 the create form asks what KIND of item it is (Weighed / Liquid /
 //      Counted → stored in g / ml / piece), never a base unit;
+//   A2 the edit form shows the kind, locked once the ingredient is used, with
+//      a "stored in kg" note for an older kg / l / pack / box ingredient;
 //   every new string exists in English AND Arabic.
 // Run: node --test tests/frontend/launch-p3-kind.test.mjs
 import assert from 'node:assert/strict';
@@ -55,7 +57,7 @@ test('A1 a new ingredient is asked what kind of item it is and is stored in g, m
     assert.equal(storedUnitForKind('weighed', 'kg'), 'kg');
 
     const { script, form } = ingredientForm();
-    assert.match(form, /<fieldset v-if="ingModalMode === 'create'" data-test="item-kind">/);
+    assert.match(form, /<fieldset[^>]*data-test="item-kind"/);
     assert.match(form, /item_kind\.question/);
     assert.match(form, /v-for="k in ITEM_KINDS"/);
     assert.match(form, /item_kind\.kinds\.\$\{k\}/);
@@ -76,6 +78,27 @@ test('A1 a new ingredient is asked what kind of item it is and is stored in g, m
     for (const key of leaves(en.item_kind, 'item_kind')) {
         assert.doesNotMatch(get(en, key), /base unit/i, `${key} has no "base unit" wording`);
     }
+});
+
+test('A2 the edit form shows the kind, locks it on a used ingredient and notes an older stored unit', () => {
+    const { isLegacyStoredUnit } = lib('itemKind');
+    for (const unit of ['kg', 'l', 'pack', 'box']) assert.equal(isLegacyStoredUnit(unit), true, unit);
+    for (const unit of ['g', 'ml', 'piece']) assert.equal(isLegacyStoredUnit(unit), false, unit);
+
+    const { script, form } = ingredientForm();
+    // One kind question for create AND edit: the base-unit dropdown is gone.
+    assert.match(form, /<fieldset data-test="item-kind" :disabled="kindLocked">/);
+    assert.doesNotMatch(form, /v-model="ingForm\.unit"/);
+    assert.doesNotMatch(script, /const unitOptions: IngredientUnit\[\]/);
+    // Locked from the server's unit-change rule, with the existing explanation.
+    assert.match(script, /const kindLocked = computed<boolean>\(\(\) => ingModalMode\.value === 'edit' && ingModalTarget\.value\?\.unit_locked === true\);/);
+    assert.match(script, /function chooseKind\(kind: ItemKind\): void \{\s*if \(kindLocked\.value\) return;/);
+    assert.match(form, /:disabled="kindLocked"/);
+    assert.match(form, /v-if="kindLocked"[^>]*data-test="item-kind-locked">\{\{ t\('item_kind\.locked'\) \}\}/);
+    // An older kg / l / pack / box ingredient: its kind + "Stored in kg".
+    assert.match(form, /v-if="legacyStoredUnit"[^>]*data-test="item-kind-stored-in">\{\{ t\('item_kind\.stored_in', \{ unit: legacyStoredUnit \}\) \}\}/);
+    assert.match(read('resources/js/lib/api/inventory.ts'), /unit_locked\?: boolean;/);
+    assert.match(en.item_kind.locked, /already has stock, movements, or recipe\/add-on usage/);
 });
 
 test('every item-kind string exists in English and Arabic', () => {

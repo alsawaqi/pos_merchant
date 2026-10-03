@@ -17,7 +17,9 @@
             "counted": "Amounts are typed in pieces."
         },
         "choose": "Choose what kind of item it is.",
-        "cost_per": "Cost per {unit}"
+        "cost_per": "Cost per {unit}",
+        "stored_in": "Stored in {unit}",
+        "locked": "The kind cannot change: this ingredient already has stock, movements, or recipe/add-on usage. Remove those references first, then create a new ingredient of the other kind."
     },
     "recipe_units": {
         "too_small": "{amount} is too small to record: it rounds to 0 {base} (stock keeps 4 decimals). Enter at least {minimum}, or use a smaller base unit.",

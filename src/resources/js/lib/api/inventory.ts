@@ -14,6 +14,7 @@
  */
 
 import { apiDelete, apiGet, apiPatch, apiPost, type JsonValue } from '@/lib/api';
+import type { ItemKind } from '@/lib/itemKind';
 
 export type IngredientUnit = 'kg' | 'g' | 'l' | 'ml' | 'piece' | 'pack' | 'box';
 export type InventoryStatus = 'active' | 'inactive';
@@ -83,6 +84,10 @@ export interface Ingredient {
     name: string;
     name_ar: string | null;
     unit: IngredientUnit;
+    /** LAUNCH item kind — weighed / liquid / counted, read from the stored unit. */
+    kind?: ItemKind;
+    /** LAUNCH item kind, A2 — the kind can no longer change (stock, movements or recipe use). */
+    unit_locked?: boolean;
     /**
      * Phase A (Additions §2.3) — the PIECE model. label + ratio come as a
      * pair (both set or both null): "bottle" / "1.0000" means 1 bottle =

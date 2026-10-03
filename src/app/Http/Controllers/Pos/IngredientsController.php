@@ -15,6 +15,7 @@ use App\Http\Resources\Pos\Inventory\IngredientPurchaseResource;
 use App\Http\Resources\Pos\Inventory\IngredientResource;
 use App\Models\Ingredient;
 use App\Models\IngredientPurchase;
+use App\Support\Inventory\IngredientUnitLock;
 use App\Support\MerchantTenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -70,6 +71,13 @@ class IngredientsController extends Controller
             ->orderBy('name')
             ->get();
 
+        // LAUNCH item kind, A2 — the edit form locks the kind of a used
+        // ingredient up front (one query per kind of reference, not per row).
+        $locked = IngredientUnitLock::lockedIds($ingredients->pluck('id')->map(static fn ($id): int => (int) $id)->all());
+        foreach ($ingredients as $ingredient) {
+            $ingredient->unitLocked = isset($locked[(int) $ingredient->id]);
+        }
+
         return IngredientResource::collection($ingredients);
     }
 
@@ -83,6 +91,7 @@ class IngredientsController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
         $ingredient->load('primarySupplier');
+        $ingredient->unitLocked = false;
 
         return response()->json([
             'data' => (new IngredientResource($ingredient))->resolve($request),
@@ -103,6 +112,7 @@ class IngredientsController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
         $updated->load('primarySupplier');
+        $updated->unitLocked = IngredientUnitLock::isLocked($updated);
 
         return IngredientResource::make($updated);
     }

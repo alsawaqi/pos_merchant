@@ -25,6 +25,12 @@ class IngredientResource extends JsonResource
             'name' => $this->name,
             'name_ar' => $this->name_ar,
             'unit' => $this->unit?->value,
+            // LAUNCH item kind — weighed / liquid / counted, read from the
+            // stored unit (an older kg ingredient is Weighed, stored in kg).
+            'kind' => $this->unit?->kind(),
+            // A2 — whether the kind can no longer change (only when the
+            // endpoint worked it out; see IngredientUnitLock).
+            'unit_locked' => $this->when($this->resource->unitLocked !== null, fn (): bool => (bool) $this->resource->unitLocked),
             // Phase A — piece model (Additions §2.3).
             'piece_unit_label' => $this->piece_unit_label,
             'piece_unit_label_ar' => $this->piece_unit_label_ar,

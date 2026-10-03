@@ -67,6 +67,14 @@ class Ingredient extends Model
     protected $table = 'pos_ingredients';
 
     /**
+     * LAUNCH item kind, A2 — whether the unit (and so the kind) can no longer
+     * change (the rule in Support\Inventory\IngredientUnitLock). Set by the
+     * ingredient endpoints for the response only, never stored; null = not
+     * worked out.
+     */
+    public ?bool $unitLocked = null;
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

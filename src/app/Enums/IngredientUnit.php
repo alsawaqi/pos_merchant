@@ -36,6 +36,20 @@ enum IngredientUnit: string
     }
 
     /**
+     * LAUNCH item kind (owner decision 2026-10-03) — what kind of item an
+     * ingredient stored in this unit is: g/kg 'weighed', ml/l 'liquid',
+     * piece/pack/box 'counted'. Read from the stored unit; no data converts.
+     */
+    public function kind(): string
+    {
+        return match ($this) {
+            self::Kilogram, self::Gram => 'weighed',
+            self::Litre, self::Millilitre => 'liquid',
+            default => 'counted',
+        };
+    }
+
+    /**
      * PD4 — the metric family this unit belongs to, or null for count units
      * (piece/pack/box) whose subdivisions are not universal. Only units in the
      * SAME family auto-convert (kg <-> g, l <-> ml); cross-family (kg <-> l)

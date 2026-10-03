@@ -69,7 +69,6 @@ import {
     deleteIngredient,
     deleteIngredientUnit,
     deleteSupplier,
-    autoUnitNames,
     getInventorySettings,
     ingredientUnitFactor,
     ingredientUnitOptions,
@@ -123,7 +122,7 @@ import {
     type PhysicalItemPurpose,
 } from '@/lib/api/physicalItems';
 import ProductStockDialog from '@/Pages/Merchant/Catalogue/ProductStockDialog.vue';
-import { ITEM_KINDS, kindOfUnit, storedUnitForKind, type ItemKind } from '@/lib/itemKind';
+import { ITEM_KINDS, isLegacyStoredUnit, kindOfUnit, storedUnitForKind, type ItemKind } from '@/lib/itemKind';
 import { MerchantPermission } from '@/lib/permissions';
 
 const { t, locale } = useI18n();
@@ -262,15 +261,24 @@ const ingForm = reactive<{
     status: 'active',
 });
 
-const unitOptions: IngredientUnit[] = ['kg', 'g', 'l', 'ml', 'piece', 'pack', 'box'];
-
 // LAUNCH item kind (owner decision 2026-10-03) — a new ingredient is asked
 // what KIND of item it is, never a base unit: Weighed is stored in g, Liquid
 // in ml, Counted in pieces ("buy big, use small", LAUNCH-P2 P2-1). kg, l and
 // pack sizes stay available wherever an amount is typed.
 const ingKind = computed<ItemKind | null>(() => (ingForm.unit === '' ? null : kindOfUnit(ingForm.unit)));
 
+/**
+ * A2 — the edit form shows the kind; it can change only while today's
+ * unit-change rule allows it (an unused ingredient). The server works that
+ * out for the list (unit_locked) and still refuses on save.
+ */
+const kindLocked = computed<boolean>(() => ingModalMode.value === 'edit' && ingModalTarget.value?.unit_locked === true);
+
+/** A2 — an older ingredient stored in kg / l / pack / box: its kind plus a small "stored in kg" note. */
+const legacyStoredUnit = computed<string | null>(() => (ingForm.unit !== '' && isLegacyStoredUnit(ingForm.unit) ? ingForm.unit : null));
+
 function chooseKind(kind: ItemKind): void {
+    if (kindLocked.value) return;
     // Back to the ingredient's own kind keeps its stored unit (an older kg stays kg).
     ingForm.unit = storedUnitForKind(kind, ingModalTarget.value?.unit ?? null) as IngredientUnit;
 }
@@ -3022,40 +3030,39 @@ async function submitSuggestions(): Promise<void> {
                             <input v-model="ingForm.name_ar" type="text" dir="rtl" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                         </label>
                     </div>
-                    <!-- LAUNCH item kind — a new ingredient is asked what KIND of
-                         item it is (stored in g, ml or piece), never a base unit. -->
-                    <fieldset v-if="ingModalMode === 'create'" data-test="item-kind">
+                    <!-- LAUNCH item kind — the form asks what KIND of item it is
+                         (a new one is stored in g, ml or piece), never a base
+                         unit. A2: on edit the kind shows, and is locked once the
+                         ingredient is used (today's unit-change rule). -->
+                    <fieldset data-test="item-kind" :disabled="kindLocked">
                         <legend class="text-sm font-medium text-slate-700">{{ t('item_kind.question') }} *</legend>
                         <div class="mt-1 grid gap-2 sm:grid-cols-3">
                             <label
                                 v-for="k in ITEM_KINDS"
                                 :key="k"
-                                class="flex cursor-pointer flex-col rounded-lg border px-3 py-2.5 transition"
-                                :class="ingKind === k ? 'border-teal-500 bg-teal-50 ring-2 ring-teal-100' : 'border-slate-200 hover:bg-slate-50'"
+                                class="flex flex-col rounded-lg border px-3 py-2.5 transition"
+                                :class="[
+                                    ingKind === k ? 'border-teal-500 bg-teal-50 ring-2 ring-teal-100' : 'border-slate-200',
+                                    kindLocked ? (ingKind === k ? 'cursor-not-allowed' : 'cursor-not-allowed opacity-50') : 'cursor-pointer hover:bg-slate-50',
+                                ]"
                                 :data-test="`item-kind-${k}`"
                             >
                                 <span class="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
-                                    <input type="radio" name="ing-kind" :value="k" :checked="ingKind === k" class="size-4 border-slate-300 text-teal-600 focus:ring-teal-500" @change="chooseKind(k)">
+                                    <input type="radio" name="ing-kind" :value="k" :checked="ingKind === k" :disabled="kindLocked" class="size-4 border-slate-300 text-teal-600 focus:ring-teal-500" @change="chooseKind(k)">
                                     {{ t(`item_kind.kinds.${k}`) }}
                                 </span>
                                 <span class="mt-0.5 ps-6 text-xs text-slate-500">{{ t(`item_kind.examples.${k}`) }}</span>
                             </label>
                         </div>
-                        <p v-if="ingKind" class="mt-1 text-xs text-slate-500" data-test="item-kind-units">{{ t(`item_kind.entered_in.${ingKind}`) }}</p>
+                        <p v-if="ingKind" class="mt-1 text-xs text-slate-500" data-test="item-kind-units">
+                            {{ t(`item_kind.entered_in.${ingKind}`) }}
+                            <!-- A2 — an older kg / l / pack / box ingredient keeps its stored unit. -->
+                            <span v-if="legacyStoredUnit" class="ms-1 rounded bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-600" data-test="item-kind-stored-in">{{ t('item_kind.stored_in', { unit: legacyStoredUnit }) }}</span>
+                        </p>
+                        <p v-if="kindLocked" class="mt-1 text-xs font-semibold text-amber-700" data-test="item-kind-locked">{{ t('item_kind.locked') }}</p>
                         <p v-if="ingModalErrors.unit" class="mt-1 text-xs text-rose-600">{{ ingModalErrors.unit[0] }}</p>
                     </fieldset>
-                    <div class="grid gap-3" :class="ingModalMode === 'create' ? 'sm:grid-cols-2' : 'sm:grid-cols-3'">
-                        <label v-if="ingModalMode !== 'create'" class="block">
-                            <span class="text-sm font-medium text-slate-700">{{ t('inventory.fields.unit') }} *</span>
-                            <select v-model="ingForm.unit" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                                <option v-for="u in unitOptions" :key="u" :value="u">{{ unitLabel(u) }}</option>
-                            </select>
-                            <!-- PD4 — the system already converts to/from these
-                                 same-family metric units; no need to add them. -->
-                            <p v-if="ingForm.unit !== '' && autoUnitNames(ingForm.unit).length" class="mt-1 text-xs text-slate-500">
-                                {{ t('inventory.alt_units.auto_provided', { units: autoUnitNames(ingForm.unit).join(', ') }) }}
-                            </p>
-                        </label>
+                    <div class="grid gap-3 sm:grid-cols-2">
                         <label class="block">
                             <!-- The cost is per stored unit: say which, now that no unit is picked on screen. -->
                             <span class="text-sm font-medium text-slate-700">{{ ingForm.unit !== '' ? t('item_kind.cost_per', { unit: ingForm.unit }) : t('inventory.fields.default_unit_cost') }} (OMR)</span>

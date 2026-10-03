@@ -31,6 +31,11 @@ export function kindOfUnit(unit: string | null | undefined): ItemKind {
     return 'counted';
 }
 
+/** An older stored unit the kind question would not choose (kg, l, pack, box): shown as "stored in kg". */
+export function isLegacyStoredUnit(unit: string | null | undefined): boolean {
+    return !!unit && unit !== KIND_STORED_UNIT[kindOfUnit(unit)];
+}
+
 /** The stored unit for a kind choice: the item's own unit when it is already of that kind, else g / ml / piece. */
 export function storedUnitForKind(kind: ItemKind, currentUnit?: string | null): string {
     if (currentUnit && kindOfUnit(currentUnit) === kind) return currentUnit;

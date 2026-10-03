@@ -6,15 +6,10 @@ namespace App\Actions\Pos\Inventory;
 
 use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
-use App\Models\AddOn;
-use App\Models\AddOnConsumption;
-use App\Models\BranchStock;
 use App\Models\Ingredient;
-use App\Models\IngredientRecipe;
-use App\Models\ProductRecipe;
-use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Models\User;
+use App\Support\Inventory\IngredientUnitLock;
 use App\Support\MerchantTenantContext;
 use App\Support\Recipes\PrepGraph;
 use Illuminate\Support\Facades\DB;
@@ -79,43 +74,14 @@ final readonly class UpdateIngredientAction
             }
         }
 
-        // Unit-change guard — explained in the class docblock.
-        if (array_key_exists('unit', $attributes) && $attributes['unit'] !== $ingredient->unit?->value) {
-            $hasHistory = StockMovement::query()
-                ->where('ingredient_id', $ingredient->id)
-                ->exists()
-                || BranchStock::query()
-                    ->where('ingredient_id', $ingredient->id)
-                    ->where('quantity', '!=', '0.000')
-                    ->exists()
-                // A recipe / add-on consumption line stores its quantity in the
-                // ingredient's CURRENT base unit (the portal converts at entry).
-                // Flipping the unit without rescaling those lines would silently
-                // mis-deduct them at sale — e.g. 0.250 authored as kg, then read
-                // as grams, deducts 1000x too little. Block the flip while any
-                // recipe/add-on still references the ingredient.
-                || ProductRecipe::query()
-                    ->where('ingredient_id', $ingredient->id)
-                    ->exists()
-                || AddOnConsumption::query()
-                    ->where('ingredient_id', $ingredient->id)
-                    ->exists()
-                // Legacy single-ingredient add-on (pos_addons.ingredient_id /
-                // ingredient_qty) — still read by the sale-time deduction
-                // pipeline, so its base-unit qty must be protected too.
-                || AddOn::query()
-                    ->where('ingredient_id', $ingredient->id)
-                    ->exists()
-                // LAUNCH-P3 P3-4 — a prep recipe line is per batch in this
-                // ingredient's base unit too.
-                || IngredientRecipe::query()
-                    ->where('ingredient_id', $ingredient->id)
-                    ->exists();
-            if ($hasHistory) {
-                throw new RuntimeException(
-                    'Cannot change the unit of an ingredient that already has stock, movements, or recipe/add-on usage. Remove those references first, then create a new ingredient with the new unit.',
-                );
-            }
+        // Unit-change guard — explained in the class docblock. Flipping the
+        // unit without rescaling recipe / add-on lines would silently
+        // mis-deduct them at sale (0.250 authored as kg, then read as grams,
+        // deducts 1000x too little). The rule lives in IngredientUnitLock so
+        // the ingredient list can lock the kind up front (LAUNCH item kind).
+        if (array_key_exists('unit', $attributes) && $attributes['unit'] !== $ingredient->unit?->value
+            && IngredientUnitLock::isLocked($ingredient)) {
+            throw new RuntimeException(IngredientUnitLock::MESSAGE);
         }
 
         return DB::transaction(function () use ($ingredient, $attributes, $actor, $companyId): Ingredient {
