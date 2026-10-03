@@ -50,6 +50,36 @@ enum IngredientUnit: string
     }
 
     /**
+     * LAUNCH item kind — how many of THIS (stored) unit one $unit of the same
+     * kind holds: 1 for the unit itself, the metric factor for its pair
+     * (stored g: kg → 1000; stored kg: g → 0.001), null for any other unit.
+     * What a pack size or an amount may be typed in.
+     */
+    public function factorOf(string $unit): ?float
+    {
+        if ($unit === $this->value) {
+            return 1.0;
+        }
+
+        return $this->metricSiblings()[$unit] ?? null;
+    }
+
+    /**
+     * The units of this unit's kind, big first: ['kg', 'g'], ['l', 'ml'], or
+     * the stored count unit alone (['piece']).
+     *
+     * @return list<string>
+     */
+    public function kindUnits(): array
+    {
+        return match ($this->kind()) {
+            'weighed' => [self::Kilogram->value, self::Gram->value],
+            'liquid' => [self::Litre->value, self::Millilitre->value],
+            default => [$this->value],
+        };
+    }
+
+    /**
      * PD4 — the metric family this unit belongs to, or null for count units
      * (piece/pack/box) whose subdivisions are not universal. Only units in the
      * SAME family auto-convert (kg <-> g, l <-> ml); cross-family (kg <-> l)

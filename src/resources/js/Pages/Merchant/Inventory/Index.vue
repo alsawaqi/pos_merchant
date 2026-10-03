@@ -122,7 +122,7 @@ import {
     type PhysicalItemPurpose,
 } from '@/lib/api/physicalItems';
 import ProductStockDialog from '@/Pages/Merchant/Catalogue/ProductStockDialog.vue';
-import { ITEM_KINDS, isLegacyStoredUnit, kindOfUnit, storedUnitForKind, type ItemKind } from '@/lib/itemKind';
+import { ITEM_KINDS, isLegacyStoredUnit, kindOfUnit, kindUnits, storedUnitForKind, type ItemKind, type KindUnit } from '@/lib/itemKind';
 import { MerchantPermission } from '@/lib/permissions';
 
 const { t, locale } = useI18n();
@@ -281,6 +281,61 @@ function chooseKind(kind: ItemKind): void {
     if (kindLocked.value) return;
     // Back to the ingredient's own kind keeps its stored unit (an older kg stays kg).
     ingForm.unit = storedUnitForKind(kind, ingModalTarget.value?.unit ?? null) as IngredientUnit;
+}
+
+/** The units a pack size (or the count container) can hold: kg/g, l/ml, or pieces. */
+const holdUnits = computed<KindUnit[]>(() => kindUnits(ingForm.unit));
+
+function holdUnitLabel(unit: string): string {
+    return unit === 'piece' || unit === 'pack' || unit === 'box' ? unitLabel(unit) : unit;
+}
+
+// =================== LAUNCH item kind, A3 — pack sizes on create ===
+// "How do you buy it?" (optional): crate holds 12 l, sack holds 25 kg, box
+// holds 24 pieces. Sent with the ingredient (pack_sizes[]) and saved in the
+// same transaction; the server works out each factor from the amount.
+
+interface PackSizeDraft {
+    name: string;
+    name_ar: string;
+    amount: string;
+    unit: string;
+}
+const packSizeDrafts = ref<PackSizeDraft[]>([]);
+
+function addPackSizeDraft(): void {
+    packSizeDrafts.value.push({ name: '', name_ar: '', amount: '', unit: holdUnits.value[0]?.value ?? '' });
+}
+
+function removePackSizeDraft(index: number): void {
+    packSizeDrafts.value.splice(index, 1);
+}
+
+// A kind change moves every pack row to a unit of the new kind.
+watch(
+    () => ingForm.unit,
+    () => {
+        const allowed = holdUnits.value.map((u) => u.value);
+        for (const draft of packSizeDrafts.value) {
+            if (!allowed.includes(draft.unit)) draft.unit = allowed[0] ?? '';
+        }
+    },
+);
+
+/** The rows to send: a fully blank row is left out; anything typed is sent (the server explains what is missing). */
+function packSizesPayload(): { name: string; name_ar: string | null; amount: string; unit: string }[] {
+    return packSizeDrafts.value
+        .filter((d) => d.name.trim() !== '' || d.name_ar.trim() !== '' || String(d.amount ?? '').trim() !== '')
+        .map((d) => ({ name: d.name.trim(), name_ar: d.name_ar.trim() || null, amount: String(d.amount ?? '').trim(), unit: d.unit }));
+}
+
+/** The first server error of one pack row (name, amount or unit). */
+function packSizeError(index: number): string | null {
+    for (const field of ['name', 'amount', 'unit']) {
+        const messages = ingModalErrors.value[`pack_sizes.${index}.${field}`];
+        if (messages && messages.length > 0) return messages[0]!;
+    }
+    return null;
 }
 
 // =================== Alternate units (v2 #13) ====================
@@ -817,6 +872,7 @@ function openCreateIngredient(): void {
     ingModalErrors.value = {};
     ingModalError.value = null;
     resetAltUnits();
+    packSizeDrafts.value = [];
     ingModalOpen.value = true;
 }
 
@@ -876,7 +932,9 @@ async function submitIngredient(): Promise<void> {
             primary_supplier_id: ingForm.primary_supplier_id ?? null,
         };
         if (ingModalMode.value === 'create') {
-            await createIngredient(payload);
+            // A3 — the pack sizes ride the same request (one transaction).
+            const packSizes = packSizesPayload();
+            await createIngredient(packSizes.length > 0 ? { ...payload, pack_sizes: packSizes } : payload);
         } else if (ingModalTarget.value) {
             await updateIngredient(ingModalTarget.value.uuid, {
                 ...payload,
@@ -3131,12 +3189,51 @@ async function submitSuggestions(): Promise<void> {
                     <fieldset class="rounded-lg border border-slate-200 p-3">
                         <legend class="px-2 text-sm font-semibold text-slate-700">
                             <Boxes class="me-1 inline size-3.5 text-amber-600" />
-                            {{ t('inventory.alt_units.title') }}
+                            {{ ingModalMode === 'edit' ? t('inventory.alt_units.title') : t('item_kind.pack_sizes.title') }}
                         </legend>
 
-                        <!-- New, unsaved ingredient: no uuid yet. -->
-                        <div v-if="ingModalMode !== 'edit'" class="rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
-                            {{ t('inventory.alt_units.save_first_hint') }}
+                        <!-- LAUNCH item kind, A3 — "How do you buy it?" on a new
+                             ingredient: optional pack sizes sent with it. -->
+                        <div v-if="ingModalMode !== 'edit'" data-test="pack-sizes-create">
+                            <p class="mb-2 text-xs text-slate-500">{{ t('item_kind.pack_sizes.hint') }}</p>
+                            <ul v-if="packSizeDrafts.length > 0" class="mb-2 space-y-2">
+                                <li v-for="(pack, i) in packSizeDrafts" :key="i" class="flex flex-wrap items-end gap-2 rounded border border-slate-200 bg-slate-50/50 p-2" data-test="pack-size-draft">
+                                    <label class="block min-w-[8rem] flex-1">
+                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.pack_sizes.name') }} *</span>
+                                        <input v-model="pack.name" type="text" maxlength="32" :placeholder="t('item_kind.pack_sizes.name_placeholder')" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                                    </label>
+                                    <label class="block w-32">
+                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.pack_sizes.name_ar') }}</span>
+                                        <input v-model="pack.name_ar" type="text" dir="rtl" maxlength="32" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                                    </label>
+                                    <span class="pb-2 text-sm font-medium text-slate-600">{{ t('item_kind.holds') }}</span>
+                                    <label class="block w-24">
+                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.pack_sizes.amount') }} *</span>
+                                        <input v-model="pack.amount" type="number" step="0.0001" min="0" inputmode="decimal" placeholder="12" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                                    </label>
+                                    <label class="block w-24">
+                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.pack_sizes.unit') }}</span>
+                                        <select v-model="pack.unit" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                                            <option v-for="u in holdUnits" :key="u.value" :value="u.value">{{ holdUnitLabel(u.value) }}</option>
+                                        </select>
+                                    </label>
+                                    <button type="button" class="grid size-9 place-items-center rounded-lg border border-rose-200 text-rose-700 transition hover:bg-rose-50" :title="t('item_kind.pack_sizes.remove')" @click="removePackSizeDraft(i)">
+                                        <Trash2 class="size-4" />
+                                    </button>
+                                    <p v-if="packSizeError(i)" class="basis-full text-[11px] text-rose-600">{{ packSizeError(i) }}</p>
+                                </li>
+                            </ul>
+                            <button
+                                type="button"
+                                :disabled="!ingKind"
+                                class="inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                data-test="add-pack-size"
+                                @click="addPackSizeDraft"
+                            >
+                                <Plus class="size-3.5" />
+                                {{ t('item_kind.pack_sizes.add') }}
+                            </button>
+                            <p v-if="!ingKind" class="mt-1 text-[11px] text-slate-500">{{ t('item_kind.pack_sizes.choose_kind_first') }}</p>
                         </div>
 
                         <template v-else>

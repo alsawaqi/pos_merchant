@@ -90,7 +90,8 @@ class IngredientsController extends Controller
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
-        $ingredient->load('primarySupplier');
+        // LAUNCH item kind, A3 — the pack sizes saved with it.
+        $ingredient->load('primarySupplier', 'altUnits');
         $ingredient->unitLocked = false;
 
         return response()->json([

@@ -3,6 +3,8 @@
 //      Counted → stored in g / ml / piece), never a base unit;
 //   A2 the edit form shows the kind, locked once the ingredient is used, with
 //      a "stored in kg" note for an older kg / l / pack / box ingredient;
+//   A3 optional "How do you buy it?" pack sizes on create, "holds [amount]
+//      [unit]" with the unit limited to the kind, sent with the ingredient;
 //   every new string exists in English AND Arabic.
 // Run: node --test tests/frontend/launch-p3-kind.test.mjs
 import assert from 'node:assert/strict';
@@ -99,6 +101,34 @@ test('A2 the edit form shows the kind, locks it on a used ingredient and notes a
     assert.match(form, /v-if="legacyStoredUnit"[^>]*data-test="item-kind-stored-in">\{\{ t\('item_kind\.stored_in', \{ unit: legacyStoredUnit \}\) \}\}/);
     assert.match(read('resources/js/lib/api/inventory.ts'), /unit_locked\?: boolean;/);
     assert.match(en.item_kind.locked, /already has stock, movements, or recipe\/add-on usage/);
+});
+
+test('A3 a new ingredient takes optional pack sizes ("crate holds 12 l") in the same request', () => {
+    const { kindUnits } = lib('itemKind');
+    const plain = (units) => units.map((u) => `${u.value}=${u.factor}`).join(' ');
+    assert.equal(plain(kindUnits('ml')), 'l=1000 ml=1');
+    assert.equal(plain(kindUnits('g')), 'kg=1000 g=1');
+    assert.equal(plain(kindUnits('kg')), 'kg=1 g=0.001');
+    assert.equal(plain(kindUnits('piece')), 'piece=1');
+    assert.equal(plain(kindUnits('box')), 'box=1');
+    assert.equal(kindUnits('').length, 0);
+
+    const { script, form } = ingredientForm();
+    const create = form.slice(form.indexOf('data-test="pack-sizes-create"'));
+    assert.ok(form.includes('data-test="pack-sizes-create"'));
+    assert.match(create, /item_kind\.pack_sizes\.hint/);
+    assert.match(create, /v-for="\(pack, i\) in packSizeDrafts"/);
+    assert.match(create, /v-model="pack\.name"/);
+    assert.match(create, /v-model="pack\.name_ar"/);
+    assert.match(create, /t\('item_kind\.holds'\)/);
+    assert.match(create, /v-model="pack\.amount"/);
+    // The unit picker is limited to the kind; no factor is typed.
+    assert.match(create, /<select v-model="pack\.unit"[^>]*>\s*<option v-for="u in holdUnits"/);
+    assert.doesNotMatch(create.slice(0, create.indexOf('data-test="add-pack-size"')), /factor/);
+    assert.match(script, /const holdUnits = computed<KindUnit\[\]>\(\(\) => kindUnits\(ingForm\.unit\)\);/);
+    assert.match(script, /await createIngredient\(packSizes\.length > 0 \? \{ \.\.\.payload, pack_sizes: packSizes \} : payload\);/);
+    assert.match(script, /\.map\(\(d\) => \(\{ name: d\.name\.trim\(\), name_ar: d\.name_ar\.trim\(\) \|\| null, amount: String\(d\.amount \?\? ''\)\.trim\(\), unit: d\.unit \}\)\);/);
+    assert.match(read('resources/js/lib/api/inventory.ts'), /pack_sizes\?: \{ name: string; name_ar\?: string \| null; amount: string \| number; unit: string \}\[\];/);
 });
 
 test('every item-kind string exists in English and Arabic', () => {

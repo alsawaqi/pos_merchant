@@ -19,7 +19,20 @@
         "choose": "Choose what kind of item it is.",
         "cost_per": "Cost per {unit}",
         "stored_in": "Stored in {unit}",
-        "locked": "The kind cannot change: this ingredient already has stock, movements, or recipe/add-on usage. Remove those references first, then create a new ingredient of the other kind."
+        "locked": "The kind cannot change: this ingredient already has stock, movements, or recipe/add-on usage. Remove those references first, then create a new ingredient of the other kind.",
+        "holds": "holds",
+        "pack_sizes": {
+            "title": "How do you buy it? (optional)",
+            "hint": "For example: crate holds 12 l, sack holds 25 kg, box holds 24 pieces. Receiving 3 crates then adds 36 l by itself. Skip it and type the total (e.g. 36 l) when receiving.",
+            "name": "Pack",
+            "name_placeholder": "e.g. crate, sack, box",
+            "name_ar": "Arabic name",
+            "amount": "Amount",
+            "unit": "Unit",
+            "add": "Add pack size",
+            "remove": "Remove",
+            "choose_kind_first": "Choose the kind first."
+        }
     },
     "recipe_units": {
         "too_small": "{amount} is too small to record: it rounds to 0 {base} (stock keeps 4 decimals). Enter at least {minimum}, or use a smaller base unit.",

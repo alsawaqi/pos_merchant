@@ -36,6 +36,27 @@ export function isLegacyStoredUnit(unit: string | null | undefined): boolean {
     return !!unit && unit !== KIND_STORED_UNIT[kindOfUnit(unit)];
 }
 
+/** One unit an amount of the item can be typed in, with how many stored units ONE of it holds. */
+export interface KindUnit {
+    value: string;
+    factor: number;
+}
+
+const METRIC_SIZE: Record<string, number> = { kg: 1000, g: 1, l: 1000, ml: 1 };
+
+/**
+ * The units of the item's kind, big first, each with its size in the stored
+ * unit (mirrors IngredientUnit::kindUnits / factorOf on the server):
+ * stored g → kg 1000, g 1; stored kg → kg 1, g 0.001; counted → its own unit.
+ */
+export function kindUnits(storedUnit: string | null | undefined): KindUnit[] {
+    if (!storedUnit) return [];
+    const kind = kindOfUnit(storedUnit);
+    if (kind === 'counted') return [{ value: storedUnit, factor: 1 }];
+    const pair = kind === 'weighed' ? ['kg', 'g'] : ['l', 'ml'];
+    return pair.map((value) => ({ value, factor: METRIC_SIZE[value]! / METRIC_SIZE[storedUnit]! }));
+}
+
 /** The stored unit for a kind choice: the item's own unit when it is already of that kind, else g / ml / piece. */
 export function storedUnitForKind(kind: ItemKind, currentUnit?: string | null): string {
     if (currentUnit && kindOfUnit(currentUnit) === kind) return currentUnit;

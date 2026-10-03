@@ -273,6 +273,12 @@ export interface CreateIngredientPayload {
     default_unit_cost?: string | number;
     min_stock_threshold?: string | number | null;
     primary_supplier_id?: number | null;
+    /**
+     * LAUNCH item kind, A3 — optional pack sizes ("crate holds 12 l"), saved
+     * with the ingredient in one transaction. amount + unit (of the item's
+     * kind); the server works out the factor.
+     */
+    pack_sizes?: { name: string; name_ar?: string | null; amount: string | number; unit: string }[];
 }
 
 export interface UpdateIngredientPayload {

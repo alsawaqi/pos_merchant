@@ -9,6 +9,7 @@ use App\Data\Security\AuditLogData;
 use App\Models\Ingredient;
 use App\Models\IngredientAltUnit;
 use App\Models\User;
+use App\Support\Inventory\PackSize;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -42,14 +43,13 @@ final readonly class CreateIngredientUnitAction
         if ($name === '') {
             throw new RuntimeException('A unit name is required.');
         }
-        if ($name === $ingredient->unit?->value) {
-            throw new RuntimeException("An alternate unit can't be named the same as the base unit.");
-        }
-        // PD4 — the system already provides same-family metric units (g when the
-        // base is kg, ml when the base is l...). Refuse a custom duplicate so the
-        // dropdown never shows the same name twice.
-        if (array_key_exists($name, $ingredient->unit?->metricSiblings() ?? [])) {
-            throw new RuntimeException("'{$name}' is provided automatically for this base unit — you don't need to add it.");
+        // Not the stored unit itself, nor its PD4 metric pair (g when the base
+        // is kg, ml when the base is l...), which the system already provides:
+        // the dropdown never shows the same name twice. LAUNCH item kind — one
+        // rule (and wording) with the pack sizes of the create form.
+        $nameProblem = $ingredient->unit !== null ? PackSize::nameProblem($ingredient->unit, $name) : null;
+        if ($nameProblem !== null) {
+            throw new RuntimeException($nameProblem);
         }
 
         return DB::transaction(function () use ($ingredient, $attributes, $actor, $companyId, $name): IngredientAltUnit {
@@ -59,7 +59,7 @@ final readonly class CreateIngredientUnitAction
                 ->first();
 
             if ($existing !== null && ! $existing->trashed()) {
-                throw new RuntimeException("This ingredient already has a '{$name}' unit.");
+                throw new RuntimeException("This item already has a '{$name}' pack size.");
             }
 
             $payload = [

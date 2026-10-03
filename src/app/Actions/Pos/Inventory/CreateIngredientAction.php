@@ -9,6 +9,7 @@ use App\Data\Security\AuditLogData;
 use App\Models\Ingredient;
 use App\Models\Supplier;
 use App\Models\User;
+use App\Support\Inventory\PackSize;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -26,10 +27,16 @@ final readonly class CreateIngredientAction
     public function __construct(
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
+        private CreateIngredientUnitAction $createUnit,
     ) {}
 
     /**
-     * @param  array{name: string, name_ar?: string|null, unit: string, default_unit_cost?: numeric-string|float|int, min_stock_threshold?: numeric-string|float|int|null, primary_supplier_id?: int|null}  $attributes
+     * LAUNCH item kind, A3 — optional pack_sizes ("crate holds 12 l") are
+     * saved in the SAME transaction through CreateIngredientUnitAction (its
+     * rules and audit), each with its factor = the amount in the stored
+     * unit. Any refusal rolls the whole ingredient back.
+     *
+     * @param  array{name: string, name_ar?: string|null, unit: string, default_unit_cost?: numeric-string|float|int, min_stock_threshold?: numeric-string|float|int|null, primary_supplier_id?: int|null, pack_sizes?: list<array{name: string, name_ar?: string|null, amount: numeric-string|float|int, unit: string}>}  $attributes
      */
     public function handle(array $attributes, User $actor): Ingredient
     {
@@ -78,6 +85,15 @@ final readonly class CreateIngredientAction
                     'min_stock_threshold' => $ingredient->min_stock_threshold !== null ? (string) $ingredient->min_stock_threshold : null,
                 ],
             ));
+
+            foreach (array_values($attributes['pack_sizes'] ?? []) as $i => $pack) {
+                $this->createUnit->handle($ingredient, [
+                    'name' => $pack['name'],
+                    'name_ar' => $pack['name_ar'] ?? null,
+                    'factor' => PackSize::factor($ingredient->unit, $pack['amount'], $pack['unit']),
+                    'sort_order' => $i,
+                ], $actor);
+            }
 
             return $ingredient;
         });
