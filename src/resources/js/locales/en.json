@@ -22,6 +22,13 @@
         "locked": "The kind cannot change: this ingredient already has stock, movements, or recipe/add-on usage. Remove those references first, then create a new ingredient of the other kind.",
         "holds": "holds",
         "holds_amount": "holds {amount}",
+        "container": {
+            "title": "Count container (optional)",
+            "hint": "Set this when staff handle whole containers — bottles, bags, trays. Day-end counts and goods received can then be entered in containers, e.g. bottle holds 1.5 l.",
+            "label": "Container",
+            "label_placeholder": "e.g. bottle, bag, tray",
+            "label_ar": "Container (Arabic)"
+        },
         "pack_sizes": {
             "title": "How do you buy it? (optional)",
             "title_edit": "Pack sizes",

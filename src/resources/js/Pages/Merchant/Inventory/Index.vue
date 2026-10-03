@@ -130,6 +130,8 @@ import {
     kindOfUnit,
     kindUnits,
     storedUnitForKind,
+    toStoredAmount,
+    trimAmount,
     type ItemKind,
     type KindUnit,
 } from '@/lib/itemKind';
@@ -251,7 +253,9 @@ const ingForm = reactive<{
     unit: IngredientUnit | '';
     piece_unit_label: string;
     piece_unit_label_ar: string;
-    units_per_piece: string;
+    /** A5 — what the count container holds ("1.5" + "l"); sent as units_per_piece in the stored unit. */
+    container_amount: string;
+    container_unit: string;
     allow_fractional_pieces: boolean;
     default_unit_cost: string;
     min_stock_threshold: string;
@@ -263,7 +267,8 @@ const ingForm = reactive<{
     unit: 'g',
     piece_unit_label: '',
     piece_unit_label_ar: '',
-    units_per_piece: '',
+    container_amount: '',
+    container_unit: '',
     allow_fractional_pieces: true,
     default_unit_cost: '0.000',
     min_stock_threshold: '',
@@ -331,6 +336,28 @@ watch(
         }
     },
 );
+
+// A5 — the count container's unit follows the kind too.
+watch(
+    () => ingForm.unit,
+    () => {
+        const allowed = holdUnits.value.map((u) => u.value);
+        if (!allowed.includes(ingForm.container_unit)) ingForm.container_unit = allowed[0] ?? '';
+    },
+);
+
+/**
+ * A5 — what the count container holds, in the stored unit (units_per_piece):
+ * "bottle holds 1.5 l" on a ml item → "1500". Blank = no container. An
+ * amount that does not convert (0, negative) goes as typed, so the server
+ * explains it next to the field.
+ */
+function containerUnitsPerPiece(storedUnit: string): string | null {
+    const text = String(ingForm.container_amount ?? '').trim();
+    if (text === '') return null;
+    const stored = toStoredAmount(text, ingForm.container_unit, storedUnit);
+    return stored === null ? text : trimAmount(stored);
+}
 
 /** The rows to send: a fully blank row is left out; anything typed is sent (the server explains what is missing). */
 function packSizesPayload(): { name: string; name_ar: string | null; amount: string; unit: string }[] {
@@ -880,7 +907,8 @@ function openCreateIngredient(): void {
     ingForm.unit = '';
     ingForm.piece_unit_label = '';
     ingForm.piece_unit_label_ar = '';
-    ingForm.units_per_piece = '';
+    ingForm.container_amount = '';
+    ingForm.container_unit = '';
     ingForm.allow_fractional_pieces = true;
     ingForm.default_unit_cost = '0.000';
     ingForm.min_stock_threshold = '';
@@ -901,7 +929,10 @@ function openEditIngredient(ingredient: Ingredient): void {
     ingForm.unit = ingredient.unit;
     ingForm.piece_unit_label = ingredient.piece_unit_label ?? '';
     ingForm.piece_unit_label_ar = ingredient.piece_unit_label_ar ?? '';
-    ingForm.units_per_piece = ingredient.units_per_piece ?? '';
+    // A5 — "1500.0000" ml reopens as "bottle holds 1.5 l".
+    const holds = holdsEntry(ingredient.units_per_piece, ingredient.unit);
+    ingForm.container_amount = holds.amount;
+    ingForm.container_unit = holds.amount !== '' ? holds.unit : (kindUnits(ingredient.unit)[0]?.value ?? '');
     ingForm.allow_fractional_pieces = ingredient.allow_fractional_pieces;
     ingForm.default_unit_cost = ingredient.default_unit_cost;
     ingForm.min_stock_threshold = ingredient.min_stock_threshold ?? '';
@@ -935,9 +966,8 @@ async function submitIngredient(): Promise<void> {
             // both-or-neither); blanks become null = "not piece-tracked".
             piece_unit_label: ingForm.piece_unit_label.trim() || null,
             piece_unit_label_ar: ingForm.piece_unit_label_ar.trim() || null,
-            units_per_piece: String(ingForm.units_per_piece).trim() === ''
-                ? null
-                : ingForm.units_per_piece,
+            // A5 — "bottle holds 1.5 l" → 1500 (ml).
+            units_per_piece: containerUnitsPerPiece(unit),
             allow_fractional_pieces: ingForm.allow_fractional_pieces,
             default_unit_cost: ingForm.default_unit_cost,
             // The bound input is type="number", so Vue casts this to a
@@ -3170,31 +3200,42 @@ async function submitSuggestions(): Promise<void> {
                             <p class="mt-1 text-xs text-slate-500">{{ t('inventory.fields.min_stock_threshold_hint') }}</p>
                         </label>
                     </div>
-                    <!-- Phase A — piece unit (Additions §2.3). Label + ratio
-                         are a pair: both set = piece-tracked (purchases and
-                         day-end counts happen in pieces), both blank = not. -->
-                    <fieldset class="rounded-lg border border-amber-200 bg-amber-50/40 p-3">
+                    <!-- Phase A — piece unit (Additions §2.3), now the COUNT
+                         CONTAINER. Label + ratio are a pair: both set = staff
+                         count and receive in containers, both blank = not.
+                         LAUNCH item kind, A5 — the ratio is typed as what the
+                         container holds ("bottle holds 1.5 l", a unit of the
+                         kind), not "1500 ml per piece"; the portal converts it
+                         to units_per_piece in the stored unit. -->
+                    <fieldset class="rounded-lg border border-amber-200 bg-amber-50/40 p-3" data-test="count-container">
                         <legend class="px-2 text-sm font-semibold text-slate-700">
                             <Package class="me-1 inline size-3.5 text-amber-600" />
-                            {{ t('inventory.piece.title') }}
+                            {{ t('item_kind.container.title') }}
                         </legend>
-                        <p class="mb-2 text-xs text-slate-500">{{ t('inventory.piece.hint') }}</p>
-                        <div class="grid gap-3 sm:grid-cols-3">
-                            <label class="block">
-                                <span class="text-sm font-medium text-slate-700">{{ t('inventory.piece.label') }}</span>
-                                <input v-model="ingForm.piece_unit_label" type="text" :placeholder="t('inventory.piece.label_placeholder')" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                                <p v-if="ingModalErrors.piece_unit_label" class="mt-1 text-xs text-rose-600">{{ ingModalErrors.piece_unit_label[0] }}</p>
+                        <p class="mb-2 text-xs text-slate-500">{{ t('item_kind.container.hint') }}</p>
+                        <div class="flex flex-wrap items-end gap-2">
+                            <label class="block min-w-[8rem] flex-1">
+                                <span class="text-sm font-medium text-slate-700">{{ t('item_kind.container.label') }}</span>
+                                <input v-model="ingForm.piece_unit_label" type="text" maxlength="32" :placeholder="t('item_kind.container.label_placeholder')" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                             </label>
-                            <label class="block">
-                                <span class="text-sm font-medium text-slate-700">{{ t('inventory.piece.label_ar') }}</span>
-                                <input v-model="ingForm.piece_unit_label_ar" type="text" dir="rtl" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                            <label class="block w-36">
+                                <span class="text-sm font-medium text-slate-700">{{ t('item_kind.container.label_ar') }}</span>
+                                <input v-model="ingForm.piece_unit_label_ar" type="text" dir="rtl" maxlength="32" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                             </label>
-                            <label class="block">
-                                <span class="text-sm font-medium text-slate-700">{{ t('inventory.piece.units_per_piece', { unit: unitLabel(ingForm.unit) }) }}</span>
-                                <input v-model="ingForm.units_per_piece" type="number" step="0.0001" min="0" inputmode="decimal" placeholder="—" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                                <p v-if="ingModalErrors.units_per_piece" class="mt-1 text-xs text-rose-600">{{ ingModalErrors.units_per_piece[0] }}</p>
+                            <span class="pb-3 text-sm font-medium text-slate-600">{{ t('item_kind.holds') }}</span>
+                            <label class="block w-28">
+                                <span class="text-sm font-medium text-slate-700">{{ t('item_kind.pack_sizes.amount') }}</span>
+                                <input v-model="ingForm.container_amount" type="number" step="0.0001" min="0" inputmode="decimal" placeholder="1.5" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                            </label>
+                            <label class="block w-28">
+                                <span class="text-sm font-medium text-slate-700">{{ t('item_kind.pack_sizes.unit') }}</span>
+                                <select v-model="ingForm.container_unit" :disabled="holdUnits.length === 0" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100 disabled:bg-slate-50">
+                                    <option v-for="u in holdUnits" :key="u.value" :value="u.value">{{ holdUnitLabel(u.value) }}</option>
+                                </select>
                             </label>
                         </div>
+                        <p v-if="ingModalErrors.piece_unit_label" class="mt-1 text-xs text-rose-600">{{ ingModalErrors.piece_unit_label[0] }}</p>
+                        <p v-if="ingModalErrors.units_per_piece" class="mt-1 text-xs text-rose-600">{{ ingModalErrors.units_per_piece[0] }}</p>
                         <label class="mt-2 inline-flex items-center gap-2 text-sm font-medium text-slate-700">
                             <input v-model="ingForm.allow_fractional_pieces" type="checkbox" class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500">
                             {{ t('inventory.piece.allow_fractional') }}

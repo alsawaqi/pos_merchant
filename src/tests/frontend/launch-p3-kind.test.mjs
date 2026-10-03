@@ -7,6 +7,7 @@
 //      [unit]" with the unit limited to the kind, sent with the ingredient;
 //   A4 the edit form's "Alternate units" become "Pack sizes" ("holds 12 l"),
 //      with the same holds input and no factor field;
+//   A5 the count container (piece unit) is typed as "bottle holds 1.5 l";
 //   every new string exists in English AND Arabic.
 // Run: node --test tests/frontend/launch-p3-kind.test.mjs
 import assert from 'node:assert/strict';
@@ -162,6 +163,30 @@ test('A4 the edit form lists Pack sizes as "holds 12 l", edited as holds [amount
     assert.match(script, /const holds = holdsEntry\(u\.factor, ingModalTarget\.value\?\.unit\);/);
     assert.match(script, /const savedHoldUnits = computed<KindUnit\[\]>\(\(\) => kindUnits\(ingModalTarget\.value\?\.unit\)\);/);
     assert.equal(en.item_kind.holds_amount, 'holds {amount}');
+});
+
+test('A5 the count container is typed as what it holds ("bottle holds 1.5 l"), not "1500 ml per piece"', () => {
+    const { toStoredAmount } = lib('itemKind');
+    assert.equal(toStoredAmount('1.5', 'l', 'ml'), 1500);
+    assert.equal(toStoredAmount('330', 'ml', 'ml'), 330);
+    assert.equal(toStoredAmount('330', 'g', 'kg'), 0.33);
+    assert.equal(toStoredAmount('24', 'piece', 'piece'), 24);
+    assert.equal(toStoredAmount('0', 'l', 'ml'), null);
+    assert.equal(toStoredAmount('5', 'kg', 'ml'), null, 'not a unit of the kind');
+    assert.equal(toStoredAmount('0.00001', 'g', 'kg'), null, 'rounds away at 4 decimals');
+
+    const { script, form } = ingredientForm();
+    const container = form.slice(form.indexOf('data-test="count-container"'), form.indexOf('</fieldset>', form.indexOf('data-test="count-container"')));
+    assert.ok(container.length > 0);
+    assert.match(container, /item_kind\.container\.title/);
+    assert.match(container, /v-model="ingForm\.piece_unit_label"/);
+    assert.match(container, /t\('item_kind\.holds'\)/);
+    assert.match(container, /v-model="ingForm\.container_amount"/);
+    assert.match(container, /<select v-model="ingForm\.container_unit"[^>]*>\s*<option v-for="u in holdUnits"/);
+    assert.doesNotMatch(container, /units_per_piece'|ingForm\.units_per_piece|piece\.units_per_piece/);
+    assert.match(script, /units_per_piece: containerUnitsPerPiece\(unit\),/);
+    assert.match(script, /const stored = toStoredAmount\(text, ingForm\.container_unit, storedUnit\);/);
+    assert.match(script, /const holds = holdsEntry\(ingredient\.units_per_piece, ingredient\.unit\);/);
 });
 
 test('every item-kind string exists in English and Arabic', () => {
