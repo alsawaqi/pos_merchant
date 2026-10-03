@@ -88,14 +88,15 @@ test('P3-1 a stored line reopens exactly as typed, else in its base unit', () =>
 
 test('P3-1/P3-2/P3-3 the product editor keeps the entered unit, sends the note, shows history and is read-only without "Edit recipes"', () => {
     const { script, template } = sfc('resources/js/Pages/Merchant/Catalogue/ProductWizard.vue');
-    assert.match(script, /const canEditRecipes = computed\(\(\) => can\(MerchantPermission\.CatalogueRecipesManage\)\)/);
+    // Fix order 1, L8 — the one rule: Edit recipes + catalogue view.
+    assert.match(script, /const canEditRecipes = computed\(\(\) => canWriteRecipes\(can\)\)/);
     assert.match(script, /listIngredients\(\{ includePrep: true \}\)/);
     assert.match(script, /\.\.\.lineEntry\(line, line\.ingredient\?\.unit\)/);
     assert.match(script, /updateProductRecipe\(uuid, \{ lines: recipePayload\(\), note: recipeNote \}\)/);
     assert.match(script, /recipe_note: canEditRecipes\.value \? recipeNote : null/);
     assert.match(script, /recipe_lines: canEditRecipes\.value \? recipePayload\(\) : \[\]/);
     assert.match(script, /if \(canEditRecipes\.value\) \{\s*await updateProductRecipe/);
-    assert.match(template, /recipeUnitOptions\(ingredientByUuid\(line\.ingredient_uuid\)\)/);
+    assert.match(template, /recipeUnitOptions\(ingredientByUuid\(line\.ingredient_uuid\), locale\)/);
     assert.match(template, /data-test="recipe-readonly"/);
     assert.match(template, /v-if="!canEditRecipes"/);
     assert.match(template, /data-test="recipe-note"/);
@@ -109,7 +110,7 @@ test('P3-1/P3-2/P3-3 the product editor keeps the entered unit, sends the note, 
 
 test('P3-1/P3-3/P3-4 the add-on stock-usage editor offers the piece unit and prep items, and can be read-only', () => {
     const editor = sfc('resources/js/Pages/Merchant/Catalogue/AddonConsumptionEditor.vue');
-    assert.match(editor.script, /recipeUnitOptions\(ingredient\)/);
+    assert.match(editor.script, /recipeUnitOptions\(ingredient, locale\.value\)/);
     assert.match(editor.script, /readonly\?: boolean/);
     assert.match(editor.template, /<div v-if="readonly"/);
     assert.match(editor.template, /prep_items\.optgroup/);
@@ -128,7 +129,7 @@ test('P3-4 prep items have their own editor, an Inventory tab, and are offered f
     const editor = sfc('resources/js/Pages/Merchant/Inventory/PrepItemEditor.vue');
     assert.match(editor.script, /const prepUnits: PrepUnit\[\] = \['g', 'ml', 'piece'\];/);
     assert.match(editor.script, /listIngredients\(\{ includePrep: true \}\)/);
-    assert.match(editor.template, /recipeUnitOptions\(ingredientByUuid\(line\.ingredient_uuid\)\)/);
+    assert.match(editor.template, /recipeUnitOptions\(ingredientByUuid\(line\.ingredient_uuid\), locale\)/);
     assert.match(editor.template, /data-test="prep-live-cost"/);
     assert.match(editor.template, /data-test="prep-readonly"/);
     assert.match(editor.template, /<RecipeHistoryPanel v-if="isEdit"/);

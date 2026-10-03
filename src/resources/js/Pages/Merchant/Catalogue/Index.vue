@@ -52,7 +52,7 @@ import {
 } from '@/lib/api/catalogue';
 import AddonConsumptionEditor from '@/Pages/Merchant/Catalogue/AddonConsumptionEditor.vue';
 import { listIngredients, type Ingredient } from '@/lib/api/inventory';
-import { lineEntry } from '@/lib/recipeUnits';
+import { completeConsumptionLines, consumptionLinesHaveProblems, lineEntry } from '@/lib/recipeUnits';
 import { listBranches, type Branch as BranchLite } from '@/lib/api/branches';
 import {
     createDeliveryProvider,
@@ -61,7 +61,7 @@ import {
     updateDeliveryProvider,
     type DeliveryProvider,
 } from '@/lib/api/deliveryProviders';
-import { MerchantPermission } from '@/lib/permissions';
+import { canWriteRecipes, MerchantPermission } from '@/lib/permissions';
 
 const { t, locale } = useI18n();
 const { can } = usePermissions();
@@ -71,8 +71,10 @@ const router = useRouter();
 const isArabic = computed(() => locale.value === 'ar');
 const canManage = computed(() => can(MerchantPermission.CatalogueManage));
 // LAUNCH-P3 P3-3 — "Edit recipes": an option's stock usage is read-only
-// (and never sent) without it.
-const canEditRecipes = computed(() => can(MerchantPermission.CatalogueRecipesManage));
+// (and never sent) without it. Fix order 1, L8 — the one rule for every
+// recipe write: "Edit recipes" + catalogue.view; such a role opens an
+// option for its stock usage only.
+const canEditRecipes = computed(() => canWriteRecipes(can));
 
 type TabKey = 'categories' | 'products' | 'addons' | 'providers';
 const activeTab = ref<TabKey>('categories');
@@ -586,21 +588,9 @@ function consumptionToPayload(lines: AddOnConsumptionLine[] | undefined): Consum
     });
 }
 
-/** Drop rows the user left half-filled (no ref, no quantity, or zero). */
-function completeConsumptionLines(lines: ConsumptionLinePayload[]): ConsumptionLinePayload[] {
-    return lines
-        .filter((l) => String(l.quantity ?? '').trim() !== ''
-            && Number(l.quantity) > 0
-            && (l.type === 'ingredient' ? !!l.ingredient_uuid : !!l.product_uuid))
-        .map((l) => ({
-            type: l.type,
-            ingredient_uuid: l.type === 'ingredient' ? l.ingredient_uuid : undefined,
-            product_uuid: l.type === 'product' ? l.product_uuid : undefined,
-            direction: l.direction,
-            quantity: String(l.quantity).trim(),
-            unit: l.type === 'ingredient' ? (l.unit || null) : null,
-        }));
-}
+// Fix order 1, L5 — completeConsumptionLines (lib/recipeUnits) leaves out only
+// lines with nothing picked; a picked line with a blank or 0 amount blocks the
+// save (consumptionLinesHaveProblems) instead of silently disappearing.
 
 /** The option editor's product source: packaging + prepared (cooked) from
  * componentOptions PLUS bought-in sellable unit products (legal consumption
@@ -670,10 +660,26 @@ function onLinkedProductPicked(): void {
 }
 
 async function submitAddOn(): Promise<void> {
-    aoModalBusy.value = true;
     aoModalErrors.value = {};
     aoModalError.value = null;
+    // Fix order 1, K8 + L5 — never sent while a stock-usage line has a
+    // problem (the server would only answer with a generic English 422).
+    if (canEditRecipes.value && consumptionLinesHaveProblems(aoConsumption.value, (uuid) => consumptionIngredients.value.find((i) => i.uuid === uuid))) {
+        aoModalError.value = t('recipe_units.fix_lines');
+        return;
+    }
+    aoModalBusy.value = true;
     try {
+        // Fix order 1, L8 — a recipe-only role (Edit recipes + catalogue view)
+        // saves the option's stock usage and nothing else of it.
+        if (!canManage.value) {
+            if (aoModalTarget.value && canEditRecipes.value) {
+                await updateAddOn(aoModalTarget.value.uuid, { consumption: completeConsumptionLines(aoConsumption.value) });
+            }
+            aoModalOpen.value = false;
+            await fetchAddOnGroups();
+            return;
+        }
         const payload = {
             name: aoForm.name.trim(),
             name_ar: aoForm.name_ar.trim() || null,
@@ -1091,8 +1097,9 @@ async function performProviderDelete(): Promise<void> {
                                 </td>
                                 <td class="px-5 py-4 text-end">
                                     <div class="inline-flex gap-2">
-                                        <button v-if="canManage" type="button" class="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50" @click="router.push(`/catalogue/products/${prod.uuid}/edit`)">
-                                            <Pencil class="size-3" /> {{ t('catalogue.actions.edit') }}
+                                        <!-- Fix order 1, L8 — a catalogue viewer opens the product read-only (recipe history included). -->
+                                        <button type="button" class="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50" data-test="product-open" @click="router.push(`/catalogue/products/${prod.uuid}/edit`)">
+                                            <Pencil class="size-3" /> {{ canManage ? t('catalogue.actions.edit') : t('catalogue.actions.view') }}
                                         </button>
                                         <!-- PD1 stock model: restocking belongs to ready/bought-in
                                              (unit) products — made-to-order has no piece count.
@@ -1198,14 +1205,13 @@ async function performProviderDelete(): Promise<void> {
                                     >
                                         {{ t('catalogue.statuses.inactive') }}
                                     </span>
-                                    <template v-if="canManage">
-                                        <button type="button" class="rounded p-1 text-slate-500 hover:bg-slate-200 hover:text-slate-700" :title="t('catalogue.actions.edit')" @click="openEditAddOn(group, addon)">
-                                            <Pencil class="size-3.5" />
-                                        </button>
-                                        <button type="button" class="rounded p-1 text-rose-500 hover:bg-rose-100 hover:text-rose-700" :title="t('catalogue.actions.delete')" @click="aoDeleteTarget = addon">
-                                            <Trash2 class="size-3.5" />
-                                        </button>
-                                    </template>
+                                    <!-- Fix order 1, L8 — "Edit recipes" opens an option for its stock usage. -->
+                                    <button v-if="canManage || canEditRecipes" type="button" class="rounded p-1 text-slate-500 hover:bg-slate-200 hover:text-slate-700" :title="t('catalogue.actions.edit')" @click="openEditAddOn(group, addon)">
+                                        <Pencil class="size-3.5" />
+                                    </button>
+                                    <button v-if="canManage" type="button" class="rounded p-1 text-rose-500 hover:bg-rose-100 hover:text-rose-700" :title="t('catalogue.actions.delete')" @click="aoDeleteTarget = addon">
+                                        <Trash2 class="size-3.5" />
+                                    </button>
                                 </div>
                             </li>
                         </ul>
@@ -1610,6 +1616,8 @@ async function performProviderDelete(): Promise<void> {
                 <div v-if="aoModalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
                     {{ aoModalError }}
                 </div>
+                <!-- Fix order 1, L8 — without catalogue.manage the option's own fields are read-only. -->
+                <fieldset :disabled="!canManage" class="min-w-0 space-y-4" data-test="addon-fields">
                 <div class="grid gap-3 sm:grid-cols-2">
                     <label class="block">
                         <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.name') }} *</span>
@@ -1628,9 +1636,11 @@ async function performProviderDelete(): Promise<void> {
                      standalone price). -->
                 <label class="block">
                     <span class="text-sm font-medium text-slate-700">Linked product (optional)</span>
+                    <!-- Fix order 1, L3 — changing an existing option's linked product moves its stock deduction: "Edit recipes". -->
                     <select
                         v-model="aoForm.linked_product_uuid"
-                        class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100"
+                        :disabled="aoModalMode === 'edit' && !canEditRecipes"
+                        class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100 disabled:bg-slate-50"
                         @change="onLinkedProductPicked"
                     >
                         <option value="">None — label-only option</option>
@@ -1654,6 +1664,7 @@ async function performProviderDelete(): Promise<void> {
                         <span class="block text-xs text-slate-500">{{ t('catalogue.fields.is_default_hint') }}</span>
                     </span>
                 </label>
+                </fieldset>
                 <!-- PD3b — what picking this option uses or removes from
                      stock, on top of the parent product's recipe/items. -->
                 <div class="rounded-lg border border-slate-200 p-3">
@@ -1668,7 +1679,7 @@ async function performProviderDelete(): Promise<void> {
                     />
                     <p v-if="aoConsumptionError" class="mt-1 text-xs text-rose-600">{{ aoConsumptionError }}</p>
                 </div>
-                <div v-if="aoModalMode === 'edit'" class="grid gap-3 sm:grid-cols-2">
+                <fieldset v-if="aoModalMode === 'edit'" :disabled="!canManage" class="grid min-w-0 gap-3 sm:grid-cols-2">
                     <label class="block">
                         <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.display_order') }}</span>
                         <input v-model.number="aoForm.display_order" type="number" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
@@ -1680,7 +1691,7 @@ async function performProviderDelete(): Promise<void> {
                             <option value="inactive">{{ t('catalogue.statuses.inactive') }}</option>
                         </select>
                     </label>
-                </div>
+                </fieldset>
             </form>
             <template #footer>
                 <div class="flex justify-end gap-2">

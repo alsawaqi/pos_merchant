@@ -86,19 +86,20 @@ function changeClass(change: string): string {
                     <p v-if="v.note" class="mt-1 rounded bg-slate-50 px-2 py-1 text-xs text-slate-700">
                         <span class="font-semibold">{{ t('recipe_history.note') }}:</span> {{ v.note }}
                     </p>
+                    <!-- Fix order 1, L4 — amounts and arrows are isolated left-to-right so "150 g → 120 g" never garbles in Arabic. -->
                     <p v-if="v.yield_after !== undefined && v.yield_after !== null && v.yield_before !== v.yield_after" class="mt-1 text-xs text-slate-700">
                         {{ t('recipe_history.yield') }}:
-                        <template v-if="v.yield_before">{{ v.yield_before }} {{ yieldUnit }} → </template>{{ v.yield_after }} {{ yieldUnit }}
+                        <bdi dir="ltr" class="tabular-nums"><template v-if="v.yield_before">{{ v.yield_before }} {{ yieldUnit }} → </template>{{ v.yield_after }} {{ yieldUnit }}</bdi>
                     </p>
                     <ul v-if="v.changes.length > 0" class="mt-2 space-y-1">
                         <li v-for="c in v.changes" :key="`${c.ingredient_id}-${c.change}`" class="flex flex-wrap items-center gap-2 text-xs">
                             <span class="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase" :class="changeClass(c.change)">{{ t(`recipe_history.${c.change}`) }}</span>
                             <span class="font-medium text-slate-900">{{ c.ingredient }}</span>
-                            <span class="tabular-nums text-slate-600">
+                            <bdi dir="ltr" class="tabular-nums text-slate-600" data-test="recipe-history-amount">
                                 <template v-if="c.change === 'changed'">{{ c.before }} → {{ c.after }}</template>
                                 <template v-else-if="c.change === 'added'">{{ c.after }}</template>
                                 <template v-else>{{ c.before }}</template>
-                            </span>
+                            </bdi>
                         </li>
                     </ul>
                     <p v-else-if="!v.note" class="mt-1 text-xs italic text-slate-400">{{ t('recipe_history.no_line_changes') }}</p>

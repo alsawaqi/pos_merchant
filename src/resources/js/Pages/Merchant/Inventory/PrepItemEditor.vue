@@ -28,10 +28,12 @@ import {
     type PrepItem,
     type PrepUnit,
 } from '@/lib/api/prepItems';
-import { MerchantPermission } from '@/lib/permissions';
+import { canWriteRecipes } from '@/lib/permissions';
 import {
     lineEntry,
+    money,
     recipeLineProblem,
+    recipeLinesHaveProblems,
     recipeUnitFactor,
     recipeUnitName,
     recipeUnitOptions,
@@ -42,10 +44,11 @@ import RecipeHistoryPanel from '@/Pages/Merchant/Catalogue/RecipeHistoryPanel.vu
 
 const route = useRoute();
 const router = useRouter();
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const { can } = usePermissions();
 
-const canEditRecipes = computed(() => can(MerchantPermission.CatalogueRecipesManage));
+// Fix order 1, L8 — the one rule for every recipe write: "Edit recipes" + catalogue view.
+const canEditRecipes = computed(() => canWriteRecipes(can));
 const editUuid = route.name === 'merchant.prep-items.edit' ? String(route.params.uuid) : null;
 const isEdit = editUuid !== null;
 
@@ -86,9 +89,20 @@ function removeLine(idx: number): void {
     form.lines.splice(idx, 1);
 }
 
+/**
+ * P3-1 — an amount that rounds to 0 or would not record; fix order 1, L5 —
+ * and a picked ingredient with a blank amount ("enter an amount or remove
+ * this line"): it used to be dropped on save, deleting it from the recipe.
+ */
 function lineMessage(line: { ingredient_uuid: string; quantity: string; unit: string }): string | null {
-    const problem = recipeLineProblem(ingredientByUuid(line.ingredient_uuid), line.unit, line.quantity);
+    if (line.ingredient_uuid === '') return null;
+    const problem = recipeLineProblem(ingredientByUuid(line.ingredient_uuid), line.unit, line.quantity, true, locale.value);
     return problem === null ? null : t(problem.key, problem.params);
+}
+
+/** Fix order 1, L4 — a line's amount ("150 g"), shown left-to-right. */
+function lineAmount(line: { ingredient_uuid: string; quantity: string; unit: string }): string {
+    return `${line.quantity} ${recipeUnitName(ingredientByUuid(line.ingredient_uuid), line.unit, locale.value)}`;
 }
 
 /** Exact-enough live cost of one batch: Σ quantity (in base units) × cost per base unit. */
@@ -129,7 +143,7 @@ const hasDuplicates = computed<boolean>(() => {
     return false;
 });
 
-const hasProblems = computed<boolean>(() => form.lines.some((l) => l.ingredient_uuid !== '' && lineMessage(l) !== null));
+const hasProblems = computed<boolean>(() => recipeLinesHaveProblems(form.lines, ingredientByUuid));
 
 const completeLines = computed(() => form.lines.filter((l) => l.ingredient_uuid !== '' && String(l.quantity).trim() !== ''));
 
@@ -291,8 +305,9 @@ onMounted(async () => {
                     <p v-if="firstError('lines')" class="mt-2 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700">{{ firstError('lines') }}</p>
 
                     <ul v-if="!canEditRecipes" class="mt-3 space-y-1">
+                        <!-- Fix order 1, L4 — the amount is isolated left-to-right so it never garbles in Arabic. -->
                         <li v-for="(line, idx) in form.lines" :key="idx" class="text-sm text-slate-700">
-                            {{ line.quantity }} {{ recipeUnitName(ingredientByUuid(line.ingredient_uuid), line.unit) }} {{ ingredientByUuid(line.ingredient_uuid)?.name ?? '—' }}
+                            <bdi dir="ltr" class="tabular-nums">{{ lineAmount(line) }}</bdi> {{ ingredientByUuid(line.ingredient_uuid)?.name ?? '—' }}
                         </li>
                     </ul>
                     <template v-else>
@@ -315,13 +330,13 @@ onMounted(async () => {
                                 <label class="block w-36">
                                     <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.recipe.unit') }}</span>
                                     <select v-model="line.unit" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
-                                        <option v-for="u in recipeUnitOptions(ingredientByUuid(line.ingredient_uuid))" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
+                                        <option v-for="u in recipeUnitOptions(ingredientByUuid(line.ingredient_uuid), locale)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
                                     </select>
                                 </label>
                                 <button type="button" class="grid size-9 place-items-center rounded-lg border border-rose-200 text-rose-700 transition hover:bg-rose-50" :title="t('catalogue.recipe.remove_line')" @click="removeLine(idx)">
                                     <Minus class="size-4" />
                                 </button>
-                                <p v-if="lineMessage(line)" class="basis-full text-xs font-semibold text-rose-700">{{ lineMessage(line) }}</p>
+                                <p v-if="lineMessage(line)" class="basis-full text-xs font-semibold text-rose-700" data-test="prep-line-problem">{{ lineMessage(line) }}</p>
                             </li>
                         </ul>
                         <button type="button" class="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100" @click="addLine">
@@ -334,7 +349,7 @@ onMounted(async () => {
                     <div class="mt-3 grid gap-2 sm:grid-cols-2" data-test="prep-live-cost">
                         <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
                             <p class="text-[10px] font-semibold uppercase tracking-wide text-amber-700">{{ t('prep_items.batch_cost') }}</p>
-                            <p class="text-base font-semibold tabular-nums text-amber-900">{{ batchCost.toFixed(3) }} <span class="text-[10px] font-normal text-amber-600">OMR</span></p>
+                            <p class="text-base font-semibold tabular-nums text-amber-900">{{ money(batchCost) }} <span class="text-[10px] font-normal text-amber-600">OMR</span></p>
                         </div>
                         <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
                             <p class="text-[10px] font-semibold uppercase tracking-wide text-amber-700">{{ t('prep_items.unit_cost', { unit: form.unit }) }}</p>

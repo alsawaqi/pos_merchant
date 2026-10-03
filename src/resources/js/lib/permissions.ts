@@ -112,3 +112,13 @@ export const MerchantRole = {
 } as const;
 
 export type MerchantRoleValue = (typeof MerchantRole)[keyof typeof MerchantRole];
+
+/**
+ * LAUNCH-P3 fix order 1, L8 — the ONE rule for every recipe write (product
+ * recipes, prep items, add-on stock usage, and the changes that switch recipe
+ * deduction): "Edit recipes" together with seeing the catalogue. The server
+ * enforces the same rule (RecipeEditGate).
+ */
+export function canWriteRecipes(can: (permission: string) => boolean): boolean {
+    return can(MerchantPermission.CatalogueRecipesManage) && can(MerchantPermission.CatalogueView);
+}

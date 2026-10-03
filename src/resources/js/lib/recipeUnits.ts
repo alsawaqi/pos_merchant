@@ -21,7 +21,19 @@ export interface RecipeUnitSource {
     alt_units?: { name: string; factor: string }[];
     auto_units?: { name: string; factor: string }[];
     piece_unit_label?: string | null;
+    /** Fix order 1, K8 — the piece unit's Arabic label, used when the locale is ar. */
+    piece_unit_label_ar?: string | null;
     units_per_piece?: string | null;
+}
+
+/**
+ * Fix order 1, K8 — the piece unit's label in the reader's language: the
+ * Arabic label when the locale is Arabic and one is set, else the label.
+ */
+export function pieceUnitLabel(ingredient: RecipeUnitSource | null | undefined, locale?: string | null): string | null {
+    if (!ingredient) return null;
+    if (locale === 'ar' && ingredient.piece_unit_label_ar) return ingredient.piece_unit_label_ar;
+    return ingredient.piece_unit_label ?? null;
 }
 
 export interface RecipeUnitOption {
@@ -48,7 +60,7 @@ function trim(value: number, decimals: number): string {
  * extra unit wins over a metric pair of the same name (the server resolves
  * the same way).
  */
-export function recipeUnitOptions(ingredient: RecipeUnitSource | null | undefined): RecipeUnitOption[] {
+export function recipeUnitOptions(ingredient: RecipeUnitSource | null | undefined, locale?: string | null): RecipeUnitOption[] {
     if (!ingredient) return [];
     const base = ingredient.unit;
     const options: RecipeUnitOption[] = [{ value: '', label: base, factor: 1 }];
@@ -69,7 +81,7 @@ export function recipeUnitOptions(ingredient: RecipeUnitSource | null | undefine
     if (ingredient.piece_unit_label && perPiece !== null && !(base === 'piece' && perPiece === 1)) {
         options.push({
             value: PIECE_UNIT,
-            label: `${ingredient.piece_unit_label} (${trim(perPiece, 4)} ${base})`,
+            label: `${pieceUnitLabel(ingredient, locale)} (${trim(perPiece, 4)} ${base})`,
             factor: perPiece,
         });
     }
@@ -83,10 +95,10 @@ export function recipeUnitFactor(ingredient: RecipeUnitSource | null | undefined
 }
 
 /** The short name of a unit token for labels ("kg", "box", "loaf"). */
-export function recipeUnitName(ingredient: RecipeUnitSource | null | undefined, value: string | null | undefined): string {
+export function recipeUnitName(ingredient: RecipeUnitSource | null | undefined, value: string | null | undefined, locale?: string | null): string {
     if (!ingredient) return value ?? '';
     if (!value || value === ingredient.unit) return ingredient.unit;
-    if (value === PIECE_UNIT) return ingredient.piece_unit_label ?? 'piece';
+    if (value === PIECE_UNIT) return pieceUnitLabel(ingredient, locale) ?? 'piece';
     return value;
 }
 
@@ -160,29 +172,129 @@ export function wireRecipeUnit(selected: string | null | undefined): string | nu
 
 /**
  * Validation of one typed line: null when fine, else the message key and
- * its parameters ('recipe_units.too_small' / 'recipe_units.too_many_decimals').
+ * its parameters ('recipe_units.too_small' / 'recipe_units.too_many_decimals'
+ * / 'recipe_units.amount_required').
+ *
+ * Fix order 1, L5 + K9 — a line whose ingredient is chosen but whose amount is
+ * blank, 0 (a legacy zero line) or not a positive number is a problem too:
+ * "enter an amount or remove this line". It used to be dropped silently on
+ * save — and since a save rewrites every line, editing deleted it.
+ *
+ * @param chosen whether the line has an ingredient picked (defaults to "the ingredient is known")
  */
 export function recipeLineProblem(
     ingredient: RecipeUnitSource | null | undefined,
     unit: string,
-    quantity: string | number,
+    quantity: string | number | null | undefined,
+    chosen: boolean = ingredient !== null && ingredient !== undefined,
+    locale?: string | null,
 ): { key: string; params: Record<string, string> } | null {
-    if (String(quantity ?? '').trim() === '') return null;
-    if (hasTooManyDecimals(quantity)) {
+    const text = String(quantity ?? '').trim();
+    if (text === '') return chosen ? { key: 'recipe_units.amount_required', params: {} } : null;
+    const typed = Number(text);
+    if (!Number.isFinite(typed) || typed <= 0) {
+        return { key: 'recipe_units.amount_required', params: {} };
+    }
+    if (hasTooManyDecimals(text)) {
         return { key: 'recipe_units.too_many_decimals', params: {} };
     }
     const factor = recipeUnitFactor(ingredient, unit);
-    const amount = `${trimQuantity(quantity)} ${recipeUnitName(ingredient, unit)}`;
-    const step = `${smallestEntry(factor)} ${recipeUnitName(ingredient, unit)}`;
-    if (roundsToZero(factor, quantity)) {
+    const amount = `${trimQuantity(text)} ${recipeUnitName(ingredient, unit, locale)}`;
+    const step = `${smallestEntry(factor)} ${recipeUnitName(ingredient, unit, locale)}`;
+    if (roundsToZero(factor, text)) {
         return { key: 'recipe_units.too_small', params: { amount, base: ingredient?.unit ?? '', minimum: step } };
     }
-    if (roundsInaccurately(factor, quantity)) {
-        const stored = toBaseQuantity(factor, quantity);
+    if (roundsInaccurately(factor, text)) {
+        const stored = toBaseQuantity(factor, text);
         return {
             key: 'recipe_units.too_imprecise',
             params: { amount, stored: `${trimQuantity(stored ?? 0)} ${ingredient?.unit ?? ''}`, step },
         };
     }
     return null;
+}
+
+/** One recipe line as the editors hold it ('' ingredient = not picked yet). */
+export interface RecipeLineDraft {
+    ingredient_uuid: string;
+    quantity: string | number | null | undefined;
+    unit: string;
+}
+
+/**
+ * Fix order 1, L5 — whether any line blocks saving: a picked ingredient whose
+ * amount is blank, 0 or would not record. A line with nothing picked is
+ * simply left out.
+ */
+export function recipeLinesHaveProblems(
+    lines: RecipeLineDraft[],
+    find: (uuid: string) => RecipeUnitSource | null | undefined,
+): boolean {
+    return lines.some((l) => l.ingredient_uuid !== '' && recipeLineProblem(find(l.ingredient_uuid) ?? null, l.unit, l.quantity, true) !== null);
+}
+
+/** One add-on stock-usage line as the editor holds it. */
+export interface ConsumptionLineDraft {
+    type: 'ingredient' | 'product';
+    ingredient_uuid?: string;
+    product_uuid?: string;
+    direction: 'add' | 'remove';
+    quantity: string | number;
+    unit?: string | null;
+}
+
+/**
+ * Fix order 1, L5 + K8 — the problem of one add-on stock-usage line, or null:
+ * an ingredient line follows {@link recipeLineProblem}; an item line needs a
+ * positive amount once the item is picked (pieces keep 3 decimals).
+ */
+export function consumptionLineProblem(
+    line: ConsumptionLineDraft,
+    find: (uuid: string) => RecipeUnitSource | null | undefined,
+    locale?: string | null,
+): { key: string; params: Record<string, string> } | null {
+    if (line.type === 'ingredient') {
+        const uuid = line.ingredient_uuid ?? '';
+        return recipeLineProblem(uuid === '' ? null : (find(uuid) ?? null), line.unit ?? '', line.quantity, uuid !== '', locale);
+    }
+    if ((line.product_uuid ?? '') === '') return null;
+    const text = String(line.quantity ?? '').trim();
+    const amount = Number(text);
+    if (text === '' || !Number.isFinite(amount) || amount <= 0) return { key: 'recipe_units.amount_required', params: {} };
+    const dot = text.indexOf('.');
+    if (dot >= 0 && text.slice(dot + 1).replace(/0+$/, '').length > 3) return { key: 'recipe_units.too_many_piece_decimals', params: {} };
+    return null;
+}
+
+/** Fix order 1, K8 — an option's stock usage is not saved while a line has a problem. */
+export function consumptionLinesHaveProblems(
+    lines: ConsumptionLineDraft[],
+    find: (uuid: string) => RecipeUnitSource | null | undefined,
+): boolean {
+    return lines.some((l) => consumptionLineProblem(l, find) !== null);
+}
+
+/**
+ * The lines an option's save sends: every line with something picked (a line
+ * with nothing picked is left out). A picked line is never dropped here, even
+ * with a blank amount — {@link consumptionLinesHaveProblems} blocks the save
+ * first (fix order 1, L5: such a line used to vanish silently).
+ */
+export function completeConsumptionLines<T extends ConsumptionLineDraft>(lines: T[]): ConsumptionLineDraft[] {
+    return lines
+        .filter((l) => (l.type === 'ingredient' ? !!l.ingredient_uuid : !!l.product_uuid))
+        .map((l) => ({
+            type: l.type,
+            ingredient_uuid: l.type === 'ingredient' ? l.ingredient_uuid : undefined,
+            product_uuid: l.type === 'product' ? l.product_uuid : undefined,
+            direction: l.direction,
+            quantity: String(l.quantity ?? '').trim(),
+            unit: l.type === 'ingredient' ? (l.unit || null) : null,
+        }));
+}
+
+/** Fix order 1, UI-1 — a money amount (OMR) as shown: 3 decimals. */
+export function money(value: string | number | null | undefined): string {
+    const n = typeof value === 'number' ? value : parseFloat(String(value ?? ''));
+    return Number.isFinite(n) ? round(n, 3).toFixed(3) : '—';
 }

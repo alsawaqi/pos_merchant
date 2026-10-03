@@ -75,7 +75,17 @@ import {
 import AddonConsumptionEditor from '@/Pages/Merchant/Catalogue/AddonConsumptionEditor.vue';
 import RecipeHistoryPanel from '@/Pages/Merchant/Catalogue/RecipeHistoryPanel.vue';
 import { listIngredients, type Ingredient } from '@/lib/api/inventory';
-import { lineEntry, recipeLineProblem, recipeUnitFactor, recipeUnitName, recipeUnitOptions, wireRecipeUnit } from '@/lib/recipeUnits';
+import {
+    completeConsumptionLines,
+    consumptionLinesHaveProblems,
+    lineEntry,
+    recipeLineProblem,
+    recipeLinesHaveProblems,
+    recipeUnitFactor,
+    recipeUnitName,
+    recipeUnitOptions,
+    wireRecipeUnit,
+} from '@/lib/recipeUnits';
 import { listBranches, type Branch as BranchLite } from '@/lib/api/branches';
 import {
     listDeliveryProviders,
@@ -85,21 +95,31 @@ import {
     type DeliveryProvider,
 } from '@/lib/api/deliveryProviders';
 import { authState } from '@/stores/auth';
-import { MerchantPermission } from '@/lib/permissions';
+import { canWriteRecipes, MerchantPermission } from '@/lib/permissions';
 
 const route = useRoute();
 const router = useRouter();
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const { can } = usePermissions();
 
 const canManage = computed(() => can(MerchantPermission.CatalogueManage));
+const canView = computed(() => can(MerchantPermission.CatalogueView));
 // LAUNCH-P3 P3-3 — "Edit recipes": without it the recipe and the options'
 // stock usage are shown read-only and never sent (the server 403s them).
-const canEditRecipes = computed(() => can(MerchantPermission.CatalogueRecipesManage));
+// Fix order 1, L8 — the one rule for every recipe write: "Edit recipes" +
+// catalogue.view.
+const canEditRecipes = computed(() => canWriteRecipes(can));
 
 // Edit mode when the route carries a uuid (/catalogue/products/:uuid/edit).
 const editUuid = route.name === 'merchant.catalogue.product-edit' ? String(route.params.uuid) : null;
 const isEdit = editUuid !== null;
+
+// Fix order 1, L8 — a catalogue viewer opens an existing product READ-ONLY
+// (with its recipe history); one who may also edit recipes changes only the
+// recipe and the options' stock usage. Creating needs catalogue.manage.
+const readOnly = computed(() => !canManage.value);
+const canOpen = computed(() => canManage.value || (isEdit && canView.value));
+const canSubmit = computed(() => canManage.value || (isEdit && canEditRecipes.value));
 
 // F5 — branch assignment is HQ-only (full-replace would wipe other
 // branches' rows); scoped users simply don't get the section and the
@@ -319,6 +339,12 @@ async function addOwnedGroup(): Promise<void> {
 async function addOwnedOption(key: string, persistedGroupUuid: string | null, draftIndex: number | null): Promise<void> {
     const formRow = optionFormFor(key);
     if (formRow.name.trim() === '') return;
+    // Fix order 1, K8 + L5 — a stock-usage line with a problem (a picked item
+    // without an amount, an amount that rounds to 0) blocks the save.
+    if (canEditRecipes.value && consumptionLinesHaveProblems(formRow.consumption, ingredientByUuid)) {
+        ownedError.value = t('recipe_units.fix_lines');
+        return;
+    }
 
     const optionPayload: WizardOwnedOptionPayload = {
         name: formRow.name.trim(),
@@ -475,22 +501,10 @@ async function loadOwnedAddonGroups(): Promise<void> {
 }
 
 // ---- PD3b — per-option stock usage ----------------------------------
-
-/** Drop rows the user left half-filled (no ref, no quantity, or zero). */
-function completeConsumptionLines(lines: ConsumptionLinePayload[]): ConsumptionLinePayload[] {
-    return lines
-        .filter((l) => String(l.quantity ?? '').trim() !== ''
-            && Number(l.quantity) > 0
-            && (l.type === 'ingredient' ? !!l.ingredient_uuid : !!l.product_uuid))
-        .map((l) => ({
-            type: l.type,
-            ingredient_uuid: l.type === 'ingredient' ? l.ingredient_uuid : undefined,
-            product_uuid: l.type === 'product' ? l.product_uuid : undefined,
-            direction: l.direction,
-            quantity: String(l.quantity).trim(),
-            unit: l.type === 'ingredient' ? (l.unit || null) : null,
-        }));
-}
+// Fix order 1, L5 — completeConsumptionLines (lib/recipeUnits) leaves out
+// only lines with nothing picked; a picked line with a blank or 0 amount is
+// a problem that blocks the save (consumptionLinesHaveProblems), never a
+// line that silently disappears.
 
 /** Read-shape → editor write-shape. LAUNCH-P3 P3-1 — an ingredient line
  * reopens in the unit it was typed in (entered_unit / entered_quantity),
@@ -554,6 +568,11 @@ function toggleOptionStock(option: AddOn | DraftOption): void {
 
 async function saveOptionStock(uuid: string): Promise<void> {
     if (!canEditRecipes.value) return;
+    // Fix order 1, K8 + L5 — never sent while a line has a problem.
+    if (consumptionLinesHaveProblems(optionStockDrafts.value[uuid] ?? [], ingredientByUuid)) {
+        ownedError.value = t('recipe_units.fix_lines');
+        return;
+    }
     ownedBusy.value = true;
     ownedError.value = null;
     try {
@@ -595,19 +614,23 @@ function toBaseUnits(qty: number, ingredient: Ingredient | null | undefined, sel
 const rawIngredients = computed(() => ingredients.value.filter((i) => !i.is_prep));
 const prepIngredients = computed(() => ingredients.value.filter((i) => i.is_prep));
 
-/** LAUNCH-P3 P3-1 — an amount that would round to 0 in the base unit (or > 4 decimals), per line. */
+/**
+ * LAUNCH-P3 P3-1 — an amount that would round to 0 in the base unit (or > 4
+ * decimals), per line. Fix order 1, L5 + K9 — and a picked ingredient with a
+ * blank or 0 amount: "enter an amount or remove this line".
+ */
 function recipeLineMessage(line: { ingredient_uuid: string; quantity: string; unit: string }): string | null {
-    const problem = recipeLineProblem(ingredientByUuid(line.ingredient_uuid), line.unit, line.quantity);
+    if (line.ingredient_uuid === '') return null;
+    const problem = recipeLineProblem(ingredientByUuid(line.ingredient_uuid), line.unit, line.quantity, true, locale.value);
     return problem === null ? null : t(problem.key, problem.params);
 }
 
 const recipeHasProblems = computed<boolean>(() => hasRecipeStep.value && canEditRecipes.value
-    && form.recipe_lines.some((l) => l.ingredient_uuid !== '' && recipeLineMessage(l) !== null));
+    && recipeLinesHaveProblems(form.recipe_lines, ingredientByUuid));
 
-/** Read-only recipe line ("150 g Flour"). */
-function recipeLineText(line: { ingredient_uuid: string; quantity: string; unit: string }): string {
-    const ingredient = ingredientByUuid(line.ingredient_uuid);
-    return `${line.quantity} ${recipeUnitName(ingredient, line.unit)} ${ingredient?.name ?? '—'}`;
+/** Fix order 1, L4 — the amount of a read-only recipe line ("150 g"), shown left-to-right. */
+function recipeLineAmount(line: { ingredient_uuid: string; quantity: string; unit: string }): string {
+    return `${line.quantity} ${recipeUnitName(ingredientByUuid(line.ingredient_uuid), line.unit, locale.value)}`;
 }
 
 const historyKey = ref(0);
@@ -785,9 +808,12 @@ function recipePayload(): RecipeLinePayload[] {
     // A type without ingredient consumption carries no recipe — on edit
     // an emptied list also CLEARS any recipe left from a previous type.
     if (!hasRecipeStep.value) return [];
+    // Fix order 1, L5 — every picked line is sent: a picked line with a
+    // blank amount is a problem that blocks submit() (recipeHasProblems),
+    // never a line silently left out (that deleted it on an edit).
     return form.recipe_lines
-        .filter((l) => l.ingredient_uuid && l.quantity !== '')
-        .map((l) => ({ ingredient_uuid: l.ingredient_uuid, quantity: l.quantity, unit: wireUnit(l.unit) }));
+        .filter((l) => l.ingredient_uuid)
+        .map((l) => ({ ingredient_uuid: l.ingredient_uuid, quantity: String(l.quantity ?? '').trim(), unit: wireUnit(l.unit) }));
 }
 
 function componentsPayload(): ComponentLinePayload[] {
@@ -859,8 +885,16 @@ function confirmNoRecipe(): void {
 }
 
 async function submit(): Promise<void> {
-    // LAUNCH-P3 P3-1 — an amount that rounds to 0 is refused before it is sent.
+    if (!canSubmit.value) return;
+    // LAUNCH-P3 P3-1 — an amount that rounds to 0 is refused before it is
+    // sent; fix order 1, L5 — so is a picked ingredient with no amount.
     if (recipeHasProblems.value) {
+        step.value = 2;
+        return;
+    }
+    // Fix order 1, K8 + L5 — the same for a new option's stock usage.
+    if (!isEdit && canEditRecipes.value && ownedDrafts.value.some((g) => g.options.some((o) => consumptionLinesHaveProblems(o.consumption, ingredientByUuid)))) {
+        ownedError.value = t('recipe_units.fix_lines');
         step.value = 2;
         return;
     }
@@ -889,6 +923,11 @@ async function submit(): Promise<void> {
                 branches: branchesPayload(),
                 delivery_prices: deliveryPricesPayload(),
             });
+        } else if (readOnly.value) {
+            // Fix order 1, L8 — a recipe-only role (Edit recipes + catalogue
+            // view) saves the recipe and nothing else of the product.
+            await updateProductRecipe(editUuid!, { lines: recipePayload(), note: recipeNote })
+                .catch((e) => remapSectionErrors(e, 'lines', 'recipe_lines'));
         } else {
             const uuid = editUuid!;
             await updateProduct(uuid, { ...productPayload(), status: form.status });
@@ -1071,7 +1110,7 @@ onBeforeUnmount(() => {
 });
 
 // ---- Review helpers -----------------------------------------------------
-const reviewRecipeLines = computed(() => form.recipe_lines.filter((l) => l.ingredient_uuid && l.quantity !== ''));
+const reviewRecipeLines = computed(() => form.recipe_lines.filter((l) => l.ingredient_uuid !== ''));
 const reviewComponents = computed(() => form.component_rows.filter((l) => l.component_uuid && l.quantity !== ''));
 const reviewSharedGroups = computed(() => addOnGroups.value.filter((g) => form.addon_group_uuids.includes(g.uuid)));
 const reviewProviderPrices = computed(() => activeProviders.value
@@ -1112,6 +1151,21 @@ function ingredientName(uuid: string): string {
 }
 
 const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
+
+/**
+ * Fix order 1, L3 — on a product WITH recipe lines, a type change into or out
+ * of made-to-order / cooked turns recipe deduction on, off or between sale
+ * and production: it needs "Edit recipes" (the server refuses it with 403).
+ */
+const RECIPE_MODES: readonly string[] = ['ingredient', 'cooked'];
+function typeLocked(mode: string): boolean {
+    const saved = editTarget.value;
+    if (!isEdit || saved === null || canEditRecipes.value) return false;
+    const savedMode = saved.stock_mode ?? 'untracked';
+    if (mode === savedMode || (saved.recipe_lines ?? []).length === 0) return false;
+    return RECIPE_MODES.includes(savedMode) || RECIPE_MODES.includes(mode);
+}
+const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.some((mode) => typeLocked(mode)));
 </script>
 
 <template>
@@ -1126,12 +1180,12 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
             </RouterLink>
 
             <h1 class="text-2xl font-bold text-slate-950">
-                {{ isEdit ? t('catalogue.wizard.edit_title') : t('catalogue.wizard.create_title') }}
+                {{ isEdit ? (readOnly ? t('catalogue.wizard.view_title') : t('catalogue.wizard.edit_title')) : t('catalogue.wizard.create_title') }}
             </h1>
             <p v-if="isEdit && editTarget" class="mt-1 text-sm text-slate-500">{{ editTarget.name }}</p>
 
             <!-- Forbidden / loading / load-error -->
-            <div v-if="!canManage" class="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700">
+            <div v-if="!canOpen" class="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700">
                 {{ t('catalogue.wizard.forbidden') }}
             </div>
             <div v-else-if="pageLoading" class="mt-6 rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
@@ -1176,22 +1230,31 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                 <div v-if="stepOneErrors.length > 0 && step === 1" class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
                     <p v-for="msg in stepOneErrors" :key="msg">{{ msg }}</p>
                 </div>
+                <!-- Fix order 1, L8 — read-only for a catalogue viewer; a recipe
+                     editor changes the recipe and option stock usage only. -->
+                <div v-if="readOnly" class="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800" data-test="product-readonly">
+                    {{ t('catalogue.wizard.readonly_hint') }}
+                    <span v-if="canEditRecipes" class="block text-xs font-medium">{{ t('catalogue.wizard.readonly_recipe_hint') }}</span>
+                </div>
 
                 <form class="mt-5 space-y-5" @submit.prevent>
                     <!-- ============ STEP 1 — BASICS ============ -->
-                    <template v-if="step === 1">
+                    <!-- Fix order 1, L8 — every product field is read-only without catalogue.manage. -->
+                    <fieldset v-if="step === 1" :disabled="readOnly" class="min-w-0 space-y-5" data-test="basics-fieldset">
                         <!-- The TYPE comes first: it decides the rest of the form. -->
                         <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                             <h2 class="text-sm font-semibold text-slate-900">{{ t('catalogue.wizard.type_label') }}</h2>
                             <p class="mt-0.5 text-xs text-slate-500">{{ t('catalogue.wizard.type_hint') }}</p>
+                            <!-- Fix order 1, L3 — switching recipe deduction needs "Edit recipes". -->
+                            <p v-if="typeChangeLocked" class="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800" data-test="type-locked">{{ t('catalogue.wizard.type_locked_hint') }}</p>
                             <div class="mt-3 grid gap-2 sm:grid-cols-2">
                                 <label
                                     v-for="mode in typeOptions"
                                     :key="mode"
                                     class="flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition"
-                                    :class="form.stock_mode === mode ? 'border-teal-500 bg-teal-50/60 ring-2 ring-teal-100' : 'border-slate-200 hover:bg-slate-50'"
+                                    :class="[form.stock_mode === mode ? 'border-teal-500 bg-teal-50/60 ring-2 ring-teal-100' : 'border-slate-200 hover:bg-slate-50', typeLocked(mode) ? 'cursor-not-allowed opacity-50' : '']"
                                 >
-                                    <input v-model="form.stock_mode" type="radio" :value="mode" class="mt-1 border-slate-300 text-teal-600 focus:ring-teal-500">
+                                    <input v-model="form.stock_mode" type="radio" :value="mode" :disabled="typeLocked(mode)" class="mt-1 border-slate-300 text-teal-600 focus:ring-teal-500">
                                     <span>
                                         <span class="block text-sm font-semibold text-slate-900">{{ t(`catalogue.wizard.types.${mode}.label`) }}</span>
                                         <span class="block text-xs text-slate-500">{{ t(`catalogue.wizard.types.${mode}.desc`) }}</span>
@@ -1363,7 +1426,7 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                 <p class="mt-1 text-xs text-slate-500">{{ t('catalogue.fields.available_hours_hint') }}</p>
                             </div>
                         </section>
-                    </template>
+                    </fieldset>
 
                     <!-- ============ STEP 2 — ADD-ONS & COMPOSITION ============ -->
                     <template v-else-if="step === 2">
@@ -1379,7 +1442,7 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                             </div>
                             <div v-else class="mt-3 grid gap-1.5 sm:grid-cols-2">
                                 <label v-for="group in selectableAddOnGroups" :key="group.id" class="flex items-center gap-2 rounded border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50">
-                                    <input v-model="form.addon_group_uuids" type="checkbox" :value="group.uuid" class="rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200">
+                                    <input v-model="form.addon_group_uuids" type="checkbox" :value="group.uuid" :disabled="readOnly" class="rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200">
                                     <span class="flex-1 truncate">{{ group.name }}</span>
                                     <span class="text-[10px] text-slate-400">{{ selectionModeLabel(group.selection_mode) }}</span>
                                 </label>
@@ -1417,7 +1480,7 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                                 </template>
                                             </p>
                                         </div>
-                                        <div class="flex shrink-0 items-center gap-1.5">
+                                        <div v-if="!readOnly" class="flex shrink-0 items-center gap-1.5">
                                             <button
                                                 type="button"
                                                 :disabled="ownedBusy"
@@ -1509,6 +1572,7 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                                     <Boxes class="size-3" /> {{ t('catalogue.consumption.button') }}
                                                 </button>
                                                 <button
+                                                    v-if="!readOnly"
                                                     type="button"
                                                     :disabled="ownedBusy"
                                                     class="rounded p-1 text-rose-500 transition hover:bg-rose-100 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
@@ -1551,8 +1615,8 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                         </li>
                                     </ul>
 
-                                    <!-- Add option -->
-                                    <div class="mt-2 grid gap-2 sm:grid-cols-[1fr_7rem_auto_auto]">
+                                    <!-- Add option (fix order 1, L8: catalogue.manage only) -->
+                                    <div v-if="!readOnly" class="mt-2 grid gap-2 sm:grid-cols-[1fr_7rem_auto_auto]">
                                         <label class="block">
                                             <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.product_addons.option_name') }}</span>
                                             <input v-model="optionFormFor(groupFormKey(group)).name" type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
@@ -1591,7 +1655,7 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                     <!-- PD3b — stock usage for the option being added: what
                                          picking it consumes (cups, beans...) or hands back
                                          ("remove salad"). Optional; empty = price-only option. -->
-                                    <div class="mt-2 rounded-lg border border-dashed border-slate-200 p-2">
+                                    <div v-if="!readOnly" class="mt-2 rounded-lg border border-dashed border-slate-200 p-2">
                                         <p class="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.consumption.new_option_title') }}</p>
                                         <AddonConsumptionEditor
                                             v-model="optionFormFor(groupFormKey(group)).consumption"
@@ -1604,8 +1668,8 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                 </article>
                             </div>
 
-                            <!-- Add a group -->
-                            <div class="mt-3 grid gap-2 rounded-lg border border-dashed border-slate-200 p-3 sm:grid-cols-[1fr_1fr_8rem_5rem_5rem_auto]">
+                            <!-- Add a group (fix order 1, L8: catalogue.manage only) -->
+                            <div v-if="!readOnly" class="mt-3 grid gap-2 rounded-lg border border-dashed border-slate-200 p-3 sm:grid-cols-[1fr_1fr_8rem_5rem_5rem_auto]">
                                 <label class="block">
                                     <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.product_addons.group_name') }}</span>
                                     <input v-model="ownedGroupForm.name" type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
@@ -1656,7 +1720,8 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                 <p class="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800">{{ t('recipe_permission.readonly_hint') }}</p>
                                 <p v-if="form.recipe_lines.length === 0" class="text-xs italic text-slate-500">{{ t('catalogue.recipe.no_lines') }}</p>
                                 <ul v-else class="space-y-1">
-                                    <li v-for="(line, idx) in form.recipe_lines" :key="idx" class="text-sm text-slate-700">{{ recipeLineText(line) }}</li>
+                                    <!-- Fix order 1, L4 — the amount is isolated left-to-right so it never garbles in Arabic. -->
+                                    <li v-for="(line, idx) in form.recipe_lines" :key="idx" class="text-sm text-slate-700"><bdi dir="ltr" class="tabular-nums">{{ recipeLineAmount(line) }}</bdi> {{ ingredientName(line.ingredient_uuid) }}</li>
                                 </ul>
                                 <p v-if="form.recipe_lines.length > 0" class="text-xs text-amber-800">{{ t('catalogue.recipe.live_cost') }}: <strong class="tabular-nums">{{ recipeLiveCost }}</strong> OMR</p>
                             </div>
@@ -1688,7 +1753,7 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                             <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.recipe.unit') }}</span>
                                             <select v-model="line.unit" data-test="recipe-line-unit" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
                                                 <!-- LAUNCH-P3 P3-1 — base + extra units + metric pair + the piece unit. -->
-                                                <option v-for="u in recipeUnitOptions(ingredientByUuid(line.ingredient_uuid))" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
+                                                <option v-for="u in recipeUnitOptions(ingredientByUuid(line.ingredient_uuid), locale)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
                                             </select>
                                         </label>
                                         <button type="button" class="grid size-9 place-items-center rounded-lg border border-rose-200 text-rose-700 transition hover:bg-rose-50" :title="t('catalogue.recipe.remove_line')" @click="removeRecipeLine(idx)">
@@ -1734,6 +1799,7 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                             <p class="mt-0.5 text-xs text-slate-500">{{ t('catalogue.wizard.physical_hint') }}</p>
                             <p v-if="fieldError('component_lines')" class="mt-2 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700">{{ fieldError('component_lines') }}</p>
 
+                            <fieldset :disabled="readOnly" class="min-w-0">
                             <div v-if="componentOptions.length === 0" class="mt-3 rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
                                 {{ t('catalogue.wizard.physical_empty') }}
                             </div>
@@ -1763,6 +1829,7 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                     {{ t('catalogue.wizard.physical_add') }}
                                 </button>
                             </template>
+                            </fieldset>
                         </section>
 
                         <!-- Branch availability (HQ users only — F5) -->
@@ -1776,6 +1843,7 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                 {{ form.stock_mode === 'cooked' ? t('catalogue.wizard.branches_cooked_hint') : t('catalogue.wizard.branches_recipe_hint') }}
                             </p>
 
+                            <fieldset :disabled="readOnly" class="min-w-0">
                             <label class="mt-3 flex items-center gap-2 text-xs font-medium text-slate-700">
                                 <input v-model="form.branch_all" type="checkbox" class="rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200">
                                 {{ t('catalogue.branches.all_branches') }}
@@ -1796,6 +1864,7 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                     <input v-if="form.stock_mode === 'unit'" v-model="form.branch_rows[idx]!.stock_qty" type="number" min="0" step="1" :disabled="!row.selected" :placeholder="t('catalogue.branches.stock_placeholder')" class="w-24 rounded border border-slate-200 px-2 py-1 text-xs tabular-nums disabled:cursor-not-allowed disabled:bg-slate-50">
                                 </li>
                             </ul>
+                            </fieldset>
                         </section>
                     </template>
 
@@ -1867,15 +1936,16 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                                 <Beaker class="size-4 text-amber-600" />
                                 {{ t('catalogue.recipe.section_title') }}
                             </h2>
-                            <p v-if="droppedRecipeLines" class="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
-                                {{ t('catalogue.wizard.recipe_dropped') }}
+                            <!-- Fix order 1, L3 — on an edit the server REMOVES the recipe (kept in the recipe history). -->
+                            <p v-if="droppedRecipeLines" class="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700" data-test="recipe-dropped">
+                                {{ isEdit ? t('catalogue.wizard.recipe_removed') : t('catalogue.wizard.recipe_dropped') }}
                             </p>
                             <template v-else>
                                 <p v-if="reviewRecipeLines.length === 0" class="mt-2 text-xs italic text-slate-500">{{ t('catalogue.wizard.review_none') }}</p>
                                 <ul v-else class="mt-3 space-y-1 text-sm">
                                     <li v-for="(line, i) in reviewRecipeLines" :key="i" class="flex justify-between text-slate-700">
                                         <span>{{ ingredientName(line.ingredient_uuid) }}</span>
-                                        <span class="tabular-nums">{{ line.quantity }} {{ recipeUnitName(ingredientByUuid(line.ingredient_uuid), line.unit) }}</span>
+                                        <bdi dir="ltr" class="tabular-nums">{{ recipeLineAmount(line) }}</bdi>
                                     </li>
                                 </ul>
                                 <div v-if="reviewRecipeLines.length > 0" class="mt-3 flex gap-4 border-t border-slate-100 pt-2 text-xs">
@@ -1941,7 +2011,7 @@ const typeOptions = ['untracked', 'ingredient', 'cooked', 'unit'] as const;
                             {{ t('catalogue.wizard.next') }}
                         </button>
                         <button
-                            v-else
+                            v-else-if="canSubmit"
                             type="button"
                             :disabled="submitting || recipeHasDuplicates"
                             class="rounded-lg bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"

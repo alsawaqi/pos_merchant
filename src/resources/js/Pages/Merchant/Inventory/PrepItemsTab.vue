@@ -15,12 +15,14 @@ import { useI18n } from 'vue-i18n';
 import { RouterLink } from 'vue-router';
 import { usePermissions } from '@/composables/usePermissions';
 import { listPrepItems, type PrepItem } from '@/lib/api/prepItems';
-import { MerchantPermission } from '@/lib/permissions';
+import { canWriteRecipes } from '@/lib/permissions';
+import { money } from '@/lib/recipeUnits';
 
 const { t, locale } = useI18n();
 const { can } = usePermissions();
 
-const canEditRecipes = computed(() => can(MerchantPermission.CatalogueRecipesManage));
+// Fix order 1, L8 — the one rule for every recipe write: "Edit recipes" + catalogue view.
+const canEditRecipes = computed(() => canWriteRecipes(can));
 const isArabic = computed(() => locale.value === 'ar');
 
 const items = ref<PrepItem[]>([]);
@@ -95,7 +97,8 @@ function usedBy(item: PrepItem): string {
                         </td>
                         <td class="px-5 py-4 text-end text-sm tabular-nums text-slate-700">{{ item.prep_yield_quantity }} {{ item.unit }}</td>
                         <td class="px-5 py-4 text-end text-sm tabular-nums text-slate-950">{{ item.unit_cost }} <span class="text-[10px] text-slate-400">OMR / {{ item.unit }}</span></td>
-                        <td class="px-5 py-4 text-end text-sm tabular-nums text-slate-950">{{ item.batch_cost }} <span class="text-[10px] text-slate-400">OMR</span></td>
+                        <!-- Fix order 1, UI-1 — a batch costs money: 3 decimals (the cost per unit keeps 6). -->
+                        <td class="px-5 py-4 text-end text-sm tabular-nums text-slate-950" data-test="prep-batch-cost">{{ money(item.batch_cost) }} <span class="text-[10px] text-slate-400">OMR</span></td>
                         <td class="px-5 py-4 text-xs text-slate-600">{{ usedBy(item) }}</td>
                         <td class="px-5 py-4 text-end">
                             <RouterLink :to="`/inventory/prep-items/${item.uuid}`" class="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50">

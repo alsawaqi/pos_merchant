@@ -400,6 +400,14 @@ const canManage = computed(() => can(MerchantPermission.RolesManage));
                             </label>
                         </div>
                     </div>
+                    <!-- LAUNCH-P3 fix order 1, L8 — every recipe write needs "Edit recipes" + seeing the catalogue. -->
+                    <p
+                        v-if="editorForm.permissions.has(MerchantPermission.CatalogueRecipesManage) && !editorForm.permissions.has(MerchantPermission.CatalogueView)"
+                        class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800"
+                        data-test="recipes-need-view"
+                    >
+                        {{ t('roles.editor.recipes_need_view') }}
+                    </p>
                     <p v-if="editorFieldErrors.permissions" class="text-xs text-rose-600">{{ editorFieldErrors.permissions[0] }}</p>
                 </div>
             </form>

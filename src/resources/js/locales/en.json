@@ -2,7 +2,10 @@
     "recipe_units": {
         "too_small": "{amount} is too small to record: it rounds to 0 {base} (stock keeps 4 decimals). Enter at least {minimum}, or use a smaller base unit.",
         "too_imprecise": "{amount} cannot be recorded accurately: the stock unit keeps 4 decimals, so it would become {stored}. Enter it in steps of {step}, or use a smaller base unit.",
-        "too_many_decimals": "Use at most 4 decimal places."
+        "too_many_decimals": "Use at most 4 decimal places.",
+        "amount_required": "Enter an amount or remove this line.",
+        "too_many_piece_decimals": "Pieces keep at most 3 decimal places.",
+        "fix_lines": "Fix the highlighted stock-usage lines first: enter an amount or remove the line."
     },
     "recipe_permission": {
         "readonly_hint": "You can see this recipe but not change it: that needs the \"Edit recipes\" permission (ask an owner to add it to your role).",
@@ -788,6 +791,7 @@
             "create_title": "Create role",
             "edit_title": "Edit role",
             "system_role_hint": "This is a system role — the name cannot be changed but you can edit which permissions it holds.",
+            "recipes_need_view": "\"Edit recipes\" works only together with \"See categories + products + add-ons\" — tick that too, or this role cannot change any recipe.",
             "submit": "Save",
             "submitting": "Saving…"
         },
@@ -976,6 +980,11 @@
         "wizard": {
             "create_title": "Add product",
             "edit_title": "Edit product",
+            "view_title": "Product",
+            "readonly_hint": "You can see this product but not change it: that needs the \"Create + edit + delete catalogue items\" permission.",
+            "readonly_recipe_hint": "You can change its recipe and its options' stock usage (\"Edit recipes\").",
+            "type_locked_hint": "This product has a recipe: changing its type to or from Made to order or Cooked turns its recipe deduction on or off, which needs the \"Edit recipes\" permission.",
+            "recipe_removed": "This product type has no recipe — saving removes the recipe lines. The removal is kept in the recipe history.",
             "back": "Back to catalogue",
             "forbidden": "You need the catalogue manage permission to add or edit products.",
             "load_failed": "Couldn't load the product form.",
@@ -1001,7 +1010,7 @@
                 },
                 "cooked": {
                     "label": "Cooked",
-                    "desc": "The kitchen produces batches ahead of sale (recipe consumed at production); pieces sell from shelf stock and start sold out until produced."
+                    "desc": "The kitchen produces batches ahead of sale (recipe consumed at production); pieces sell from the shelf count. A sale is never blocked on stock: the count can go below zero and shows as a warning."
                 },
                 "unit": {
                     "label": "Ready / bought-in",
@@ -1037,7 +1046,7 @@
             "unsaved_confirm": "You have unsaved changes — leave this page and discard them?",
             "branches_none_selected": "No branches ticked — this saves as available at EVERY branch (and clears any per-branch rows).",
             "branches_recipe_hint": "A made-to-order product has no piece count — you only choose WHERE it's offered. Whether a branch can make it follows that branch's ingredient stock (and any physical items).",
-            "branches_cooked_hint": "A cooked product has no manual units — you only choose WHERE it's offered. Its shelf count at each branch comes from kitchen production and starts sold out until the kitchen produces.",
+            "branches_cooked_hint": "A cooked product has no manual units — you only choose WHERE it's offered. Its shelf count at each branch comes from kitchen production; selling before the kitchen produces is never blocked, the count goes below zero and shows as a warning.",
             "review_addons": "Add-ons",
             "review_none": "None.",
             "recipe_dropped": "This product type doesn't carry a recipe — the recipe lines you entered will not be saved.",
@@ -1060,7 +1069,7 @@
         },
         "section_label": "Menu",
         "title": "Catalogue",
-        "subtitle": "Manage menu categories, products, and add-on options. Recipes and inventory mapping arrive in the next phase.",
+        "subtitle": "Manage menu categories, products, and add-on options.",
         "validation_summary": "Please fix the highlighted fields.",
         "uncategorized": "Uncategorized",
         "delete_category_blocked": "Move or delete the category's products before deleting it.",
@@ -1100,6 +1109,7 @@
             "add_addon_group": "Add add-on group",
             "add_addon": "Add option",
             "edit": "Edit",
+            "view": "View",
             "delete": "Delete",
             "manage_addons": "Manage add-ons"
         },

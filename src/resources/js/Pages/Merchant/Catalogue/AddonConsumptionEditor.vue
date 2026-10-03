@@ -12,7 +12,7 @@ import { useI18n } from 'vue-i18n';
 import { Plus, Trash2 } from 'lucide-vue-next';
 import type { ComponentOption, ConsumptionLinePayload } from '@/lib/api/catalogue';
 import type { Ingredient } from '@/lib/api/inventory';
-import { recipeLineProblem, recipeUnitName, recipeUnitOptions } from '@/lib/recipeUnits';
+import { consumptionLineProblem, recipeUnitName, recipeUnitOptions } from '@/lib/recipeUnits';
 
 const props = defineProps<{
     modelValue: ConsumptionLinePayload[];
@@ -25,7 +25,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{ (e: 'update:modelValue', lines: ConsumptionLinePayload[]): void }>();
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 function replaceAt(idx: number, line: ConsumptionLinePayload): void {
     const next = props.modelValue.slice();
@@ -89,31 +89,32 @@ const extraProductRefs = computed(() => {
 function unitsFor(ingredientUuid: string | undefined): { value: string; label: string }[] {
     const ingredient = props.ingredients.find((i) => i.uuid === ingredientUuid);
     if (!ingredient) return [];
-    return recipeUnitOptions(ingredient).map((u) =>
+    return recipeUnitOptions(ingredient, locale.value).map((u) =>
         u.value === '' ? { value: '', label: `${u.label} (${t('catalogue.consumption.base_unit')})` } : { value: u.value, label: u.label });
 }
 
 const rawIngredients = computed(() => props.ingredients.filter((i) => !i.is_prep));
 const prepIngredients = computed(() => props.ingredients.filter((i) => i.is_prep));
 
-/** LAUNCH-P3 P3-1 — an amount that would round to 0 (or more than 4 decimals), per line. */
+/**
+ * LAUNCH-P3 P3-1 — an amount that would round to 0 (or more than 4 decimals),
+ * per line. Fix order 1, L5 + K8 — and a picked ingredient or item with a
+ * blank / 0 amount; the option's save is blocked while any line has one.
+ */
 function lineProblem(line: ConsumptionLinePayload): string | null {
-    if (line.type !== 'ingredient') return null;
-    const ingredient = props.ingredients.find((i) => i.uuid === line.ingredient_uuid);
-    const problem = recipeLineProblem(ingredient, line.unit ?? '', line.quantity);
+    const problem = consumptionLineProblem(line, (uuid) => props.ingredients.find((i) => i.uuid === uuid), locale.value);
     return problem === null ? null : t(problem.key, problem.params);
 }
 
-/** Read-only rendering of one line ("Uses 9 g Beans"). */
-function readonlyText(line: ConsumptionLinePayload): string {
+/** Read-only rendering of one line: "Uses", the amount ("9 g", fix order 1 L4: shown left-to-right) and the name. */
+function readonlyParts(line: ConsumptionLinePayload): { direction: string; amount: string; name: string } {
     const direction = line.direction === 'remove' ? t('catalogue.consumption.removes') : t('catalogue.consumption.uses');
     if (line.type === 'ingredient') {
         const ingredient = props.ingredients.find((i) => i.uuid === line.ingredient_uuid);
-        const name = ingredient?.name ?? line.ingredient_label ?? '—';
-        return `${direction} ${line.quantity} ${recipeUnitName(ingredient, line.unit ?? '')} ${name}`;
+        return { direction, amount: `${line.quantity} ${recipeUnitName(ingredient, line.unit ?? '', locale.value)}`, name: ingredient?.name ?? line.ingredient_label ?? '—' };
     }
     const product = props.products.find((p) => p.uuid === line.product_uuid);
-    return `${direction} ${line.quantity} × ${product?.name ?? line.product_label ?? '—'}`;
+    return { direction, amount: `${line.quantity} ×`, name: product?.name ?? line.product_label ?? '—' };
 }
 
 function productLabel(option: ComponentOption): string {
@@ -127,7 +128,7 @@ function productLabel(option: ComponentOption): string {
     <!-- LAUNCH-P3 P3-3 — read-only without "Edit recipes". -->
     <div v-if="readonly" class="space-y-1" data-test="consumption-readonly">
         <p v-if="modelValue.length === 0" class="text-xs italic text-slate-500">{{ t('catalogue.consumption.none') }}</p>
-        <p v-for="(line, idx) in modelValue" :key="idx" class="text-xs text-slate-700">{{ readonlyText(line) }}</p>
+        <p v-for="(line, idx) in modelValue" :key="idx" class="text-xs text-slate-700">{{ readonlyParts(line).direction }} <bdi dir="ltr" class="tabular-nums">{{ readonlyParts(line).amount }}</bdi> {{ readonlyParts(line).name }}</p>
         <p class="text-[11px] text-amber-700">{{ t('recipe_permission.readonly_hint') }}</p>
     </div>
     <div v-else class="space-y-2">
