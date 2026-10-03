@@ -17,6 +17,7 @@
 //   F1 a Weighed / Liquid cost is typed and shown per kg / l;
 //   F2 goods received: pack sizes first, kg / l before g / ml, friendly preview;
 //   F3 the receipt detail shows quantities, splits and costs the friendly way;
+//   F4 the warehouse dialog takes any unit the item knows;
 //   every new string exists in English AND Arabic.
 // Run: node --test tests/frontend/launch-p3-kind.test.mjs
 import assert from 'node:assert/strict';
@@ -398,6 +399,28 @@ test('F3 the receipt detail reads "36 l", "Kaldi athaiba: 36 l", "Cost per l: 0.
     assert.match(template, /t\('purchase_receipts\.show\.entered_as', \{ quantity: trimQty\(line\.purchase_quantity\), unit: enteredUnit\(line\), price: trimQty\(line\.unit_price\) \}\)/);
     assert.match(script, /const friendly = friendlyAmount\(quantity, unit\);\s*return `\$\{friendly\.amount\} \$\{friendly\.unit\}`;/);
     assert.doesNotMatch(template, /\{\{ trimQty\(line\.quantity\) \}\}|\{\{ trimQty\(a\.quantity\) \}\}/);
+});
+
+test('F4 the warehouse dialog types amounts in the kind\'s units, pack sizes or container and shows balances friendly', () => {
+    const { script, template } = sfc('resources/js/Pages/Merchant/Inventory/IngredientStockDialog.vue');
+    assert.match(script, /ingredient\?: Ingredient \| null;/);
+    assert.match(script, /const unitOptions = computed\(\(\) => entryUnitOptions\(/);
+    assert.match(template, /<select v-model="entryUnit" data-test="warehouse-unit"[^>]*>\s*<option v-for="o in unitOptions"/);
+    // Every write sends the unit.
+    for (const call of ['receiveAndDistributeIngredientStock', 'receiveIngredientStock', 'allocateIngredientStock', 'transferIngredientStock', 'adjustIngredientStock']) {
+        const at = script.indexOf(`() => ${call}(`);
+        assert.ok(at > 0, call);
+        assert.match(script.slice(at, script.indexOf('}),', at) + 3), /unit: wireUnit\(\)/, call);
+    }
+    // kg / l by default for a weighed / liquid item.
+    assert.match(script, /const big = costUnit\(unit\.value\);/);
+    // Balances read friendly.
+    assert.match(template, /data-test="warehouse-central">\{\{ friendlyAmount\(summary\.central_quantity, unit\)\.amount \}\}/);
+    assert.match(template, /\{\{ amount\(b\.quantity\) \}\}/);
+    assert.match(template, /\{\{ amount\(m\.quantity\) \}\}/);
+    assert.doesNotMatch(template, /Stock \(\{\{ unit \}\}\)|Total received \(\{\{ unit \}\}\)/);
+    assert.match(sfc('resources/js/Pages/Merchant/Inventory/Index.vue').template, /:ingredient="warehouseDialogIngredient"/);
+    assert.match(read('resources/js/lib/api/ingredientStock.ts'), /payload: \{ branch_uuid\?: string \| null; signed_quantity: string \| number; note: string \} & EntryUnitField,/);
 });
 
 test('every item-kind string exists in English and Arabic', () => {

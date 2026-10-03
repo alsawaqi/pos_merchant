@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Pos;
 
 use App\Actions\Pos\Inventory\AdjustIngredientStockAction;
 use App\Actions\Pos\Inventory\AllocateIngredientStockAction;
+use App\Actions\Pos\Inventory\IngredientUnitConverter;
 use App\Actions\Pos\Inventory\ReceiveAndDistributeIngredientStockAction;
 use App\Actions\Pos\Inventory\ReceiveIngredientStockAction;
 use App\Actions\Pos\Inventory\TransferStockAction;
@@ -25,6 +26,7 @@ use App\Models\StockMovement;
 use App\Support\BranchScope;
 use App\Support\MerchantTenantContext;
 use App\Support\SingleStockIn;
+use App\Support\StockDecimal;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -43,8 +45,9 @@ use RuntimeException;
  *   POST /api/ingredients/{ingredient:uuid}/stock/adjust       → correct central or a branch balance
  *   GET  /api/ingredients/{ingredient:uuid}/stock/movements    → paginated ledger (central + branch rows)
  *
- * Scoped to the ingredient's company. Quantities are in the ingredient's
- * BASE unit (the dialog labels inputs with it).
+ * Scoped to the ingredient's company. Quantities are kept in the ingredient's
+ * stored unit; LAUNCH item kind F4 — every write may name the `unit` its
+ * amounts were typed in (kg / l, a pack size, '@piece'), converted here.
  */
 class IngredientStockController extends Controller
 {
@@ -55,6 +58,7 @@ class IngredientStockController extends Controller
         private readonly AllocateIngredientStockAction $allocate,
         private readonly TransferStockAction $transfer,
         private readonly AdjustIngredientStockAction $adjust,
+        private readonly IngredientUnitConverter $units,
     ) {}
 
     public function show(Request $request, Ingredient $ingredient): JsonResponse
@@ -135,7 +139,7 @@ class IngredientStockController extends Controller
         try {
             $this->receive->handle(
                 $ingredient,
-                $request->input('quantity'),
+                $this->stored($ingredient, $request->input('quantity'), $request->input('unit')),
                 $request->input('note'),
                 $request->user(),
                 $request->input('total_cost'),
@@ -177,10 +181,11 @@ class IngredientStockController extends Controller
         }
 
         try {
+            $unit = $request->input('unit');
             $this->receiveDistribute->handle(
                 $ingredient,
-                $request->input('quantity'),
-                $lines,
+                $this->stored($ingredient, $request->input('quantity'), $unit),
+                $this->storedLines($ingredient, $lines, $unit),
                 $request->input('note'),
                 $request->user(),
                 $request->input('total_cost'),
@@ -212,7 +217,7 @@ class IngredientStockController extends Controller
         }
 
         try {
-            $this->allocate->handle($ingredient, $lines, $request->input('note'), $request->user());
+            $this->allocate->handle($ingredient, $this->storedLines($ingredient, $lines, $request->input('unit')), $request->input('note'), $request->user());
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
@@ -246,7 +251,8 @@ class IngredientStockController extends Controller
             $this->transfer->handle(
                 $from,
                 $to,
-                [['ingredient_uuid' => (string) $ingredient->uuid, 'quantity' => $request->input('quantity')]],
+                // F4 — TransferStockAction converts the line's unit itself.
+                [['ingredient_uuid' => (string) $ingredient->uuid, 'quantity' => $request->input('quantity'), 'unit' => $request->input('unit')]],
                 $request->user(),
                 $request->input('note'),
             );
@@ -279,7 +285,7 @@ class IngredientStockController extends Controller
         }
 
         try {
-            $this->adjust->handle($ingredient, $branch, $request->input('signed_quantity'), $request->input('note'), $request->user());
+            $this->adjust->handle($ingredient, $branch, $this->stored($ingredient, $request->input('signed_quantity'), $request->input('unit')), $request->input('note'), $request->user());
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
@@ -315,6 +321,34 @@ class IngredientStockController extends Controller
     }
 
     // ---- helpers ----------------------------------------------
+
+    /**
+     * LAUNCH item kind, F4 — a warehouse amount typed in another unit of the
+     * item (kg / l, a pack size, '@piece' = the count container), in the
+     * stored unit at 4 decimals, like every other entry point. A null / ''
+     * unit means the amount is already in the stored unit. An unknown unit
+     * throws (RuntimeException → 422).
+     */
+    private function stored(Ingredient $ingredient, mixed $quantity, mixed $unit): mixed
+    {
+        if (! is_string($unit) || $unit === '' || ! is_numeric($quantity)) {
+            return $quantity;
+        }
+
+        return StockDecimal::quantity(round($this->units->toBase($ingredient, $quantity, $unit), StockDecimal::QUANTITY_SCALE));
+    }
+
+    /**
+     * @param  list<array{branch: Branch, quantity: mixed}>  $lines
+     * @return list<array{branch: Branch, quantity: mixed}>
+     */
+    private function storedLines(Ingredient $ingredient, array $lines, mixed $unit): array
+    {
+        return array_map(fn (array $line): array => [
+            'branch' => $line['branch'],
+            'quantity' => $this->stored($ingredient, $line['quantity'], $unit),
+        ], $lines);
+    }
 
     private function resolveBranch(?string $uuid): ?Branch
     {

@@ -59,6 +59,15 @@ export interface PurchaseCostFields {
     tax_rate?: string | number | null;
 }
 
+/**
+ * LAUNCH item kind, F4 — the unit every amount of one write is typed in
+ * (kg / l, a pack size, '@piece' = the count container); null / omit = the
+ * stored unit. The server converts.
+ */
+export interface EntryUnitField {
+    unit?: string | null;
+}
+
 // ---- Endpoints --------------------------------------------------
 
 export function getIngredientStock(uuid: string): Promise<{ data: IngredientStockSummary }> {
@@ -67,14 +76,14 @@ export function getIngredientStock(uuid: string): Promise<{ data: IngredientStoc
 
 export function receiveIngredientStock(
     uuid: string,
-    payload: { quantity: string | number; note?: string | null } & PurchaseCostFields,
+    payload: { quantity: string | number; note?: string | null } & PurchaseCostFields & EntryUnitField,
 ): Promise<{ data: IngredientStockSummary }> {
     return apiPost<{ data: IngredientStockSummary }>(`/api/ingredients/${uuid}/stock/receive`, payload as unknown as JsonValue);
 }
 
 export function allocateIngredientStock(
     uuid: string,
-    payload: { allocations: IngredientAllocationLine[]; note?: string | null },
+    payload: { allocations: IngredientAllocationLine[]; note?: string | null } & EntryUnitField,
 ): Promise<{ data: IngredientStockSummary }> {
     return apiPost<{ data: IngredientStockSummary }>(`/api/ingredients/${uuid}/stock/allocate`, payload as unknown as JsonValue);
 }
@@ -85,7 +94,7 @@ export function allocateIngredientStock(
  */
 export function receiveAndDistributeIngredientStock(
     uuid: string,
-    payload: { quantity: string | number; allocations: IngredientAllocationLine[]; note?: string | null } & PurchaseCostFields,
+    payload: { quantity: string | number; allocations: IngredientAllocationLine[]; note?: string | null } & PurchaseCostFields & EntryUnitField,
 ): Promise<{ data: IngredientStockSummary }> {
     return apiPost<{ data: IngredientStockSummary }>(`/api/ingredients/${uuid}/stock/receive-distribute`, payload as unknown as JsonValue);
 }
@@ -93,14 +102,14 @@ export function receiveAndDistributeIngredientStock(
 /** Branch → branch move; lands as a regular BranchTransfer (Transfers tab). */
 export function transferIngredientStock(
     uuid: string,
-    payload: { from_branch_uuid: string; to_branch_uuid: string; quantity: string | number; note?: string | null },
+    payload: { from_branch_uuid: string; to_branch_uuid: string; quantity: string | number; note?: string | null } & EntryUnitField,
 ): Promise<{ data: IngredientStockSummary }> {
     return apiPost<{ data: IngredientStockSummary }>(`/api/ingredients/${uuid}/stock/transfer`, payload as unknown as JsonValue);
 }
 
 export function adjustIngredientStock(
     uuid: string,
-    payload: { branch_uuid?: string | null; signed_quantity: string | number; note: string },
+    payload: { branch_uuid?: string | null; signed_quantity: string | number; note: string } & EntryUnitField,
 ): Promise<{ data: IngredientStockSummary }> {
     return apiPost<{ data: IngredientStockSummary }>(`/api/ingredients/${uuid}/stock/adjust`, payload as unknown as JsonValue);
 }

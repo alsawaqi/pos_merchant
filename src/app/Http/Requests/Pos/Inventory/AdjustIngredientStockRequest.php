@@ -21,6 +21,10 @@ class AdjustIngredientStockRequest extends FormRequest
         return [
             'branch_uuid' => ['nullable', 'string', 'uuid'],
             'signed_quantity' => ['required', 'numeric', 'between:-999999.999,999999.999'],
+            // LAUNCH item kind, F4 — the unit the amounts are typed in (kg, l,
+            // a pack size, '@piece'); null = the stored unit. Converted by the
+            // controller (IngredientUnitConverter).
+            'unit' => ['nullable', 'string', 'max:32'],
             'note' => ['required', 'string', 'min:1', 'max:1000'],
         ];
     }

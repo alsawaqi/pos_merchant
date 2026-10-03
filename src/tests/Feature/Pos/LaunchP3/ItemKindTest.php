@@ -17,12 +17,16 @@ declare(strict_types=1);
  *      request and transaction, with the factor worked out, never typed;
  *   A4 the pack-size endpoints take what a pack holds (amount + unit);
  *   A7 a portal stock count can be typed in any unit the item knows.
+ * Follow-up fixes:
+ *   F4 the warehouse endpoints take the unit the amounts were typed in.
  */
 
 use App\Actions\Pos\Inventory\CreateIngredientAction;
+use App\Models\Branch;
 use App\Models\BranchStock;
 use App\Models\Ingredient;
 use App\Models\IngredientAltUnit;
+use App\Models\IngredientStock;
 use App\Models\StockCountLine;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -213,4 +217,44 @@ it('A7 a count in a unit the item does not know is refused, and nothing is count
         ['ingredient_uuid' => $milk->uuid, 'counted_units' => '3', 'unit' => 'kg'],
     ]])->assertStatus(422)->assertJsonPath('message', "Unit 'kg' is not defined for this ingredient.");
     expect(StockCountLine::query()->count())->toBe(0);
+});
+
+it('F4 the warehouse takes amounts in any unit the item knows: a pack size, l, the container', function (): void {
+    $ctx = makeMerchantActor();
+    config(['pos.inventory.single_stock_in' => false]);
+    $milk = p3Ingredient($ctx['company'], 'Milk', 'ml', '0.0004', ['piece_unit_label' => 'bottle', 'units_per_piece' => '1500']);
+    $this->postJson("/api/ingredients/{$milk->uuid}/units", ['name' => 'crate', 'amount' => '12', 'unit' => 'l'])->assertCreated();
+    $other = Branch::factory()->for($ctx['company'], 'company')->create();
+    $central = fn (): float => (float) IngredientStock::query()->where('ingredient_id', $milk->id)->value('quantity');
+    $at = fn (Branch $b): float => (float) BranchStock::query()->where('branch_id', $b->id)->where('ingredient_id', $milk->id)->value('quantity');
+    $base = "/api/ingredients/{$milk->uuid}/stock";
+
+    $this->postJson("{$base}/receive", ['quantity' => '2', 'unit' => 'crate', 'no_cost' => true])->assertOk();
+    expect($central())->toBe(24000.0);
+
+    $this->postJson("{$base}/allocate", ['allocations' => [['branch_uuid' => $ctx['branch']->uuid, 'quantity' => '1.5']], 'unit' => 'l'])->assertOk();
+    expect($central())->toBe(22500.0)->and($at($ctx['branch']))->toBe(1500.0);
+
+    $this->postJson("{$base}/transfer", ['from_branch_uuid' => $ctx['branch']->uuid, 'to_branch_uuid' => $other->uuid, 'quantity' => '1', 'unit' => '@piece'])->assertOk();
+    expect($at($ctx['branch']))->toBe(0.0)->and($at($other))->toBe(1500.0);
+
+    $this->postJson("{$base}/adjust", ['signed_quantity' => '-0.5', 'unit' => 'l', 'note' => 'Spilt'])->assertOk();
+    expect($central())->toBe(22000.0);
+
+    $this->postJson("{$base}/receive-distribute", [
+        'quantity' => '12', 'unit' => 'l', 'no_cost' => true,
+        'allocations' => [['branch_uuid' => $ctx['branch']->uuid, 'quantity' => '6']],
+    ])->assertOk();
+    expect($central())->toBe(28000.0)->and($at($ctx['branch']))->toBe(6000.0);
+});
+
+it('F4 a warehouse amount in a unit the item does not know is refused, and nothing moves', function (): void {
+    $ctx = makeMerchantActor();
+    $milk = p3Ingredient($ctx['company'], 'Milk', 'ml', '0.0004');
+    p3Stock($ctx['branch'], $milk, '1000');
+
+    $this->postJson("/api/ingredients/{$milk->uuid}/stock/adjust", ['branch_uuid' => $ctx['branch']->uuid, 'signed_quantity' => '-1', 'unit' => 'kg', 'note' => 'x'])
+        ->assertStatus(422)
+        ->assertJsonPath('message', "Unit 'kg' is not defined for this ingredient.");
+    expect((float) BranchStock::query()->where('branch_id', $ctx['branch']->id)->where('ingredient_id', $milk->id)->value('quantity'))->toBe(1000.0);
 });

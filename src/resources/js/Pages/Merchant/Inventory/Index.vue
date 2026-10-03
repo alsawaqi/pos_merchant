@@ -4562,6 +4562,7 @@ async function submitSuggestions(): Promise<void> {
             :open="warehouseDialogIngredient !== null"
             :ingredient-uuid="warehouseDialogIngredient?.uuid ?? null"
             :ingredient-name="warehouseDialogIngredient?.name ?? ''"
+            :ingredient="warehouseDialogIngredient"
             :can-manage="canManage"
             :single-stock-in="singleStockIn"
             @close="warehouseDialogIngredient = null"

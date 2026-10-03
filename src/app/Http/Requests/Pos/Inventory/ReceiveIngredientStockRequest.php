@@ -25,6 +25,10 @@ class ReceiveIngredientStockRequest extends FormRequest
     {
         return [
             'quantity' => ['required', 'numeric', 'gt:0', 'max:999999.999'],
+            // LAUNCH item kind, F4 — the unit the amounts are typed in (kg, l,
+            // a pack size, '@piece'); null = the stored unit. Converted by the
+            // controller (IngredientUnitConverter).
+            'unit' => ['nullable', 'string', 'max:32'],
             'note' => ['nullable', 'string', 'max:1000'],
         ] + $this->purchaseCostRules();
     }

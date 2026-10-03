@@ -5,10 +5,16 @@
  * once, then split 20/20/25 to branches"). Receive into the warehouse,
  * Receive & Distribute in one step, allocate out to branches, transfer
  * between branches (a real BranchTransfer), adjust a balance, and read the
- * movement history. All quantities are decimal strings in the ingredient's
- * BASE unit (never parsed for precision-critical math here).
+ * movement history. Balances arrive as decimal strings in the ingredient's
+ * stored unit (never parsed for precision-critical math here).
+ *
+ * LAUNCH item kind, F4 — amounts are typed in any unit the ingredient knows
+ * (kg / l, g / ml, a pack size, the count container), picked once for the
+ * form and sent as `unit`; the server converts. Balances read the friendly
+ * way ("24 l", not "24000.000 ml").
  */
 import { computed, reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import BaseModal from '@/Components/BaseModal.vue';
 import PurchaseCostFields, { type PurchaseCostModel } from '@/Pages/Merchant/Inventory/PurchaseCostFields.vue';
 import { ApiError } from '@/lib/api';
@@ -23,11 +29,15 @@ import {
     type IngredientStockSummary,
 } from '@/lib/api/ingredientStock';
 import { listTaxes, type Tax } from '@/lib/api/taxes';
+import type { Ingredient } from '@/lib/api/inventory';
+import { costUnit, entryUnitOptions, friendlyAmount } from '@/lib/itemKind';
 
 const props = withDefaults(defineProps<{
     open: boolean;
     ingredientUuid: string | null;
     ingredientName: string;
+    /** F4 — the ingredient (its pack sizes and count container) for the amount unit picker. */
+    ingredient?: Ingredient | null;
     canManage: boolean;
     /**
      * LAUNCH-P2 P2-4 — stock comes in through Goods received only: the
@@ -35,7 +45,9 @@ const props = withDefaults(defineProps<{
      * server refuses them). Allocate, transfer and adjust stay.
      */
     singleStockIn?: boolean;
-}>(), { singleStockIn: true });
+}>(), { singleStockIn: true, ingredient: null });
+
+const { locale } = useI18n();
 
 const emit = defineEmits<{ (e: 'close'): void }>();
 
@@ -91,6 +103,34 @@ function qty(v: string | number): string {
 
 const branches = computed(() => summary.value?.branches ?? []);
 const unit = computed(() => summary.value?.unit ?? '');
+
+// F4 — the unit every amount in the forms is typed in ('' = the stored unit).
+const unitOptions = computed(() => entryUnitOptions(props.ingredient ?? (unit.value ? { unit: unit.value } : null), locale.value));
+const entryUnit = ref('');
+
+/** kg / l by default for a Weighed / Liquid item (its stored unit otherwise). */
+function defaultEntryUnit(): string {
+    const big = costUnit(unit.value);
+    return big !== unit.value && unitOptions.value.some((o) => o.value === big) ? big : '';
+}
+
+/** The picked unit's name for the labels ("l", "crate", "bottle"). */
+const entryUnitName = computed(() => {
+    if (entryUnit.value === '') return unit.value;
+    const option = unitOptions.value.find((o) => o.value === entryUnit.value);
+    return option ? option.label.replace(/ \(.*\)$/, '') : entryUnit.value;
+});
+
+function wireUnit(): string | null {
+    return entryUnit.value === '' ? null : entryUnit.value;
+}
+
+/** F4 — a balance as people read it: "24 l", not "24000.000 ml". */
+function amount(quantity: string | null | undefined): string {
+    if (quantity === null || quantity === undefined) return '—';
+    const friendly = friendlyAmount(quantity, unit.value);
+    return `${friendly.amount} ${friendly.unit}`;
+}
 
 const allocateTotal = computed(() =>
     allocateRows.value.reduce((s, r) => s + (parseFloat(qty(r.quantity)) || 0), 0),
@@ -165,6 +205,7 @@ async function load(): Promise<void> {
             } catch { /* tax control optional */ }
         }
         resetForms();
+        entryUnit.value = defaultEntryUnit();
     } catch (e) {
         if (props.ingredientUuid !== uuid) return;
         error.value = e instanceof ApiError ? e.message : 'Could not load stock.';
@@ -224,6 +265,7 @@ function doDistribute(): void {
         () => receiveAndDistributeIngredientStock(props.ingredientUuid as string, {
             quantity: qty(distributeForm.quantity),
             allocations: lines,
+            unit: wireUnit(),
             note: distributeForm.note || null,
             ...costPayload(distributeCost.value),
         }),
@@ -248,6 +290,7 @@ function doReceive(): void {
     void run(
         () => receiveIngredientStock(props.ingredientUuid as string, {
             quantity: qty(receiveForm.quantity),
+            unit: wireUnit(),
             note: receiveForm.note || null,
             ...costPayload(receiveCost.value),
         }),
@@ -265,7 +308,7 @@ function doAllocate(): void {
         return;
     }
     void run(
-        () => allocateIngredientStock(props.ingredientUuid as string, { allocations: lines, note: allocateNote.value || null }),
+        () => allocateIngredientStock(props.ingredientUuid as string, { allocations: lines, unit: wireUnit(), note: allocateNote.value || null }),
         'Allocated to branches.',
     );
 }
@@ -281,6 +324,7 @@ function doTransfer(): void {
             from_branch_uuid: transferForm.from_branch_uuid,
             to_branch_uuid: transferForm.to_branch_uuid,
             quantity: qty(transferForm.quantity),
+            unit: wireUnit(),
             note: transferForm.note || null,
         }),
         'Transferred between branches.',
@@ -293,6 +337,7 @@ function doAdjust(): void {
         () => adjustIngredientStock(props.ingredientUuid as string, {
             branch_uuid: adjustForm.branch_uuid || null,
             signed_quantity: qty(adjustForm.signed_quantity),
+            unit: wireUnit(),
             note: adjustForm.note,
         }),
         'Adjusted.',
@@ -323,8 +368,8 @@ function fmtType(t: string): string {
                         <div class="rounded-xl border border-teal-200 bg-teal-50 p-4">
                             <p class="text-[11px] font-semibold uppercase tracking-wider text-teal-700">Warehouse</p>
                             <p class="mt-1 text-2xl font-black tabular-nums text-teal-900">
-                                {{ summary.central_quantity }}
-                                <span class="text-sm font-semibold text-teal-700">{{ unit }}</span>
+                                <span data-test="warehouse-central">{{ friendlyAmount(summary.central_quantity, unit).amount }}</span>
+                                <span class="text-sm font-semibold text-teal-700">{{ friendlyAmount(summary.central_quantity, unit).unit }}</span>
                             </p>
                         </div>
                         <div class="rounded-xl border border-slate-200">
@@ -332,14 +377,14 @@ function fmtType(t: string): string {
                                 <thead>
                                     <tr class="border-b border-slate-100 text-left text-[11px] uppercase tracking-wider text-slate-500">
                                         <th class="px-3 py-2 font-semibold">Branch</th>
-                                        <th class="px-3 py-2 text-right font-semibold">Stock ({{ unit }})</th>
+                                        <th class="px-3 py-2 text-right font-semibold">Stock</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <tr v-for="b in branches" :key="b.branch_uuid" class="border-b border-slate-50 last:border-0">
                                         <td class="px-3 py-2 text-slate-700">{{ b.branch_name }}</td>
                                         <td class="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">
-                                            {{ b.quantity ?? '—' }}
+                                            {{ amount(b.quantity) }}
                                         </td>
                                     </tr>
                                     <tr v-if="branches.length === 0">
@@ -363,6 +408,14 @@ function fmtType(t: string): string {
                             >{{ actionLabel(a) }}</button>
                         </div>
 
+                        <!-- F4 — every amount below is typed in this unit (kg / l, a pack size, the container). -->
+                        <label class="mb-3 flex items-center gap-2 text-xs font-semibold text-slate-600">
+                            Amounts in
+                            <select v-model="entryUnit" data-test="warehouse-unit" class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm font-normal">
+                                <option v-for="o in unitOptions" :key="o.value || 'base'" :value="o.value">{{ o.label }}</option>
+                            </select>
+                        </label>
+
                         <p v-if="actionError" class="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{{ actionError }}</p>
                         <p v-if="actionOk" class="mb-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">{{ actionOk }}</p>
 
@@ -370,13 +423,13 @@ function fmtType(t: string): string {
                         <form v-if="action === 'distribute'" class="space-y-3" @submit.prevent="doDistribute">
                             <p class="text-xs text-slate-500">Receive a purchase and split it across branches in one step ("100 in: 20 / 20 / 25"). Anything you don't distribute stays in the warehouse.</p>
                             <div class="flex flex-wrap items-center gap-3">
-                                <label class="text-xs font-semibold text-slate-600">Total received ({{ unit }})</label>
-                                <input v-model="distributeForm.quantity" type="number" step="0.001" min="0" placeholder="e.g. 100" class="w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
+                                <label class="text-xs font-semibold text-slate-600">Total received ({{ entryUnitName }})</label>
+                                <input v-model="distributeForm.quantity" type="number" step="0.0001" min="0" placeholder="e.g. 100" class="w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
                             </div>
                             <div class="space-y-2">
                                 <div v-for="row in distributeRows" :key="row.branch_uuid" class="flex items-center gap-3">
                                     <span class="flex-1 text-sm text-slate-700">{{ row.branch_name }}</span>
-                                    <input v-model="row.quantity" type="number" step="0.001" min="0" placeholder="0" class="w-28 rounded-lg border border-slate-200 px-3 py-1.5 text-sm tabular-nums">
+                                    <input v-model="row.quantity" type="number" step="0.0001" min="0" placeholder="0" class="w-28 rounded-lg border border-slate-200 px-3 py-1.5 text-sm tabular-nums">
                                 </div>
                                 <p v-if="branches.length === 0" class="text-xs text-slate-400">No branches yet — the whole amount goes to the warehouse.</p>
                             </div>
@@ -391,9 +444,9 @@ function fmtType(t: string): string {
 
                         <!-- Receive -->
                         <form v-else-if="action === 'receive'" class="space-y-3" @submit.prevent="doReceive">
-                            <p class="text-xs text-slate-500">Add a purchase to the central warehouse ({{ unit }}).</p>
+                            <p class="text-xs text-slate-500">Add a purchase to the central warehouse ({{ entryUnitName }}).</p>
                             <div class="flex flex-wrap gap-3">
-                                <input v-model="receiveForm.quantity" type="number" step="0.001" min="0" placeholder="Quantity" class="w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
+                                <input v-model="receiveForm.quantity" type="number" step="0.0001" min="0" placeholder="Quantity" class="w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
                                 <input v-model="receiveForm.note" type="text" placeholder="Note (optional)" class="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm">
                             </div>
                             <PurchaseCostFields v-model="receiveCost" :taxes="taxes" />
@@ -402,11 +455,11 @@ function fmtType(t: string): string {
 
                         <!-- Allocate -->
                         <form v-else-if="action === 'allocate'" class="space-y-3" @submit.prevent="doAllocate">
-                            <p class="text-xs text-slate-500">Distribute the warehouse ({{ summary.central_quantity }} {{ unit }}) across branches. Total entered: <span class="font-semibold">{{ round3(allocateTotal) }}</span></p>
+                            <p class="text-xs text-slate-500">Distribute the warehouse ({{ amount(summary.central_quantity) }}) across branches. Total entered: <span class="font-semibold">{{ round3(allocateTotal) }} {{ entryUnitName }}</span></p>
                             <div class="space-y-2">
                                 <div v-for="row in allocateRows" :key="row.branch_uuid" class="flex items-center gap-3">
                                     <span class="flex-1 text-sm text-slate-700">{{ row.branch_name }}</span>
-                                    <input v-model="row.quantity" type="number" step="0.001" min="0" placeholder="0" class="w-28 rounded-lg border border-slate-200 px-3 py-1.5 text-sm tabular-nums">
+                                    <input v-model="row.quantity" type="number" step="0.0001" min="0" placeholder="0" class="w-28 rounded-lg border border-slate-200 px-3 py-1.5 text-sm tabular-nums">
                                 </div>
                             </div>
                             <input v-model="allocateNote" type="text" placeholder="Note (optional)" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
@@ -424,7 +477,7 @@ function fmtType(t: string): string {
                                 <select v-model="transferForm.to_branch_uuid" class="rounded-lg border border-slate-200 px-3 py-2 text-sm">
                                     <option v-for="b in branches" :key="b.branch_uuid" :value="b.branch_uuid">{{ b.branch_name }}</option>
                                 </select>
-                                <input v-model="transferForm.quantity" type="number" step="0.001" min="0" placeholder="Qty" class="w-28 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
+                                <input v-model="transferForm.quantity" type="number" step="0.0001" min="0" placeholder="Qty" class="w-28 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
                             </div>
                             <input v-model="transferForm.note" type="text" placeholder="Note (optional)" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
                             <button type="submit" :disabled="busy" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Transfer</button>
@@ -438,7 +491,7 @@ function fmtType(t: string): string {
                                     <option v-if="!isBranchRestricted" value="">Warehouse</option>
                                     <option v-for="b in branches" :key="b.branch_uuid" :value="b.branch_uuid">{{ b.branch_name }}</option>
                                 </select>
-                                <input v-model="adjustForm.signed_quantity" type="number" step="0.001" placeholder="±Qty" class="w-28 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
+                                <input v-model="adjustForm.signed_quantity" type="number" step="0.0001" placeholder="±Qty" class="w-28 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
                             </div>
                             <input v-model="adjustForm.note" type="text" placeholder="Reason (required)" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
                             <button type="submit" :disabled="busy" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Adjust</button>
@@ -454,7 +507,7 @@ function fmtType(t: string): string {
                                     <tr v-for="m in summary.recent_movements" :key="m.id" class="border-b border-slate-50 last:border-0">
                                         <td class="px-3 py-2 capitalize text-slate-700">{{ fmtType(m.movement_type) }}</td>
                                         <td class="px-3 py-2 text-slate-500">{{ m.branch_name ?? 'Warehouse' }}</td>
-                                        <td class="px-3 py-2 text-right font-semibold tabular-nums" :class="m.quantity.startsWith('-') ? 'text-rose-600' : 'text-emerald-600'">{{ m.quantity }}</td>
+                                        <td class="px-3 py-2 text-right font-semibold tabular-nums" :class="m.quantity.startsWith('-') ? 'text-rose-600' : 'text-emerald-600'">{{ amount(m.quantity) }}</td>
                                         <td class="px-3 py-2 text-xs text-slate-400">{{ m.note }}</td>
                                     </tr>
                                     <tr v-if="summary.recent_movements.length === 0">
