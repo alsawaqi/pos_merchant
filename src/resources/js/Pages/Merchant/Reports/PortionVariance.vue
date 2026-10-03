@@ -13,6 +13,7 @@ import { fetchPortionVarianceReport, type PortionVarianceReportPayload } from '@
 import ReportShell from './components/ReportShell.vue';
 import ReportChart from './components/ReportChart.vue';
 import { useReportRunner } from './components/useReportRunner';
+import { formatQuantity } from '@/lib/itemKind';
 
 const { t } = useI18n();
 const { filter, payload, loading, error, run } = useReportRunner<PortionVarianceReportPayload>(fetchPortionVarianceReport);
@@ -101,7 +102,6 @@ type ApexSeries = { name: string; data: number[] }[];
                     <thead class="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                         <tr>
                             <th class="px-4 py-2 text-start">{{ t('reports.portion_variance.columns.ingredient') }}</th>
-                            <th class="px-4 py-2 text-start">{{ t('reports.portion_variance.columns.unit') }}</th>
                             <th class="px-4 py-2 text-end">{{ t('reports.portion_variance.columns.theoretical_qty') }}</th>
                             <th class="px-4 py-2 text-end">{{ t('reports.portion_variance.columns.theoretical_cost') }}</th>
                             <th class="px-4 py-2 text-end">{{ t('reports.portion_variance.columns.production_cost') }}</th>
@@ -117,13 +117,13 @@ type ApexSeries = { name: string; data: number[] }[];
                     <tbody>
                         <tr v-for="r in payload.rows" :key="r.ingredient_id" class="border-b border-slate-100 last:border-0">
                             <td class="px-4 py-2 font-medium text-slate-900">{{ r.ingredient_name }}</td>
-                            <td class="px-4 py-2 text-slate-600">{{ r.unit }}</td>
-                            <td class="px-4 py-2 text-end tabular-nums">{{ r.theoretical_qty }}</td>
+                            <!-- F7 — "24 l", not "24000.000" (ml). -->
+                            <td class="px-4 py-2 text-end tabular-nums" data-test="report-theoretical-qty">{{ formatQuantity(r.theoretical_qty, r.unit) }}</td>
                             <td class="px-4 py-2 text-end tabular-nums">{{ r.theoretical_cost }}</td>
                             <td class="px-4 py-2 text-end tabular-nums">{{ r.production_cost }}</td>
-                            <td class="px-4 py-2 text-end tabular-nums">{{ r.waste_qty }}</td>
+                            <td class="px-4 py-2 text-end tabular-nums">{{ formatQuantity(r.waste_qty, r.unit) }}</td>
                             <td class="px-4 py-2 text-end tabular-nums text-amber-700">{{ r.waste_cost }}</td>
-                            <td class="px-4 py-2 text-end tabular-nums" :class="varianceTone(r.count_variance_qty)">{{ r.count_variance_qty }}</td>
+                            <td class="px-4 py-2 text-end tabular-nums" :class="varianceTone(r.count_variance_qty)">{{ formatQuantity(r.count_variance_qty, r.unit) }}</td>
                             <td class="px-4 py-2 text-end tabular-nums" :class="varianceTone(r.count_variance_cost)">{{ r.count_variance_cost }}</td>
                             <td class="px-4 py-2 text-end tabular-nums" :class="varianceTone(r.adjustment_cost)">{{ r.adjustment_cost }}</td>
                             <td class="px-4 py-2 text-end tabular-nums" :class="varianceTone(r.variance_pct)">

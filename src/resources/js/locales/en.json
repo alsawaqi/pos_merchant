@@ -3054,7 +3054,7 @@
             "page_title": "Loss / Waste Report",
             "headline_labels": {
                 "total_value": "Total value",
-                "total_qty": "Total qty",
+                "total_qty": "Total qty (each item in its stored unit)",
                 "event_count": "Events"
             },
             "by_reason": "By reason",
@@ -3120,7 +3120,7 @@
             "page_title": "Restock / Purchasing Report",
             "headline_labels": {
                 "total_cost": "Total cost",
-                "total_qty": "Total qty",
+                "total_qty": "Total qty (each item in its stored unit)",
                 "event_count": "Events"
             },
             "by_supplier": "By supplier",

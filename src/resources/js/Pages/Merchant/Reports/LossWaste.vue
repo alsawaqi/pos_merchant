@@ -7,6 +7,7 @@ import ReportShell from './components/ReportShell.vue';
 import HeadlineGrid from './components/HeadlineGrid.vue';
 import ReportChart from './components/ReportChart.vue';
 import { useReportRunner } from './components/useReportRunner';
+import { formatQuantity } from '@/lib/itemKind';
 
 const { t } = useI18n();
 const { filter, payload, loading, error, run } = useReportRunner<LossWasteReportPayload>(fetchLossWasteReport);
@@ -164,8 +165,9 @@ type ApexSeries = { name: string; data: number[] }[];
                     </thead>
                     <tbody>
                         <tr v-for="r in payload.top_wasted" :key="r.ingredient_id" class="border-b border-slate-100 last:border-0">
-                            <td class="px-5 py-2 font-medium text-slate-900">{{ r.ingredient_name }} <span class="text-xs text-slate-500">({{ r.unit }})</span></td>
-                            <td class="px-5 py-2 text-end tabular-nums">{{ r.total_qty }}</td>
+                            <!-- F7 — "24 l", not "24000.000" (ml). -->
+                            <td class="px-5 py-2 font-medium text-slate-900">{{ r.ingredient_name }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums" data-test="report-wasted-qty">{{ formatQuantity(r.total_qty, r.unit) }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.value }}</td>
                         </tr>
                     </tbody>
@@ -189,10 +191,10 @@ type ApexSeries = { name: string; data: number[] }[];
                     </thead>
                     <tbody>
                         <tr v-for="r in shortfallRows" :key="r.ingredient_id" class="border-b border-slate-100 last:border-0">
-                            <td class="px-5 py-2 font-medium text-slate-900">{{ r.ingredient_name }} <span class="text-xs text-slate-500">({{ r.unit }})</span></td>
-                            <td class="px-5 py-2 text-end tabular-nums">{{ r.sales_consumption }}</td>
-                            <td class="px-5 py-2 text-end tabular-nums">{{ r.total_depletion }}</td>
-                            <td class="px-5 py-2 text-end tabular-nums" :class="num(r.shortfall) > 0 ? 'font-semibold text-rose-600' : ''">{{ r.shortfall }}</td>
+                            <td class="px-5 py-2 font-medium text-slate-900">{{ r.ingredient_name }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ formatQuantity(r.sales_consumption, r.unit) }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ formatQuantity(r.total_depletion, r.unit) }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums" :class="num(r.shortfall) > 0 ? 'font-semibold text-rose-600' : ''">{{ formatQuantity(r.shortfall, r.unit) }}</td>
                             <td class="px-5 py-2 text-end tabular-nums" :class="num(r.variance_pct) > 20 ? 'font-semibold text-rose-600' : ''">
                                 {{ r.variance_pct !== null ? `${r.variance_pct}%` : '—' }}
                             </td>

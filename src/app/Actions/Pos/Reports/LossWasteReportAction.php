@@ -7,6 +7,7 @@ namespace App\Actions\Pos\Reports;
 use App\Data\Reports\ReportFilter;
 use App\Enums\StockMovementType;
 use App\Support\MerchantTenantContext;
+use App\Support\Reports\ReportUnits;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -290,6 +291,9 @@ final readonly class LossWasteReportAction
             'headline' => [
                 'total_value' => number_format((float) ($headline?->total_value ?? 0), 3, '.', ''),
                 'total_qty' => number_format((float) ($headline?->total_qty ?? 0), 3, '.', ''),
+                // LAUNCH item kind, F7 — the export names the unit of every
+                // quantity; this total adds each ingredient in its own stored unit.
+                'total_qty_unit' => ReportUnits::MIXED,
                 'event_count' => (int) ($headline?->event_count ?? 0),
             ],
             'by_branch' => $byBranch,

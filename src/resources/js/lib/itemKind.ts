@@ -83,6 +83,13 @@ export function friendlyAmount(quantity: string | number | null | undefined, uni
     return { amount: trimAmount(n), unit: u };
 }
 
+/** F7 — friendlyAmount as one string ("24 l"); '—' for a missing amount. */
+export function formatQuantity(quantity: string | number | null | undefined, unit: string | null | undefined): string {
+    if (quantity === null || quantity === undefined || String(quantity).trim() === '') return '—';
+    const friendly = friendlyAmount(quantity, unit);
+    return friendly.unit === '' ? friendly.amount : `${friendly.amount} ${friendly.unit}`;
+}
+
 /**
  * What a stored amount reopens as in a "holds [amount] [unit]" input: the
  * friendly unit when it converts back exactly at 4 decimals (12000 ml →

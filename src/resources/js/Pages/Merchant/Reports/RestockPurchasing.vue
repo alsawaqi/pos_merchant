@@ -7,6 +7,7 @@ import ReportShell from './components/ReportShell.vue';
 import HeadlineGrid from './components/HeadlineGrid.vue';
 import ReportChart from './components/ReportChart.vue';
 import { useReportRunner } from './components/useReportRunner';
+import { formatQuantity } from '@/lib/itemKind';
 
 const { t } = useI18n();
 const { filter, payload, loading, error, run } = useReportRunner<RestockPurchasingReportPayload>(fetchRestockPurchasingReport);
@@ -139,8 +140,9 @@ type ApexSeries = { name: string; data: number[] }[];
                     </thead>
                     <tbody>
                         <tr v-for="r in payload.top_purchased" :key="r.ingredient_id" class="border-b border-slate-100 last:border-0">
-                            <td class="px-5 py-2 font-medium text-slate-900">{{ r.ingredient_name }} <span class="text-xs text-slate-500">({{ r.unit }})</span></td>
-                            <td class="px-5 py-2 text-end tabular-nums">{{ r.total_qty }}</td>
+                            <!-- F7 — "24 l", not "24000.000" (ml). -->
+                            <td class="px-5 py-2 font-medium text-slate-900">{{ r.ingredient_name }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums" data-test="report-purchased-qty">{{ formatQuantity(r.total_qty, r.unit) }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.cost }}</td>
                         </tr>
                     </tbody>

@@ -12,6 +12,7 @@ use App\Models\PurchaseReceiptLine;
 use App\Models\RestockRequestLine;
 use App\Models\Supplier;
 use App\Support\MerchantTenantContext;
+use App\Support\Reports\ReportUnits;
 use App\Support\StockDecimal;
 use Illuminate\Support\Facades\DB;
 
@@ -188,6 +189,9 @@ final readonly class RestockPurchasingReportAction
             'headline' => [
                 'total_cost' => number_format((float) ($headline?->total_cost ?? 0), 3, '.', ''),
                 'total_qty' => (string) StockDecimal::quantity((float) ($headline?->total_qty ?? 0)),
+                // LAUNCH item kind, F7 — the export names the unit of every
+                // quantity; this total adds each ingredient in its own stored unit.
+                'total_qty_unit' => ReportUnits::MIXED,
                 'event_count' => (int) ($headline?->event_count ?? 0),
             ],
             'by_supplier' => $bySupplier,

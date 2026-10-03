@@ -20,6 +20,7 @@
 //   F4 the warehouse dialog takes any unit the item knows;
 //   F5 restock allocation and suggestions too, shown friendly;
 //   F6 no kind change while pack sizes or a count container exist;
+//   F7 report screens show ingredient quantities friendly;
 //   every new string exists in English AND Arabic.
 // Run: node --test tests/frontend/launch-p3-kind.test.mjs
 import assert from 'node:assert/strict';
@@ -448,6 +449,38 @@ test('F6 the edit form says to remove pack sizes and the container before anothe
     assert.match(script, /if \(kindChangeBlocked\.value\) \{\s*ingModalErrors\.value = \{ unit: \[t\('item_kind\.kind_change_blocked'\)\] \};/);
     assert.match(form, /v-else-if="kindChangeBlocked"[^>]*data-test="item-kind-change-blocked">\{\{ t\('item_kind\.kind_change_blocked'\) \}\}/);
     assert.equal(en.item_kind.kind_change_blocked, 'Remove its pack sizes and count container before changing the kind.');
+});
+
+test('F7 report screens show ingredient quantities friendly (24 l), exports keep stored numbers with their unit', () => {
+    const { formatQuantity } = lib('itemKind');
+    assert.equal(formatQuantity('24000.000', 'ml'), '24 l');
+    assert.equal(formatQuantity('-1500.000', 'g'), '-1.5 kg');
+    assert.equal(formatQuantity('999.000', 'g'), '999 g');
+    assert.equal(formatQuantity('12.000', 'piece'), '12 piece');
+    assert.equal(formatQuantity(null, 'ml'), '—');
+
+    const screens = {
+        InventoryConsumption: ['r.consumed', 'r.current_balance', 'r.consumption_per_day', 'r.counted_units', 'r.variance_units'],
+        LossWaste: ['r.total_qty', 'r.sales_consumption', 'r.total_depletion', 'r.shortfall'],
+        RestockPurchasing: ['r.total_qty'],
+        PortionVariance: ['r.theoretical_qty', 'r.waste_qty', 'r.count_variance_qty'],
+    };
+    for (const [page, fields] of Object.entries(screens)) {
+        const { script, template } = sfc(`resources/js/Pages/Merchant/Reports/${page}.vue`);
+        assert.match(script, /import \{ formatQuantity \} from '@\/lib\/itemKind';/, page);
+        for (const field of fields) {
+            const escaped = field.replace('.', '\\.');
+            assert.match(template, new RegExp(`formatQuantity\\(${escaped}, r\\.unit\\)`), `${page} ${field}`);
+            // (Loss & Waste's product dispositions keep their bare piece count in r.total_qty.)
+            if (!(page === 'LossWaste' && field === 'r.total_qty')) {
+                assert.doesNotMatch(template, new RegExp(`\\{\\{ ${escaped}( \\?\\? '—')? \\}\\}`), `${page} ${field} raw`);
+            }
+        }
+    }
+    // A total adding several ingredients says so (stored units, mixed).
+    assert.match(en.reports.loss_waste.headline_labels.total_qty, /stored unit/);
+    assert.match(en.reports.restock_purchasing.headline_labels.total_qty, /stored unit/);
+    assert.notEqual(ar.reports.loss_waste.headline_labels.total_qty, en.reports.loss_waste.headline_labels.total_qty);
 });
 
 test('every item-kind string exists in English and Arabic', () => {

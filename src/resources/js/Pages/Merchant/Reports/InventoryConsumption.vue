@@ -6,6 +6,7 @@ import { fetchInventoryConsumptionReport, type InventoryConsumptionReportPayload
 import ReportShell from './components/ReportShell.vue';
 import ReportChart from './components/ReportChart.vue';
 import { useReportRunner } from './components/useReportRunner';
+import { formatQuantity } from '@/lib/itemKind';
 
 const { t } = useI18n();
 const { filter, payload, loading, error, run } = useReportRunner<InventoryConsumptionReportPayload>(fetchInventoryConsumptionReport);
@@ -52,7 +53,6 @@ type ApexSeries = { name: string; data: number[] }[];
                     <thead class="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                         <tr>
                             <th class="px-5 py-2 text-start">{{ t('reports.inventory_consumption.columns.ingredient') }}</th>
-                            <th class="px-5 py-2 text-start">{{ t('reports.inventory_consumption.columns.unit') }}</th>
                             <th class="px-5 py-2 text-end">{{ t('reports.inventory_consumption.columns.consumed') }}</th>
                             <th class="px-5 py-2 text-end">{{ t('reports.inventory_consumption.columns.balance') }}</th>
                             <th class="px-5 py-2 text-end">{{ t('reports.inventory_consumption.columns.per_day') }}</th>
@@ -66,16 +66,16 @@ type ApexSeries = { name: string; data: number[] }[];
                     <tbody>
                         <tr v-for="r in payload.rows" :key="r.ingredient_id" class="border-b border-slate-100 last:border-0">
                             <td class="px-5 py-2 font-medium text-slate-900">{{ r.ingredient_name }}</td>
-                            <td class="px-5 py-2 text-slate-600">{{ r.unit }}</td>
-                            <td class="px-5 py-2 text-end tabular-nums">{{ r.consumed }}</td>
-                            <td class="px-5 py-2 text-end tabular-nums">{{ r.current_balance }}</td>
-                            <td class="px-5 py-2 text-end tabular-nums">{{ r.consumption_per_day }}</td>
+                            <!-- F7 — "24 l", not "24000.000" ml (the export keeps the stored numbers + a unit column). -->
+                            <td class="px-5 py-2 text-end tabular-nums" data-test="report-consumed">{{ formatQuantity(r.consumed, r.unit) }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ formatQuantity(r.current_balance, r.unit) }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ formatQuantity(r.consumption_per_day, r.unit) }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.days_of_stock ?? '—' }}</td>
-                            <td class="px-5 py-2 text-end tabular-nums">{{ r.counted_units ?? '—' }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ formatQuantity(r.counted_units, r.unit) }}</td>
                             <td
                                 class="px-5 py-2 text-end tabular-nums"
                                 :class="num(r.variance_units) < 0 ? 'font-semibold text-rose-600' : num(r.variance_units) > 0 ? 'font-semibold text-amber-600' : ''"
-                            >{{ r.variance_units ?? '—' }}</td>
+                            >{{ formatQuantity(r.variance_units, r.unit) }}</td>
                             <td class="px-5 py-2 text-center">
                                 <span
                                     v-if="r.below_min_threshold"

@@ -20,10 +20,13 @@ declare(strict_types=1);
  * Follow-up fixes:
  *   F4 the warehouse endpoints take the unit the amounts were typed in;
  *   F5 restock allocations take a unit per line (suggestions already could);
- *   F6 no kind change while pack sizes or a count container exist.
+ *   F6 no kind change while pack sizes or a count container exist;
+ *   F7 report exports keep stored numbers and name every quantity's unit.
  */
 
 use App\Actions\Pos\Inventory\CreateIngredientAction;
+use App\Actions\Pos\Inventory\WriteStockMovementAction;
+use App\Enums\StockMovementType;
 use App\Models\Branch;
 use App\Models\BranchStock;
 use App\Models\Ingredient;
@@ -309,4 +312,69 @@ it('F6 an unused ingredient with pack sizes or a count container cannot change k
     // Clearing the container in the same save counts as removing it.
     $this->patchJson("/api/ingredients/{$withContainer->uuid}", ['unit' => 'piece', 'piece_unit_label' => null, 'units_per_piece' => null])
         ->assertOk()->assertJsonPath('data.kind', 'counted');
+});
+
+/** F7 — a report CSV split into its sections: name => list of rows (a table's first row is its header). */
+function kindCsvSections(string $csv): array
+{
+    $sections = [];
+    $name = null;
+    foreach (preg_split('/\R/', trim($csv)) ?: [] as $line) {
+        if (trim($line) === '') {
+            $name = null;
+
+            continue;
+        }
+        $cells = str_getcsv($line);
+        if (str_starts_with((string) $cells[0], '# ')) {
+            $name = substr((string) $cells[0], 2);
+            $sections[$name] = [];
+
+            continue;
+        }
+        if ($name !== null) {
+            $sections[$name][] = $cells;
+        }
+    }
+
+    return $sections;
+}
+
+it('F7 report exports keep the stored numbers and name the unit of every ingredient quantity', function (): void {
+    $ctx = makeMerchantActor();
+    $milk = p3Ingredient($ctx['company'], 'Milk', 'ml', '0.0004');
+    $this->postJson('/api/purchase-receipts', [
+        'destination_branch_uuid' => $ctx['branch']->uuid,
+        'lines' => [['item_type' => 'ingredient', 'item_uuid' => $milk->uuid, 'quantity' => '36', 'unit' => 'l', 'unit_price' => '0.400']],
+    ])->assertCreated();
+    app(WriteStockMovementAction::class)->handle($ctx['branch'], $milk, StockMovementType::SaleConsumption, '-2000', '0.0004');
+    $this->postJson("/api/branches/{$ctx['branch']->uuid}/waste", ['ingredient_uuid' => $milk->uuid, 'quantity' => '1.5', 'unit' => 'l', 'reason' => 'spoiled'])->assertCreated();
+    $window = 'date_from='.now()->subDay()->toDateString().'&date_to='.now()->addDay()->toDateString();
+    $export = fn (string $report): array => kindCsvSections($this->get("/api/reports/{$report}/export?{$window}", ['Accept' => 'application/json'])->assertOk()->getContent());
+    $row = function (array $table, string $name): array {
+        $header = $table[0];
+        foreach (array_slice($table, 1) as $cells) {
+            $assoc = array_combine($header, $cells);
+            if (($assoc['ingredient_name'] ?? null) === $name) {
+                return $assoc;
+            }
+        }
+        throw new RuntimeException("{$name} not in the table");
+    };
+
+    $loss = $export('loss-waste');
+    expect(array_column($loss['headline'], 1, 0)['total_qty_unit'] ?? null)->toBe('mixed: each ingredient in its stored unit');
+    expect($row($loss['top_wasted'], 'Milk'))->toMatchArray(['unit' => 'ml', 'total_qty' => '1500.000']);
+    expect($loss['shortfall'][0])->toContain('unit');
+
+    $purchasing = $export('restock-purchasing');
+    expect(array_column($purchasing['headline'], 1, 0)['total_qty_unit'] ?? null)->toBe('mixed: each ingredient in its stored unit');
+    expect($row($purchasing['top_purchased'], 'Milk')['unit'])->toBe('ml');
+    expect((float) $row($purchasing['top_purchased'], 'Milk')['total_qty'])->toBe(36000.0);
+
+    $consumption = $export('inventory-consumption');
+    expect($row($consumption['rows'], 'Milk'))->toMatchArray(['unit' => 'ml', 'consumed' => '2000.000']);
+
+    $variance = $export('portion-variance');
+    expect($row($variance['rows'], 'Milk')['unit'])->toBe('ml');
 });
