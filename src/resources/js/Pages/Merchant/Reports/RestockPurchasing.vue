@@ -51,10 +51,11 @@ type ApexSeries = { name: string; data: number[] }[];
 <template>
     <ReportShell export-key="restock-purchasing" :title="t('reports.restock_purchasing.page_title')" v-model="filter" :loading="loading" :error="error" @run="run">
         <div v-if="payload" class="space-y-6">
+            <!-- Item kind F8 — no "Total qty" tile: it adds every ingredient in its
+                 own stored unit (g + ml + pieces). The export keeps it, labelled mixed. -->
             <HeadlineGrid
                 :items="[
                     { label: t('reports.restock_purchasing.headline_labels.total_cost'), value: payload.headline.total_cost },
-                    { label: t('reports.restock_purchasing.headline_labels.total_qty'), value: payload.headline.total_qty },
                     { label: t('reports.restock_purchasing.headline_labels.event_count'), value: payload.headline.event_count },
                 ]"
             />

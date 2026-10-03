@@ -21,6 +21,7 @@
 //   F5 restock allocation and suggestions too, shown friendly;
 //   F6 no kind change while pack sizes or a count container exist;
 //   F7 report screens show ingredient quantities friendly;
+//   F8 no mixed-unit Total qty tile on Loss & Waste / Restock & Purchasing;
 //   every new string exists in English AND Arabic.
 // Run: node --test tests/frontend/launch-p3-kind.test.mjs
 import assert from 'node:assert/strict';
@@ -481,6 +482,20 @@ test('F7 report screens show ingredient quantities friendly (24 l), exports keep
     assert.match(en.reports.loss_waste.headline_labels.total_qty, /stored unit/);
     assert.match(en.reports.restock_purchasing.headline_labels.total_qty, /stored unit/);
     assert.notEqual(ar.reports.loss_waste.headline_labels.total_qty, en.reports.loss_waste.headline_labels.total_qty);
+});
+
+test('F8 Loss & Waste and Restock & Purchasing drop the mixed-unit Total qty tile; the export keeps it, labelled mixed', () => {
+    for (const [page, key, money] of [['LossWaste', 'loss_waste', 'total_value'], ['RestockPurchasing', 'restock_purchasing', 'total_cost']]) {
+        const { template } = sfc(`resources/js/Pages/Merchant/Reports/${page}.vue`);
+        const grid = template.slice(template.indexOf('<HeadlineGrid'), template.indexOf('/>', template.indexOf('<HeadlineGrid')));
+        assert.ok(grid.length > 0, page);
+        assert.doesNotMatch(grid, /total_qty/, `${page} has no Total qty tile`);
+        assert.match(grid, new RegExp(`t\\('reports\\.${key}\\.headline_labels\\.${money}'\\), value: payload\\.headline\\.${money}`), `${page} keeps ${money}`);
+        assert.match(grid, new RegExp(`t\\('reports\\.${key}\\.headline_labels\\.event_count'\\), value: payload\\.headline\\.event_count`), `${page} keeps events`);
+    }
+    for (const action of ['LossWasteReportAction', 'RestockPurchasingReportAction']) {
+        assert.match(read(`app/Actions/Pos/Reports/${action}.php`), /'total_qty_unit' => ReportUnits::MIXED,/, action);
+    }
 });
 
 test('every item-kind string exists in English and Arabic', () => {
