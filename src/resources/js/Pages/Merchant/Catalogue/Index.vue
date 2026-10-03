@@ -12,7 +12,7 @@
  *   - Create / edit / delete buttons only when CatalogueManage
  */
 
-import { Beaker, Building2, Boxes, Clock3, Globe2, Image, Layers, Package, Pencil, Plus, QrCode, Sparkles, Store, Trash2, Truck } from 'lucide-vue-next';
+import { Beaker, Building2, Boxes, Clock3, FileSpreadsheet, Globe2, Image, Layers, Package, Pencil, Plus, QrCode, Sparkles, Store, Trash2, Truck } from 'lucide-vue-next';
 import { channelBadges, type ChannelKey } from '@/lib/channels';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -1028,9 +1028,20 @@ async function performProviderDelete(): Promise<void> {
                             {{ t('sold_out.filter') }}
                         </label>
                     </div>
-                    <div v-if="canManage" class="flex flex-wrap gap-2">
+                    <div class="flex flex-wrap gap-2">
+                        <!-- LAUNCH-P4 B6 — menu import / export page. -->
+                        <button
+                            type="button"
+                            class="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                            data-test="open-import"
+                            @click="router.push('/catalogue/import')"
+                        >
+                            <FileSpreadsheet class="size-4" />
+                            {{ t('menu_import.open') }}
+                        </button>
                         <!-- LAUNCH-P4 B2 — combos have their own editor. -->
                         <button
+                            v-if="canManage"
                             type="button"
                             class="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100"
                             data-test="add-combo"
@@ -1040,6 +1051,7 @@ async function performProviderDelete(): Promise<void> {
                             {{ t('combos.add') }}
                         </button>
                         <button
+                            v-if="canManage"
                             type="button"
                             class="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-teal-600 to-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-teal-600/30 transition hover:-translate-y-0.5 hover:shadow-xl"
                             :disabled="categories.length === 0"

@@ -12,6 +12,7 @@ import BranchesShow from '@/Pages/Merchant/Branches/Show.vue';
 import CatalogueIndex from '@/Pages/Merchant/Catalogue/Index.vue';
 import ProductWizard from '@/Pages/Merchant/Catalogue/ProductWizard.vue';
 import ComboEditor from '@/Pages/Merchant/Catalogue/ComboEditor.vue';
+import MenuImport from '@/Pages/Merchant/Catalogue/MenuImport.vue';
 import TaxesIndex from '@/Pages/Merchant/Taxes/Index.vue';
 import ExpenseCategoriesIndex from '@/Pages/Merchant/ExpenseCategories/Index.vue';
 import CustomersIndex from '@/Pages/Merchant/Customers/Index.vue';
@@ -220,6 +221,14 @@ const routes: RouteRecordRaw[] = [
         path: '/catalogue/combos/:uuid/edit',
         name: 'merchant.catalogue.combo-edit',
         component: ComboEditor,
+        meta: { requiresAuth: true },
+    },
+    {
+        // LAUNCH-P4 B6 — menu import (template → preview → save) and export.
+        // Server-side: catalogue.view to download, catalogue.manage to import.
+        path: '/catalogue/import',
+        name: 'merchant.catalogue.import',
+        component: MenuImport,
         meta: { requiresAuth: true },
     },
     {

@@ -92,7 +92,9 @@ final readonly class CreateProductAction
                 'available_from' => $attributes['available_from'] ?? null,
                 'available_until' => $attributes['available_until'] ?? null,
                 'display_order' => $attributes['display_order'] ?? 0,
-                'status' => ProductStatus::Active->value,
+                // LAUNCH-P4 B6 — the menu import may add a product as inactive;
+                // the create forms never send a status (active).
+                'status' => $attributes['status'] ?? ProductStatus::Active->value,
                 // LAUNCH-P4 — Arabic description (L5), channels (B3), the
                 // branch rule (H6: 'all' until a branch list is chosen) and
                 // the type ('combo' only through the combo editor, B2).

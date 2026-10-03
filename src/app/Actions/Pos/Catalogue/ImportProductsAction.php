@@ -103,6 +103,11 @@ final readonly class ImportProductsAction
      */
     private function parse(string $csv): array
     {
+        // LAUNCH-P4 B6 — Excel's "CSV UTF-8" starts with a byte-order mark
+        // that made the first header "\u{FEFF}name" (refused as no 'name').
+        if (str_starts_with($csv, "\xEF\xBB\xBF")) {
+            $csv = substr($csv, 3);
+        }
         $stream = fopen('php://temp', 'r+');
         fwrite($stream, $csv);
         rewind($stream);
@@ -214,7 +219,9 @@ final readonly class ImportProductsAction
             'name' => ['required', 'string', 'max:255'],
             'name_ar' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:1000'],
-            'image_url' => ['nullable', 'url', 'max:1000'],
+            // LAUNCH-P4 L9 — the column holds 500 characters (a longer link
+            // was a raw database error on that row).
+            'image_url' => ['nullable', 'url', 'max:500'],
             'base_price' => ['required', 'numeric', 'min:0', 'max:999999.999'],
             'delivery_price' => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
             'cost_price' => ['nullable', 'numeric', 'min:0', 'max:999999.999'],

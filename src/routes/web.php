@@ -38,6 +38,7 @@ use App\Http\Controllers\Pos\InventorySettingsController;
 use App\Http\Controllers\Pos\KitchenPositionsSettingController;
 use App\Http\Controllers\Pos\LoyaltyController;
 use App\Http\Controllers\Pos\ManagerApprovalSettingController;
+use App\Http\Controllers\Pos\MenuImportController;
 use App\Http\Controllers\Pos\OffersController;
 use App\Http\Controllers\Pos\OrderCancellationSettingController;
 use App\Http\Controllers\Pos\OrderNumberingSettingController;
@@ -334,6 +335,17 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('products.store');
         Route::post('products/import', [ProductsController::class, 'import'])
             ->name('products.import');
+        // LAUNCH-P4 B6 — menu import page (template → preview → save) and the
+        // menu export, in the same columns. Declared before the
+        // products/{product:uuid} GET so the binding cannot swallow them.
+        Route::get('products/import/template', [MenuImportController::class, 'template'])
+            ->name('products.import.template');
+        Route::post('products/import/preview', [MenuImportController::class, 'preview'])
+            ->name('products.import.preview');
+        Route::post('products/import/commit', [MenuImportController::class, 'commit'])
+            ->name('products.import.commit');
+        Route::get('products/export', [MenuImportController::class, 'export'])
+            ->name('products.export');
         // PD1 — the 3-step wizard's atomic create (product + add-on
         // groups + recipe + physical items + branches + provider
         // prices in ONE transaction; edit mode keeps the per-section
