@@ -74,6 +74,10 @@ final readonly class UpdateAddOnAction
                 if ($product->is_internal) {
                     throw new RuntimeException('An internal item cannot be sold as an add-on.');
                 }
+                // LAUNCH-P4 B2 — a combo is never an add-on.
+                if ($product->isCombo()) {
+                    throw new RuntimeException('A combo cannot be sold as an add-on.');
+                }
                 $attributes['linked_product_id'] = (int) $product->id;
             }
         }

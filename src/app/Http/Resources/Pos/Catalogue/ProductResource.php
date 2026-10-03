@@ -131,6 +131,33 @@ class ProductResource extends JsonResource
             // + the provider relation. Product edit modal uses
             // this to pre-populate the provider-price grid.
             'delivery_provider_prices' => ProductDeliveryPriceResource::collection($this->whenLoaded('deliveryPrices')),
+            // LAUNCH-P4 B2 — a combo's slots and the items each one offers
+            // (extra price per item, the same on every channel), inlined when
+            // the controller eager-loaded comboSlots.options.product.
+            'combo' => $this->whenLoaded('comboSlots', fn (): array => [
+                'slots' => $this->comboSlots->map(static fn ($slot): array => [
+                    'id' => (int) $slot->id,
+                    'uuid' => (string) $slot->uuid,
+                    'name' => (string) $slot->name,
+                    'name_ar' => $slot->name_ar,
+                    'min_choices' => (int) $slot->min_choices,
+                    'max_choices' => (int) $slot->max_choices,
+                    'sort_order' => (int) $slot->sort_order,
+                    'options' => $slot->options->map(static fn ($option): array => [
+                        'product_uuid' => (string) $option->product?->uuid,
+                        'product_name' => $option->product?->name,
+                        'product_name_ar' => $option->product?->name_ar,
+                        'product_base_price' => $option->product !== null ? (string) $option->product->base_price : null,
+                        // A deleted or switched-off item still shows in the
+                        // editor so the merchant can take it out.
+                        'product_available' => $option->product !== null && ! $option->product->trashed()
+                            && ($option->product->status?->value ?? 'active') === 'active',
+                        'extra_price' => (string) $option->extra_price,
+                        'is_default' => (bool) $option->is_default,
+                        'sort_order' => (int) $option->sort_order,
+                    ])->values()->all(),
+                ])->values()->all(),
+            ]),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

@@ -54,6 +54,11 @@ final readonly class UpdateProductComponentsAction
         if ($product->is_internal && $lines !== []) {
             throw new RuntimeException('A physical item cannot consume other items.');
         }
+        // LAUNCH-P4 B2 — a combo has no components: each chosen item uses
+        // its own recipe and packaging when the combo sells.
+        if ($product->isCombo() && $lines !== []) {
+            throw new RuntimeException('A combo has no components: each item in it uses its own recipe and packaging.');
+        }
 
         $uuids = array_map(static fn (array $l): string => (string) $l['component_uuid'], $lines);
         if (count($uuids) !== count(array_unique($uuids))) {

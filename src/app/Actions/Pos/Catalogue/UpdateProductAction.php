@@ -88,6 +88,13 @@ final readonly class UpdateProductAction
             abort(404);
         }
 
+        // LAUNCH-P4 B2 — a combo keeps no stock of its own: the items chosen
+        // in it are counted when it sells.
+        if ($product->isCombo() && array_key_exists('stock_mode', $attributes)
+            && $attributes['stock_mode'] !== null && $attributes['stock_mode'] !== 'untracked') {
+            throw new RuntimeException('A combo has no stock of its own: the items in it are counted when it sells.');
+        }
+
         // Category move — verify the new category is ours.
         if (array_key_exists('category_id', $attributes) && ! empty($attributes['category_id'])) {
             $categoryOwned = ProductCategory::query()

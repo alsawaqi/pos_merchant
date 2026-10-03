@@ -356,17 +356,23 @@ class ProductsController extends Controller
     {
         $this->ensure($request, MerchantPermission::CatalogueView);
 
+        // LAUNCH-P4 B2 — standard products only (a combo is never an add-on
+        // or a combo item); the combo editor reuses this list as its item
+        // picker, so it carries the base price and status too.
         $options = Product::query()
             ->where('company_id', $this->tenant->requiredId())
             ->where('is_internal', false)
+            ->where('product_type', Product::TYPE_STANDARD)
             ->orderBy('name')
             ->limit(500)
-            ->get(['uuid', 'name', 'name_ar', 'stock_mode'])
+            ->get(['uuid', 'name', 'name_ar', 'stock_mode', 'base_price', 'status'])
             ->map(static fn (Product $p): array => [
                 'uuid' => $p->uuid,
                 'name' => $p->name,
                 'name_ar' => $p->name_ar,
                 'stock_mode' => $p->stock_mode,
+                'base_price' => (string) $p->base_price,
+                'status' => $p->status?->value,
             ]);
 
         return response()->json(['data' => $options]);
@@ -378,7 +384,14 @@ class ProductsController extends Controller
         $this->refuseIfNotInTenant($product);
         $this->refuseIfPhysicalItem($product);
 
-        $this->delete->handle($product, $request->user());
+        try {
+            $this->delete->handle($product, $request->user());
+        } catch (QueryException|HttpException $e) {
+            throw $e;
+        } catch (RuntimeException $e) {
+            // LAUNCH-P4 B2 — an item still offered in a combo.
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
         return response()->json(['data' => null], 204);
     }

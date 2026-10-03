@@ -1002,17 +1002,28 @@ async function performProviderDelete(): Promise<void> {
                             </select>
                         </label>
                     </div>
-                    <button
-                        v-if="canManage"
-                        type="button"
-                        class="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-teal-600 to-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-teal-600/30 transition hover:-translate-y-0.5 hover:shadow-xl"
-                        :disabled="categories.length === 0"
-                        :title="categories.length === 0 ? t('catalogue.no_categories_hint') : ''"
-                        @click="router.push('/catalogue/products/new')"
-                    >
-                        <Plus class="size-4" />
-                        {{ t('catalogue.actions.add_product') }}
-                    </button>
+                    <div v-if="canManage" class="flex flex-wrap gap-2">
+                        <!-- LAUNCH-P4 B2 — combos have their own editor. -->
+                        <button
+                            type="button"
+                            class="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100"
+                            data-test="add-combo"
+                            @click="router.push('/catalogue/combos/new')"
+                        >
+                            <Layers class="size-4" />
+                            {{ t('combos.add') }}
+                        </button>
+                        <button
+                            type="button"
+                            class="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-teal-600 to-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-teal-600/30 transition hover:-translate-y-0.5 hover:shadow-xl"
+                            :disabled="categories.length === 0"
+                            :title="categories.length === 0 ? t('catalogue.no_categories_hint') : ''"
+                            @click="router.push('/catalogue/products/new')"
+                        >
+                            <Plus class="size-4" />
+                            {{ t('catalogue.actions.add_product') }}
+                        </button>
+                    </div>
                 </div>
 
                 <div v-if="loading" class="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500 shadow-sm">
@@ -1042,7 +1053,14 @@ async function performProviderDelete(): Promise<void> {
                         <tbody class="divide-y divide-slate-100 bg-white">
                             <tr v-for="prod in products" :key="prod.id" class="transition hover:bg-slate-50">
                                 <td class="px-5 py-4">
-                                    <span class="block text-sm font-semibold text-slate-950">{{ prod.name }}</span>
+                                    <span class="block text-sm font-semibold text-slate-950">
+                                        {{ prod.name }}
+                                        <!-- LAUNCH-P4 B2 — combos carry a badge. -->
+                                        <span v-if="prod.product_type === 'combo'" class="ms-1 inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wider text-indigo-700" data-test="combo-badge">
+                                            <Layers class="size-3" />
+                                            {{ t('combos.badge') }}
+                                        </span>
+                                    </span>
                                     <span v-if="prod.name_ar" class="block text-xs text-slate-500" dir="rtl">{{ prod.name_ar }}</span>
                                     <!-- PD3a: physical items moved to Inventory →
                                          Physical items; this list is sellable
@@ -1118,7 +1136,7 @@ async function performProviderDelete(): Promise<void> {
                                 <td class="px-5 py-4 text-end">
                                     <div class="inline-flex gap-2">
                                         <!-- Fix order 1, L8 — a catalogue viewer opens the product read-only (recipe history included). -->
-                                        <button type="button" class="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50" data-test="product-open" @click="router.push(`/catalogue/products/${prod.uuid}/edit`)">
+                                        <button type="button" class="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50" data-test="product-open" @click="router.push(prod.product_type === 'combo' ? `/catalogue/combos/${prod.uuid}/edit` : `/catalogue/products/${prod.uuid}/edit`)">
                                             <Pencil class="size-3" /> {{ canManage ? t('catalogue.actions.edit') : t('catalogue.actions.view') }}
                                         </button>
                                         <!-- PD1 stock model: restocking belongs to ready/bought-in

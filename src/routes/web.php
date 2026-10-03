@@ -17,6 +17,7 @@ use App\Http\Controllers\Pos\BranchesController as PosBranchesController;
 use App\Http\Controllers\Pos\BranchTargetsController;
 use App\Http\Controllers\Pos\BranchTransfersController;
 use App\Http\Controllers\Pos\CategoriesController;
+use App\Http\Controllers\Pos\CombosController;
 use App\Http\Controllers\Pos\CommissionInvoicesController;
 use App\Http\Controllers\Pos\CompReasonsController;
 use App\Http\Controllers\Pos\CustomersController;
@@ -342,6 +343,15 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('products.update');
         Route::delete('products/{product:uuid}', [ProductsController::class, 'destroy'])
             ->name('products.destroy');
+
+        // LAUNCH-P4 B2 — combos: a set price plus choice slots. Listed,
+        // deleted and switched sold out through the product endpoints.
+        Route::post('combos', [CombosController::class, 'store'])
+            ->name('combos.store');
+        Route::get('combos/{product:uuid}', [CombosController::class, 'show'])
+            ->name('combos.show');
+        Route::put('combos/{product:uuid}', [CombosController::class, 'update'])
+            ->name('combos.update');
 
         // -------- Phase 4.9 — Modifiers / Add-on Groups ----
         // Add-on groups are catalog-tier config (a "Milk Choice"

@@ -11,6 +11,7 @@ import BranchesIndex from '@/Pages/Merchant/Branches/Index.vue';
 import BranchesShow from '@/Pages/Merchant/Branches/Show.vue';
 import CatalogueIndex from '@/Pages/Merchant/Catalogue/Index.vue';
 import ProductWizard from '@/Pages/Merchant/Catalogue/ProductWizard.vue';
+import ComboEditor from '@/Pages/Merchant/Catalogue/ComboEditor.vue';
 import TaxesIndex from '@/Pages/Merchant/Taxes/Index.vue';
 import ExpenseCategoriesIndex from '@/Pages/Merchant/ExpenseCategories/Index.vue';
 import CustomersIndex from '@/Pages/Merchant/Customers/Index.vue';
@@ -205,6 +206,20 @@ const routes: RouteRecordRaw[] = [
         path: '/catalogue/products/:uuid/edit',
         name: 'merchant.catalogue.product-edit',
         component: ProductWizard,
+        meta: { requiresAuth: true },
+    },
+    {
+        // LAUNCH-P4 B2 — the combos editor (a set price + choice slots).
+        // Server-side gates by catalogue.manage.
+        path: '/catalogue/combos/new',
+        name: 'merchant.catalogue.combo-create',
+        component: ComboEditor,
+        meta: { requiresAuth: true },
+    },
+    {
+        path: '/catalogue/combos/:uuid/edit',
+        name: 'merchant.catalogue.combo-edit',
+        component: ComboEditor,
         meta: { requiresAuth: true },
     },
     {

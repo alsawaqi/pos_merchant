@@ -6,10 +6,13 @@ namespace App\Actions\Pos\Catalogue;
 
 use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
+use App\Models\ComboSlot;
+use App\Models\ComboSlotOption;
 use App\Models\Product;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 /**
  * Soft-delete a product. Phase 7 orders will reference
@@ -32,6 +35,21 @@ final readonly class DeleteProductAction
         $companyId = $this->tenant->requiredId();
         if ((int) $product->company_id !== $companyId) {
             abort(404);
+        }
+
+        // LAUNCH-P4 B2 — an item offered inside a combo cannot go while the
+        // combo still offers it (the option row's product FK is RESTRICT,
+        // and a combo slot must never point at a deleted item).
+        $combos = Product::query()
+            ->where('company_id', $companyId)
+            ->whereIn('id', ComboSlot::query()
+                ->whereIn('id', ComboSlotOption::query()->where('product_id', $product->id)->select('slot_id'))
+                ->select('combo_product_id'))
+            ->orderBy('name')
+            ->pluck('name')
+            ->all();
+        if ($combos !== []) {
+            throw new RuntimeException('This item is offered in a combo: remove it from '.implode(', ', $combos).' first.');
         }
 
         DB::transaction(function () use ($product, $actor, $companyId): void {

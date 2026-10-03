@@ -734,6 +734,82 @@ export interface AddonLinkOption {
     name: string;
     name_ar: string | null;
     stock_mode: string | null;
+    /** LAUNCH-P4 B2 — the combo editor shows the item's own price. */
+    base_price?: string;
+    status?: ProductStatus | null;
+}
+
+// ---- LAUNCH-P4 B2 — combos ---------------------------------------
+
+export interface ComboSlotOption {
+    product_uuid: string;
+    product_name: string | null;
+    product_name_ar: string | null;
+    product_base_price: string | null;
+    /** false = the item is deleted or switched off (still shown so it can be removed). */
+    product_available: boolean;
+    extra_price: string;
+    is_default: boolean;
+    sort_order: number;
+}
+
+export interface ComboSlot {
+    id: number;
+    uuid: string;
+    name: string;
+    name_ar: string | null;
+    min_choices: number;
+    max_choices: number;
+    sort_order: number;
+    options: ComboSlotOption[];
+}
+
+/** A combo as GET /api/combos/{uuid} returns it (a product + its slots). */
+export type Combo = Product & {
+    combo?: { slots: ComboSlot[] };
+    delivery_provider_prices?: { price: string | null; listed: boolean; delivery_provider?: { uuid: string } | null }[];
+};
+
+export interface SaveComboPayload {
+    name: string;
+    name_ar: string | null;
+    description: string | null;
+    description_ar: string | null;
+    image_url: string | null;
+    category_id: number | null;
+    sku: string | null;
+    barcode: string | null;
+    base_price: string;
+    delivery_price: string | null;
+    sold_in_store: boolean;
+    show_on_customer_tablet: boolean;
+    sold_on_delivery: boolean;
+    available_from: string | null;
+    available_until: string | null;
+    display_order?: number;
+    status?: ProductStatus;
+    slots: {
+        id?: number | null;
+        name: string;
+        name_ar: string | null;
+        min_choices: number;
+        max_choices: number;
+        options: { product_uuid: string; extra_price: string; is_default: boolean }[];
+    }[];
+    delivery_prices: ProviderChannelPayload[];
+    branches: BranchScopePayload | null;
+}
+
+export function getCombo(uuid: string): Promise<{ data: Combo }> {
+    return apiGet<{ data: Combo }>(`/api/combos/${uuid}`);
+}
+
+export function createCombo(payload: SaveComboPayload): Promise<{ data: Combo }> {
+    return apiPost<{ data: Combo }>('/api/combos', payload as unknown as JsonValue);
+}
+
+export function updateCombo(uuid: string, payload: SaveComboPayload): Promise<{ data: Combo }> {
+    return apiPut<{ data: Combo }>(`/api/combos/${uuid}`, payload as unknown as JsonValue);
 }
 
 /** P-G3 — the slim picker source: every sellable (non-internal) product. */
