@@ -75,6 +75,40 @@ class CompanySetting extends Model
     public const KEY_PURCHASE_TAX_RECOVERABLE = 'purchase_tax_recoverable';
 
     /**
+     * LAUNCH-P4 — "Menu prices include VAT": the merchant's own switch (a JSON
+     * boolean, default TRUE when the row is absent). pos_api emits it in
+     * /device/config as company.tax.prices_include_vat; it only matters for a
+     * VAT-registered company (pos_companies.vat_registered_at set).
+     */
+    public const KEY_PRICES_INCLUDE_VAT = 'tax.prices_include_vat';
+
+    /**
+     * LAUNCH-P4 — read a JSON-boolean setting defensively across drivers
+     * (Postgres jsonb vs sqlite text). $default when the row is absent.
+     */
+    public static function boolFor(int $companyId, string $key, bool $default): bool
+    {
+        $value = self::query()
+            ->withoutGlobalScopes()
+            ->where('company_id', $companyId)
+            ->where('key', $key)
+            ->value('value');
+
+        if ($value === null) {
+            return $default;
+        }
+        if (is_bool($value)) {
+            return $value;
+        }
+        $decoded = is_string($value) ? json_decode($value, true) : $value;
+        if ($decoded === null) {
+            return $default;
+        }
+
+        return $decoded === true || $decoded === 1 || $decoded === '1' || $decoded === 'true';
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

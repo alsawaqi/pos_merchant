@@ -796,8 +796,8 @@ function productPayload(): CreateProductPayload {
         base_price: form.base_price,
         delivery_price: form.delivery_price === '' ? null : form.delivery_price,
         cost_price: form.cost_price === '' ? null : form.cost_price,
-        tax_rate: form.tax_rate === '' ? null : form.tax_rate,
-        tax_inclusive: form.tax_inclusive,
+        // LAUNCH-P4 B1 — tax_rate / tax_inclusive are hidden and never sent:
+        // VAT is merchant-wide (Taxes page).
         show_on_customer_tablet: form.show_on_customer_tablet,
         available_from: form.available_from ? `${form.available_from}:00` : null,
         available_until: form.available_until ? `${form.available_until}:00` : null,
@@ -1325,7 +1325,11 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                         <!-- Pricing (incl. the per-provider grid — step 1 by design) -->
                         <section class="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                             <h2 class="text-sm font-semibold text-slate-900">{{ t('catalogue.wizard.pricing_title') }}</h2>
-                            <div class="grid gap-3 sm:grid-cols-3">
+                            <!-- LAUNCH-P4 B1 — no per-product tax rate / "price
+                                 includes tax" any more: VAT is merchant-wide
+                                 (Taxes page). The fields are hidden and never
+                                 sent, so stored values stay untouched. -->
+                            <div class="grid gap-3 sm:grid-cols-2">
                                 <label class="block">
                                     <span class="text-sm font-medium text-slate-700">
                                         <Tag class="me-1 inline size-3" />
@@ -1338,12 +1342,8 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                     <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.cost_price') }} (OMR)</span>
                                     <input v-model="form.cost_price" type="number" step="0.001" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                                 </label>
-                                <label class="block">
-                                    <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.tax_rate') }} (%)</span>
-                                    <input v-model="form.tax_rate" type="number" step="0.01" min="0" max="100" :placeholder="t('catalogue.fields.tax_rate_placeholder')" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                                    <p class="mt-1 text-xs text-slate-500">{{ t('catalogue.fields.tax_rate_hint') }}</p>
-                                </label>
                             </div>
+                            <p class="text-xs text-slate-500" data-test="vat-hint">{{ t('tax_settings.product_hint') }}</p>
                             <label class="block max-w-xs">
                                 <span class="text-sm font-medium text-slate-700">
                                     <Truck class="me-1 inline size-3" />
@@ -1352,13 +1352,6 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                 <input v-model="form.delivery_price" type="number" step="0.001" min="0" :placeholder="form.base_price || '—'" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                                 <p class="mt-1 text-xs text-slate-500">{{ t('catalogue.fields.delivery_price_hint') }}</p>
                             </label>
-                            <div>
-                                <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
-                                    <input v-model="form.tax_inclusive" type="checkbox" class="rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200">
-                                    {{ t('catalogue.fields.tax_inclusive') }}
-                                </label>
-                                <p class="mt-1 text-xs text-slate-500">{{ t('catalogue.fields.tax_inclusive_hint') }}</p>
-                            </div>
 
                             <!-- Per-provider price overrides -->
                             <div v-if="activeProviders.length > 0" class="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
@@ -1890,7 +1883,6 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                 <div><dt class="text-xs text-slate-500">{{ t('catalogue.fields.base_price') }}</dt><dd class="font-semibold tabular-nums text-slate-900">{{ form.base_price || '0.000' }} OMR</dd></div>
                                 <div><dt class="text-xs text-slate-500">{{ t('catalogue.fields.cost_price') }}</dt><dd class="tabular-nums text-slate-900">{{ form.cost_price || '—' }}</dd></div>
                                 <div><dt class="text-xs text-slate-500">{{ t('catalogue.fields.delivery_price') }}</dt><dd class="tabular-nums text-slate-900">{{ form.delivery_price || t('catalogue.wizard.inherits_base') }}</dd></div>
-                                <div><dt class="text-xs text-slate-500">{{ t('catalogue.fields.tax_rate') }}</dt><dd class="tabular-nums text-slate-900">{{ form.tax_rate !== '' ? `${form.tax_rate}%` : t('catalogue.wizard.company_default') }}</dd></div>
                                 <div><dt class="text-xs text-slate-500">{{ t('catalogue.fields.available_hours') }}</dt><dd class="tabular-nums text-slate-900">{{ form.available_from || form.available_until ? `${form.available_from || '00:00'} – ${form.available_until || '23:59'}` : t('catalogue.wizard.always_available') }}</dd></div>
                                 <div v-if="isPieceCounted"><dt class="text-xs text-slate-500">{{ t('catalogue.fields.low_stock_threshold') }}</dt><dd class="tabular-nums text-slate-900">{{ form.low_stock_threshold || '—' }}</dd></div>
                                 <div v-if="form.stock_mode === 'cooked'"><dt class="text-xs text-slate-500">{{ t('catalogue.wizard.shelf_life') }}</dt><dd class="tabular-nums text-slate-900">{{ form.shelf_life_days || t('catalogue.wizard.keeps') }}</dd></div>

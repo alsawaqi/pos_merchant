@@ -2,24 +2,42 @@
 /**
  * Taxes — company-level tax settings.
  *
- * The merchant defines the taxes their company collects (a free-form name +
- * a percentage, e.g. "VAT" 5%, "Municipality" 2%). The Main POS fetches the
- * active set at staff login (/device/config) and adds each, as its own line,
- * on top of the order total (exclusive).
+ * LAUNCH-P4 B1 — VAT settings first: whether the business is VAT-registered
+ * and its VAT number (read-only, kept on the company record by the onboarding
+ * team), the merchant's "Menu prices include VAT" switch (default on), and a
+ * warning + one-click "Add VAT 5%" when a registered business has no active
+ * tax row.
+ *
+ * Below, the taxes the company collects (a free-form name + a percentage).
+ * For a registered business the POS charges the active ones, one line each:
+ * taken out of the menu price when prices include VAT, else added on top.
+ * Delivery-app orders carry no tax; an unregistered business charges none.
  *
  * Permission gating:
  *   - Page reachable when CatalogueView
  *   - Add / edit / delete only when CatalogueManage
  */
 
-import { Pencil, Percent, Plus, Trash2 } from 'lucide-vue-next';
+import { AlertTriangle, BadgeCheck, Pencil, Percent, Plus, Trash2 } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import BaseModal from '@/Components/BaseModal.vue';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
-import { createTax, deleteTax, getPurchaseTaxRecoverable, listTaxes, updatePurchaseTaxRecoverable, updateTax, type Tax } from '@/lib/api/taxes';
+import {
+    addStandardVat,
+    createTax,
+    deleteTax,
+    getPurchaseTaxRecoverable,
+    getTaxSettings,
+    listTaxes,
+    updatePricesIncludeVat,
+    updatePurchaseTaxRecoverable,
+    updateTax,
+    type Tax,
+    type TaxSettings,
+} from '@/lib/api/taxes';
 import { MerchantPermission } from '@/lib/permissions';
 
 const { t } = useI18n();
@@ -58,6 +76,50 @@ async function fetchTaxes(): Promise<void> {
 }
 
 onMounted(fetchTaxes);
+
+// LAUNCH-P4 B1 — VAT settings: registration + number (read-only) and the
+// "Menu prices include VAT" switch; a registered business with no active tax
+// row is warned and offered "Add VAT 5%".
+const vat = ref<TaxSettings | null>(null);
+const vatSaving = ref(false);
+const vatError = ref<string | null>(null);
+async function fetchVat(): Promise<void> {
+    try {
+        vat.value = (await getTaxSettings()).data;
+    } catch (e) {
+        vatError.value = apiErrorMessage(e);
+    }
+}
+async function togglePricesIncludeVat(value: boolean): Promise<void> {
+    if (!canManage.value || vatSaving.value) {
+        return;
+    }
+    vatSaving.value = true;
+    vatError.value = null;
+    try {
+        vat.value = (await updatePricesIncludeVat(value)).data;
+    } catch (e) {
+        vatError.value = apiErrorMessage(e);
+    } finally {
+        vatSaving.value = false;
+    }
+}
+async function addVat(): Promise<void> {
+    if (!canManage.value || vatSaving.value) {
+        return;
+    }
+    vatSaving.value = true;
+    vatError.value = null;
+    try {
+        vat.value = (await addStandardVat()).data;
+        await fetchTaxes();
+    } catch (e) {
+        vatError.value = apiErrorMessage(e);
+    } finally {
+        vatSaving.value = false;
+    }
+}
+onMounted(fetchVat);
 
 // PT — the purchase-tax-recoverable company setting (lives on this page).
 const recoverable = ref(false);
@@ -188,6 +250,61 @@ async function confirmDelete(): Promise<void> {
             <div v-if="loadError" class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
                 {{ loadError }}
             </div>
+
+            <!-- LAUNCH-P4 B1 — VAT settings (registration is read-only). -->
+            <section v-if="vat" class="mt-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm" data-test="vat-settings">
+                <h2 class="text-sm font-semibold text-slate-900">{{ t('tax_settings.title') }}</h2>
+                <dl class="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                    <div>
+                        <dt class="text-xs text-slate-500">{{ t('tax_settings.registered') }}</dt>
+                        <dd class="mt-0.5 inline-flex items-center gap-1.5 font-semibold" :class="vat.vat_registered ? 'text-emerald-700' : 'text-slate-700'">
+                            <BadgeCheck v-if="vat.vat_registered" class="size-4" />
+                            {{ vat.vat_registered ? t('tax_settings.yes') : t('tax_settings.no') }}
+                            <span v-if="vat.vat_registered && vat.vat_registered_at" class="text-xs font-normal text-slate-500">· {{ t('tax_settings.since', { date: vat.vat_registered_at }) }}</span>
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs text-slate-500">{{ t('tax_settings.vat_number') }}</dt>
+                        <dd class="mt-0.5 font-mono font-semibold text-slate-900" dir="ltr">{{ vat.vat_number ?? '—' }}</dd>
+                    </div>
+                </dl>
+                <p class="mt-2 text-xs text-slate-500">{{ vat.vat_registered ? t('tax_settings.registered_hint') : t('tax_settings.not_registered_hint') }}</p>
+                <p class="mt-1 text-xs text-slate-400">{{ t('tax_settings.readonly_hint') }}</p>
+
+                <label class="mt-4 flex items-start gap-3 border-t border-slate-100 pt-4">
+                    <input
+                        type="checkbox"
+                        :checked="vat.prices_include_vat"
+                        :disabled="!canManage || vatSaving"
+                        class="mt-0.5 rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200 disabled:opacity-50"
+                        data-test="prices-include-vat"
+                        @change="togglePricesIncludeVat(($event.target as HTMLInputElement).checked)"
+                    >
+                    <span>
+                        <span class="block text-sm font-semibold text-slate-800">{{ t('tax_settings.prices_include_vat') }}</span>
+                        <span class="mt-0.5 block text-xs text-slate-500">{{ vat.prices_include_vat ? t('tax_settings.prices_include_vat_on') : t('tax_settings.prices_include_vat_off') }}</span>
+                    </span>
+                </label>
+
+                <div v-if="vat.needs_vat_row" class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5" data-test="vat-missing">
+                    <span class="inline-flex items-start gap-2 text-sm font-semibold text-amber-800">
+                        <AlertTriangle class="mt-0.5 size-4 shrink-0" />
+                        {{ t('tax_settings.no_vat_row') }}
+                    </span>
+                    <button
+                        v-if="canManage"
+                        type="button"
+                        :disabled="vatSaving"
+                        class="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:opacity-60"
+                        data-test="add-vat"
+                        @click="addVat"
+                    >
+                        <Plus class="size-3.5" />
+                        {{ t('tax_settings.add_vat') }}
+                    </button>
+                </div>
+                <p v-if="vatError" class="mt-2 text-xs text-rose-600">{{ vatError }}</p>
+            </section>
 
             <!-- PT — whether tracked purchase/input tax is recoverable. -->
             <div class="mt-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">

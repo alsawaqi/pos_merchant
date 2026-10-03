@@ -2349,7 +2349,7 @@
     },
     "taxes": {
         "title": "Taxes",
-        "subtitle": "Define the taxes your company collects (e.g. VAT, Municipality). The POS fetches the active set when staff log in and adds each, as its own line, on top of every order total.",
+        "subtitle": "The taxes your business charges. When it is VAT-registered, the POS charges the active taxes below, one line each: taken out of the menu price when menu prices include VAT, otherwise added on top. Delivery-app orders carry no tax. A business that is not VAT-registered charges no tax.",
         "recoverable": {
             "title": "Purchase tax is recoverable",
             "hint": "When on, the tax you record on purchases (on the Goods Received Note, stock receives and expenses) is credited back into net profit on the Sales report — like a reclaimable VAT receivable. When off, it's just tracked as a figure."
@@ -2370,7 +2370,7 @@
             "name": "Tax name",
             "name_ar": "Arabic name (optional)",
             "rate_percent": "Rate (%)",
-            "is_active": "Active (applied at the POS)"
+            "is_active": "Active (charged at the POS)"
         },
         "statuses": {
             "active": "Active",
@@ -3553,5 +3553,22 @@
             "delete_title": "Delete reason",
             "delete_confirm": "Delete \"{name}\"? Historical orders keep their snapshot of it."
         }
+    },
+    "tax_settings": {
+        "title": "VAT settings",
+        "registered": "VAT-registered",
+        "yes": "Yes",
+        "no": "No",
+        "since": "since {date}",
+        "vat_number": "VAT number",
+        "registered_hint": "Receipts print \"Simplified tax invoice\" with this VAT number and one line per tax.",
+        "not_registered_hint": "Not VAT-registered: no VAT is charged and receipts print no VAT lines.",
+        "readonly_hint": "Registration and the VAT number are set by the MITHQAL team. Contact support to change them.",
+        "prices_include_vat": "Menu prices include VAT",
+        "prices_include_vat_on": "On: a 1.000 menu price is charged 1.000, and the VAT inside it is shown on the receipt.",
+        "prices_include_vat_off": "Off: VAT is added on top of the menu price (a 1.000 item at 5% is charged 1.050).",
+        "no_vat_row": "Your business is VAT-registered but has no active tax, so no VAT is charged.",
+        "add_vat": "Add VAT 5%",
+        "product_hint": "VAT is set once for the whole business on the Taxes page, not per product."
     }
 }

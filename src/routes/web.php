@@ -65,6 +65,7 @@ use App\Http\Controllers\Pos\TableCardsPrintController;
 use App\Http\Controllers\Pos\TableInsightsController;
 use App\Http\Controllers\Pos\TablesController;
 use App\Http\Controllers\Pos\TaxesController;
+use App\Http\Controllers\Pos\TaxSettingsController;
 use App\Http\Controllers\Pos\VoidReasonsController;
 use App\Http\Controllers\Pos\WasteController;
 use App\Http\Controllers\SpaController;
@@ -954,9 +955,10 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         Route::delete('delivery-providers/{provider:uuid}', [DeliveryProvidersController::class, 'destroy'])
             ->name('delivery-providers.destroy');
 
-        // Company-level taxes (merchant settings). The Main POS fetches the
-        // active set via /device/config and adds each, as its own line, on top
-        // of the order total. Gated under CatalogueView / CatalogueManage --
+        // Company-level taxes (merchant settings). For a VAT-registered company
+        // the POS charges the active set (taken out of the price when menu
+        // prices include VAT, else added on top; never on delivery-app orders).
+        // Gated under CatalogueView / CatalogueManage --
         // a company-wide pricing setting, same risk class as product pricing.
         Route::get('taxes', [TaxesController::class, 'index'])->name('taxes.index');
         Route::post('taxes', [TaxesController::class, 'store'])->name('taxes.store');
@@ -970,6 +972,16 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('settings.purchase-tax-recoverable.show');
         Route::put('settings/purchase-tax-recoverable', [PurchaseTaxRecoverableSettingController::class, 'update'])
             ->name('settings.purchase-tax-recoverable.update');
+
+        // LAUNCH-P4 B1 — VAT settings on the Taxes page: registration and VAT
+        // number (read-only, from the company record), the "menu prices
+        // include VAT" switch, and the one-click "Add VAT 5%".
+        Route::get('settings/tax', [TaxSettingsController::class, 'show'])
+            ->name('settings.tax.show');
+        Route::put('settings/tax/prices-include-vat', [TaxSettingsController::class, 'updatePricesIncludeVat'])
+            ->name('settings.tax.prices-include-vat');
+        Route::post('settings/tax/add-vat', [TaxSettingsController::class, 'addVat'])
+            ->name('settings.tax.add-vat');
 
         // v2 #14 — order cancellation policy: which staff positions may cancel a
         // completed order at the POS. Emitted in /device/config + enforced on the
