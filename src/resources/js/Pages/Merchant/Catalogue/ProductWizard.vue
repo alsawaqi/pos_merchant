@@ -78,11 +78,11 @@ import { listIngredients, type Ingredient } from '@/lib/api/inventory';
 import {
     completeConsumptionLines,
     consumptionLinesHaveProblems,
+    lineAmountText,
     lineEntry,
     recipeLineProblem,
     recipeLinesHaveProblems,
     recipeUnitFactor,
-    recipeUnitName,
     recipeUnitOptions,
     wireRecipeUnit,
 } from '@/lib/recipeUnits';
@@ -628,9 +628,13 @@ function recipeLineMessage(line: { ingredient_uuid: string; quantity: string; un
 const recipeHasProblems = computed<boolean>(() => hasRecipeStep.value && canEditRecipes.value
     && recipeLinesHaveProblems(form.recipe_lines, ingredientByUuid));
 
-/** Fix order 1, L4 — the amount of a read-only recipe line ("150 g"), shown left-to-right. */
+/**
+ * Fix order 1, L4 — the amount of a read-only recipe line ("150 g"), shown
+ * left-to-right. LAUNCH item kind, A8 — in the stored unit, 1000 g / ml and
+ * above reads in kg / l ("1.5 kg").
+ */
 function recipeLineAmount(line: { ingredient_uuid: string; quantity: string; unit: string }): string {
-    return `${line.quantity} ${recipeUnitName(ingredientByUuid(line.ingredient_uuid), line.unit, locale.value)}`;
+    return lineAmountText(ingredientByUuid(line.ingredient_uuid), line.unit, line.quantity, locale.value);
 }
 
 const historyKey = ref(0);

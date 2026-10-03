@@ -9,6 +9,7 @@ import { History } from 'lucide-vue-next';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { RecipeHistory } from '@/lib/api/catalogue';
+import { friendlyAmount } from '@/lib/itemKind';
 
 const props = defineProps<{
     /** Fetches the history (product or prep item endpoint). */
@@ -46,6 +47,12 @@ const versions = computed(() => history.value?.versions ?? []);
 function when(iso: string | null): string {
     if (!iso) return '—';
     return new Date(iso).toLocaleString(locale.value === 'ar' ? 'ar-OM' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+/** LAUNCH item kind, A8 — a prep yield as people read it ("2 l", not "2000 ml"). */
+function yieldText(quantity: string | null | undefined): string {
+    const batch = friendlyAmount(quantity, props.yieldUnit ?? '');
+    return batch.unit === '' ? batch.amount : `${batch.amount} ${batch.unit}`;
 }
 
 function changeClass(change: string): string {
@@ -89,7 +96,7 @@ function changeClass(change: string): string {
                     <!-- Fix order 1, L4 — amounts and arrows are isolated left-to-right so "150 g → 120 g" never garbles in Arabic. -->
                     <p v-if="v.yield_after !== undefined && v.yield_after !== null && v.yield_before !== v.yield_after" class="mt-1 text-xs text-slate-700">
                         {{ t('recipe_history.yield') }}:
-                        <bdi dir="ltr" class="tabular-nums"><template v-if="v.yield_before">{{ v.yield_before }} {{ yieldUnit }} → </template>{{ v.yield_after }} {{ yieldUnit }}</bdi>
+                        <bdi dir="ltr" class="tabular-nums"><template v-if="v.yield_before">{{ yieldText(v.yield_before) }} → </template>{{ yieldText(v.yield_after) }}</bdi>
                     </p>
                     <ul v-if="v.changes.length > 0" class="mt-2 space-y-1">
                         <li v-for="c in v.changes" :key="`${c.ingredient_id}-${c.change}`" class="flex flex-wrap items-center gap-2 text-xs">

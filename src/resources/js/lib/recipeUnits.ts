@@ -56,6 +56,18 @@ function trim(value: number, decimals: number): string {
 }
 
 /**
+ * LAUNCH item kind, A8 — an amount as people read it: 1000 g or ml and above
+ * in kg or l ("12 l", not "12000 ml"), 4 decimals at most. Kept in step with
+ * friendlyAmount in lib/itemKind (each lib loads on its own in the node tests).
+ */
+function friendlyText(quantity: number, unit: string): string {
+    if ((unit === 'g' || unit === 'ml') && Math.abs(quantity) >= 1000) {
+        return `${trim(quantity / 1000, QUANTITY_DECIMALS)} ${unit === 'g' ? 'kg' : 'l'}`;
+    }
+    return `${trim(quantity, QUANTITY_DECIMALS)} ${unit}`;
+}
+
+/**
  * Base first, then extra units, the metric pair and the piece unit. A custom
  * extra unit wins over a metric pair of the same name (the server resolves
  * the same way).
@@ -69,7 +81,7 @@ export function recipeUnitOptions(ingredient: RecipeUnitSource | null | undefine
         const factor = positive(alt.factor);
         if (seen.has(alt.name) || factor === null) continue;
         seen.add(alt.name);
-        options.push({ value: alt.name, label: `${alt.name} (${trim(factor, 4)} ${base})`, factor });
+        options.push({ value: alt.name, label: `${alt.name} (${friendlyText(factor, base)})`, factor });
     }
     for (const auto of ingredient.auto_units ?? []) {
         const factor = positive(auto.factor);
@@ -81,7 +93,7 @@ export function recipeUnitOptions(ingredient: RecipeUnitSource | null | undefine
     if (ingredient.piece_unit_label && perPiece !== null && !(base === 'piece' && perPiece === 1)) {
         options.push({
             value: PIECE_UNIT,
-            label: `${pieceUnitLabel(ingredient, locale)} (${trim(perPiece, 4)} ${base})`,
+            label: `${pieceUnitLabel(ingredient, locale)} (${friendlyText(perPiece, base)})`,
             factor: perPiece,
         });
     }
@@ -157,6 +169,24 @@ export function lineEntry(
         return { quantity: line.entered_quantity, unit: line.entered_unit === baseUnit ? '' : line.entered_unit };
     }
     return { quantity: trimQuantity(line.quantity), unit: '' };
+}
+
+/**
+ * A8 — a recipe or prep line as people read it: typed in the stored unit (or
+ * stored before P3) it shows big amounts in kg or l ("1.5 kg", not "1500 g");
+ * typed in another unit it shows exactly as typed ("2 loaf", "150 g").
+ */
+export function lineAmountText(
+    ingredient: RecipeUnitSource | null | undefined,
+    unit: string | null | undefined,
+    quantity: string | number | null | undefined,
+    locale?: string | null,
+): string {
+    const n = typeof quantity === 'number' ? quantity : parseFloat(String(quantity ?? ''));
+    if (ingredient && (!unit || unit === ingredient.unit) && Number.isFinite(n)) {
+        return friendlyText(n, ingredient.unit);
+    }
+    return `${trimQuantity(quantity)} ${recipeUnitName(ingredient, unit, locale)}`;
 }
 
 /** "0.0050" → "0.005", "150.000" → "150". */

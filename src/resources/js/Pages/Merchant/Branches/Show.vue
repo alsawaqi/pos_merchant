@@ -35,6 +35,7 @@ import {
     type MerchantBranch, type BranchProductRow, type BranchStaffMember, type BranchActivity, type BranchDevice,
 } from '@/lib/api/branches';
 import { ApiError } from '@/lib/api';
+import { friendlyAmount } from '@/lib/itemKind';
 import { usePermissions } from '@/composables/usePermissions';
 import { MerchantPermission } from '@/lib/permissions';
 
@@ -473,7 +474,8 @@ onMounted(() => {
                                 <li v-for="(m, i) in activity.recent_movements" :key="i" class="px-5 py-2.5 text-sm">
                                     <div class="flex items-center justify-between">
                                         <span class="text-slate-700">{{ m.ingredient_name ?? '—' }}</span>
-                                        <span class="font-semibold tabular-nums" :class="Number(m.quantity) < 0 ? 'text-rose-600' : 'text-emerald-600'">{{ m.quantity }} {{ m.unit }}</span>
+                                        <!-- LAUNCH item kind, A8 — "24 l", not "24000.000 ml". -->
+                                        <span class="font-semibold tabular-nums" :class="Number(m.quantity) < 0 ? 'text-rose-600' : 'text-emerald-600'">{{ friendlyAmount(m.quantity, m.unit).amount }} {{ friendlyAmount(m.quantity, m.unit).unit }}</span>
                                     </div>
                                     <p class="text-xs capitalize text-slate-400">{{ humanize(m.movement_type) }}<span v-if="m.recorded_by"> · {{ t('branches.show.by') }} {{ m.recorded_by }}</span></p>
                                 </li>

@@ -11,6 +11,8 @@
 //   A6 the prep item form asks the kind; the yield is typed in its units;
 //   A7 every amount picker offers the kind's units, the pack sizes and the
 //      count container; the portal count gets a unit per row;
+//   A8 inventory screens, recipe and prep lines show 1000 g / ml and above
+//      in kg / l ("24 l", not "24000.000 ml");
 //   every new string exists in English AND Arabic.
 // Run: node --test tests/frontend/launch-p3-kind.test.mjs
 import assert from 'node:assert/strict';
@@ -260,6 +262,58 @@ test('A7 waste, adjust, transfers, restock requests and the count offer the kind
     const { form } = ingredientForm();
     assert.match(form, /<select v-model="ingForm\.min_stock_unit"[^>]*data-test="min-stock-unit"[^>]*>\s*<option v-for="u in holdUnits"/);
     assert.match(script, /min_stock_threshold: minimumInStoredUnit\(unit\),/);
+});
+
+test('A8 inventory screens show 1000 g / ml and above in kg / l, up to 4 decimals, trailing zeros trimmed', () => {
+    const { friendlyAmount } = lib('itemKind');
+    const plain = (q, u) => { const f = friendlyAmount(q, u); return `${f.amount} ${f.unit}`; };
+    assert.equal(plain('24000.000', 'ml'), '24 l');
+    assert.equal(plain('999.500', 'g'), '999.5 g');
+    assert.equal(plain('1000.000', 'g'), '1 kg');
+    assert.equal(plain('-1500.000', 'ml'), '-1.5 l');
+    assert.equal(plain('1234.5678', 'g'), '1.2346 kg');
+    assert.equal(plain('0.2500', 'kg'), '0.25 kg');
+    assert.equal(plain('12.000', 'piece'), '12 piece');
+
+    // Recipe and prep lines in the stored unit read the same way; typed in another unit they stay as typed.
+    const { lineAmountText, recipeUnitOptions } = lib('recipeUnits');
+    const flour = { unit: 'g', alt_units: [{ name: 'sack', factor: '25000.0000' }], auto_units: [{ name: 'kg', factor: '1000' }] };
+    assert.equal(lineAmountText(flour, '', '1500.0000'), '1.5 kg');
+    assert.equal(lineAmountText(flour, '', '150'), '150 g');
+    assert.equal(lineAmountText(flour, 'kg', '1.5'), '1.5 kg');
+    assert.equal(lineAmountText(flour, 'sack', '2'), '2 sack');
+    assert.equal(recipeUnitOptions(flour).find((o) => o.value === 'sack').label, 'sack (25 kg)');
+    const { purchaseUnitOptions } = lib('purchaseUnits');
+    assert.equal(purchaseUnitOptions(flour).find((o) => o.value === 'sack').label, 'sack (25 kg)');
+
+    const { script, template } = sfc('resources/js/Pages/Merchant/Inventory/Index.vue');
+    assert.match(script, /function qty\(quantity: string \| number \| null \| undefined, unit: string \| null \| undefined\): string \{\s*const friendly = friendlyAmount\(quantity, unit\);/);
+    // Ingredient list: the kind (and an older stored unit), the minimum.
+    assert.match(template, /t\('item_kind\.column'\)/);
+    assert.match(template, /data-test="ingredient-kind">\s*\{\{ t\(`item_kind\.kinds\.\$\{kindOfUnit\(ing\.unit\)\}`\) \}\}/);
+    assert.match(template, /qty\(ing\.min_stock_threshold, ing\.unit\)/);
+    // Branch stock (and its minimum), movements, waste, counts, transfers, restock requests.
+    for (const pattern of [
+        /friendlyAmount\(row\.quantity, row\.ingredient\?\.unit\)\.amount/,
+        /qty\(row\.ingredient\.min_stock_threshold, row\.ingredient\.unit\)/,
+        /friendlyAmount\(m\.quantity, m\.ingredient\?\.unit\)\.amount/,
+        /-\{\{ friendlyAmount\(w\.quantity, w\.unit_at_set\)\.amount \}\}/,
+        /qty\(line\.counted_units, line\.ingredient\?\.unit\)/,
+        /qty\(line\.expected_units, line\.ingredient\?\.unit\)/,
+        /qty\(line\.variance_units, line\.ingredient\?\.unit\)/,
+        /\(\{\{ qty\(l\.quantity, l\.unit\) \}\}\)/,
+        /friendlyAmount\(l\.quantity_requested, l\.unit_at_set\)\.amount/,
+        /qty\(row\.suggestion\.current_quantity, row\.suggestion\.unit\)/,
+    ]) {
+        assert.match(template, pattern, String(pattern));
+    }
+    assert.doesNotMatch(template, /\{\{ row\.quantity \}\}|\{\{ m\.quantity \}\}|\{\{ line\.expected_units \}\}|\{\{ line\.variance_units \}\}/);
+    // Prep list and recipe history yields; read-only recipe / option / prep lines.
+    assert.match(sfc('resources/js/Pages/Merchant/Inventory/PrepItemsTab.vue').template, /data-test="prep-yield">\{\{ yieldText\(item\) \}\}/);
+    assert.match(sfc('resources/js/Pages/Merchant/Catalogue/RecipeHistoryPanel.vue').template, /\{\{ yieldText\(v\.yield_before\) \}\} → <\/template>\{\{ yieldText\(v\.yield_after\) \}\}/);
+    assert.match(sfc('resources/js/Pages/Merchant/Catalogue/ProductWizard.vue').script, /return lineAmountText\(ingredientByUuid\(line\.ingredient_uuid\), line\.unit, line\.quantity, locale\.value\);/);
+    assert.match(sfc('resources/js/Pages/Merchant/Inventory/PrepItemEditor.vue').script, /return lineAmountText\(ingredientByUuid\(line\.ingredient_uuid\), line\.unit, line\.quantity, locale\.value\);/);
+    assert.match(sfc('resources/js/Pages/Merchant/Catalogue/AddonConsumptionEditor.vue').script, /amount: lineAmountText\(ingredient, line\.unit \?\? '', line\.quantity, locale\.value\)/);
 });
 
 test('every item-kind string exists in English and Arabic', () => {

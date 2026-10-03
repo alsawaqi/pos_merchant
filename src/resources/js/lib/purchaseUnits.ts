@@ -41,6 +41,18 @@ export function trimNumber(value: number, decimals: number): string {
 }
 
 /**
+ * LAUNCH item kind, A8 — what a pack holds as people read it: 1000 g or ml
+ * and above in kg or l ("crate (12 l)", not "12000 ml"). Kept in step with
+ * friendlyAmount in lib/itemKind (each lib loads on its own in the node tests).
+ */
+function holdsText(factor: number, base: string): string {
+    if ((base === 'g' || base === 'ml') && Math.abs(factor) >= 1000) {
+        return `${trimNumber(factor / 1000, 4)} ${base === 'g' ? 'kg' : 'l'}`;
+    }
+    return `${trimNumber(factor, 4)} ${base}`;
+}
+
+/**
  * The picker options: base first, then the metric pair, the extra units and
  * the piece unit. A custom extra unit wins over a metric pair of the same
  * name (the server resolves the same way).
@@ -54,7 +66,7 @@ export function purchaseUnitOptions(ingredient: PurchaseUnitSource | null | unde
         const factor = positive(alt.factor);
         if (seen.has(alt.name) || factor === null) continue;
         seen.add(alt.name);
-        options.push({ value: alt.name, label: `${alt.name} (${trimNumber(factor, 4)} ${base})`, factor });
+        options.push({ value: alt.name, label: `${alt.name} (${holdsText(factor, base)})`, factor });
     }
     for (const auto of ingredient.auto_units ?? []) {
         const factor = positive(auto.factor);
@@ -66,7 +78,7 @@ export function purchaseUnitOptions(ingredient: PurchaseUnitSource | null | unde
     if (ingredient.piece_unit_label && perPiece !== null && !(base === 'piece' && perPiece === 1)) {
         options.push({
             value: PIECE_UNIT,
-            label: `${ingredient.piece_unit_label} (${trimNumber(perPiece, 4)} ${base})`,
+            label: `${ingredient.piece_unit_label} (${holdsText(perPiece, base)})`,
             factor: perPiece,
         });
     }

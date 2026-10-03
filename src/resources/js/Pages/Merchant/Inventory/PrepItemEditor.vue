@@ -38,7 +38,7 @@ import {
     recipeLineProblem,
     recipeLinesHaveProblems,
     recipeUnitFactor,
-    recipeUnitName,
+    lineAmountText,
     recipeUnitOptions,
     toBaseQuantity,
     wireRecipeUnit,
@@ -122,7 +122,8 @@ function lineMessage(line: { ingredient_uuid: string; quantity: string; unit: st
 
 /** Fix order 1, L4 — a line's amount ("150 g"), shown left-to-right. */
 function lineAmount(line: { ingredient_uuid: string; quantity: string; unit: string }): string {
-    return `${line.quantity} ${recipeUnitName(ingredientByUuid(line.ingredient_uuid), line.unit, locale.value)}`;
+    // LAUNCH item kind, A8 — "1.5 kg", not "1500 g", when in the stored unit.
+    return lineAmountText(ingredientByUuid(line.ingredient_uuid), line.unit, line.quantity, locale.value);
 }
 
 /** Exact-enough live cost of one batch: Σ quantity (in base units) × cost per base unit. */

@@ -29,6 +29,7 @@
         },
         "prep_locked": "The kind cannot change while recipes use this prep item.",
         "count_unit": "Counted in",
+        "column": "Kind",
         "prep_yield_hint": "Type it in any unit of the kind, e.g. one batch makes 2 l.",
         "container": {
             "title": "Count container (optional)",

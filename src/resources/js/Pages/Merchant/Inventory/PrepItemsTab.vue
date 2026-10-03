@@ -16,6 +16,7 @@ import { RouterLink } from 'vue-router';
 import { usePermissions } from '@/composables/usePermissions';
 import { listPrepItems, type PrepItem } from '@/lib/api/prepItems';
 import { canWriteRecipes } from '@/lib/permissions';
+import { friendlyAmount } from '@/lib/itemKind';
 import { money } from '@/lib/recipeUnits';
 
 const { t, locale } = useI18n();
@@ -40,6 +41,12 @@ onMounted(async () => {
 });
 
 defineExpose({ count: computed(() => items.value.length) });
+
+/** A8 — what one batch makes, as people read it ("2 l"). */
+function yieldText(item: PrepItem): string {
+    const batch = friendlyAmount(item.prep_yield_quantity, item.unit);
+    return `${batch.amount} ${batch.unit}`;
+}
 
 function usedBy(item: PrepItem): string {
     const used = item.used_by;
@@ -95,7 +102,8 @@ function usedBy(item: PrepItem): string {
                             <span class="block text-sm font-semibold text-slate-950">{{ isArabic && item.name_ar ? item.name_ar : item.name }}</span>
                             <span class="mt-0.5 inline-block rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700">{{ t('prep_items.level', { n: item.depth }) }}</span>
                         </td>
-                        <td class="px-5 py-4 text-end text-sm tabular-nums text-slate-700">{{ item.prep_yield_quantity }} {{ item.unit }}</td>
+                        <!-- LAUNCH item kind, A8 — "2 l", not "2000.0000 ml". -->
+                        <td class="px-5 py-4 text-end text-sm tabular-nums text-slate-700" data-test="prep-yield">{{ yieldText(item) }}</td>
                         <td class="px-5 py-4 text-end text-sm tabular-nums text-slate-950">{{ item.unit_cost }} <span class="text-[10px] text-slate-400">OMR / {{ item.unit }}</span></td>
                         <!-- Fix order 1, UI-1 — a batch costs money: 3 decimals (the cost per unit keeps 6). -->
                         <td class="px-5 py-4 text-end text-sm tabular-nums text-slate-950" data-test="prep-batch-cost">{{ money(item.batch_cost) }} <span class="text-[10px] text-slate-400">OMR</span></td>

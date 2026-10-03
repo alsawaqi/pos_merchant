@@ -1546,6 +1546,16 @@ function unitLabel(unit: IngredientUnit | '' | null): string {
     return t(`inventory.units.${unit}`);
 }
 
+/**
+ * LAUNCH item kind, A8 — an amount as people read it on the inventory
+ * screens: 1000 g or ml and above in kg or l ("24 l", not "24000.000 ml"),
+ * up to 4 decimals with trailing zeros trimmed.
+ */
+function qty(quantity: string | number | null | undefined, unit: string | null | undefined): string {
+    const friendly = friendlyAmount(quantity, unit);
+    return friendly.unit === '' ? friendly.amount : `${friendly.amount} ${friendly.unit}`;
+}
+
 function unitShort(unit: IngredientUnit | null): string {
     if (!unit) return '';
     // Just the symbol for column displays — full label only in dropdowns.
@@ -2422,7 +2432,7 @@ async function submitSuggestions(): Promise<void> {
                         <thead class="bg-slate-50">
                             <tr>
                                 <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.table.name') }}</th>
-                                <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.table.unit') }}</th>
+                                <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.column') }}</th>
                                 <th class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.table.default_cost') }}</th>
                                 <th class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.table.min_threshold') }}</th>
                                 <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.table.supplier') }}</th>
@@ -2436,9 +2446,13 @@ async function submitSuggestions(): Promise<void> {
                                     <span class="block text-sm font-semibold text-slate-950">{{ ing.name }}</span>
                                     <span v-if="ing.name_ar" class="block text-xs text-slate-500" dir="rtl">{{ ing.name_ar }}</span>
                                 </td>
-                                <td class="px-5 py-4 text-sm text-slate-700">{{ unitShort(ing.unit) }}</td>
-                                <td class="px-5 py-4 text-end text-sm tabular-nums text-slate-950">{{ ing.default_unit_cost }} <span class="text-[10px] text-slate-400">OMR</span></td>
-                                <td class="px-5 py-4 text-end text-sm tabular-nums text-slate-500">{{ ing.min_stock_threshold ?? '—' }}</td>
+                                <!-- LAUNCH item kind — the kind, not a unit; an older kg / l / pack / box one notes its stored unit. -->
+                                <td class="px-5 py-4 text-sm text-slate-700" data-test="ingredient-kind">
+                                    {{ t(`item_kind.kinds.${kindOfUnit(ing.unit)}`) }}
+                                    <span v-if="isLegacyStoredUnit(ing.unit)" class="block text-[10px] text-slate-400">{{ t('item_kind.stored_in', { unit: ing.unit }) }}</span>
+                                </td>
+                                <td class="px-5 py-4 text-end text-sm tabular-nums text-slate-950">{{ ing.default_unit_cost }} <span class="text-[10px] text-slate-400">OMR / {{ ing.unit }}</span></td>
+                                <td class="px-5 py-4 text-end text-sm tabular-nums text-slate-500">{{ ing.min_stock_threshold !== null ? qty(ing.min_stock_threshold, ing.unit) : '—' }}</td>
                                 <td class="px-5 py-4 text-sm text-slate-700">{{ ing.primary_supplier?.name ?? '—' }}</td>
                                 <td class="px-5 py-4">
                                     <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider" :class="statusBadgeClass(ing.status)">
@@ -2709,9 +2723,10 @@ async function submitSuggestions(): Promise<void> {
                                     <span v-if="row.ingredient?.name_ar" class="block text-xs text-slate-500" dir="rtl">{{ row.ingredient.name_ar }}</span>
                                 </td>
                                 <td class="px-5 py-4 text-end text-sm font-semibold tabular-nums" :class="stockQuantityClass(row.stock_status)">
-                                    {{ row.quantity }}
-                                    <span class="ms-1 text-[10px] font-normal text-slate-400">{{ unitShort(row.ingredient?.unit ?? null) }}</span>
-                                    <span v-if="row.ingredient?.min_stock_threshold" class="block text-[10px] font-normal text-slate-400">{{ t('inventory.stock.minimum', { quantity: row.ingredient.min_stock_threshold }) }}</span>
+                                    <!-- A8 — "24 l", not "24000.000 ml". -->
+                                    {{ friendlyAmount(row.quantity, row.ingredient?.unit).amount }}
+                                    <span class="ms-1 text-[10px] font-normal text-slate-400">{{ friendlyAmount(row.quantity, row.ingredient?.unit).unit }}</span>
+                                    <span v-if="row.ingredient?.min_stock_threshold" class="block text-[10px] font-normal text-slate-400">{{ t('inventory.stock.minimum', { quantity: qty(row.ingredient.min_stock_threshold, row.ingredient.unit) }) }}</span>
                                 </td>
                                 <td class="px-5 py-4 text-end text-sm tabular-nums" :class="Number(row.stock_value) < 0 ? 'text-rose-600' : 'text-slate-700'">{{ row.stock_value }}</td>
                                 <td class="px-5 py-4">
@@ -2799,8 +2814,8 @@ async function submitSuggestions(): Promise<void> {
                                 </td>
                                 <td class="px-5 py-4 text-sm text-slate-900">{{ m.ingredient?.name ?? '—' }}</td>
                                 <td class="px-5 py-4 text-end text-sm font-semibold tabular-nums" :class="isOutflow(m.quantity) ? 'text-rose-700' : 'text-emerald-700'">
-                                    {{ m.quantity }}
-                                    <span class="ms-1 text-[10px] font-normal text-slate-400">{{ unitShort(m.ingredient?.unit ?? null) }}</span>
+                                    {{ friendlyAmount(m.quantity, m.ingredient?.unit).amount }}
+                                    <span class="ms-1 text-[10px] font-normal text-slate-400">{{ friendlyAmount(m.quantity, m.ingredient?.unit).unit }}</span>
                                 </td>
                                 <td class="px-5 py-4 text-end text-xs tabular-nums text-slate-500">{{ m.unit_cost_at_time }} <span class="text-[10px] text-slate-400">OMR</span></td>
                                 <td class="px-5 py-4 text-xs text-slate-600 max-w-xs truncate" :title="m.note ?? ''">{{ m.note ?? '—' }}</td>
@@ -2892,7 +2907,7 @@ async function submitSuggestions(): Promise<void> {
                                     <span v-if="w.prep_item" class="ms-1 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700" data-test="waste-prep-item">{{ t('inventory.waste.from_prep', { name: isArabic && w.prep_item.name_ar ? w.prep_item.name_ar : w.prep_item.name }) }}</span>
                                 </td>
                                 <td class="px-5 py-3 text-end text-sm font-semibold tabular-nums text-rose-700">
-                                    -{{ w.quantity }} <span class="text-[10px] text-slate-500">{{ w.unit_at_set }}</span>
+                                    -{{ friendlyAmount(w.quantity, w.unit_at_set).amount }} <span class="text-[10px] text-slate-500">{{ friendlyAmount(w.quantity, w.unit_at_set).unit }}</span>
                                 </td>
                                 <td class="px-5 py-3 text-sm">
                                     <span class="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800">
@@ -2986,14 +3001,14 @@ async function submitSuggestions(): Promise<void> {
                                                     </td>
                                                     <td class="px-2 py-1.5 text-end tabular-nums text-slate-700">
                                                         <template v-if="line.counted_pieces !== null">
-                                                            {{ line.counted_pieces }} {{ line.ingredient?.piece_unit_label ?? t('inventory.units.piece') }}
-                                                            <span class="text-slate-400">(= {{ line.counted_units }} {{ line.ingredient?.unit ?? '' }})</span>
+                                                            {{ trimAmount(parseFloat(line.counted_pieces)) }} {{ line.ingredient?.piece_unit_label ?? t('inventory.units.piece') }}
+                                                            <span class="text-slate-400">(= {{ qty(line.counted_units, line.ingredient?.unit) }})</span>
                                                         </template>
-                                                        <template v-else>{{ line.counted_units }} {{ line.ingredient?.unit ?? '' }}</template>
+                                                        <template v-else>{{ qty(line.counted_units, line.ingredient?.unit) }}</template>
                                                     </td>
-                                                    <td class="px-2 py-1.5 text-end tabular-nums text-slate-600">{{ line.expected_units }}</td>
+                                                    <td class="px-2 py-1.5 text-end tabular-nums text-slate-600">{{ line.expected_units !== undefined ? qty(line.expected_units, line.ingredient?.unit) : '' }}</td>
                                                     <td class="px-2 py-1.5 text-end font-semibold tabular-nums" :class="Number(line.variance_units) < 0 ? 'text-rose-600' : Number(line.variance_units) > 0 ? 'text-amber-600' : 'text-emerald-600'">
-                                                        {{ line.variance_units }}
+                                                        {{ line.variance_units !== undefined ? qty(line.variance_units, line.ingredient?.unit) : '' }}
                                                     </td>
                                                     <td class="px-2 py-1.5 text-end tabular-nums" :class="Number(line.variance_value) < 0 ? 'text-rose-600' : 'text-slate-600'">{{ line.variance_value }}</td>
                                                 </tr>
@@ -3172,7 +3187,7 @@ async function submitSuggestions(): Promise<void> {
                                 </td>
                                 <td class="px-5 py-3 text-end text-sm tabular-nums text-slate-700">{{ tr.lines.length }}</td>
                                 <td class="px-5 py-3 text-sm text-slate-600">
-                                    <span v-for="(l, i) in tr.lines" :key="l.ingredient_id">{{ l.ingredient_name ?? ('#' + l.ingredient_id) }} ({{ l.quantity }}{{ l.unit ? ' ' + l.unit : '' }}){{ i < tr.lines.length - 1 ? ', ' : '' }}</span>
+                                    <span v-for="(l, i) in tr.lines" :key="l.ingredient_id">{{ l.ingredient_name ?? ('#' + l.ingredient_id) }} ({{ qty(l.quantity, l.unit) }}){{ i < tr.lines.length - 1 ? ', ' : '' }}</span>
                                 </td>
                                 <td class="px-5 py-3 text-sm text-slate-500">{{ tr.note || '—' }}</td>
                             </tr>
@@ -3894,7 +3909,7 @@ async function submitSuggestions(): Promise<void> {
                     <p v-if="wasteIsPrep" class="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-800" data-test="waste-prep-hint">{{ t('prep_items.waste_hint') }}</p>
                     <div v-if="wasteForm.ingredient_uuid && !wasteIsPrep" class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                         {{ t('inventory.waste.modal.current_balance') }}:
-                        <span class="font-semibold text-slate-900">{{ wasteCurrentBalance }}</span>
+                        <span class="font-semibold text-slate-900">{{ wasteCurrentBalance === '—' ? '—' : qty(wasteCurrentBalance, wasteIngredient?.unit) }}</span>
                     </div>
                     <div class="grid gap-3 sm:grid-cols-2">
                         <label class="block">
@@ -4132,8 +4147,8 @@ async function submitSuggestions(): Promise<void> {
                             <tbody class="divide-y divide-slate-100">
                                 <tr v-for="l in showTarget.lines" :key="l.id">
                                     <td class="px-3 py-2 font-medium text-slate-900">{{ l.ingredient ? (isArabic && l.ingredient.name_ar ? l.ingredient.name_ar : l.ingredient.name) : '—' }}</td>
-                                    <td class="px-3 py-2 text-end tabular-nums text-slate-700">{{ l.quantity_requested }} <span class="text-[10px] text-slate-500">{{ l.unit_at_set }}</span></td>
-                                    <td class="px-3 py-2 text-end tabular-nums font-semibold text-emerald-700">{{ l.quantity_allocated }}</td>
+                                    <td class="px-3 py-2 text-end tabular-nums text-slate-700">{{ friendlyAmount(l.quantity_requested, l.unit_at_set).amount }} <span class="text-[10px] text-slate-500">{{ friendlyAmount(l.quantity_requested, l.unit_at_set).unit }}</span></td>
+                                    <td class="px-3 py-2 text-end tabular-nums font-semibold text-emerald-700">{{ qty(l.quantity_allocated, l.unit_at_set) }}</td>
                                     <td class="px-3 py-2 text-slate-600">{{ l.note || '—' }}</td>
                                 </tr>
                             </tbody>
@@ -4234,9 +4249,9 @@ async function submitSuggestions(): Promise<void> {
                                 <td class="px-3 py-2 font-medium text-slate-900">
                                     {{ l.ingredient ? (isArabic && l.ingredient.name_ar ? l.ingredient.name_ar : l.ingredient.name) : '—' }}
                                 </td>
-                                <td class="px-3 py-2 text-end tabular-nums text-slate-700">{{ l.quantity_requested }} <span class="text-[10px] text-slate-500">{{ l.unit_at_set }}</span></td>
+                                <td class="px-3 py-2 text-end tabular-nums text-slate-700">{{ friendlyAmount(l.quantity_requested, l.unit_at_set).amount }} <span class="text-[10px] text-slate-500">{{ friendlyAmount(l.quantity_requested, l.unit_at_set).unit }}</span></td>
                                 <td class="px-3 py-2 text-end tabular-nums" :class="parseFloat(l.ingredient?.central_quantity ?? '0') < parseFloat(allocateOverrides[String(l.id)] ?? '0') ? 'font-semibold text-rose-600' : 'text-slate-700'">
-                                    {{ l.ingredient?.central_quantity ?? '—' }}
+                                    {{ l.ingredient?.central_quantity != null ? qty(l.ingredient.central_quantity, l.unit_at_set) : '—' }}
                                 </td>
                                 <td class="px-3 py-2 text-end">
                                     <input v-model="allocateOverrides[String(l.id)]" type="number" step="0.0001" min="0" :max="l.quantity_requested" class="w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-sm tabular-nums text-end">
@@ -4354,7 +4369,7 @@ async function submitSuggestions(): Promise<void> {
                                     {{ row.suggestion.name }}
                                     <span class="ms-1 text-[10px] font-normal text-slate-400">{{ row.suggestion.unit }}</span>
                                 </td>
-                                <td class="px-3 py-2 text-end tabular-nums text-slate-700">{{ row.suggestion.current_quantity }}</td>
+                                <td class="px-3 py-2 text-end tabular-nums text-slate-700">{{ qty(row.suggestion.current_quantity, row.suggestion.unit) }}</td>
                                 <td class="px-3 py-2 text-end tabular-nums text-slate-700">{{ row.suggestion.avg_daily_consumption }}</td>
                                 <td class="px-3 py-2 text-end tabular-nums text-slate-700">{{ row.suggestion.target_level }}</td>
                                 <td class="px-3 py-2">

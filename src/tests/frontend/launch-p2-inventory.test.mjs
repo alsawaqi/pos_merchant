@@ -48,7 +48,9 @@ test('P2-3 the unit picker offers base, metric pair, extra units and the piece u
     assert.equal(purchaseUnitFactor(options, 'l'), 1000);
     assert.equal(purchaseUnitFactor(options, 'box'), 12000);
     assert.equal(purchaseUnitFactor(options, PIECE_UNIT), 1000);
-    assert.equal(options[3].label, 'bottle (1000 ml)');
+    // LAUNCH item kind, A8: 1000 ml and above reads in l.
+    assert.equal(options[3].label, 'bottle (1 l)');
+    assert.equal(options[1].label, 'box (12 l)');
     assert.equal(PIECE_UNIT, '@piece');
 });
 

@@ -12,7 +12,7 @@ import { useI18n } from 'vue-i18n';
 import { Plus, Trash2 } from 'lucide-vue-next';
 import type { ComponentOption, ConsumptionLinePayload } from '@/lib/api/catalogue';
 import type { Ingredient } from '@/lib/api/inventory';
-import { consumptionLineProblem, recipeUnitName, recipeUnitOptions } from '@/lib/recipeUnits';
+import { consumptionLineProblem, lineAmountText, recipeUnitOptions } from '@/lib/recipeUnits';
 
 const props = defineProps<{
     modelValue: ConsumptionLinePayload[];
@@ -111,7 +111,8 @@ function readonlyParts(line: ConsumptionLinePayload): { direction: string; amoun
     const direction = line.direction === 'remove' ? t('catalogue.consumption.removes') : t('catalogue.consumption.uses');
     if (line.type === 'ingredient') {
         const ingredient = props.ingredients.find((i) => i.uuid === line.ingredient_uuid);
-        return { direction, amount: `${line.quantity} ${recipeUnitName(ingredient, line.unit ?? '', locale.value)}`, name: ingredient?.name ?? line.ingredient_label ?? '—' };
+        // LAUNCH item kind, A8 — "1.5 kg", not "1500 g", when in the stored unit.
+        return { direction, amount: lineAmountText(ingredient, line.unit ?? '', line.quantity, locale.value), name: ingredient?.name ?? line.ingredient_label ?? '—' };
     }
     const product = props.products.find((p) => p.uuid === line.product_uuid);
     return { direction, amount: `${line.quantity} ×`, name: product?.name ?? line.product_label ?? '—' };
