@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
+use App\Support\Recipes\RecipeEditGate;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -62,9 +63,13 @@ final readonly class UpdateProductAction
         'status',
     ];
 
+    /** The stock modes whose products carry a recipe (consumed at sale / at production). */
+    private const RECIPE_MODES = ['ingredient', 'cooked'];
+
     public function __construct(
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
+        private UpdateProductRecipeAction $updateRecipe,
     ) {}
 
     /**
@@ -90,7 +95,21 @@ final readonly class UpdateProductAction
             }
         }
 
-        return DB::transaction(function () use ($product, $attributes, $actor, $companyId): Product {
+        // Fix order 1, L3 — a stock-mode change into or out of a recipe type
+        // (made-to-order / cooked) on a product WITH recipe lines switches
+        // recipe deduction on, off or between sale and production: it needs
+        // "Edit recipes" (+ catalogue.view), like any recipe change.
+        $oldMode = $product->stock_mode instanceof \BackedEnum ? $product->stock_mode->value : (string) $product->stock_mode;
+        $newMode = array_key_exists('stock_mode', $attributes) && $attributes['stock_mode'] !== null
+            ? (string) $attributes['stock_mode']
+            : $oldMode;
+        $modeChanges = $newMode !== $oldMode;
+        $hasRecipe = $modeChanges && $product->recipeLines()->exists();
+        if ($hasRecipe && (in_array($oldMode, self::RECIPE_MODES, true) || in_array($newMode, self::RECIPE_MODES, true))) {
+            RecipeEditGate::ensure($actor);
+        }
+
+        return DB::transaction(function () use ($product, $attributes, $actor, $companyId, $oldMode, $newMode, $hasRecipe): Product {
             $changes = [];
 
             foreach (self::MUTABLE_FIELDS as $field) {
@@ -135,7 +154,33 @@ final readonly class UpdateProductAction
                 newValues: array_map(static fn (array $v): mixed => $v['new'], $changes),
             ));
 
+            // Fix order 1, L3 — leaving a recipe type clears the recipe on
+            // the server, through the recipe action: a version row and a
+            // recipe audit row name the actor, so the recipe history shows
+            // it. A stale recipe would otherwise keep driving the product
+            // badge, Recipe & Cost and the cost fallback — and come back to
+            // life if the type is switched back.
+            if ($hasRecipe && in_array($oldMode, self::RECIPE_MODES, true) && ! in_array($newMode, self::RECIPE_MODES, true)) {
+                $this->updateRecipe->handle(
+                    $product,
+                    [],
+                    $actor,
+                    sprintf('Recipe removed: the product type changed from %s to %s.', self::modeLabel($oldMode), self::modeLabel($newMode)),
+                );
+            }
+
             return $product->fresh();
         });
+    }
+
+    private static function modeLabel(string $mode): string
+    {
+        return match ($mode) {
+            'ingredient' => 'made to order',
+            'cooked' => 'cooked',
+            'unit' => 'ready / bought-in',
+            'untracked' => 'no stock tracking',
+            default => $mode,
+        };
     }
 }

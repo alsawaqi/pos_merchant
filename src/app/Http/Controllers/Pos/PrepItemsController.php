@@ -17,6 +17,7 @@ use App\Models\ProductRecipe;
 use App\Support\MerchantTenantContext;
 use App\Support\Recipes\PrepItemHistory;
 use App\Support\Recipes\PrepUsage;
+use App\Support\Recipes\RecipeEditGate;
 use App\Support\Recipes\RecipeQuantity;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -35,7 +36,7 @@ use RuntimeException;
  *   DELETE /api/prep-items/{uuid}          → soft delete (refused while used)
  *   GET    /api/prep-items/{uuid}/history  → the recipe history (P3-2)
  *
- * Read: catalogue.view OR inventory.view. Writes: "Edit recipes"
+ * Read: catalogue.view OR inventory.view. Writes: "Edit recipes" + catalogue.view
  * (catalogue.recipes.manage, P3-3) — re-checked in the actions.
  */
 class PrepItemsController extends Controller
@@ -81,7 +82,7 @@ class PrepItemsController extends Controller
 
     public function store(SavePrepItemRequest $request): JsonResponse
     {
-        $this->ensure($request, MerchantPermission::CatalogueRecipesManage);
+        $this->ensureCanWrite($request);
 
         try {
             $prep = $this->save->create($request->validated(), $request->user());
@@ -102,7 +103,7 @@ class PrepItemsController extends Controller
 
     public function update(SavePrepItemRequest $request, Ingredient $prepItem): JsonResponse
     {
-        $this->ensure($request, MerchantPermission::CatalogueRecipesManage);
+        $this->ensureCanWrite($request);
         $this->refuseIfNotPrep($prepItem);
 
         try {
@@ -116,7 +117,7 @@ class PrepItemsController extends Controller
 
     public function destroy(Request $request, Ingredient $prepItem): JsonResponse
     {
-        $this->ensure($request, MerchantPermission::CatalogueRecipesManage);
+        $this->ensureCanWrite($request);
         $this->refuseIfNotPrep($prepItem);
 
         try {
@@ -159,11 +160,11 @@ class PrepItemsController extends Controller
         }
     }
 
-    private function ensure(Request $request, MerchantPermission $permission): void
+    /** Fix order 1, L8 — the one rule for every recipe write: "Edit recipes" + catalogue.view. */
+    private function ensureCanWrite(Request $request): void
     {
-        $user = $request->user();
-        if ($user === null || ! $user->can($permission->value)) {
-            abort(403);
+        if (! RecipeEditGate::allows($request->user())) {
+            abort(403, RecipeEditGate::MESSAGE);
         }
     }
 

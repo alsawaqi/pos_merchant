@@ -6,10 +6,13 @@ namespace App\Actions\Pos\Catalogue;
 
 use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
+use App\Enums\MerchantPermission;
 use App\Models\AddOn;
 use App\Models\Product;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
+use App\Support\Recipes\RecipeEditGate;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -75,6 +78,14 @@ final readonly class UpdateAddOnAction
             }
         }
 
+        // Fix order 1, L3 — linking, re-linking or unlinking a product moves
+        // what selling the option deducts (the product's shelf or recipe):
+        // that needs "Edit recipes", like any change to recipe deduction.
+        if (array_key_exists('linked_product_id', $attributes)
+            && ($attributes['linked_product_id'] === null ? null : (int) $attributes['linked_product_id']) !== ($addon->linked_product_id === null ? null : (int) $addon->linked_product_id)) {
+            RecipeEditGate::ensure($actor);
+        }
+
         // PD3b — the stock-usage lines sync independently of the scalar
         // fields: a key present in the payload (even []) replaces the
         // set; an absent key leaves the lines untouched.
@@ -136,6 +147,13 @@ final readonly class UpdateAddOnAction
 
             if ($changes === []) {
                 return $addon->fresh();
+            }
+
+            // Fix order 1, L8 — a recipe-only role (Edit recipes + view) may
+            // open an option for its stock usage; changing the option itself
+            // stays catalogue.manage.
+            if (! $actor->can(MerchantPermission::CatalogueManage->value)) {
+                throw new AuthorizationException('Changing an option needs the "Create + edit + delete catalogue items" permission.');
             }
 
             $addon->save();

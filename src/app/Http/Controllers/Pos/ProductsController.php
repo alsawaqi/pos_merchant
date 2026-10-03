@@ -33,6 +33,7 @@ use App\Models\ProductCategory;
 use App\Support\BranchScope;
 use App\Support\MerchantTenantContext;
 use App\Support\Recipes\ProductRecipeHistory;
+use App\Support\Recipes\RecipeEditGate;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -164,7 +165,7 @@ class ProductsController extends Controller
         // payload need "Edit recipes" too (catalogue.manage alone creates
         // the product without them).
         if (self::wizardCarriesRecipe($validated)) {
-            $this->ensure($request, MerchantPermission::CatalogueRecipesManage);
+            RecipeEditGate::ensure($request->user());
         }
         if (($validated['branches'] ?? null) !== null) {
             BranchScope::ensureUnrestricted(
@@ -395,8 +396,12 @@ class ProductsController extends Controller
     public function updateRecipe(UpdateProductRecipeRequest $request, Product $product): ProductResource|JsonResponse
     {
         // LAUNCH-P3 P3-3 — recipes have their own permission ("Edit
-        // recipes"); catalogue.manage alone no longer changes them.
-        $this->ensure($request, MerchantPermission::CatalogueRecipesManage);
+        // recipes"); catalogue.manage alone no longer changes them. Fix order
+        // 1, L8 — the one rule for every recipe write: "Edit recipes" +
+        // catalogue.view.
+        if (! RecipeEditGate::allows($request->user())) {
+            abort(403, RecipeEditGate::MESSAGE);
+        }
         $this->refuseIfNotInTenant($product);
 
         // PD2 — a ready / bought-in product is PURCHASED, never made: its

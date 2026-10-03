@@ -15,6 +15,7 @@ use App\Http\Resources\Pos\Catalogue\AddOnResource;
 use App\Models\AddOn;
 use App\Models\AddOnGroup;
 use App\Support\MerchantTenantContext;
+use App\Support\Recipes\RecipeEditGate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use RuntimeException;
@@ -60,7 +61,14 @@ class AddOnsController extends Controller
 
     public function update(UpdateAddOnRequest $request, AddOn $addon): AddOnResource|JsonResponse
     {
-        $this->ensure($request, MerchantPermission::CatalogueManage);
+        // Fix order 1, L8 — an option's stock-usage lines are a recipe write
+        // ("Edit recipes" + catalogue.view, checked in the sync); the rest of
+        // the option is the catalogue's (catalogue.manage, checked in the
+        // action for the fields that really change). Either may open it.
+        $user = $request->user();
+        if ($user === null || ! ($user->can(MerchantPermission::CatalogueManage->value) || RecipeEditGate::allows($user))) {
+            abort(403);
+        }
         $this->refuseIfNotInTenant($addon);
 
         try {

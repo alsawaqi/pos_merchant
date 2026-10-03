@@ -164,8 +164,10 @@ final class PermissionCatalog
                     // LAUNCH-P3 P3-3.
                     [
                         'key' => MerchantPermission::CatalogueRecipesManage->value,
-                        'label_en' => 'Edit recipes (product recipes, prep items, add-on stock usage)',
-                        'label_ar' => 'تعديل الوصفات (وصفات المنتجات، المستحضرات، استهلاك الإضافات من المخزون)',
+                        // Fix order 1, L8 — one rule for every recipe write:
+                        // this permission + catalogue.view.
+                        'label_en' => 'Edit recipes (product recipes, prep items, add-on stock usage) — needs "See categories + products + add-ons"',
+                        'label_ar' => 'تعديل الوصفات (وصفات المنتجات، المستحضرات، استهلاك الإضافات من المخزون) — تحتاج صلاحية "عرض الفئات والمنتجات والإضافات"',
                     ],
                 ],
             ],
