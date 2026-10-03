@@ -81,12 +81,25 @@ export function friendlyCostPer(costPerBase: number, base: string): { cost: stri
 }
 
 /**
+ * Item kind G1 — the US units (gallon, fl oz, lb, oz) with their names and
+ * the size every picker shows. Kept in step with NON_METRIC_UNITS in
+ * lib/itemKind (each lib loads on its own in the node tests).
+ */
+const US_UNITS: Record<string, { en: string; ar: string; size: string }> = {
+    gal: { en: 'gallon', ar: 'جالون', size: '3.785 l' },
+    'fl oz': { en: 'fl oz', ar: 'أونصة سائلة', size: '29.57 ml' },
+    lb: { en: 'lb', ar: 'رطل', size: '453.6 g' },
+    oz: { en: 'oz', ar: 'أونصة', size: '28.35 g' },
+};
+
+/**
  * The picker options — F2: what people buy in first: the pack sizes, then
- * the larger unit of the kind (kg / l), the smaller (g / ml), then the count
+ * the larger unit of the kind (kg / l), the smaller (g / ml), G1 the US
+ * units (gallon / fl oz, lb / oz, each saying its size), then the count
  * container. ('' = the stored unit, wherever it falls.) A custom extra unit
  * wins over a metric pair of the same name (the server resolves the same way).
  */
-export function purchaseUnitOptions(ingredient: PurchaseUnitSource | null | undefined): PurchaseUnitOption[] {
+export function purchaseUnitOptions(ingredient: PurchaseUnitSource | null | undefined, locale?: string | null): PurchaseUnitOption[] {
     if (!ingredient) return [];
     const base = ingredient.unit;
     const options: PurchaseUnitOption[] = [];
@@ -98,15 +111,22 @@ export function purchaseUnitOptions(ingredient: PurchaseUnitSource | null | unde
         options.push({ value: alt.name, label: `${alt.name} (${holdsText(factor, base)})`, factor });
     }
     const metric: PurchaseUnitOption[] = [{ value: '', label: base, factor: 1 }];
+    const us: PurchaseUnitOption[] = [];
     for (const auto of ingredient.auto_units ?? []) {
         const factor = positive(auto.factor);
         if (seen.has(auto.name) || factor === null) continue;
         seen.add(auto.name);
-        metric.push({ value: auto.name, label: auto.name, factor });
+        const named = US_UNITS[auto.name];
+        if (named) {
+            us.push({ value: auto.name, label: `${locale === 'ar' ? named.ar : named.en} (${named.size})`, factor });
+        } else {
+            metric.push({ value: auto.name, label: auto.name, factor });
+        }
     }
-    // Larger first: kg before g, l before ml.
+    // Larger first: kg before g, l before ml; gallon before fl oz, lb before oz.
     metric.sort((a, b) => b.factor - a.factor);
-    options.push(...metric);
+    us.sort((a, b) => b.factor - a.factor);
+    options.push(...metric, ...us);
     const perPiece = positive(ingredient.units_per_piece);
     if (ingredient.piece_unit_label && perPiece !== null && !(base === 'piece' && perPiece === 1)) {
         options.push({
@@ -128,11 +148,12 @@ export function purchaseUnitFactor(options: PurchaseUnitOption[], value: string)
     return options.find((o) => o.value === value)?.factor ?? 1;
 }
 
-/** The short name of a selected unit for labels ("kg", "box", "bottle"). */
-export function purchaseUnitName(ingredient: PurchaseUnitSource | null | undefined, value: string): string {
+/** The short name of a selected unit for labels ("kg", "box", "bottle", G1 "gal" / "جالون"). */
+export function purchaseUnitName(ingredient: PurchaseUnitSource | null | undefined, value: string, locale?: string | null): string {
     if (!ingredient) return '';
     if (value === '' || value === ingredient.unit) return ingredient.unit;
     if (value === PIECE_UNIT) return ingredient.piece_unit_label ?? 'piece';
+    if (locale === 'ar' && US_UNITS[value]) return US_UNITS[value]!.ar;
     return value;
 }
 

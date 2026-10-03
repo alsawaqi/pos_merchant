@@ -146,7 +146,7 @@ function lineIngredient(line: LineRow): Ingredient | null {
 
 /** P2-3 — the units this line can be entered in (ingredients only). */
 function lineUnitOptions(line: LineRow): PurchaseUnitOption[] {
-    return purchaseUnitOptions(lineIngredient(line));
+    return purchaseUnitOptions(lineIngredient(line), locale.value);
 }
 
 /** The chosen unit's short name, or "each" for a product line. */
@@ -155,7 +155,7 @@ function lineUnit(line: LineRow): string {
         return '';
     }
     const ing = lineIngredient(line);
-    return ing ? purchaseUnitName(ing, line.unit) : t('purchase_receipts.form.unit_each');
+    return ing ? purchaseUnitName(ing, line.unit, locale.value) : t('purchase_receipts.form.unit_each');
 }
 
 /** The live preview: base quantity, line total, cost per base unit. */

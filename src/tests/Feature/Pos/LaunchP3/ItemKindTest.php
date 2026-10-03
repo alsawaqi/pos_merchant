@@ -22,6 +22,8 @@ declare(strict_types=1);
  *   F5 restock allocations take a unit per line (suggestions already could);
  *   F6 no kind change while pack sizes or a count container exist;
  *   F7 report exports keep stored numbers and name every quantity's unit.
+ * Owner addendum 2026-10-03:
+ *   G1 the US units (gal, fl oz, lb, oz) at their exact sizes.
  */
 
 use App\Actions\Pos\Inventory\CreateIngredientAction;
@@ -377,4 +379,52 @@ it('F7 report exports keep the stored numbers and name the unit of every ingredi
 
     $variance = $export('portion-variance');
     expect($row($variance['rows'], 'Milk')['unit'])->toBe('ml');
+});
+
+it('G1 every weighed / liquid item lists the US units with their exact factors; counted items none', function (): void {
+    $ctx = makeMerchantActor();
+    p3Ingredient($ctx['company'], 'Milk', 'ml', '0.0004');
+    p3Ingredient($ctx['company'], 'Saffron', 'kg', '50');
+    p3Ingredient($ctx['company'], 'Cups', 'piece', '0.05');
+
+    $rows = collect($this->getJson('/api/ingredients')->assertOk()->json('data'))->keyBy('name');
+    expect(collect($rows['Milk']['auto_units'])->pluck('factor', 'name')->all())
+        ->toBe(['l' => '1000', 'gal' => '3785.411784', 'fl oz' => '29.5735295625']);
+    expect(collect($rows['Saffron']['auto_units'])->pluck('factor', 'name')->all())
+        ->toBe(['g' => '0.001', 'lb' => '0.45359237', 'oz' => '0.028349523125']);
+    expect($rows['Cups']['auto_units'])->toBe([]);
+});
+
+it('G1 stock entries, pack sizes and recipe lines take gal / fl oz / lb / oz, converted exactly', function (): void {
+    $ctx = makeMerchantActor();
+    $milk = p3Ingredient($ctx['company'], 'Milk', 'ml', '0.0004');
+    p3Stock($ctx['branch'], $milk, '10000');
+    $this->postJson("/api/branches/{$ctx['branch']->uuid}/waste", ['ingredient_uuid' => $milk->uuid, 'quantity' => '1', 'unit' => 'gal', 'reason' => 'spoiled'])->assertCreated();
+    expect((float) BranchStock::query()->where('branch_id', $ctx['branch']->id)->where('ingredient_id', $milk->id)->value('quantity'))->toBe(6214.5882);
+
+    $this->postJson("/api/ingredients/{$milk->uuid}/units", ['name' => 'jug', 'amount' => '1', 'unit' => 'gal'])
+        ->assertCreated()->assertJsonPath('data.factor', '3785.4118');
+
+    $flour = p3Ingredient($ctx['company'], 'Flour', 'g', '0.0004');
+    $prep = $this->postJson('/api/prep-items', [
+        'name' => 'Dough', 'unit' => 'g', 'prep_yield_quantity' => '1000',
+        'lines' => [['ingredient_uuid' => $flour->uuid, 'quantity' => '2', 'unit' => 'lb']],
+    ])->assertCreated()->json('data');
+    $line = $this->getJson("/api/prep-items/{$prep['uuid']}")->assertOk()->json('data.lines.0');
+    // Reopens as typed; stored exactly (2 × 453.59237 g, 4 decimals).
+    expect($line['entered_unit'])->toBe('lb')
+        ->and($line['entered_quantity'])->toBe('2')
+        ->and((float) $line['quantity'])->toBe(907.1847);
+});
+
+it('G1 the tiny-amount refusal still applies after converting from oz', function (): void {
+    $ctx = makeMerchantActor();
+    $saffron = p3Ingredient($ctx['company'], 'Saffron', 'kg', '50');
+
+    // 0.001 oz = 0.0000283 kg: rounds to 0 at 4 decimals.
+    $this->postJson('/api/prep-items', [
+        'name' => 'Saffron water', 'unit' => 'ml', 'prep_yield_quantity' => '100',
+        'lines' => [['ingredient_uuid' => $saffron->uuid, 'quantity' => '0.001', 'unit' => 'oz']],
+    ])->assertStatus(422)->assertJsonPath('message', fn (string $m): bool => str_contains($m, 'Saffron: 0.001 oz is too small to record'));
+    expect(Ingredient::query()->where('name', 'Saffron water')->exists())->toBeFalse();
 });

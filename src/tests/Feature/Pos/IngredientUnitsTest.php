@@ -121,12 +121,14 @@ it('converts entered quantities to the base unit', function (): void {
         'company_id' => $ctx['company']->id, 'ingredient_id' => $ing->id, 'name' => 'kg', 'factor' => '1000',
     ]);
 
-    $converter = new IngredientUnitConverter();
+    $converter = new IngredientUnitConverter;
 
     expect($converter->toBase($ing, 250))->toBe(250.0);          // null = base (g)
     expect($converter->toBase($ing, 250, 'g'))->toBe(250.0);     // explicit base
     expect($converter->toBase($ing, 2, 'kg'))->toBe(2000.0);     // 2 kg → 2000 g
-    expect(fn () => $converter->toBase($ing, 1, 'lb'))->toThrow(RuntimeException::class);
+    // lb converts since LAUNCH item kind G1 (453.59237 g); an unknown unit still throws.
+    expect($converter->toBase($ing, 1, 'lb'))->toBe(453.59237);
+    expect(fn () => $converter->toBase($ing, 1, 'cup'))->toThrow(RuntimeException::class);
 });
 
 it('refuses an alt unit whose name is an auto metric sibling (PD4)', function (): void {
@@ -153,7 +155,8 @@ it('surfaces auto_units on the ingredient resource (PD4)', function (): void {
     $rows = collect($this->getJson('/api/ingredients')->assertOk()->json('data'))->keyBy('uuid');
 
     $auto = collect($rows[$kg->uuid]['auto_units']);
-    expect($auto->pluck('name')->all())->toBe(['g'])
+    // LAUNCH item kind G1 — the US units (lb, oz) come with the metric pair.
+    expect($auto->pluck('name')->all())->toBe(['g', 'lb', 'oz'])
         ->and($auto->firstWhere('name', 'g')['factor'])->toBe('0.001');
 
     // Count units get no auto siblings.

@@ -197,15 +197,24 @@ final readonly class RecipeQuantity
 
                 return BigDecimal::of((string) $alt->factor);
             }
-            $siblings = $ingredient->unit?->metricSiblings() ?? [];
+            // The metric pair and (item kind G1) the US units, exact.
+            $siblings = $ingredient->unit?->convertibleUnitFactors() ?? [];
             if (isset($siblings[$token])) {
-                return self::decimal($siblings[$token]);
+                return BigDecimal::of($siblings[$token]);
             }
 
             throw new RuntimeException("Unit '{$token}' is not defined for this ingredient.");
         }
 
-        return self::decimal($this->units->factorFor($ingredient, $token));
+        $factor = $this->units->factorFor($ingredient, $token);
+        // Item kind G1 — a metric / US unit (no extra unit of that name
+        // overriding it) uses its exact decimal factor, not the float.
+        $exact = $ingredient->unit?->convertibleUnitFactors()[$token] ?? null;
+        if ($exact !== null && abs((float) $exact - $factor) < 1e-9) {
+            return BigDecimal::of($exact);
+        }
+
+        return self::decimal($factor);
     }
 
     /** "5.0000" → "5", "0.0500" → "0.05". */
@@ -221,7 +230,8 @@ final readonly class RecipeQuantity
 
     private static function decimal(float $factor): BigDecimal
     {
-        // Factors are metric powers of ten or numeric(14,4) values: exact at 10 places.
+        // Factors are metric powers of ten or numeric(14,4) values: exact at
+        // 10 places (the US units take their exact strings, above).
         return BigDecimal::of(rtrim(rtrim(number_format($factor, 10, '.', ''), '0'), '.'));
     }
 

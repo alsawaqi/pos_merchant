@@ -22,6 +22,8 @@
 //   F6 no kind change while pack sizes or a count container exist;
 //   F7 report screens show ingredient quantities friendly;
 //   F8 no mixed-unit Total qty tile on Loss & Waste / Restock & Purchasing;
+// Owner addendum 2026-10-03:
+//   G1 gallon / fl oz (Liquid) and lb / oz (Weighed) wherever kg/g or l/ml are;
 //   every new string exists in English AND Arabic.
 // Run: node --test tests/frontend/launch-p3-kind.test.mjs
 import assert from 'node:assert/strict';
@@ -123,9 +125,10 @@ test('A2 the edit form shows the kind, locks it on a used ingredient and notes a
 test('A3 a new ingredient takes optional pack sizes ("crate holds 12 l") in the same request', () => {
     const { kindUnits } = lib('itemKind');
     const plain = (units) => units.map((u) => `${u.value}=${u.factor}`).join(' ');
-    assert.equal(plain(kindUnits('ml')), 'l=1000 ml=1');
-    assert.equal(plain(kindUnits('g')), 'kg=1000 g=1');
-    assert.equal(plain(kindUnits('kg')), 'kg=1 g=0.001');
+    // (G1 adds the US units after the metric pair.)
+    assert.equal(plain(kindUnits('ml').slice(0, 2)), 'l=1000 ml=1');
+    assert.equal(plain(kindUnits('g').slice(0, 2)), 'kg=1000 g=1');
+    assert.equal(plain(kindUnits('kg').slice(0, 2)), 'kg=1 g=0.001');
     assert.equal(plain(kindUnits('piece')), 'piece=1');
     assert.equal(plain(kindUnits('box')), 'box=1');
     assert.equal(kindUnits('').length, 0);
@@ -496,6 +499,43 @@ test('F8 Loss & Waste and Restock & Purchasing drop the mixed-unit Total qty til
     for (const action of ['LossWasteReportAction', 'RestockPurchasingReportAction']) {
         assert.match(read(`app/Actions/Pos/Reports/${action}.php`), /'total_qty_unit' => ReportUnits::MIXED,/, action);
     }
+});
+
+test('G1 every weighed / liquid picker also offers gallon, fl oz, lb and oz, labelled with their size (EN and AR)', () => {
+    const { kindUnits, unitOptionLabel, toStoredAmount, toStoredCost, entryUnitOptions } = lib('itemKind');
+    const plain = (units) => units.map((u) => `${u.value}=${u.factor}`).join(' ');
+    assert.equal(plain(kindUnits('ml')), 'l=1000 ml=1 gal=3785.411784 fl oz=29.5735295625');
+    assert.equal(plain(kindUnits('g')), 'kg=1000 g=1 lb=453.59237 oz=28.349523125');
+    assert.equal(kindUnits('kg').find((u) => u.value === 'oz').factor, 0.028349523125);
+    assert.equal(plain(kindUnits('piece')), 'piece=1');
+    assert.deepEqual(['gal', 'fl oz', 'lb', 'oz'].map((u) => unitOptionLabel(u, 'en')), ['gallon (3.785 l)', 'fl oz (29.57 ml)', 'lb (453.6 g)', 'oz (28.35 g)']);
+    assert.deepEqual(['gal', 'fl oz', 'lb', 'oz'].map((u) => unitOptionLabel(u, 'ar')), ['جالون (3.785 l)', 'أونصة سائلة (29.57 ml)', 'رطل (453.6 g)', 'أونصة (28.35 g)']);
+    assert.equal(unitOptionLabel('kg', 'en'), 'kg');
+    // Pack sizes, container, minimum, yield: stored exactly (4 decimals); cost per gallon.
+    assert.equal(toStoredAmount('1', 'gal', 'ml'), 3785.4118);
+    assert.equal(toStoredAmount('2', 'lb', 'g'), 907.1847);
+    assert.equal(toStoredCost('3.785411784', 'gal', 'ml'), 0.001);
+
+    const milk = { unit: 'ml', alt_units: [{ name: 'crate', factor: '12000' }], auto_units: [{ name: 'l', factor: '1000' }, { name: 'gal', factor: '3785.411784' }, { name: 'fl oz', factor: '29.5735295625' }] };
+    assert.deepEqual([...entryUnitOptions(milk, 'en').map((o) => o.label)], ['ml', 'crate (12 l)', 'l', 'gallon (3.785 l)', 'fl oz (29.57 ml)']);
+    const { recipeUnitOptions, recipeUnitName, recipeLineProblem, lineEntry } = lib('recipeUnits');
+    assert.deepEqual([...recipeUnitOptions(milk, 'ar').map((o) => o.label)], ['ml', 'crate (12 l)', 'l', 'جالون (3.785 l)', 'أونصة سائلة (29.57 ml)']);
+    assert.equal(recipeUnitName(milk, 'gal', 'ar'), 'جالون');
+    assert.equal(recipeUnitName(milk, 'gal', 'en'), 'gal');
+    // A line typed in gal reopens as typed.
+    assert.deepEqual({ ...lineEntry({ quantity: '7570.8236', entered_unit: 'gal', entered_quantity: '2' }, 'ml') }, { quantity: '2', unit: 'gal' });
+    // The tiny-amount rule still applies after converting from oz (0.001 oz of a kg item rounds to 0).
+    const saffron = { unit: 'kg', auto_units: [{ name: 'g', factor: '0.001' }, { name: 'oz', factor: '0.028349523125' }] };
+    assert.equal(recipeLineProblem(saffron, 'oz', '0.001').key, 'recipe_units.too_small');
+    assert.equal(recipeLineProblem(saffron, 'oz', '1'), null);
+    // Goods received: pack sizes, l, ml, then the US units, then the container.
+    const { purchaseUnitOptions } = lib('purchaseUnits');
+    assert.deepEqual([...purchaseUnitOptions({ ...milk, piece_unit_label: 'bottle', units_per_piece: '1500' }, 'en').map((o) => o.label)], ['crate (12 l)', 'l', 'ml', 'gallon (3.785 l)', 'fl oz (29.57 ml)', 'bottle (1.5 l)']);
+    assert.match(sfc('resources/js/Pages/Merchant/Inventory/PurchaseReceipts/Create.vue').script, /purchaseUnitOptions\(lineIngredient\(line\), locale\.value\)/);
+    // The form's "holds", cost, minimum and yield pickers label them the same way.
+    assert.match(ingredientForm().script, /: unitOptionLabel\(unit, locale\.value\);/);
+    assert.match(sfc('resources/js/Pages/Merchant/Inventory/PrepItemEditor.vue').script, /: unitOptionLabel\(unit, locale\.value\);/);
+    assert.equal(en.item_kind.entered_in.liquid, 'Amounts are typed in l, ml, gallons or fl oz.');
 });
 
 test('every item-kind string exists in English and Arabic', () => {

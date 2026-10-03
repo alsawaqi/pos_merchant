@@ -40,6 +40,7 @@ import {
     kindUnits,
     toStoredAmount,
     trimAmount,
+    unitOptionLabel,
     type ItemKind,
 } from '@/lib/itemKind';
 import { canWriteRecipes } from '@/lib/permissions';
@@ -100,7 +101,8 @@ function chooseKind(kind: ItemKind): void {
 }
 
 function yieldUnitLabel(unit: string): string {
-    return unit === 'piece' ? t('inventory.units.piece') : unit;
+    // G1 — a US unit says its size: "gallon (3.785 l)".
+    return unit === 'piece' ? t('inventory.units.piece') : unitOptionLabel(unit, locale.value);
 }
 
 /** The components a prep recipe can use: every ingredient and every OTHER prep item. */

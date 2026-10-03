@@ -64,10 +64,12 @@ class IngredientResource extends JsonResource
             // (base kg -> g, base l -> ml...). Derived from the base unit, so it
             // ships unconditionally; the dropdowns merge these with alt_units and
             // the converter resolves the same names. Empty for count units.
-            'auto_units' => collect($this->unit?->metricSiblings() ?? [])
-                ->map(static fn (float $factor, string $name): array => [
+            // LAUNCH item kind G1 — and the US units (lb / oz, gal / fl oz),
+            // with their exact factors (0.0295735295625 l per fl oz).
+            'auto_units' => collect($this->unit?->convertibleUnitFactors() ?? [])
+                ->map(static fn (string $factor, string $name): array => [
                     'name' => $name,
-                    'factor' => rtrim(rtrim(number_format($factor, 4, '.', ''), '0'), '.'),
+                    'factor' => $factor,
                 ])->values()->all(),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),

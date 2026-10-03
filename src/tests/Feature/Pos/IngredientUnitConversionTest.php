@@ -73,7 +73,8 @@ it('restock rejects an unknown unit with 422', function (): void {
     $ing = gramIngredientWithKg($ctx['company']);
 
     $this->postJson("/api/branches/{$ctx['branch']->uuid}/stock/restock", [
-        'ingredient_uuid' => $ing->uuid, 'quantity' => '2', 'unit' => 'lb',
+        // (lb is a known unit of a weighed item since LAUNCH item kind G1.)
+        'ingredient_uuid' => $ing->uuid, 'quantity' => '2', 'unit' => 'cup',
     ])->assertStatus(422);
 
     expect(StockMovement::query()->where('ingredient_id', $ing->id)->exists())->toBeFalse();

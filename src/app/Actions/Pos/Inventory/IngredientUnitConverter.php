@@ -22,6 +22,7 @@ use RuntimeException;
  *   '@piece' (LAUNCH-P2)                          → × the ingredient's piece ratio
  *   an alt unit's name                            → × that unit's factor
  *   kg↔g / l↔ml                                   → × the metric factor
+ *   lb / oz, gal / fl oz (item kind G1)           → × the exact US size
  *   anything else                                 → RuntimeException (422)
  */
 final readonly class IngredientUnitConverter
@@ -104,8 +105,10 @@ final readonly class IngredientUnitConverter
 
         // PD4 — same-family metric units the system provides automatically
         // (no IngredientAltUnit row needed): base kg accepts 'g', base l
-        // accepts 'ml', and so on. Count units (piece/pack/box) have none.
-        $siblings = $ingredient->unit?->metricSiblings() ?? [];
+        // accepts 'ml', and so on; LAUNCH item kind G1 — and the US units
+        // (gal / fl oz, lb / oz) at their exact sizes. Count units
+        // (piece/pack/box) have none.
+        $siblings = $ingredient->unit?->convertibleUnits() ?? [];
         if (isset($siblings[$unit])) {
             return $siblings[$unit];
         }

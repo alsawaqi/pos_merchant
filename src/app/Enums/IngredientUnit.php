@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Enums;
 
+use Brick\Math\BigDecimal;
+use Brick\Math\RoundingMode;
+
 /**
  * Phase 5a — units in which an ingredient's quantity is measured.
  *
@@ -61,22 +64,80 @@ enum IngredientUnit: string
             return 1.0;
         }
 
-        return $this->metricSiblings()[$unit] ?? null;
+        return $this->convertibleUnits()[$unit] ?? null;
     }
 
     /**
-     * The units of this unit's kind, big first: ['kg', 'g'], ['l', 'ml'], or
-     * the stored count unit alone (['piece']).
+     * The units of this unit's kind, big first: ['kg', 'g', 'lb', 'oz'],
+     * ['l', 'ml', 'gal', 'fl oz'] (G1), or the stored count unit alone
+     * (['piece']).
      *
      * @return list<string>
      */
     public function kindUnits(): array
     {
         return match ($this->kind()) {
-            'weighed' => [self::Kilogram->value, self::Gram->value],
-            'liquid' => [self::Litre->value, self::Millilitre->value],
+            'weighed' => [self::Kilogram->value, self::Gram->value, ...array_keys(self::NON_METRIC['mass'])],
+            'liquid' => [self::Litre->value, self::Millilitre->value, ...array_keys(self::NON_METRIC['volume'])],
             default => [$this->value],
         };
+    }
+
+    /**
+     * LAUNCH item kind, G1 (owner addendum 2026-10-03) — the US units every
+     * Weighed / Liquid item also accepts, sized EXACTLY in its family's
+     * canonical base: US gallon and US fluid ounce in ml, avoirdupois pound
+     * and ounce in g. Stored units never change.
+     */
+    private const NON_METRIC = [
+        'mass' => ['lb' => '453.59237', 'oz' => '28.349523125'],
+        'volume' => ['gal' => '3785.411784', 'fl oz' => '29.5735295625'],
+    ];
+
+    /**
+     * Every unit besides the stored one that an amount of this item may be
+     * typed in, mapped to its factor = stored units per ONE of that unit: the
+     * metric pair (PD4) and, G1, the US pair. Empty for count units.
+     * e.g. stored g → ['kg' => 1000, 'lb' => 453.59237, 'oz' => 28.349523125].
+     *
+     * @return array<string, float>
+     */
+    public function convertibleUnits(): array
+    {
+        return array_map(static fn (string $factor): float => (float) $factor, $this->convertibleUnitFactors());
+    }
+
+    /**
+     * {@see convertibleUnits()} as EXACT decimal strings ("3.785411784" l per
+     * gallon, "0.0295735295625" l per fl oz), for the API and the recipe
+     * arithmetic, where a float would print as 3.7854117839999999.
+     *
+     * @return array<string, string>
+     */
+    public function convertibleUnitFactors(): array
+    {
+        $family = $this->family();
+        $baseMagnitude = $this->magnitude();
+        if ($family === null || $baseMagnitude === null) {
+            return [];
+        }
+        $base = BigDecimal::of((string) (int) $baseMagnitude);
+        $ratio = static fn (string $size): string => (string) BigDecimal::of($size)
+            ->dividedBy($base, 15, RoundingMode::HALF_UP)
+            ->stripTrailingZeros();
+
+        $factors = [];
+        foreach (self::cases() as $case) {
+            if ($case === $this || $case->family() !== $family) {
+                continue;
+            }
+            $factors[$case->value] = $ratio((string) (int) $case->magnitude());
+        }
+        foreach (self::NON_METRIC[$family] as $name => $size) {
+            $factors[$name] = $ratio($size);
+        }
+
+        return $factors;
     }
 
     /**

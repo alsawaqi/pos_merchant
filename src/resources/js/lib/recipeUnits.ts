@@ -68,6 +68,18 @@ function friendlyText(quantity: number, unit: string): string {
 }
 
 /**
+ * Item kind G1 — the US units (gallon, fl oz, lb, oz) with their names and
+ * the size every picker shows. Kept in step with NON_METRIC_UNITS in
+ * lib/itemKind (each lib loads on its own in the node tests).
+ */
+const US_UNITS: Record<string, { en: string; ar: string; size: string }> = {
+    gal: { en: 'gallon', ar: 'جالون', size: '3.785 l' },
+    'fl oz': { en: 'fl oz', ar: 'أونصة سائلة', size: '29.57 ml' },
+    lb: { en: 'lb', ar: 'رطل', size: '453.6 g' },
+    oz: { en: 'oz', ar: 'أونصة', size: '28.35 g' },
+};
+
+/**
  * Base first, then extra units, the metric pair and the piece unit. A custom
  * extra unit wins over a metric pair of the same name (the server resolves
  * the same way).
@@ -87,7 +99,9 @@ export function recipeUnitOptions(ingredient: RecipeUnitSource | null | undefine
         const factor = positive(auto.factor);
         if (seen.has(auto.name) || factor === null) continue;
         seen.add(auto.name);
-        options.push({ value: auto.name, label: auto.name, factor });
+        // G1 — a US unit says its size: "gallon (3.785 l)".
+        const us = US_UNITS[auto.name];
+        options.push({ value: auto.name, label: us ? `${locale === 'ar' ? us.ar : us.en} (${us.size})` : auto.name, factor });
     }
     const perPiece = positive(ingredient.units_per_piece);
     if (ingredient.piece_unit_label && perPiece !== null && !(base === 'piece' && perPiece === 1)) {
@@ -111,6 +125,8 @@ export function recipeUnitName(ingredient: RecipeUnitSource | null | undefined, 
     if (!ingredient) return value ?? '';
     if (!value || value === ingredient.unit) return ingredient.unit;
     if (value === PIECE_UNIT) return pieceUnitLabel(ingredient, locale) ?? 'piece';
+    // G1 — "2 gal" / "2 جالون".
+    if (locale === 'ar' && US_UNITS[value]) return US_UNITS[value]!.ar;
     return value;
 }
 

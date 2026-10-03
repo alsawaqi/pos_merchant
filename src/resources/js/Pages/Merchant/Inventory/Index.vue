@@ -137,6 +137,7 @@ import {
     toStoredAmount,
     toStoredCost,
     trimAmount,
+    unitOptionLabel,
     type ItemKind,
     type KindUnit,
 } from '@/lib/itemKind';
@@ -325,7 +326,8 @@ function chooseKind(kind: ItemKind): void {
 const holdUnits = computed<KindUnit[]>(() => kindUnits(ingForm.unit));
 
 function holdUnitLabel(unit: string): string {
-    return unit === 'piece' || unit === 'pack' || unit === 'box' ? unitLabel(unit) : unit;
+    // G1 — a US unit says its size: "gallon (3.785 l)".
+    return unit === 'piece' || unit === 'pack' || unit === 'box' ? unitLabel(unit) : unitOptionLabel(unit, locale.value);
 }
 
 // =================== LAUNCH item kind, A3 — pack sizes on create ===

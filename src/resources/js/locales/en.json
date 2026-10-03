@@ -12,8 +12,8 @@
             "counted": "Eggs, cups, buns"
         },
         "entered_in": {
-            "weighed": "Amounts are typed in kg or g.",
-            "liquid": "Amounts are typed in l or ml.",
+            "weighed": "Amounts are typed in kg, g, lb or oz.",
+            "liquid": "Amounts are typed in l, ml, gallons or fl oz.",
             "counted": "Amounts are typed in pieces."
         },
         "choose": "Choose what kind of item it is.",

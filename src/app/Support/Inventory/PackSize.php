@@ -29,7 +29,10 @@ final class PackSize
             return null;
         }
 
-        return sprintf('A pack size of this item holds %s.', implode(' or ', $stored->kindUnits()));
+        $units = $stored->kindUnits();
+        $last = array_pop($units);
+
+        return sprintf('A pack size of this item holds %s.', $units === [] ? $last : implode(', ', $units).' or '.$last);
     }
 
     /**
