@@ -74,6 +74,7 @@ import {
 } from '@/lib/api/catalogue';
 import AddonConsumptionEditor from '@/Pages/Merchant/Catalogue/AddonConsumptionEditor.vue';
 import ChannelsEditor from '@/Pages/Merchant/Catalogue/ChannelsEditor.vue';
+import ImageUploadField from '@/Pages/Merchant/Catalogue/ImageUploadField.vue';
 import RecipeHistoryPanel from '@/Pages/Merchant/Catalogue/RecipeHistoryPanel.vue';
 import {
     branchScopePayload,
@@ -1302,14 +1303,8 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                     <span v-if="fieldError('description_ar')" class="mt-1 block text-xs text-rose-600">{{ fieldError('description_ar') }}</span>
                                 </label>
                             </div>
-                            <label class="block">
-                                <span class="text-sm font-medium text-slate-700">
-                                    <Image class="me-1 inline size-3" />
-                                    {{ t('catalogue.fields.image_url') }}
-                                </span>
-                                <input v-model="form.image_url" type="url" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                                <p v-if="fieldError('image_url')" class="mt-1 text-xs text-rose-600">{{ fieldError('image_url') }}</p>
-                            </label>
+                            <!-- LAUNCH-P4 B5 — upload (resized in the browser) or a link. -->
+                            <ImageUploadField v-model="form.image_url" kind="product" :disabled="readOnly" :error="fieldError('image_url')" />
                             <div class="grid gap-3 sm:grid-cols-2">
                                 <label class="block">
                                     <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.sku') }}</span>

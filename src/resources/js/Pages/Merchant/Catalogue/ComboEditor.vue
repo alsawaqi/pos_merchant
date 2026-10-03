@@ -19,6 +19,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import ChannelsEditor from '@/Pages/Merchant/Catalogue/ChannelsEditor.vue';
+import ImageUploadField from '@/Pages/Merchant/Catalogue/ImageUploadField.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
 import {
@@ -349,11 +350,10 @@ async function save(): Promise<void> {
                             <textarea v-model="form.description_ar" rows="2" dir="rtl" maxlength="1000" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100" />
                         </label>
                     </div>
-                    <label class="block" data-test="combo-photo">
-                        <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.image_url') }}</span>
-                        <input v-model="form.image_url" type="url" maxlength="500" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                        <span v-if="fieldError('image_url')" class="mt-1 block text-xs text-rose-600">{{ fieldError('image_url') }}</span>
-                    </label>
+                    <div data-test="combo-photo">
+                        <!-- LAUNCH-P4 B5 — upload (resized in the browser) or a link. -->
+                        <ImageUploadField v-model="form.image_url" kind="product" :disabled="!canManage" :error="fieldError('image_url')" />
+                    </div>
                     <div class="grid gap-3 sm:grid-cols-3">
                         <label class="block">
                             <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.sku') }}</span>

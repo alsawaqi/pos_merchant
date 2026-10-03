@@ -235,6 +235,47 @@ export async function apiDownload(url: string): Promise<{ blob: Blob; filename: 
     return { blob: await response.blob(), filename };
 }
 
+/**
+ * LAUNCH-P4 — POST a multipart form (a file upload). Same headers, CSRF
+ * token and error handling as apiRequest; the browser sets the multipart
+ * Content-Type itself. A 419 retries once with a fresh CSRF token.
+ */
+export async function apiUpload<T>(url: string, form: FormData, retried = false): Promise<T> {
+    const token = csrfTokenFromMeta();
+    const response = await fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+            Accept: 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+            ...(token ? { 'X-CSRF-TOKEN': token } : {}),
+        },
+        body: form,
+    });
+
+    if (response.ok) {
+        const text = await response.text();
+        return text ? (JSON.parse(text) as T) : (undefined as unknown as T);
+    }
+
+    let payload: unknown = null;
+    try {
+        payload = await response.json();
+    } catch {
+        payload = null;
+    }
+    observeAccountAccess(response.status, payload);
+    if (response.status === 419 && !retried) {
+        await refreshCsrfToken();
+        return apiUpload<T>(url, form, true);
+    }
+    if (response.status === 401 && !accountAccess.suspended) {
+        const redirect = encodeURIComponent(window.location.pathname + window.location.search);
+        window.location.href = `${LOGIN_PATH}?redirect=${redirect}`;
+    }
+    throw new ApiError(response.status, payload);
+}
+
 export function apiPost<T>(url: string, body?: JsonValue, options: Omit<ApiRequestOptions, 'body' | 'method'> = {}): Promise<T> {
     return apiRequest<T>('POST', url, { ...options, body });
 }

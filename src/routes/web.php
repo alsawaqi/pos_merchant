@@ -16,6 +16,7 @@ use App\Http\Controllers\Pos\AddOnsController;
 use App\Http\Controllers\Pos\BranchesController as PosBranchesController;
 use App\Http\Controllers\Pos\BranchTargetsController;
 use App\Http\Controllers\Pos\BranchTransfersController;
+use App\Http\Controllers\Pos\CatalogueImagesController;
 use App\Http\Controllers\Pos\CategoriesController;
 use App\Http\Controllers\Pos\CombosController;
 use App\Http\Controllers\Pos\CommissionInvoicesController;
@@ -343,6 +344,11 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('products.update');
         Route::delete('products/{product:uuid}', [ProductsController::class, 'destroy'])
             ->name('products.destroy');
+
+        // LAUNCH-P4 B5 — photo upload (stored on the public disk, served at
+        // APP_URL/storage/products/...).
+        Route::post('catalogue/images', [CatalogueImagesController::class, 'store'])
+            ->name('catalogue.images.store');
 
         // LAUNCH-P4 B2 — combos: a set price plus choice slots. Listed,
         // deleted and switched sold out through the product endpoints.

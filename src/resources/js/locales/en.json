@@ -3660,5 +3660,17 @@
         "put_back": "Put back on sale at this branch",
         "not_allowed": "You cannot change this branch.",
         "save_failed": "Could not save. Try again."
+    },
+    "photo": {
+        "label": "Photo",
+        "upload": "Upload photo",
+        "replace": "Replace photo",
+        "uploading": "Uploading…",
+        "remove": "Remove",
+        "hint": "JPEG, PNG or WebP. It is resized to 800 px and saved on MITHQAL, so the till, the handheld and the QR menu all show it.",
+        "link_fallback": "Or paste a link to a photo",
+        "not_an_image": "Pick a photo file (JPEG, PNG or WebP).",
+        "too_large": "This file is too big. Pick a photo under 15 MB.",
+        "upload_failed": "The photo could not be uploaded. Try again."
     }
 }

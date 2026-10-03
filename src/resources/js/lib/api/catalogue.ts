@@ -9,7 +9,20 @@
  * because OMR 3-decimal precision matters.
  */
 
-import { apiDelete, apiGet, apiPatch, apiPost, apiPut, type JsonValue } from '@/lib/api';
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut, apiUpload, type JsonValue } from '@/lib/api';
+
+// ---- LAUNCH-P4 B5 — photo upload ---------------------------------
+
+/**
+ * Upload an already-resized photo; the answer is its public URL (on our own
+ * host, under /storage/products/...), saved in image_url by the form.
+ */
+export function uploadCatalogueImage(photo: Blob, kind: 'product' | 'category'): Promise<{ data: { url: string; path: string } }> {
+    const form = new FormData();
+    form.append('image', photo, 'photo.jpg');
+    form.append('kind', kind);
+    return apiUpload<{ data: { url: string; path: string } }>('/api/catalogue/images', form);
+}
 
 export type CategoryStatus = 'active' | 'inactive';
 export type ProductStatus = 'active' | 'inactive';

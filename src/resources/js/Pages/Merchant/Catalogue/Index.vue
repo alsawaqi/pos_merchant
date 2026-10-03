@@ -64,6 +64,8 @@ import {
 } from '@/lib/api/deliveryProviders';
 import { canMarkSoldOut, canWriteRecipes, MerchantPermission } from '@/lib/permissions';
 import SoldOutDialog from './SoldOutDialog.vue';
+import ImageUploadField from './ImageUploadField.vue';
+import ProductThumb from './ProductThumb.vue';
 
 const { t, locale } = useI18n();
 const { can } = usePermissions();
@@ -1079,6 +1081,10 @@ async function performProviderDelete(): Promise<void> {
                         <tbody class="divide-y divide-slate-100 bg-white">
                             <tr v-for="prod in products" :key="prod.id" class="transition hover:bg-slate-50">
                                 <td class="px-5 py-4">
+                                  <div class="flex items-start gap-3">
+                                    <!-- LAUNCH-P4 B5 — the photo, or the initials. -->
+                                    <ProductThumb :url="prod.image_url" :name="prod.name" />
+                                    <div class="min-w-0">
                                     <span class="block text-sm font-semibold text-slate-950">
                                         {{ prod.name }}
                                         <!-- LAUNCH-P4 B2 — combos carry a badge. -->
@@ -1101,6 +1107,8 @@ async function performProviderDelete(): Promise<void> {
                                         <Clock3 class="size-3" />
                                         {{ availabilityWindowLabel(prod) }}
                                     </span>
+                                    </div>
+                                  </div>
                                 </td>
                                 <td class="px-5 py-4 text-sm text-slate-700">{{ categoryName(prod.category_id) }}</td>
                                 <td class="px-5 py-4 text-xs font-mono text-slate-500">{{ prod.sku ?? '—' }}</td>
@@ -1479,13 +1487,8 @@ async function performProviderDelete(): Promise<void> {
                     <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.description') }}</span>
                     <textarea v-model="catForm.description" rows="2" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100" />
                 </label>
-                <label class="block">
-                    <span class="text-sm font-medium text-slate-700">
-                        <Image class="me-1 inline size-3" />
-                        {{ t('catalogue.fields.image_url') }}
-                    </span>
-                    <input v-model="catForm.image_url" type="url" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                </label>
+                <!-- LAUNCH-P4 B5 — upload (resized in the browser) or a link. -->
+                <ImageUploadField v-model="catForm.image_url" kind="category" :error="catModalErrors.image_url?.[0] ?? null" />
                 <div v-if="catModalMode === 'edit'" class="grid gap-3 sm:grid-cols-2">
                     <label class="block">
                         <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.display_order') }}</span>
