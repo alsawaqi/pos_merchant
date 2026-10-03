@@ -50,13 +50,15 @@ class UpdateAddOnGroupRequest extends FormRequest
             if ($this->has('name')) {
                 $name = trim((string) $this->input('name'));
                 if ($name !== '') {
-                    $taken = AddOnGroup::query()
-                        ->where('company_id', $companyId)
-                        ->where('name', $name)
-                        ->where('id', '!=', $current?->id ?? 0)
-                        ->exists();
-                    if ($taken) {
-                        $v->errors()->add('name', 'An add-on group with this name already exists.');
+                    // LAUNCH-P4 M4 — a product's own group is unique per
+                    // product, a shared group per company among shared
+                    // groups; soft-deleted groups still hold their name
+                    // (the DB indexes have no deleted_at filter).
+                    $ownerId = $current?->owner_product_id !== null ? (int) $current->owner_product_id : null;
+                    if (AddOnGroup::nameTaken((int) $companyId, $ownerId, $name, $current?->id)) {
+                        $v->errors()->add('name', $ownerId !== null
+                            ? 'This product already has an add-on group with this name (it may belong to a deleted group).'
+                            : 'A shared add-on group with this name already exists (it may belong to a deleted group).');
                     }
                 }
             }

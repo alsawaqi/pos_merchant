@@ -331,8 +331,13 @@ return new class extends Migration
             $table->string('status', 32)->default('active');
             $table->timestamps();
             $table->softDeletes();
-            $table->unique(['company_id', 'name'], 'pos_addon_groups_company_name_unique');
         });
+        // LAUNCH-P4 M4 (pos_admin 2026_10_03_100009) — shared group names
+        // unique per company among shared groups; a product's own group
+        // names unique per owner product. No deleted_at filter: a
+        // soft-deleted group still holds its name.
+        DB::statement('CREATE UNIQUE INDEX pos_addon_groups_company_shared_name_unique ON pos_addon_groups (company_id, name) WHERE owner_product_id IS NULL');
+        DB::statement('CREATE UNIQUE INDEX pos_addon_groups_owner_name_unique ON pos_addon_groups (owner_product_id, name) WHERE owner_product_id IS NOT NULL');
 
         Schema::create('pos_addons', function (Blueprint $table): void {
             $table->id();

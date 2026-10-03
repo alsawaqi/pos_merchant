@@ -6,6 +6,7 @@ namespace App\Http\Requests\Pos\Catalogue;
 
 use App\Enums\AddOnSelectionMode;
 use App\Models\AddOnGroup;
+use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Support\MerchantTenantContext;
 use Illuminate\Foundation\Http\FormRequest;
@@ -51,17 +52,19 @@ class CreateAddOnGroupRequest extends FormRequest
             }
             $name = trim((string) $this->input('name'));
             if ($name !== '') {
-                // withTrashed (PD1): the DB unique index has no
-                // deleted_at carve-out, so a soft-deleted group still
-                // occupies the name — without this the INSERT trips
-                // the index instead of returning this clean 422.
-                $taken = AddOnGroup::query()
-                    ->withTrashed()
-                    ->where('company_id', $companyId)
-                    ->where('name', $name)
-                    ->exists();
-                if ($taken) {
-                    $v->errors()->add('name', 'An add-on group with this name already exists (it may belong to a deleted group).');
+                // LAUNCH-P4 M4 — this request serves both POST
+                // /api/addon-groups (a shared group) and POST
+                // /api/products/{product}/addon-groups (that product's
+                // own group). Owned names are unique per product,
+                // shared names per company among shared groups.
+                // Soft-deleted groups still hold their name (the DB
+                // indexes have no deleted_at filter).
+                $owner = $this->route('product');
+                $ownerId = $owner instanceof Product ? (int) $owner->id : null;
+                if (AddOnGroup::nameTaken((int) $companyId, $ownerId, $name)) {
+                    $v->errors()->add('name', $ownerId !== null
+                        ? 'This product already has an add-on group with this name (it may belong to a deleted group).'
+                        : 'A shared add-on group with this name already exists (it may belong to a deleted group).');
                 }
             }
 

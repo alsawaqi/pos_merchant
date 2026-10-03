@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Models\Concerns\BelongsToCompany;
 use App\Enums\AddOnSelectionMode;
+use App\Models\Concerns\BelongsToCompany;
 use Database\Factories\AddOnGroupFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -79,6 +79,40 @@ class AddOnGroup extends Model
     public function getRouteKeyName(): string
     {
         return 'uuid';
+    }
+
+    /**
+     * LAUNCH-P4 M4 — is this group name already taken where the DB
+     * indexes look?
+     *
+     *   - A product's own group ($ownerProductId set): unique per owner
+     *     product (pos_addon_groups_owner_name_unique), so two products
+     *     can each own a "Size" group.
+     *   - A shared group ($ownerProductId null): unique per company among
+     *     shared groups only (pos_addon_groups_company_shared_name_unique).
+     *
+     * Soft-deleted rows still hold their name (the indexes have no
+     * deleted_at filter), so this counts them too — the caller then
+     * returns a clean 422 instead of tripping the index mid-insert.
+     */
+    public static function nameTaken(int $companyId, ?int $ownerProductId, string $name, ?int $exceptId = null): bool
+    {
+        $query = static::query()
+            ->withTrashed()
+            ->where('company_id', $companyId)
+            ->where('name', $name);
+
+        if ($ownerProductId !== null) {
+            $query->where('owner_product_id', $ownerProductId);
+        } else {
+            $query->whereNull('owner_product_id');
+        }
+
+        if ($exceptId !== null) {
+            $query->whereKeyNot($exceptId);
+        }
+
+        return $query->exists();
     }
 
     /**

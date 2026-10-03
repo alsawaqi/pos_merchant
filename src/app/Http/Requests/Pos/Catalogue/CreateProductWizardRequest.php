@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Http\Requests\Pos\Catalogue;
 
 use App\Enums\AddOnSelectionMode;
-use App\Models\AddOnGroup;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Support\BranchScope;
@@ -126,7 +125,7 @@ class CreateProductWizardRequest extends FormRequest
 
             $this->checkProductBasics($v, $companyId);
             $this->checkRecipeStockMode($v);
-            $this->checkOwnedGroups($v, $companyId);
+            $this->checkOwnedGroups($v);
 
             // LAUNCH-P4 H6 — "only selected branches" needs at least one.
             if ($this->input('branches.branch_scope') === Product::SCOPE_SELECTED && empty($this->input('branches.branch_ids'))) {
@@ -195,13 +194,14 @@ class CreateProductWizardRequest extends FormRequest
     }
 
     /**
-     * Owned-group names must be unique within the payload AND against
-     * the company's existing groups (pos_addon_groups carries a hard
-     * UNIQUE (company_id, name) with no owner carve-out) — checked here
+     * Owned-group names must be unique within the payload (LAUNCH-P4 M4:
+     * pos_addon_groups_owner_name_unique is per owner product, and the
+     * new product owns nothing yet, so a shared group or another
+     * product's group with the same name does not clash). Checked here
      * so the user gets a per-group 422 instead of a mid-transaction DB
      * error. Min/max cross-checks mirror CreateAddOnGroupRequest.
      */
-    private function checkOwnedGroups(Validator $v, int $companyId): void
+    private function checkOwnedGroups(Validator $v): void
     {
         $groups = $this->input('owned_groups');
         if (! is_array($groups) || $groups === []) {
@@ -221,18 +221,11 @@ class CreateProductWizardRequest extends FormRequest
             }
             $seen[$key] = true;
 
-            // withTrashed: the DB unique index has no deleted_at
-            // carve-out, so a soft-deleted group still occupies the
-            // name — without this the INSERT trips the index instead
-            // of the user getting this clean per-group 422.
-            $taken = AddOnGroup::query()
-                ->withTrashed()
-                ->where('company_id', $companyId)
-                ->where('name', $name)
-                ->exists();
-            if ($taken) {
-                $v->errors()->add("owned_groups.$i.name", 'An add-on group with this name already exists (it may belong to a deleted group).');
-            }
+            // LAUNCH-P4 M4 — owned group names are unique per owner
+            // product (pos_addon_groups_owner_name_unique). The wizard
+            // creates a brand-new product, which owns no groups yet, so
+            // the only possible clash is within this form (above); a
+            // shared or another product's group of the same name is fine.
 
             $min = $group['min_selections'] ?? null;
             $max = $group['max_selections'] ?? null;

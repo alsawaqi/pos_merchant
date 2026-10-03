@@ -156,18 +156,15 @@ it('refuses a recipe on ready / bought-in and untracked products', function (): 
 it('rejects duplicate skus and owned-group name collisions with field errors', function (): void {
     $ctx = makeMerchantActor();
     Product::factory()->for($ctx['company'], 'company')->create(['sku' => 'TAKEN']);
-    AddOnGroup::factory()->for($ctx['company'], 'company')->create(['name' => 'Existing group']);
 
     $this->postJson('/api/products/wizard', wizardPayload([
         'product' => ['sku' => 'TAKEN'],
     ]))->assertUnprocessable()->assertJsonValidationErrors(['product.sku']);
 
-    // Collides with an existing shared group (hard DB unique has no owner carve-out).
-    $this->postJson('/api/products/wizard', wizardPayload([
-        'owned_groups' => [['name' => 'Existing group', 'options' => []]],
-    ]))->assertUnprocessable()->assertJsonValidationErrors(['owned_groups.0.name']);
-
-    // Used twice within the same payload.
+    // LAUNCH-P4 M4: a shared group of the same name no longer collides
+    // (owned names are unique per owner product) — see
+    // LaunchP4/OwnedGroupNamesTest. Used twice within the same payload
+    // still does.
     $this->postJson('/api/products/wizard', wizardPayload([
         'owned_groups' => [
             ['name' => 'Size', 'options' => []],
@@ -194,18 +191,19 @@ it('enforces the owned-group min/max cross-field rules', function (): void {
     expect(Product::query()->where('name', 'Wizard Latte')->exists())->toBeFalse();
 });
 
-it('refuses a name still held by a soft-deleted group with a clean 422', function (): void {
+it('is not blocked by a soft-deleted shared group of the same name', function (): void {
     $ctx = makeMerchantActor();
     $group = AddOnGroup::factory()->for($ctx['company'], 'company')->create(['name' => 'Sauces']);
     $group->delete();
 
-    // The DB unique index has no deleted_at carve-out — without the
-    // withTrashed check this would trip the index mid-transaction.
+    // LAUNCH-P4 M4: the deleted SHARED group still holds "Sauces" among
+    // shared groups, but the new product's own group is checked per
+    // owner product (pos_addon_groups_owner_name_unique), so it saves.
     $this->postJson('/api/products/wizard', wizardPayload([
         'owned_groups' => [['name' => 'Sauces', 'options' => []]],
-    ]))->assertUnprocessable()->assertJsonValidationErrors(['owned_groups.0.name']);
+    ]))->assertCreated();
 
-    expect(Product::query()->where('name', 'Wizard Latte')->exists())->toBeFalse();
+    expect(Product::query()->where('name', 'Wizard Latte')->exists())->toBeTrue();
 });
 
 it('pins the branches [] boundary on both sides of the F5 guard', function (): void {
