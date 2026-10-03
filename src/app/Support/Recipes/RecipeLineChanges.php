@@ -34,18 +34,40 @@ final class RecipeLineChanges
     {
         $out = [];
         foreach ($lines as $line) {
+            [$enteredUnit, $enteredQuantity] = self::storedEntered($line->ingredient, (string) $line->quantity, $line->entered_unit, $line->entered_quantity, $quantities);
             $out[(int) $line->ingredient_id] = self::line(
                 $line->ingredient,
                 (int) $line->ingredient_id,
                 (string) $line->quantity,
                 $line->unit_at_set?->value ?? $line->ingredient?->unit?->value ?? '',
-                $line->entered_unit,
-                $line->entered_quantity,
+                $enteredUnit,
+                $enteredQuantity,
                 $quantities,
             );
         }
 
         return $out;
+    }
+
+    /**
+     * Fix order 1, L7 — a STORED line's entered form, as the editor shows it
+     * ({@see RecipeQuantity::display()}): once its extra unit was re-sized or
+     * deleted (or the piece ratio moved) it no longer converts to the stored
+     * base quantity and the line reopens in the base unit. Compare it that
+     * way too, so sending back the untouched reopened line is a no-op — not a
+     * phantom "2 box → 24 piece" version blamed on whoever saved next.
+     *
+     * @return array{0: ?string, 1: string|int|float|null}
+     */
+    public static function storedEntered(?Ingredient $ingredient, string $baseQuantity, ?string $enteredUnit, string|int|float|null $enteredQuantity, RecipeQuantity $quantities): array
+    {
+        if ($ingredient === null || $enteredUnit === null || $enteredUnit === '' || $enteredQuantity === null || $enteredQuantity === '') {
+            return [$enteredUnit, $enteredQuantity];
+        }
+
+        return $quantities->display($ingredient, $baseQuantity, $enteredUnit, $enteredQuantity)['entered']
+            ? [$enteredUnit, $enteredQuantity]
+            : [null, null];
     }
 
     /**
@@ -56,13 +78,14 @@ final class RecipeLineChanges
     {
         $out = [];
         foreach ($lines as $line) {
+            [$enteredUnit, $enteredQuantity] = self::storedEntered($line->ingredient, (string) $line->quantity, $line->entered_unit, $line->entered_quantity, $quantities);
             $out[(int) $line->ingredient_id] = self::line(
                 $line->ingredient,
                 (int) $line->ingredient_id,
                 (string) $line->quantity,
                 $line->ingredient?->unit?->value ?? '',
-                $line->entered_unit,
-                $line->entered_quantity,
+                $enteredUnit,
+                $enteredQuantity,
                 $quantities,
             );
         }

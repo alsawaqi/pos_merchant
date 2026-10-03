@@ -15,6 +15,7 @@ use App\Support\MerchantTenantContext;
 use App\Support\Recipes\ExplodedPrecision;
 use App\Support\Recipes\PrepGraph;
 use App\Support\Recipes\RecipeEditGate;
+use App\Support\Recipes\RecipeLineChanges;
 use App\Support\Recipes\RecipeQuantity;
 use App\Support\StockDecimal;
 use Illuminate\Support\Collection;
@@ -90,16 +91,26 @@ final readonly class SyncAddOnConsumptionAction
             ),
         ])->sortKeys();
 
+        // Fix order 1, L7 — a stored entered form that no longer converts (its
+        // extra unit was re-sized or deleted) reads as the base, like the
+        // modal reopens it: sending that back untouched stays a no-op.
         $currentShape = $addon->consumptionLines()
+            ->with('ingredient.altUnits')
             ->get()
-            ->mapWithKeys(static fn (AddOnConsumption $c): array => [
-                ($c->ingredient_id !== null ? 'i:'.$c->ingredient_id : 'p:'.$c->component_product_id).':'.$c->direction => self::shapeValue(
-                    (string) $c->quantity,
-                    $c->ingredient_id !== null ? $c->unit : null,
-                    $c->entered_unit,
-                    $c->entered_quantity,
-                ),
-            ])->sortKeys();
+            ->mapWithKeys(function (AddOnConsumption $c): array {
+                [$enteredUnit, $enteredQuantity] = $c->ingredient_id !== null
+                    ? RecipeLineChanges::storedEntered($c->ingredient, (string) $c->quantity, $c->entered_unit, $c->entered_quantity, $this->quantities)
+                    : [$c->entered_unit, $c->entered_quantity];
+
+                return [
+                    ($c->ingredient_id !== null ? 'i:'.$c->ingredient_id : 'p:'.$c->component_product_id).':'.$c->direction => self::shapeValue(
+                        (string) $c->quantity,
+                        $c->ingredient_id !== null ? $c->unit : null,
+                        $enteredUnit,
+                        $enteredQuantity,
+                    ),
+                ];
+            })->sortKeys();
 
         // No-op BEFORE the kind guards: an untouched set must never block an
         // unrelated edit (the option modal re-sends the full set on every
