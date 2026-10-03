@@ -25,6 +25,7 @@ use App\Models\BranchProduct;
 use App\Models\Product;
 use App\Models\ProductStock;
 use App\Models\ProductStockMovement;
+use App\Support\BranchScope;
 use App\Support\MerchantTenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -127,7 +128,7 @@ class ProductStockController extends Controller
         $this->refuseIfNotInTenant($product);
         $this->requireUnitProduct($product);
         // P-G5 — the central pool is an HQ resource.
-        \App\Support\BranchScope::ensureUnrestricted($request->user(), 'The central pool is managed by accounts with access to all branches.');
+        BranchScope::ensureUnrestricted($request->user(), 'The central pool is managed by accounts with access to all branches.');
 
         try {
             $this->receive->handle(
@@ -158,7 +159,7 @@ class ProductStockController extends Controller
         $this->refuseIfNotInTenant($product);
         $this->requireUnitProduct($product);
         // P-G5 — receiving + distributing drains the HQ pool.
-        \App\Support\BranchScope::ensureUnrestricted($request->user(), 'The central pool is managed by accounts with access to all branches.');
+        BranchScope::ensureUnrestricted($request->user(), 'The central pool is managed by accounts with access to all branches.');
 
         $lines = [];
         foreach ((array) $request->input('allocations', []) as $row) {
@@ -194,7 +195,7 @@ class ProductStockController extends Controller
         $this->refuseIfNotInTenant($product);
         $this->requireUnitProduct($product);
         // P-G5 — allocation debits the HQ pool.
-        \App\Support\BranchScope::ensureUnrestricted($request->user(), 'The central pool is managed by accounts with access to all branches.');
+        BranchScope::ensureUnrestricted($request->user(), 'The central pool is managed by accounts with access to all branches.');
 
         $lines = [];
         foreach ((array) $request->input('allocations') as $row) {
@@ -227,8 +228,8 @@ class ProductStockController extends Controller
         }
 
         // P-G5 — both sides of a transfer must be within the scope.
-        \App\Support\BranchScope::ensureBranch($request->user(), $from);
-        \App\Support\BranchScope::ensureBranch($request->user(), $to);
+        BranchScope::ensureBranch($request->user(), $from);
+        BranchScope::ensureBranch($request->user(), $to);
 
         try {
             $this->transfer->handle($product, $from, $to, $request->input('quantity'), $request->input('note'), $request->user());
@@ -256,9 +257,9 @@ class ProductStockController extends Controller
         // P-G5 — a branch adjustment needs that branch in scope; a
         // CENTRAL adjustment (no branch) is an HQ act.
         if ($branch !== null) {
-            \App\Support\BranchScope::ensureBranch($request->user(), $branch);
+            BranchScope::ensureBranch($request->user(), $branch);
         } else {
-            \App\Support\BranchScope::ensureUnrestricted($request->user(), 'The central pool is managed by accounts with access to all branches.');
+            BranchScope::ensureUnrestricted($request->user(), 'The central pool is managed by accounts with access to all branches.');
         }
 
         try {
@@ -286,7 +287,7 @@ class ProductStockController extends Controller
             return response()->json(['message' => 'Branch not found.'], 422);
         }
         // P-G5 — waste happens at a specific branch; the actor must hold it.
-        \App\Support\BranchScope::ensureBranch($request->user(), $branch);
+        BranchScope::ensureBranch($request->user(), $branch);
 
         $occurredAt = $request->filled('occurred_at')
             ? Carbon::parse((string) $request->input('occurred_at'))
