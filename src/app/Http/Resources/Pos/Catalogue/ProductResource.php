@@ -44,7 +44,16 @@ class ProductResource extends JsonResource
             'name' => $this->name,
             'name_ar' => $this->name_ar,
             'description' => $this->description,
+            // LAUNCH-P4 L5 — the Arabic description.
+            'description_ar' => $this->description_ar,
             'image_url' => $this->image_url,
+            // LAUNCH-P4 — 'standard' | 'combo' (B2); the channels (B3): in
+            // store, delivery, and the QR menu (show_on_customer_tablet); the
+            // branch rule (H6): 'all' | 'selected'.
+            'product_type' => (string) ($this->product_type ?? 'standard'),
+            'sold_in_store' => (bool) ($this->sold_in_store ?? true),
+            'sold_on_delivery' => (bool) ($this->sold_on_delivery ?? true),
+            'branch_scope' => (string) ($this->branch_scope ?? 'all'),
             'base_price' => (string) $this->base_price,
             // Phase 4.9 — per-product delivery override. NULL
             // means "no markup, use base_price for delivery too".

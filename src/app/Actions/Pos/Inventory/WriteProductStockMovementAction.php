@@ -98,10 +98,17 @@ final readonly class WriteProductStockMovementAction
             } else {
                 // Branch unit count. A null stock_qty (availability-only) is
                 // promoted to 0 so the increment lands on a number.
+                //
+                // LAUNCH-P4 H6 — stock rows never decide where a product is
+                // sold (pos_products.branch_scope does): a new row is
+                // "available" under 'all' (no exception) and NOT available
+                // under 'selected', so receiving stock at a branch neither
+                // hides the product elsewhere nor starts selling it here.
+                $scope = (string) (DB::table('pos_products')->where('id', $product->id)->value('branch_scope') ?? 'all');
                 /** @var BranchProduct $bp */
                 $bp = BranchProduct::query()->firstOrCreate(
                     ['branch_id' => $branch->id, 'product_id' => $product->id],
-                    ['is_available' => true, 'stock_qty' => '0.000'],
+                    ['is_available' => $scope !== 'selected', 'stock_qty' => '0.000'],
                 );
                 if ($bp->stock_qty === null) {
                     $bp->forceFill(['stock_qty' => '0.000'])->save();

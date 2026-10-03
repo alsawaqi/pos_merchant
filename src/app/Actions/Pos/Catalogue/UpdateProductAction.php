@@ -61,6 +61,12 @@ final readonly class UpdateProductAction
         'available_until',
         'display_order',
         'status',
+        // LAUNCH-P4 — Arabic description (L5) and the channels (B3). The
+        // branch rule changes only through SyncProductBranchesAction; the
+        // product type never changes after create.
+        'description_ar',
+        'sold_in_store',
+        'sold_on_delivery',
     ];
 
     /** The stock modes whose products carry a recipe (consumed at sale / at production). */

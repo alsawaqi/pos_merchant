@@ -31,8 +31,13 @@ export interface ProductDeliveryPrice {
     id: number;
     product_id: number;
     delivery_provider_id: number;
-    /** OMR decimal:3 string. Never parseFloat. */
-    price: string;
+    /**
+     * OMR decimal:3 string. Never parseFloat. LAUNCH-P4 B3: null = the
+     * product's delivery price, else its base price.
+     */
+    price: string | null;
+    /** LAUNCH-P4 B3 — false hides the product on this provider. */
+    listed: boolean;
     created_at: string | null;
     updated_at: string | null;
     /** Inlined when the controller eager-loaded the provider. */
@@ -65,8 +70,10 @@ export interface UpdateDeliveryProviderPayload {
 }
 
 export interface SetDeliveryPricePayload {
-    /** OMR string, must be > 0. */
-    price: string;
+    /** OMR string, must be > 0; null = the product's delivery price. */
+    price: string | null;
+    /** LAUNCH-P4 B3 — false hides the product on this provider (default true). */
+    listed?: boolean;
 }
 
 // ---- Provider CRUD ---------------------------------------------
@@ -108,8 +115,8 @@ export function setProductDeliveryPrice(
     productUuid: string,
     providerUuid: string,
     payload: SetDeliveryPricePayload,
-): Promise<{ data: ProductDeliveryPrice }> {
-    return apiPut<{ data: ProductDeliveryPrice }>(
+): Promise<{ data: ProductDeliveryPrice | null }> {
+    return apiPut<{ data: ProductDeliveryPrice | null }>(
         `/api/products/${productUuid}/delivery-prices/${providerUuid}`,
         payload as unknown as JsonValue,
     );

@@ -2,6 +2,13 @@
 
 declare(strict_types=1);
 
+/*
+ * PUT /api/products/{uuid}/branches. LAUNCH-P4 H6 + H7 changed the payload to
+ * { branch_scope: 'all'|'selected', branch_ids } — the branch rule only. The
+ * endpoint no longer writes shelf counts and no longer deletes branch rows
+ * (the older tests here asserted both).
+ */
+
 use App\Models\Branch;
 use App\Models\BranchProduct;
 use App\Models\Product;
@@ -9,55 +16,41 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-it('assigns a product to branches with per-branch availability + stock', function (): void {
+it('sells a product at the selected branches only, without any shelf count', function (): void {
     $ctx = makeMerchantActor();
-    // Units belong to ready/bought-in products only (PD1 stock model).
     $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'unit']);
     $b1 = $ctx['branch'];
-    $b2 = Branch::factory()->for($ctx['company'], 'company')->create();
+    Branch::factory()->for($ctx['company'], 'company')->create();
 
     $res = $this->putJson("/api/products/{$product->uuid}/branches", [
-        'branches' => [
-            ['branch_id' => $b1->id, 'is_available' => true, 'stock_qty' => 20],
-            ['branch_id' => $b2->id, 'is_available' => false, 'stock_qty' => null],
-        ],
+        'branch_scope' => 'selected',
+        'branch_ids' => [$b1->id],
     ])->assertOk();
 
-    expect(BranchProduct::where('product_id', $product->id)->count())->toBe(2);
-
+    expect($product->fresh()->branch_scope)->toBe('selected');
     $row1 = BranchProduct::where(['product_id' => $product->id, 'branch_id' => $b1->id])->first();
-    expect((bool) $row1->is_available)->toBeTrue();
-    expect((float) $row1->stock_qty)->toBe(20.0);
-
-    $row2 = BranchProduct::where(['product_id' => $product->id, 'branch_id' => $b2->id])->first();
-    expect((bool) $row2->is_available)->toBeFalse();
-    expect($row2->stock_qty)->toBeNull();
-
-    expect($res->json('data.branches'))->toHaveCount(2);
+    expect((bool) $row1->is_available)->toBeTrue()
+        ->and($row1->stock_qty)->toBeNull();
+    expect(BranchProduct::where('product_id', $product->id)->count())->toBe(1);
+    expect($res->json('data.branch_scope'))->toBe('selected');
 });
 
-it('replaces the set on re-sync, removing branches no longer present', function (): void {
+it('switches other branches off on re-sync instead of deleting their rows', function (): void {
     $ctx = makeMerchantActor();
     $product = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'unit']);
     $b1 = $ctx['branch'];
     $b2 = Branch::factory()->for($ctx['company'], 'company')->create();
+    BranchProduct::query()->create(['branch_id' => $b1->id, 'product_id' => $product->id, 'is_available' => true, 'stock_qty' => 10]);
 
     $this->putJson("/api/products/{$product->uuid}/branches", [
-        'branches' => [
-            ['branch_id' => $b1->id, 'is_available' => true, 'stock_qty' => 10],
-            ['branch_id' => $b2->id, 'is_available' => true, 'stock_qty' => 5],
-        ],
+        'branch_scope' => 'selected',
+        'branch_ids' => [$b2->id],
     ])->assertOk();
 
-    $this->putJson("/api/products/{$product->uuid}/branches", [
-        'branches' => [
-            ['branch_id' => $b2->id, 'is_available' => true, 'stock_qty' => 99],
-        ],
-    ])->assertOk();
-
-    expect(BranchProduct::where('product_id', $product->id)->count())->toBe(1);
-    expect(BranchProduct::where(['product_id' => $product->id, 'branch_id' => $b1->id])->exists())->toBeFalse();
-    expect((float) BranchProduct::where(['product_id' => $product->id, 'branch_id' => $b2->id])->value('stock_qty'))->toBe(99.0);
+    $row1 = BranchProduct::where(['product_id' => $product->id, 'branch_id' => $b1->id])->first();
+    expect((bool) $row1->is_available)->toBeFalse()
+        ->and((float) $row1->stock_qty)->toBe(10.0);
+    expect((bool) BranchProduct::where(['product_id' => $product->id, 'branch_id' => $b2->id])->value('is_available'))->toBeTrue();
 });
 
 it('rejects a branch that belongs to another company', function (): void {
@@ -66,9 +59,8 @@ it('rejects a branch that belongs to another company', function (): void {
     $foreignBranch = Branch::factory()->create(); // different company
 
     $this->putJson("/api/products/{$product->uuid}/branches", [
-        'branches' => [
-            ['branch_id' => $foreignBranch->id, 'is_available' => true, 'stock_qty' => 1],
-        ],
+        'branch_scope' => 'selected',
+        'branch_ids' => [$foreignBranch->id],
     ])->assertStatus(422);
 
     expect(BranchProduct::where('product_id', $product->id)->count())->toBe(0);
@@ -79,11 +71,12 @@ it('404s when syncing branches on another company product', function (): void {
     $foreignProduct = Product::factory()->create(); // different company
 
     $this->putJson("/api/products/{$foreignProduct->uuid}/branches", [
-        'branches' => [],
+        'branch_scope' => 'all',
+        'branch_ids' => [],
     ])->assertNotFound();
 });
 
-it('ignores stock_qty for recipe-driven types and preserves production-written shelf counts', function (): void {
+it('never writes a shelf count, for any product type', function (): void {
     $ctx = makeMerchantActor();
     $cooked = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'cooked']);
     $b1 = $ctx['branch'];
@@ -95,23 +88,13 @@ it('ignores stock_qty for recipe-driven types and preserves production-written s
         'is_available' => true, 'stock_qty' => 12,
     ]);
 
-    // A portal branch edit round-trips a stale qty for b1 and tries to
-    // hand-set units on the new b2 row — BOTH must be ignored: the
-    // shelf count belongs to production, not manual restocking.
+    // An old-style payload with counts: the counts are ignored.
     $this->putJson("/api/products/{$cooked->uuid}/branches", [
-        'branches' => [
-            ['branch_id' => $b1->id, 'is_available' => true, 'stock_qty' => 3],
-            ['branch_id' => $b2->id, 'is_available' => true, 'stock_qty' => 50],
-        ],
+        'branch_scope' => 'selected',
+        'branch_ids' => [$b1->id, $b2->id],
+        'branches' => [['branch_id' => $b1->id, 'is_available' => true, 'stock_qty' => 3]],
     ])->assertOk();
 
     expect((float) BranchProduct::where(['product_id' => $cooked->id, 'branch_id' => $b1->id])->value('stock_qty'))->toBe(12.0);
     expect(BranchProduct::where(['product_id' => $cooked->id, 'branch_id' => $b2->id])->value('stock_qty'))->toBeNull();
-
-    // Made-to-order: same — assignment is purely WHERE it's offered.
-    $made = Product::factory()->for($ctx['company'], 'company')->create(['stock_mode' => 'ingredient']);
-    $this->putJson("/api/products/{$made->uuid}/branches", [
-        'branches' => [['branch_id' => $b1->id, 'is_available' => true, 'stock_qty' => 7]],
-    ])->assertOk();
-    expect(BranchProduct::where(['product_id' => $made->id, 'branch_id' => $b1->id])->value('stock_qty'))->toBeNull();
 });

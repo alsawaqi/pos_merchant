@@ -12,7 +12,8 @@
  *   - Create / edit / delete buttons only when CatalogueManage
  */
 
-import { Beaker, Building2, Boxes, Clock3, Globe2, Image, Layers, Package, Pencil, Plus, Sparkles, Trash2, Truck } from 'lucide-vue-next';
+import { Beaker, Building2, Boxes, Clock3, Globe2, Image, Layers, Package, Pencil, Plus, QrCode, Sparkles, Store, Trash2, Truck } from 'lucide-vue-next';
+import { channelBadges, type ChannelKey } from '@/lib/channels';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
@@ -447,6 +448,9 @@ async function confirmDeleteCategory(): Promise<void> {
  * single-sided window falls back to the day edge on the open
  * side, matching the device evaluator's defaults.
  */
+/** LAUNCH-P4 B3 — the icon of each channel in the catalogue list. */
+const CHANNEL_ICONS: Record<ChannelKey, typeof Store> = { in_store: Store, qr: QrCode, delivery: Truck };
+
 function availabilityWindowLabel(prod: Product): string | null {
     if (!prod.available_from && !prod.available_until) return null;
     const from = prod.available_from?.slice(0, 5) ?? '00:00';
@@ -1029,6 +1033,8 @@ async function performProviderDelete(): Promise<void> {
                                 <!-- Phase 5b — recipe cost + has-recipe badge columns. -->
                                 <th class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.table_cost_col') }}</th>
                                 <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.table_recipe_col') }}</th>
+                                <!-- LAUNCH-P4 B3 — channel icons. -->
+                                <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('channels.column') }}</th>
                                 <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.table.status') }}</th>
                                 <th class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.table.actions') }}</th>
                             </tr>
@@ -1089,6 +1095,20 @@ async function performProviderDelete(): Promise<void> {
                                         {{ t('catalogue.recipe.missing_badge') }}
                                     </span>
                                     <span v-else class="text-xs text-slate-400">—</span>
+                                </td>
+                                <td class="px-5 py-4">
+                                    <span class="inline-flex items-center gap-1" data-test="channel-icons">
+                                        <span
+                                            v-for="badge in channelBadges(prod)"
+                                            :key="badge.key"
+                                            class="grid size-6 place-items-center rounded-full"
+                                            :class="badge.on ? 'bg-teal-50 text-teal-700' : 'bg-slate-100 text-slate-300'"
+                                            :title="t(`channels.badge.${badge.key}`) + ' — ' + (badge.on ? t('channels.on') : t('channels.off'))"
+                                            :aria-label="t(`channels.badge.${badge.key}`) + ' — ' + (badge.on ? t('channels.on') : t('channels.off'))"
+                                        >
+                                            <component :is="CHANNEL_ICONS[badge.key]" class="size-3.5" />
+                                        </span>
+                                    </span>
                                 </td>
                                 <td class="px-5 py-4">
                                     <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider" :class="statusBadgeClass(prod.status)">

@@ -1203,8 +1203,8 @@
             "tax_rate_hint": "Leave blank to inherit the company default (5%).",
             "tax_inclusive": "Price includes tax",
             "tax_inclusive_hint": "Display label only for now — order totals still add company taxes on top.",
-            "show_on_tablet": "Show on customer tablet menu",
-            "show_on_tablet_hint": "Controls the future customer-facing tablet menu. The staff POS is unaffected.",
+            "show_on_tablet": "Show on QR menu",
+            "show_on_tablet_hint": "Customers see and order it on the QR menu, at the in-store price.",
             "low_stock_threshold": "Low-stock threshold",
             "low_stock_threshold_placeholder": "e.g. 5",
             "low_stock_threshold_hint": "Show a LOW STOCK badge on the POS card when branch units fall to or below this. Leave blank for no badge.",
@@ -3570,5 +3570,35 @@
         "no_vat_row": "Your business is VAT-registered but has no active tax, so no VAT is charged.",
         "add_vat": "Add VAT 5%",
         "product_hint": "VAT is set once for the whole business on the Taxes page, not per product."
+    },
+    "channels": {
+        "title": "Where it is sold",
+        "hint": "Choose the channels. Each channel has its own switch; delivery providers can each have their own price.",
+        "column": "Channels",
+        "in_store": "In store",
+        "in_store_hint": "Sold on the till and the handheld for in-store orders (quick, dine-in, to go, car).",
+        "qr": "QR menu",
+        "qr_hint": "Customers see it on the QR menu and order it at the in-store price.",
+        "delivery": "Delivery",
+        "delivery_hint": "Sold on delivery orders. Delivery-app orders carry no VAT.",
+        "providers": "Delivery providers",
+        "providers_hint": "Untick a provider to hide it there. Leave the price blank to use the delivery price (or the base price).",
+        "not_listed": "Not listed on this provider",
+        "branches": "Branches",
+        "branches_hint": "Sold at every branch, or only at the branches you tick. Applies to every channel at those branches.",
+        "scope_all": "All branches",
+        "scope_selected": "Only selected branches",
+        "pick_a_branch": "Pick at least one branch, or choose all branches.",
+        "no_stock_hint": "Stock is never changed here: use Stock to receive, move or count it. Stock never hides a product.",
+        "on": "on",
+        "off": "off",
+        "badge": {
+            "in_store": "In store",
+            "qr": "QR menu",
+            "delivery": "Delivery"
+        }
+    },
+    "product_form": {
+        "description_ar": "Arabic description"
     }
 }

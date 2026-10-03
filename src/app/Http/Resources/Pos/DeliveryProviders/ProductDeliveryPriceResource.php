@@ -24,7 +24,10 @@ class ProductDeliveryPriceResource extends JsonResource
             'delivery_provider_id' => $this->delivery_provider_id,
             // OMR decimal:3 as a string — frontend treats as
             // opaque (never parseFloat).
-            'price' => (string) $this->price,
+            // LAUNCH-P4 B3 — NULL = the product's delivery price, else its
+            // base price; listed=false hides the product on this provider.
+            'price' => $this->price !== null ? (string) $this->price : null,
+            'listed' => (bool) ($this->listed ?? true),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
             // Provider summary inlined when the controller

@@ -86,7 +86,7 @@ class DeliveryProvidersController extends Controller
         ], 201);
     }
 
-    public function update(UpdateDeliveryProviderRequest $request, DeliveryProvider $provider): DeliveryProviderResource | JsonResponse
+    public function update(UpdateDeliveryProviderRequest $request, DeliveryProvider $provider): DeliveryProviderResource|JsonResponse
     {
         $this->ensure($request, MerchantPermission::CatalogueManage);
         $this->refuseIfProviderNotInTenant($provider);
@@ -144,11 +144,17 @@ class DeliveryProvidersController extends Controller
             $row = $this->setPrice->handle(
                 $product,
                 $provider,
-                (string) $request->validated()['price'],
+                $request->validated()['price'] ?? null,
                 $request->user(),
+                $request->boolean('listed', true),
             );
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        // LAUNCH-P4 B3 — listed at the default price needs no row.
+        if ($row === null) {
+            return response()->json(['data' => null]);
         }
 
         $row->load('deliveryProvider');

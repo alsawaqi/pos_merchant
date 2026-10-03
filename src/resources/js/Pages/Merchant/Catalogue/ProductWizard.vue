@@ -25,7 +25,7 @@
 
 import {
     ArrowLeft, Beaker, Boxes, Building2, Check, Image, Minus, Package,
-    Pencil, Plus, Sparkles, Tag, Trash2, Truck,
+    Pencil, Plus, Sparkles, Tag, Trash2,
 } from 'lucide-vue-next';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { onBeforeRouteLeave, useRoute, useRouter, RouterLink } from 'vue-router';
@@ -65,15 +65,23 @@ import {
     type ComponentOption,
     type ConsumptionLinePayload,
     type CreateProductPayload,
+    type BranchScopePayload,
     type Product,
-    type ProductBranchAssignment,
     type ProductStatus,
     type RecipeLinePayload,
     type WizardOwnedGroupPayload,
     type WizardOwnedOptionPayload,
 } from '@/lib/api/catalogue';
 import AddonConsumptionEditor from '@/Pages/Merchant/Catalogue/AddonConsumptionEditor.vue';
+import ChannelsEditor from '@/Pages/Merchant/Catalogue/ChannelsEditor.vue';
 import RecipeHistoryPanel from '@/Pages/Merchant/Catalogue/RecipeHistoryPanel.vue';
+import {
+    branchScopePayload,
+    providerPayload,
+    providerRowsFrom,
+    selectedBranchIds,
+    type ProviderChannelRow,
+} from '@/lib/channels';
 import { listIngredients, type Ingredient } from '@/lib/api/inventory';
 import {
     completeConsumptionLines,
@@ -90,7 +98,6 @@ import { listBranches, type Branch as BranchLite } from '@/lib/api/branches';
 import {
     listDeliveryProviders,
     listProductDeliveryPrices,
-    removeProductDeliveryPrice,
     setProductDeliveryPrice,
     type DeliveryProvider,
 } from '@/lib/api/deliveryProviders';
@@ -160,6 +167,11 @@ const form = reactive<{
     name: string;
     name_ar: string;
     description: string;
+    /** LAUNCH-P4 L5. */
+    description_ar: string;
+    /** LAUNCH-P4 B3 — channels (the QR menu is show_on_customer_tablet). */
+    sold_in_store: boolean;
+    sold_on_delivery: boolean;
     image_url: string;
     category_id: number | null;
     sku: string;
@@ -182,12 +194,16 @@ const form = reactive<{
     recipe_lines: { ingredient_uuid: string; quantity: string; unit: string }[];
     /** LAUNCH-P3 P3-2 — optional note saved with the recipe change. */
     recipe_note: string;
-    branch_all: boolean;
-    branch_rows: { branch_id: number; selected: boolean; stock_qty: string | number }[];
+    /** LAUNCH-P4 H6 — every branch, or only the selected ones (no shelf counts, H7). */
+    branch_scope: 'all' | 'selected';
+    branch_ids: number[];
 }>({
     name: '',
     name_ar: '',
     description: '',
+    description_ar: '',
+    sold_in_store: true,
+    sold_on_delivery: true,
     image_url: '',
     category_id: null,
     sku: '',
@@ -209,16 +225,17 @@ const form = reactive<{
     addon_group_uuids: [],
     recipe_lines: [],
     recipe_note: '',
-    branch_all: true,
-    branch_rows: [],
+    branch_scope: 'all',
+    branch_ids: [],
 });
 
 // The recipe belongs only to types whose ingredients get consumed.
 const hasRecipeStep = computed(() => form.stock_mode === 'ingredient' || form.stock_mode === 'cooked');
 const isPieceCounted = computed(() => form.stock_mode === 'unit' || form.stock_mode === 'cooked');
 
-// ---- Provider price grid (step 1) ----------------------------------
-const providerPrices = ref<Record<string, string>>({});
+// ---- Delivery providers (step 1, LAUNCH-P4 B3) ----------------------
+// Per provider: listed + an optional own price ('' = the delivery price).
+const providerRows = ref<Record<string, ProviderChannelRow>>({});
 const providerPricesTouched = ref<Record<string, boolean>>({});
 
 function markProviderPriceTouched(providerUuid: string): void {
@@ -677,18 +694,6 @@ function branchName(branchId: number): string {
     return branches.value.find((b) => b.id === branchId)?.name ?? `#${branchId}`;
 }
 
-function buildBranchRows(assignments?: ProductBranchAssignment[]): { branch_id: number; selected: boolean; stock_qty: string | number }[] {
-    const byBranch = new Map<number, ProductBranchAssignment>();
-    for (const a of assignments ?? []) byBranch.set(a.branch_id, a);
-    return branches.value.map((b) => {
-        const a = byBranch.get(b.id);
-        return {
-            branch_id: b.id,
-            selected: a ? a.is_available : false,
-            stock_qty: a && a.stock_qty !== null ? String(a.stock_qty) : '',
-        };
-    });
-}
 
 // ---- Misc helpers ----------------------------------------------------
 function apiMessage(err: unknown, fallback: string): string {
@@ -752,6 +757,10 @@ function validateStepOne(): boolean {
     if (form.base_price === '' || Number(form.base_price) < 0 || !isFinite(Number(form.base_price))) {
         missing.push(t('catalogue.wizard.price_required'));
     }
+    // LAUNCH-P4 H6 — "only selected branches" needs at least one.
+    if (isUnrestricted.value && form.branch_scope === 'selected' && form.branch_ids.length === 0) {
+        missing.push(t('channels.pick_a_branch'));
+    }
     stepOneErrors.value = missing;
     return missing.length === 0;
 }
@@ -789,6 +798,9 @@ function productPayload(): CreateProductPayload {
         name: form.name.trim(),
         name_ar: form.name_ar.trim() || null,
         description: form.description.trim() || null,
+        description_ar: form.description_ar.trim() || null,
+        sold_in_store: form.sold_in_store,
+        sold_on_delivery: form.sold_on_delivery,
         image_url: form.image_url.trim() || null,
         category_id: form.category_id ?? null,
         sku: form.sku.trim() || null,
@@ -826,22 +838,16 @@ function componentsPayload(): ComponentLinePayload[] {
         .map((l) => ({ component_uuid: l.component_uuid, quantity: l.quantity }));
 }
 
-function branchesPayload(): ProductBranchAssignment[] | null {
+/**
+ * LAUNCH-P4 H6 + H7 — the branch rule only: every branch, or only the
+ * selected ones. Never a shelf count (those change only through the stock
+ * actions, with a ledger movement). null = nothing to send (scoped users; a
+ * new product on every branch).
+ */
+function branchesPayload(): BranchScopePayload | null {
     if (!isUnrestricted.value) return null;
-    if (form.branch_all) return isEdit ? [] : null; // create: nothing to clear
-    return form.branch_rows
-        .filter((r) => r.selected)
-        .map((r) => ({
-            branch_id: r.branch_id,
-            is_available: true,
-            // Units belong to ready/bought-in products ONLY — for the
-            // recipe-driven types the server ignores stock_qty anyway
-            // (made-to-order follows ingredient stock; cooked shelf
-            // counts are written by kitchen production).
-            stock_qty: form.stock_mode === 'unit' && String(r.stock_qty ?? '').trim() !== ''
-                ? Number(r.stock_qty)
-                : null,
-        }));
+    if (!isEdit && form.branch_scope === 'all') return null;
+    return branchScopePayload(form.branch_scope, form.branch_ids);
 }
 
 function ownedGroupsPayload(): WizardOwnedGroupPayload[] {
@@ -863,13 +869,9 @@ function ownedGroupsPayload(): WizardOwnedGroupPayload[] {
     }));
 }
 
-function deliveryPricesPayload(): { provider_uuid: string; price: string }[] {
-    const rows: { provider_uuid: string; price: string }[] = [];
-    for (const provider of activeProviders.value) {
-        const value = (providerPrices.value[provider.uuid] ?? '').trim();
-        if (value !== '') rows.push({ provider_uuid: provider.uuid, price: value });
-    }
-    return rows;
+/** LAUNCH-P4 B3 — not-listed providers and providers with their own price. */
+function deliveryPricesPayload(): { provider_uuid: string; listed: boolean; price: string | null }[] {
+    return providerPayload(activeProviders.value, providerRows.value);
 }
 
 // ---- Submit -----------------------------------------------------------
@@ -949,15 +951,13 @@ async function submit(): Promise<void> {
             if (branchSync !== null) {
                 await syncProductBranches(uuid, branchSync);
             }
-            // Per-provider price overrides — touched rows only.
+            // LAUNCH-P4 B3 — per provider (touched rows only): listed + own
+            // price; listed at the default price removes the row server-side.
             for (const provider of activeProviders.value) {
                 if (!providerPricesTouched.value[provider.uuid]) continue;
-                const value = (providerPrices.value[provider.uuid] ?? '').trim();
-                if (value === '') {
-                    await removeProductDeliveryPrice(uuid, provider.uuid);
-                } else {
-                    await setProductDeliveryPrice(uuid, provider.uuid, { price: value });
-                }
+                const row = providerRows.value[provider.uuid] ?? { listed: true, price: '' };
+                const value = String(row.price ?? '').trim();
+                await setProductDeliveryPrice(uuid, provider.uuid, { listed: row.listed, price: value === '' ? null : value });
             }
         }
 
@@ -969,10 +969,10 @@ async function submit(): Promise<void> {
             submitError.value = t('catalogue.validation_summary');
             // Land the user on the step that owns the first error.
             const keys = Object.keys(err.payload.errors);
+            // LAUNCH-P4 — branches and delivery providers live on step 1 now.
             const stepTwoKey = (k: string): boolean =>
                 k.startsWith('recipe_lines') || k.startsWith('component_lines')
-                || k.startsWith('owned_groups') || k.startsWith('addon_group_uuids')
-                || k.startsWith('branches');
+                || k.startsWith('owned_groups') || k.startsWith('addon_group_uuids');
             step.value = keys.some((k) => !stepTwoKey(k)) ? 1 : 2;
         } else {
             submitError.value = apiMessage(err, t('catalogue.wizard.save_failed'));
@@ -1003,6 +1003,9 @@ function prefillFromProduct(product: Product): void {
     form.name = product.name;
     form.name_ar = product.name_ar ?? '';
     form.description = product.description ?? '';
+    form.description_ar = product.description_ar ?? '';
+    form.sold_in_store = product.sold_in_store ?? true;
+    form.sold_on_delivery = product.sold_on_delivery ?? true;
     form.image_url = product.image_url ?? '';
     form.category_id = product.category_id;
     form.sku = product.sku ?? '';
@@ -1040,8 +1043,8 @@ function prefillFromProduct(product: Product): void {
         ...lineEntry(line, line.ingredient?.unit),
     }));
     form.recipe_note = '';
-    form.branch_all = (product.branches ?? []).length === 0;
-    form.branch_rows = buildBranchRows(product.branches);
+    form.branch_scope = product.branch_scope ?? 'all';
+    form.branch_ids = selectedBranchIds(product.branches);
 }
 
 onMounted(async () => {
@@ -1056,13 +1059,10 @@ onMounted(async () => {
                 listProductDeliveryPrices(editUuid!).catch(() => ({ data: [] })),
             ]);
             prefillFromProduct(productRes.data);
-            for (const row of pricesRes.data) {
-                const providerUuid = row.delivery_provider?.uuid;
-                if (providerUuid) providerPrices.value[providerUuid] = row.price;
-            }
+            providerRows.value = providerRowsFrom(activeProviders.value, pricesRes.data);
             await loadOwnedAddonGroups().catch(() => { ownedAddonGroups.value = []; });
         } else {
-            form.branch_rows = buildBranchRows();
+            providerRows.value = providerRowsFrom(activeProviders.value, []);
             // New products sort to the end of the full catalogue.
             try {
                 const meta = await listProducts({ per_page: 1 });
@@ -1091,7 +1091,7 @@ const leavingAfterSave = ref(false);
 const dirtyBaseline = ref('');
 
 function dirtySnapshot(): string {
-    return JSON.stringify({ form, drafts: ownedDrafts.value, prices: providerPrices.value });
+    return JSON.stringify({ form, drafts: ownedDrafts.value, providers: providerRows.value });
 }
 
 function isDirty(): boolean {
@@ -1117,10 +1117,11 @@ onBeforeUnmount(() => {
 const reviewRecipeLines = computed(() => form.recipe_lines.filter((l) => l.ingredient_uuid !== ''));
 const reviewComponents = computed(() => form.component_rows.filter((l) => l.component_uuid && l.quantity !== ''));
 const reviewSharedGroups = computed(() => addOnGroups.value.filter((g) => form.addon_group_uuids.includes(g.uuid)));
+// LAUNCH-P4 B3 — providers that differ from "listed at the delivery price".
 const reviewProviderPrices = computed(() => activeProviders.value
-    .map((p) => ({ provider: p, price: (providerPrices.value[p.uuid] ?? '').trim() }))
-    .filter((row) => row.price !== ''));
-const reviewSelectedBranches = computed(() => form.branch_rows.filter((r) => r.selected));
+    .map((p) => ({ provider: p, listed: providerRows.value[p.uuid]?.listed !== false, price: String(providerRows.value[p.uuid]?.price ?? '').trim() }))
+    .filter((row) => !row.listed || row.price !== ''));
+const reviewSelectedBranches = computed(() => form.branch_ids.map((id) => ({ branch_id: id })));
 const droppedRecipeLines = computed(() => !hasRecipeStep.value && form.recipe_lines.some((l) => l.ingredient_uuid));
 
 // PD3a — the picker now offers used-with-food physical items only, but
@@ -1289,10 +1290,18 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                 </select>
                                 <p v-if="fieldError('category_id')" class="mt-1 text-xs text-rose-600">{{ fieldError('category_id') }}</p>
                             </label>
-                            <label class="block">
-                                <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.description') }}</span>
-                                <textarea v-model="form.description" rows="2" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100" />
-                            </label>
+                            <div class="grid gap-3 sm:grid-cols-2">
+                                <label class="block">
+                                    <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.description') }}</span>
+                                    <textarea v-model="form.description" rows="2" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100" />
+                                </label>
+                                <!-- LAUNCH-P4 L5 — the Arabic description. -->
+                                <label class="block">
+                                    <span class="text-sm font-medium text-slate-700">{{ t('product_form.description_ar') }}</span>
+                                    <textarea v-model="form.description_ar" rows="2" dir="rtl" maxlength="1000" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100" data-test="description-ar" />
+                                    <span v-if="fieldError('description_ar')" class="mt-1 block text-xs text-rose-600">{{ fieldError('description_ar') }}</span>
+                                </label>
+                            </div>
                             <label class="block">
                                 <span class="text-sm font-medium text-slate-700">
                                     <Image class="me-1 inline size-3" />
@@ -1344,41 +1353,29 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                 </label>
                             </div>
                             <p class="text-xs text-slate-500" data-test="vat-hint">{{ t('tax_settings.product_hint') }}</p>
-                            <label class="block max-w-xs">
-                                <span class="text-sm font-medium text-slate-700">
-                                    <Truck class="me-1 inline size-3" />
-                                    {{ t('catalogue.fields.delivery_price') }} (OMR)
-                                </span>
-                                <input v-model="form.delivery_price" type="number" step="0.001" min="0" :placeholder="form.base_price || '—'" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                                <p class="mt-1 text-xs text-slate-500">{{ t('catalogue.fields.delivery_price_hint') }}</p>
-                            </label>
-
-                            <!-- Per-provider price overrides -->
-                            <div v-if="activeProviders.length > 0" class="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-                                <p class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
-                                    <Truck class="size-4 text-teal-700" />
-                                    {{ t('delivery_providers.product_grid.title') }}
-                                </p>
-                                <p class="mt-1 text-xs text-slate-500">{{ t('delivery_providers.product_grid.hint') }}</p>
-                                <p v-if="fieldError('delivery_prices')" class="mt-2 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">{{ fieldError('delivery_prices') }}</p>
-                                <div class="mt-2 grid gap-2 sm:grid-cols-2">
-                                    <div v-for="provider in activeProviders" :key="provider.id" class="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
-                                        <span class="inline-flex min-w-[7rem] items-center gap-2 text-sm font-medium text-slate-700">
-                                            <span v-if="provider.color" class="inline-block size-3 rounded-full border border-slate-200" :style="{ backgroundColor: provider.color }"></span>
-                                            {{ provider.name }}
-                                        </span>
-                                        <input
-                                            :value="providerPrices[provider.uuid] ?? ''"
-                                            type="text"
-                                            inputmode="decimal"
-                                            :placeholder="form.delivery_price || form.base_price || '0.000'"
-                                            class="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-mono text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
-                                            @input="(e) => { providerPrices[provider.uuid] = (e.target as HTMLInputElement).value; markProviderPriceTouched(provider.uuid); }"
-                                        >
-                                    </div>
-                                </div>
-                            </div>
                         </section>
+
+                        <!-- LAUNCH-P4 B3 — where it is sold: in store, QR menu,
+                             delivery (+ providers) and the branch rule (H6).
+                             The delivery prices moved here from Pricing. -->
+                        <ChannelsEditor
+                            v-model:sold-in-store="form.sold_in_store"
+                            v-model:show-on-qr="form.show_on_customer_tablet"
+                            v-model:sold-on-delivery="form.sold_on_delivery"
+                            v-model:delivery-price="form.delivery_price"
+                            v-model:provider-rows="providerRows"
+                            v-model:branch-scope="form.branch_scope"
+                            v-model:branch-ids="form.branch_ids"
+                            :providers="activeProviders"
+                            :branches="branches"
+                            :base-price="form.base_price"
+                            :can-edit-branches="isUnrestricted"
+                            :disabled="readOnly"
+                            :delivery-price-error="fieldError('delivery_price')"
+                            :providers-error="fieldError('delivery_prices')"
+                            :branches-error="fieldError('branches') ?? fieldError('branch_ids')"
+                            @provider-touched="markProviderPriceTouched"
+                        />
 
                         <!-- Type-specific stock settings -->
                         <section v-if="isPieceCounted || form.stock_mode === 'cooked'" class="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -1398,16 +1395,9 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                  on the Inventory page, never as products. -->
                         </section>
 
-                        <!-- Visibility + available hours -->
+                        <!-- Available hours (the QR switch moved to Channels). -->
                         <section class="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                             <h2 class="text-sm font-semibold text-slate-900">{{ t('catalogue.wizard.visibility_title') }}</h2>
-                            <div>
-                                <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
-                                    <input v-model="form.show_on_customer_tablet" type="checkbox" class="rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200">
-                                    {{ t('catalogue.fields.show_on_tablet') }}
-                                </label>
-                                <p class="mt-1 text-xs text-slate-500">{{ t('catalogue.fields.show_on_tablet_hint') }}</p>
-                            </div>
                             <div>
                                 <p class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.available_hours') }}</p>
                                 <div class="mt-1 grid max-w-md grid-cols-2 gap-3">
@@ -1829,40 +1819,8 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                             </fieldset>
                         </section>
 
-                        <!-- Branch availability (HQ users only — F5) -->
-                        <section v-if="isUnrestricted" class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                            <h2 class="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
-                                <Building2 class="size-4 text-teal-600" />
-                                {{ t('catalogue.branches.section_title') }}
-                            </h2>
-                            <p class="mt-0.5 text-xs text-slate-500">{{ t('catalogue.branches.section_hint') }}</p>
-                            <p v-if="form.stock_mode !== 'unit'" class="mt-1.5 rounded border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
-                                {{ form.stock_mode === 'cooked' ? t('catalogue.wizard.branches_cooked_hint') : t('catalogue.wizard.branches_recipe_hint') }}
-                            </p>
-
-                            <fieldset :disabled="readOnly" class="min-w-0">
-                            <label class="mt-3 flex items-center gap-2 text-xs font-medium text-slate-700">
-                                <input v-model="form.branch_all" type="checkbox" class="rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200">
-                                {{ t('catalogue.branches.all_branches') }}
-                            </label>
-
-                            <div v-if="form.branch_all" class="mt-2 rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
-                                {{ t('catalogue.branches.all_branches_hint') }}
-                            </div>
-                            <div v-else-if="form.branch_rows.length === 0" class="mt-2 rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
-                                {{ t('catalogue.branches.no_branches') }}
-                            </div>
-                            <ul v-else class="mt-2 space-y-1.5">
-                                <li v-for="(row, idx) in form.branch_rows" :key="row.branch_id" class="flex items-center gap-2 rounded border border-slate-200 px-2.5 py-1.5 text-xs">
-                                    <label class="flex flex-1 items-center gap-2 font-medium text-slate-700">
-                                        <input v-model="form.branch_rows[idx]!.selected" type="checkbox" class="rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200">
-                                        <span class="truncate">{{ branchName(row.branch_id) }}</span>
-                                    </label>
-                                    <input v-if="form.stock_mode === 'unit'" v-model="form.branch_rows[idx]!.stock_qty" type="number" min="0" step="1" :disabled="!row.selected" :placeholder="t('catalogue.branches.stock_placeholder')" class="w-24 rounded border border-slate-200 px-2 py-1 text-xs tabular-nums disabled:cursor-not-allowed disabled:bg-slate-50">
-                                </li>
-                            </ul>
-                            </fieldset>
-                        </section>
+                        <!-- LAUNCH-P4 H6/H7 — the branch rule moved to step 1
+                             (Channels); shelf counts are never edited here. -->
                     </template>
 
                     <!-- ============ STEP 3 — REVIEW ============ -->
@@ -1888,11 +1846,19 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                 <div v-if="form.stock_mode === 'cooked'"><dt class="text-xs text-slate-500">{{ t('catalogue.wizard.shelf_life') }}</dt><dd class="tabular-nums text-slate-900">{{ form.shelf_life_days || t('catalogue.wizard.keeps') }}</dd></div>
                                 <div v-if="isEdit"><dt class="text-xs text-slate-500">{{ t('catalogue.fields.status') }}</dt><dd class="font-semibold text-slate-900">{{ t(`catalogue.statuses.${form.status}`) }}</dd></div>
                             </dl>
-                            <div v-if="reviewProviderPrices.length > 0" class="mt-3 border-t border-slate-100 pt-3">
-                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('delivery_providers.product_grid.title') }}</p>
-                                <ul class="mt-1.5 flex flex-wrap gap-2">
+                            <!-- LAUNCH-P4 B3 — the channels. -->
+                            <div class="mt-3 border-t border-slate-100 pt-3" data-test="review-channels">
+                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('channels.title') }}</p>
+                                <ul class="mt-1.5 flex flex-wrap gap-2 text-xs font-medium">
+                                    <li class="rounded-lg px-2.5 py-1" :class="form.sold_in_store ? 'bg-teal-50 text-teal-800' : 'bg-slate-100 text-slate-400 line-through'">{{ t('channels.in_store') }}</li>
+                                    <li class="rounded-lg px-2.5 py-1" :class="form.show_on_customer_tablet ? 'bg-teal-50 text-teal-800' : 'bg-slate-100 text-slate-400 line-through'">{{ t('channels.qr') }}</li>
+                                    <li class="rounded-lg px-2.5 py-1" :class="form.sold_on_delivery ? 'bg-teal-50 text-teal-800' : 'bg-slate-100 text-slate-400 line-through'">{{ t('channels.delivery') }}</li>
+                                </ul>
+                                <ul v-if="form.sold_on_delivery && reviewProviderPrices.length > 0" class="mt-1.5 flex flex-wrap gap-2">
                                     <li v-for="row in reviewProviderPrices" :key="row.provider.uuid" class="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-                                        {{ row.provider.name }}: <span class="font-semibold tabular-nums">{{ row.price }}</span> OMR
+                                        {{ row.provider.name }}:
+                                        <span v-if="!row.listed" class="italic text-slate-500">{{ t('channels.not_listed') }}</span>
+                                        <span v-else class="font-semibold tabular-nums">{{ row.price }} OMR</span>
                                     </li>
                                 </ul>
                             </div>
@@ -1972,13 +1938,13 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                     <Building2 class="size-4 text-teal-600" />
                                     {{ t('catalogue.branches.section_title') }}
                                 </h3>
-                                <p v-if="form.branch_all" class="mt-1 text-xs text-slate-600">{{ t('catalogue.branches.all_branches') }}</p>
+                                <p v-if="form.branch_scope === 'all'" class="mt-1 text-xs text-slate-600">{{ t('channels.scope_all') }}</p>
                                 <p v-else-if="reviewSelectedBranches.length === 0" class="mt-1 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
                                     {{ t('catalogue.wizard.branches_none_selected') }}
                                 </p>
                                 <ul v-else class="mt-1.5 flex flex-wrap gap-2">
                                     <li v-for="row in reviewSelectedBranches" :key="row.branch_id" class="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-                                        {{ branchName(row.branch_id) }}<span v-if="form.stock_mode === 'unit' && String(row.stock_qty).trim() !== ''" class="ms-1 tabular-nums text-slate-500">({{ row.stock_qty }})</span>
+                                        {{ branchName(row.branch_id) }}
                                     </li>
                                 </ul>
                             </template>

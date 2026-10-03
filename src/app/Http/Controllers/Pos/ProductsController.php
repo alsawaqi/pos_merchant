@@ -502,23 +502,24 @@ class ProductsController extends Controller
     /**
      * PUT /api/products/{product:uuid}/branches
      *
-     * Replace the product's per-branch availability + unit stock (which
-     * branches sell it + how many units each holds). Empty set = available
-     * at every branch (the device-config default).
+     * LAUNCH-P4 H6 + H7 — which branches sell the product: { branch_scope:
+     * 'all' | 'selected', branch_ids }. Never touches shelf counts and never
+     * deletes a branch row ({@see SyncProductBranchesAction}).
      */
     public function syncBranches(SyncProductBranchesRequest $request, Product $product): ProductResource|JsonResponse
     {
         $this->ensure($request, MerchantPermission::CatalogueManage);
         $this->refuseIfNotInTenant($product);
-        // P-G5 — this is a FULL-REPLACE of the per-branch set: a scoped
-        // user submitting it would silently delete other branches' rows,
-        // so branch assignment stays an all-branches (HQ) operation.
+        // P-G5 — the branch rule covers every branch of the company, so it
+        // stays an all-branches (HQ) operation. Branch-limited users switch
+        // their own branches with "Sold out" instead (B4).
         BranchScope::ensureUnrestricted($request->user(), 'Branch availability is managed by accounts with access to all branches.');
 
         try {
             $this->syncBranches->handle(
                 $product,
-                $request->validated()['branches'] ?? [],
+                (string) $request->validated()['branch_scope'],
+                $request->validated()['branch_ids'] ?? [],
                 $request->user(),
             );
         } catch (RuntimeException $e) {

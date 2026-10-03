@@ -93,6 +93,14 @@ final readonly class CreateProductAction
                 'available_until' => $attributes['available_until'] ?? null,
                 'display_order' => $attributes['display_order'] ?? 0,
                 'status' => ProductStatus::Active->value,
+                // LAUNCH-P4 — Arabic description (L5), channels (B3), the
+                // branch rule (H6: 'all' until a branch list is chosen) and
+                // the type ('combo' only through the combo editor, B2).
+                'description_ar' => $attributes['description_ar'] ?? null,
+                'sold_in_store' => (bool) ($attributes['sold_in_store'] ?? true),
+                'sold_on_delivery' => (bool) ($attributes['sold_on_delivery'] ?? true),
+                'branch_scope' => $attributes['branch_scope'] ?? Product::SCOPE_ALL,
+                'product_type' => $attributes['product_type'] ?? Product::TYPE_STANDARD,
             ]);
 
             $this->writeAuditLog->handle(new AuditLogData(

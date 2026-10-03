@@ -8,8 +8,10 @@ use App\Enums\AddOnSelectionMode;
 use App\Models\AddOnGroup;
 use App\Models\Product;
 use App\Models\ProductCategory;
+use App\Support\BranchScope;
 use App\Support\MerchantTenantContext;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 /**
@@ -25,6 +27,22 @@ use Illuminate\Validation\Validator;
  */
 class CreateProductWizardRequest extends FormRequest
 {
+    /**
+     * LAUNCH-P4 H6 — a branch payload is HQ-only (P-G5); refused before
+     * validation so a branch-restricted user always gets the 403.
+     */
+    public function authorize(): bool
+    {
+        if ($this->input('branches') !== null) {
+            BranchScope::ensureUnrestricted(
+                $this->user(),
+                'Branch availability is managed by accounts with access to all branches.',
+            );
+        }
+
+        return true;
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -79,19 +97,22 @@ class CreateProductWizardRequest extends FormRequest
             'component_lines.*.component_uuid' => ['required', 'string', 'uuid'],
             'component_lines.*.quantity' => ['required', 'numeric', 'gt:0', 'max:999.999'],
 
-            // Branch availability. NULL (or omitted) = skip the sync
-            // entirely — available everywhere, and the only legal value
-            // for branch-restricted users (the controller 403s a non-null
-            // payload from them, mirroring the standalone PUT).
+            // Branches (LAUNCH-P4 H6). NULL (or omitted) = skip the sync —
+            // every branch, and the only legal value for branch-restricted
+            // users (the controller 403s a non-null payload from them,
+            // mirroring the standalone PUT). Otherwise { branch_scope:
+            // 'all'|'selected', branch_ids }. No shelf counts (H7).
             'branches' => ['nullable', 'array'],
-            'branches.*.branch_id' => ['required', 'integer'],
-            'branches.*.is_available' => ['required', 'boolean'],
-            'branches.*.stock_qty' => ['nullable', 'numeric', 'min:0'],
+            'branches.branch_scope' => ['required_with:branches', 'string', Rule::in([Product::SCOPE_ALL, Product::SCOPE_SELECTED])],
+            'branches.branch_ids' => ['nullable', 'array', 'max:500'],
+            'branches.branch_ids.*' => ['integer', 'min:1'],
 
-            // Delivery-provider price overrides.
+            // Delivery providers (LAUNCH-P4 B3): listed=false hides the
+            // product on that provider; a blank price = the delivery price.
             'delivery_prices' => ['present', 'array', 'max:50'],
             'delivery_prices.*.provider_uuid' => ['required', 'string', 'uuid'],
-            'delivery_prices.*.price' => ['required', 'numeric', 'gt:0', 'max:999999.999'],
+            'delivery_prices.*.listed' => ['nullable', 'boolean'],
+            'delivery_prices.*.price' => ['nullable', 'numeric', 'gt:0', 'max:999999.999'],
         ];
     }
 
@@ -106,6 +127,11 @@ class CreateProductWizardRequest extends FormRequest
             $this->checkProductBasics($v, $companyId);
             $this->checkRecipeStockMode($v);
             $this->checkOwnedGroups($v, $companyId);
+
+            // LAUNCH-P4 H6 — "only selected branches" needs at least one.
+            if ($this->input('branches.branch_scope') === Product::SCOPE_SELECTED && empty($this->input('branches.branch_ids'))) {
+                $v->errors()->add('branches.branch_ids', 'Pick at least one branch, or choose all branches.');
+            }
         });
     }
 

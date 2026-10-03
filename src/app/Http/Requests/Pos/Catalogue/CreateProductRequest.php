@@ -29,6 +29,8 @@ class CreateProductRequest extends FormRequest
             'name' => ['required', 'string', 'max:191'],
             'name_ar' => ['nullable', 'string', 'max:191'],
             'description' => ['nullable', 'string', 'max:1000'],
+            // LAUNCH-P4 L5 — the Arabic description.
+            'description_ar' => ['nullable', 'string', 'max:1000'],
             'image_url' => ['nullable', 'url', 'max:500'],
             'category_id' => ['nullable', 'integer', 'min:1'],
             'sku' => ['nullable', 'string', 'max:64'],
@@ -58,6 +60,10 @@ class CreateProductRequest extends FormRequest
             // Phase D2 — §5.5.3 "Show on Customer Tablet menu yes/no". The
             // future tablet menu consumes it; the staff POS ignores it.
             'show_on_customer_tablet' => ['nullable', 'boolean'],
+            // LAUNCH-P4 B3 — channels: in store (till + handheld order
+            // types) and delivery. The QR menu is show_on_customer_tablet.
+            'sold_in_store' => ['nullable', 'boolean'],
+            'sold_on_delivery' => ['nullable', 'boolean'],
             // PD3a — is_internal is NOT accepted here any more: physical
             // items are created on the Inventory page (PhysicalItemsController
             // forces the flag); a catalogue product is always sellable.

@@ -12,30 +12,33 @@ use App\Models\Product;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 use RuntimeException;
 
 /**
- * Replace a product's per-branch availability + unit stock (idempotent).
+ * Set which branches sell a product (LAUNCH-P4 H6 + H7).
  *
- * The caller passes the COMPLETE desired set of branch rows; we upsert each
- * and delete any branch no longer present. An EMPTY set leaves the product
- * with no rows = "available at every branch" (the backward-compatible
- * default the device config relies on).
+ * The branch rule lives on the product (pos_products.branch_scope):
+ *   'all'      — every branch sells it, except a branch whose
+ *                pos_branch_product row has is_available = false;
+ *   'selected' — only branches whose row has is_available = true.
+ * Stock rows never restrict: a shelf count at one branch no longer hides the
+ * product at the others.
  *
- * Cross-tenant defence: every branch_id must belong to the actor's company,
- * else the whole sync aborts (RuntimeException -> 422). stock_qty NULL = not
- * unit-tracked at that branch.
+ * This action:
+ *   - 'all'      → stores the rule and switches every existing row back to
+ *                  available (the editor offers no per-branch exceptions);
+ *   - 'selected' → stores the rule, marks the chosen branches available
+ *                  (creating a row with NO shelf count where none exists)
+ *                  and every other existing row unavailable.
+ * It NEVER writes stock_qty and NEVER deletes a row: shelf counts change only
+ * through the stock actions, which write ledger movements (H7 — the old form
+ * re-sent the counts it loaded and overwrote live ones, and refused a save
+ * below zero).
  *
- * PD1 stock-model rule: per-branch UNITS belong to ready/bought-in
- * ('unit') products ONLY. For every other type the payload's stock_qty
- * is IGNORED — made-to-order availability derives from branch
- * ingredient stock, and a cooked product's shelf count is written by
- * kitchen production (pos_api), so overwriting it here with the form's
- * stale round-tripped number would corrupt the shelf. Existing rows
- * keep their stock_qty; new rows start NULL (cooked = sold out until
- * produced, by design).
- *
- * Audit event: catalogue.product.branches_synced.
+ * Cross-tenant defence: every branch id must belong to the actor's company.
+ * Audit event: catalogue.product.branches_synced (only when something
+ * changed).
  */
 final readonly class SyncProductBranchesAction
 {
@@ -45,21 +48,23 @@ final readonly class SyncProductBranchesAction
     ) {}
 
     /**
-     * @param  array<int, array{branch_id: int|string, is_available: bool, stock_qty?: float|int|string|null}>  $branches
+     * @param  list<int|string>  $branchIds  the chosen branches ('selected'); ignored for 'all'
      * @return array<int, BranchProduct>
      */
-    public function handle(Product $product, array $branches, User $actor): array
+    public function handle(Product $product, string $scope, array $branchIds, User $actor): array
     {
         $companyId = $this->tenant->requiredId();
         if ((int) $product->company_id !== $companyId) {
             abort(404);
         }
+        if (! in_array($scope, [Product::SCOPE_ALL, Product::SCOPE_SELECTED], true)) {
+            throw new InvalidArgumentException('Unknown branch scope.');
+        }
 
-        $branchIds = array_values(array_unique(array_map(
-            static fn (array $b): int => (int) $b['branch_id'],
-            $branches,
-        )));
-
+        $branchIds = array_values(array_unique(array_map('intval', $branchIds)));
+        if ($scope === Product::SCOPE_ALL) {
+            $branchIds = [];
+        }
         if ($branchIds !== []) {
             $owned = Branch::query()->where('company_id', $companyId)->whereIn('id', $branchIds)->pluck('id')->all();
             if (count($owned) !== count($branchIds)) {
@@ -67,44 +72,43 @@ final readonly class SyncProductBranchesAction
             }
         }
 
-        $isUnitMode = $product->stock_mode === 'unit';
+        return DB::transaction(function () use ($product, $scope, $branchIds, $actor, $companyId): array {
+            $before = $this->snapshot($product);
 
-        return DB::transaction(function () use ($product, $branches, $branchIds, $actor, $companyId, $isUnitMode): array {
-            $before = $this->snapshot($product->id);
-
-            foreach ($branches as $b) {
-                $attributes = ['is_available' => (bool) $b['is_available']];
-
-                if ($isUnitMode) {
-                    $attributes['stock_qty'] = array_key_exists('stock_qty', $b) && $b['stock_qty'] !== null && $b['stock_qty'] !== ''
-                        ? (float) $b['stock_qty']
-                        : null;
-                }
-
-                $row = BranchProduct::query()
-                    ->where('branch_id', (int) $b['branch_id'])
-                    ->where('product_id', $product->id)
-                    ->first();
-
-                if ($row !== null) {
-                    // Non-unit: stock_qty absent from $attributes → the
-                    // production-written shelf count survives the sync.
-                    $row->update($attributes);
-                } else {
-                    BranchProduct::query()->create($attributes + [
-                        'branch_id' => (int) $b['branch_id'],
-                        'product_id' => $product->id,
-                        'stock_qty' => $attributes['stock_qty'] ?? null,
-                    ]);
-                }
+            if ($product->branch_scope !== $scope) {
+                $product->forceFill(['branch_scope' => $scope])->save();
             }
 
-            BranchProduct::query()
-                ->where('product_id', $product->id)
-                ->when($branchIds !== [], fn ($q) => $q->whereNotIn('branch_id', $branchIds))
-                ->delete();
+            if ($scope === Product::SCOPE_ALL) {
+                BranchProduct::query()
+                    ->where('product_id', $product->id)
+                    ->where('is_available', false)
+                    ->update(['is_available' => true, 'updated_at' => now()]);
+            } else {
+                foreach ($branchIds as $branchId) {
+                    $row = BranchProduct::query()
+                        ->where('branch_id', $branchId)
+                        ->where('product_id', $product->id)
+                        ->first();
+                    if ($row === null) {
+                        BranchProduct::query()->create([
+                            'branch_id' => $branchId,
+                            'product_id' => $product->id,
+                            'is_available' => true,
+                            'stock_qty' => null,
+                        ]);
+                    } elseif (! $row->is_available) {
+                        $row->forceFill(['is_available' => true])->save();
+                    }
+                }
+                BranchProduct::query()
+                    ->where('product_id', $product->id)
+                    ->when($branchIds !== [], fn ($q) => $q->whereNotIn('branch_id', $branchIds))
+                    ->where('is_available', true)
+                    ->update(['is_available' => false, 'updated_at' => now()]);
+            }
 
-            $after = $this->snapshot($product->id);
+            $after = $this->snapshot($product->fresh());
 
             if ($before !== $after) {
                 $this->writeAuditLog->handle(new AuditLogData(
@@ -113,8 +117,8 @@ final readonly class SyncProductBranchesAction
                     companyId: $companyId,
                     auditableType: Product::class,
                     auditableId: $product->id,
-                    oldValues: ['branches' => $before],
-                    newValues: ['branches' => $after],
+                    oldValues: $before,
+                    newValues: $after,
                 ));
             }
 
@@ -123,19 +127,16 @@ final readonly class SyncProductBranchesAction
     }
 
     /**
-     * @return array<int, array{branch_id: int, is_available: bool, stock_qty: float|null}>
+     * @return array{branch_scope: string, available_branch_ids: list<int>, unavailable_branch_ids: list<int>}
      */
-    private function snapshot(int $productId): array
+    private function snapshot(Product $product): array
     {
-        return BranchProduct::query()
-            ->where('product_id', $productId)
-            ->orderBy('branch_id')
-            ->get()
-            ->map(static fn (BranchProduct $bp): array => [
-                'branch_id' => (int) $bp->branch_id,
-                'is_available' => (bool) $bp->is_available,
-                'stock_qty' => $bp->stock_qty !== null ? (float) $bp->stock_qty : null,
-            ])
-            ->all();
+        $rows = BranchProduct::query()->where('product_id', $product->id)->orderBy('branch_id')->get();
+
+        return [
+            'branch_scope' => (string) ($product->branch_scope ?? Product::SCOPE_ALL),
+            'available_branch_ids' => $rows->where('is_available', true)->pluck('branch_id')->map(fn ($id): int => (int) $id)->values()->all(),
+            'unavailable_branch_ids' => $rows->where('is_available', false)->pluck('branch_id')->map(fn ($id): int => (int) $id)->values()->all(),
+        ];
     }
 }

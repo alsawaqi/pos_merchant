@@ -23,6 +23,8 @@ class UpdateProductRequest extends FormRequest
             'name' => ['sometimes', 'string', 'max:191'],
             'name_ar' => ['sometimes', 'nullable', 'string', 'max:191'],
             'description' => ['sometimes', 'nullable', 'string', 'max:1000'],
+            // LAUNCH-P4 L5 — the Arabic description.
+            'description_ar' => ['sometimes', 'nullable', 'string', 'max:1000'],
             'image_url' => ['sometimes', 'nullable', 'url', 'max:500'],
             'category_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'sku' => ['sometimes', 'nullable', 'string', 'max:64'],
@@ -43,6 +45,9 @@ class UpdateProductRequest extends FormRequest
             'tax_inclusive' => ['sometimes', 'boolean'],
             // Phase D2 — §5.5.3 "Show on Customer Tablet menu yes/no".
             'show_on_customer_tablet' => ['sometimes', 'boolean'],
+            // LAUNCH-P4 B3 — channels: in store and delivery.
+            'sold_in_store' => ['sometimes', 'boolean'],
+            'sold_on_delivery' => ['sometimes', 'boolean'],
             // PD3a — is_internal is no longer editable here: physical
             // items are managed on the Inventory page, and a catalogue
             // product can't be flipped internal by accident.

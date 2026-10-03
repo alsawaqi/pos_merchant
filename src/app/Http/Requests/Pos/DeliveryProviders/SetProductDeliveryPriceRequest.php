@@ -9,8 +9,9 @@ use Illuminate\Foundation\Http\FormRequest;
 /**
  * Validates PUT /api/products/{uuid}/delivery-prices/{providerUuid}.
  *
- * price must be > 0 (zero is rejected by the Action; here we
- * also catch it at the form layer for a cleaner error).
+ * LAUNCH-P4 B3 — { listed?: bool (default true), price?: decimal > 0 | null }.
+ * listed=false hides the product on that provider; a NULL price means the
+ * product's delivery price, else its base price. 0 is never a price.
  */
 class SetProductDeliveryPriceRequest extends FormRequest
 {
@@ -20,7 +21,8 @@ class SetProductDeliveryPriceRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'price' => ['required', 'numeric', 'gt:0', 'max:999999.999'],
+            'price' => ['nullable', 'numeric', 'gt:0', 'max:999999.999'],
+            'listed' => ['sometimes', 'boolean'],
         ];
     }
 }

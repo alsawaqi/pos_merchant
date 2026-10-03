@@ -77,10 +77,8 @@ it('creates a fully configured product atomically', function (): void {
         ]],
         'recipe_lines' => [['ingredient_uuid' => $ingredient->uuid, 'quantity' => 18]],
         'component_lines' => [['component_uuid' => $cup->uuid, 'quantity' => 1]],
-        'branches' => [
-            ['branch_id' => $ctx['branch']->id, 'is_available' => true, 'stock_qty' => null],
-            ['branch_id' => $branchB->id, 'is_available' => false, 'stock_qty' => null],
-        ],
+        // LAUNCH-P4 H6 — the branch rule (no shelf counts).
+        'branches' => ['branch_scope' => 'selected', 'branch_ids' => [$ctx['branch']->id]],
         'delivery_prices' => [['provider_uuid' => $provider->uuid, 'price' => '2.000']],
     ]))->assertCreated();
 
@@ -101,7 +99,9 @@ it('creates a fully configured product atomically', function (): void {
     // Recipe, components, branches, delivery price all landed.
     expect(DB::table('pos_product_recipes')->where('product_id', $product->id)->count())->toBe(1);
     expect(DB::table('pos_product_components')->where('product_id', $product->id)->where('component_product_id', $cup->id)->exists())->toBeTrue();
-    expect(DB::table('pos_branch_product')->where('product_id', $product->id)->count())->toBe(2);
+    // LAUNCH-P4 H6 — 'selected': a row only for the chosen branch.
+    expect(DB::table('pos_branch_product')->where('product_id', $product->id)->count())->toBe(1)
+        ->and($product->fresh()->branch_scope)->toBe('selected');
     expect(DB::table('pos_product_delivery_prices')->where('product_id', $product->id)->exists())->toBeTrue();
 
     // The 201 response carries the full nested shape for the review step.
@@ -227,7 +227,7 @@ it('keeps branch assignment HQ-only but lets scoped users create without it', fu
     $ctx['user']->forceFill(['branch_scope_json' => [$ctx['branch']->id]])->save();
 
     $this->postJson('/api/products/wizard', wizardPayload([
-        'branches' => [['branch_id' => $ctx['branch']->id, 'is_available' => true, 'stock_qty' => null]],
+        'branches' => ['branch_scope' => 'selected', 'branch_ids' => [$ctx['branch']->id]],
     ]))->assertForbidden();
     expect(Product::query()->where('name', 'Wizard Latte')->exists())->toBeFalse();
 

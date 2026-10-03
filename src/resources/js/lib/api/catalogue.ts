@@ -13,6 +13,10 @@ import { apiDelete, apiGet, apiPatch, apiPost, apiPut, type JsonValue } from '@/
 
 export type CategoryStatus = 'active' | 'inactive';
 export type ProductStatus = 'active' | 'inactive';
+/** LAUNCH-P4 — a combo is a product with choice slots (B2). */
+export type ProductType = 'standard' | 'combo';
+/** LAUNCH-P4 H6 — where a product is sold. */
+export type BranchScope = 'all' | 'selected';
 export type AddOnSelectionMode = 'single' | 'multi';
 export type AddOnStatus = 'active' | 'inactive';
 
@@ -46,7 +50,17 @@ export interface Product {
     name: string;
     name_ar: string | null;
     description: string | null;
+    /** LAUNCH-P4 L5 — the Arabic description. */
+    description_ar?: string | null;
     image_url: string | null;
+    /** LAUNCH-P4 B2 — 'standard' or 'combo'. */
+    product_type?: ProductType;
+    /** LAUNCH-P4 B3 — sold for in-store order types (till + handheld). */
+    sold_in_store?: boolean;
+    /** LAUNCH-P4 B3 — sold on delivery (each provider: listed + price). */
+    sold_on_delivery?: boolean;
+    /** LAUNCH-P4 H6 — 'all' branches, or only the 'selected' ones. */
+    branch_scope?: BranchScope;
     /** OMR with 3 decimals — keep as string for precision. */
     base_price: string;
     /**
@@ -331,6 +345,11 @@ export interface CreateProductPayload {
     name: string;
     name_ar?: string | null;
     description?: string | null;
+    /** LAUNCH-P4 L5. */
+    description_ar?: string | null;
+    /** LAUNCH-P4 B3 — channels (the QR menu is show_on_customer_tablet). */
+    sold_in_store?: boolean;
+    sold_on_delivery?: boolean;
     image_url?: string | null;
     category_id?: number | null;
     sku?: string | null;
@@ -362,6 +381,11 @@ export interface UpdateProductPayload {
     name?: string;
     name_ar?: string | null;
     description?: string | null;
+    /** LAUNCH-P4 L5. */
+    description_ar?: string | null;
+    /** LAUNCH-P4 B3 — channels. */
+    sold_in_store?: boolean;
+    sold_on_delivery?: boolean;
     image_url?: string | null;
     category_id?: number | null;
     sku?: string | null;
@@ -553,8 +577,23 @@ export interface CreateProductWizardPayload {
     recipe_lines: RecipeLinePayload[];
     recipe_note?: string | null;
     component_lines: ComponentLinePayload[];
-    branches: ProductBranchAssignment[] | null;
-    delivery_prices: { provider_uuid: string; price: string }[];
+    /** LAUNCH-P4 H6 — null = every branch (and the only value for scoped users). */
+    branches: BranchScopePayload | null;
+    /** LAUNCH-P4 B3 — per provider: listed + price (null = delivery price). */
+    delivery_prices: ProviderChannelPayload[];
+}
+
+/** LAUNCH-P4 H6 — where the product is sold; never any shelf count (H7). */
+export interface BranchScopePayload {
+    branch_scope: BranchScope;
+    branch_ids: number[];
+}
+
+/** LAUNCH-P4 B3 — one delivery provider row of a product. */
+export interface ProviderChannelPayload {
+    provider_uuid: string;
+    listed: boolean;
+    price: string | null;
 }
 
 export function createProductWizard(
@@ -712,15 +751,16 @@ export interface ProductBranchAssignment {
 }
 
 /**
- * Idempotent replace of a product's per-branch availability + unit
- * stock. Empty array = available at every branch (device default).
+ * LAUNCH-P4 H6 + H7 — which branches sell the product: every branch, or only
+ * the selected ones. Never sends a shelf count (those change only through the
+ * stock actions) and never removes a branch's stock row.
  */
 export function syncProductBranches(
     productUuid: string,
-    branches: ProductBranchAssignment[],
+    payload: BranchScopePayload,
 ): Promise<{ data: Product }> {
     return apiPut<{ data: Product }>(
         `/api/products/${productUuid}/branches`,
-        { branches } as unknown as JsonValue,
+        payload as unknown as JsonValue,
     );
 }

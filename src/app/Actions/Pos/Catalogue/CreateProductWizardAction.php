@@ -83,13 +83,21 @@ final readonly class CreateProductWizardAction
                 $this->updateComponents->handle($product, $componentLines, $actor);
             }
 
-            // NULL = skip (available everywhere); [] = explicit "every
-            // branch" sync. The controller has already 403'd a non-null
-            // payload from a branch-restricted user.
+            // NULL = skip (every branch, the default rule). LAUNCH-P4 H6 —
+            // otherwise { branch_scope, branch_ids }. The controller has
+            // already 403'd a non-null payload from a branch-restricted user.
             if (array_key_exists('branches', $payload) && $payload['branches'] !== null) {
-                $this->syncBranches->handle($product, $payload['branches'], $actor);
+                // [] (the old "every branch" payload) = 'all'.
+                $this->syncBranches->handle(
+                    $product,
+                    (string) ($payload['branches']['branch_scope'] ?? Product::SCOPE_ALL),
+                    $payload['branches']['branch_ids'] ?? [],
+                    $actor,
+                );
             }
 
+            // LAUNCH-P4 B3 — per provider: listed (false hides the product
+            // there) and an optional price (NULL = the delivery price).
             foreach ($payload['delivery_prices'] ?? [] as $pricePayload) {
                 $provider = DeliveryProvider::query()
                     ->where('company_id', $companyId)
@@ -99,7 +107,13 @@ final readonly class CreateProductWizardAction
                     throw new RuntimeException('A delivery provider in the pricing list does not belong to your company.');
                 }
 
-                $this->setDeliveryPrice->handle($product, $provider, $pricePayload['price'], $actor);
+                $this->setDeliveryPrice->handle(
+                    $product,
+                    $provider,
+                    $pricePayload['price'] ?? null,
+                    $actor,
+                    (bool) ($pricePayload['listed'] ?? true),
+                );
             }
 
             return $product;
