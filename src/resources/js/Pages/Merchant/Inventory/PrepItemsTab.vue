@@ -16,7 +16,7 @@ import { RouterLink } from 'vue-router';
 import { usePermissions } from '@/composables/usePermissions';
 import { listPrepItems, type PrepItem } from '@/lib/api/prepItems';
 import { canWriteRecipes } from '@/lib/permissions';
-import { friendlyAmount } from '@/lib/itemKind';
+import { friendlyAmount, friendlyCost } from '@/lib/itemKind';
 import { money } from '@/lib/recipeUnits';
 
 const { t, locale } = useI18n();
@@ -104,7 +104,8 @@ function usedBy(item: PrepItem): string {
                         </td>
                         <!-- LAUNCH item kind, A8 — "2 l", not "2000.0000 ml". -->
                         <td class="px-5 py-4 text-end text-sm tabular-nums text-slate-700" data-test="prep-yield">{{ yieldText(item) }}</td>
-                        <td class="px-5 py-4 text-end text-sm tabular-nums text-slate-950">{{ item.unit_cost }} <span class="text-[10px] text-slate-400">OMR / {{ item.unit }}</span></td>
+                        <!-- F1 — per kg / l for a g / ml prep item. -->
+                        <td class="px-5 py-4 text-end text-sm tabular-nums text-slate-950" data-test="prep-unit-cost">{{ friendlyCost(item.unit_cost, item.unit).amount }} <span class="text-[10px] text-slate-400">OMR / {{ friendlyCost(item.unit_cost, item.unit).unit }}</span></td>
                         <!-- Fix order 1, UI-1 — a batch costs money: 3 decimals (the cost per unit keeps 6). -->
                         <td class="px-5 py-4 text-end text-sm tabular-nums text-slate-950" data-test="prep-batch-cost">{{ money(item.batch_cost) }} <span class="text-[10px] text-slate-400">OMR</span></td>
                         <td class="px-5 py-4 text-xs text-slate-600">{{ usedBy(item) }}</td>

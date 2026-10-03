@@ -13,6 +13,8 @@
 //      count container; the portal count gets a unit per row;
 //   A8 inventory screens, recipe and prep lines show 1000 g / ml and above
 //      in kg / l ("24 l", not "24000.000 ml");
+// Follow-up fixes (browser check of d75a3bd):
+//   F1 a Weighed / Liquid cost is typed and shown per kg / l;
 //   every new string exists in English AND Arabic.
 // Run: node --test tests/frontend/launch-p3-kind.test.mjs
 import assert from 'node:assert/strict';
@@ -79,8 +81,8 @@ test('A1 a new ingredient is asked what kind of item it is and is stored in g, m
     // Nothing is preselected, and nothing is saved before a kind is chosen.
     assert.match(script, /ingForm\.name_ar = '';\s*\/\/[^\n]*\n\s*ingForm\.unit = '';/);
     assert.match(script, /if \(ingForm\.unit === ''\) \{\s*ingModalErrors\.value = \{ unit: \[t\('item_kind\.choose'\)\] \};/);
-    // The cost says which unit it is per.
-    assert.match(form, /t\('item_kind\.cost_per', \{ unit: ingForm\.unit \}\)/);
+    // The cost says which unit it is per (F1: per kg / l by default).
+    assert.match(form, /t\('item_kind\.cost_per', \{ unit: ingForm\.cost_unit \}\)/);
 
     assert.equal(en.item_kind.examples.weighed, 'Rice, cheese, coffee beans');
     assert.equal(en.item_kind.examples.liquid, 'Milk, oil, syrup');
@@ -314,6 +316,40 @@ test('A8 inventory screens show 1000 g / ml and above in kg / l, up to 4 decimal
     assert.match(sfc('resources/js/Pages/Merchant/Catalogue/ProductWizard.vue').script, /return lineAmountText\(ingredientByUuid\(line\.ingredient_uuid\), line\.unit, line\.quantity, locale\.value\);/);
     assert.match(sfc('resources/js/Pages/Merchant/Inventory/PrepItemEditor.vue').script, /return lineAmountText\(ingredientByUuid\(line\.ingredient_uuid\), line\.unit, line\.quantity, locale\.value\);/);
     assert.match(sfc('resources/js/Pages/Merchant/Catalogue/AddonConsumptionEditor.vue').script, /amount: lineAmountText\(ingredient, line\.unit \?\? '', line\.quantity, locale\.value\)/);
+});
+
+test('F1 a Weighed / Liquid cost is typed and shown per kg / l, kept per stored unit (6 decimals)', () => {
+    const { costUnit, friendlyCost, toStoredCost, formatCost } = lib('itemKind');
+    const plain = (x) => `${x.amount} / ${x.unit}`;
+    assert.deepEqual(['g', 'kg', 'ml', 'l', 'piece', 'box'].map((u) => costUnit(u)), ['kg', 'kg', 'l', 'l', 'piece', 'box']);
+    assert.equal(plain(friendlyCost('0.000150', 'ml')), '0.150 / l');
+    assert.equal(plain(friendlyCost('0.00035', 'g')), '0.350 / kg');
+    assert.equal(plain(friendlyCost('1.200', 'kg')), '1.200 / kg');
+    assert.equal(plain(friendlyCost('0.050', 'piece')), '0.050 / piece');
+    assert.equal(toStoredCost('0.150', 'l', 'ml'), 0.00015);
+    assert.equal(toStoredCost('1.2', 'kg', 'g'), 0.0012);
+    assert.equal(toStoredCost('0.35', 'g', 'g'), 0.35);
+    assert.equal(toStoredCost('1.2', 'g', 'kg'), 1200);
+    assert.equal(toStoredCost('0.05', 'piece', 'piece'), 0.05);
+    assert.equal(toStoredCost('-1', 'kg', 'g'), null);
+    assert.equal(formatCost(0.15), '0.150');
+    assert.equal(formatCost(0.0012345), '0.001235');
+    assert.equal(formatCost(12), '12.000');
+
+    const { script, form } = ingredientForm();
+    assert.match(form, /<select v-model="ingForm\.cost_unit"[^>]*data-test="cost-unit"[^>]*>\s*<option v-for="u in holdUnits"/);
+    assert.match(script, /default_unit_cost: costInStoredUnit\(unit\),/);
+    assert.match(script, /const stored = toStoredCost\(text, ingForm\.cost_unit, storedUnit\);/);
+    assert.match(script, /ingForm\.default_unit_cost = friendlyCost\(ingredient\.default_unit_cost, ingredient\.unit\)\.amount;\s*ingForm\.cost_unit = costUnit\(ingredient\.unit\);/);
+    // Defaults to kg / l when the kind is chosen.
+    assert.match(script, /if \(!allowed\.includes\(ingForm\.cost_unit\)\) ingForm\.cost_unit = ingForm\.unit === '' \? '' : costUnit\(ingForm\.unit\);/);
+    const { template } = sfc('resources/js/Pages/Merchant/Inventory/Index.vue');
+    assert.match(template, /data-test="ingredient-cost">\{\{ friendlyCost\(ing\.default_unit_cost, ing\.unit\)\.amount \}\}/);
+    assert.match(template, /friendlyCost\(m\.unit_cost_at_time, m\.ingredient\?\.unit\)\.amount/);
+    assert.match(sfc('resources/js/Pages/Merchant/Inventory/PrepItemsTab.vue').template, /data-test="prep-unit-cost">\{\{ friendlyCost\(item\.unit_cost, item\.unit\)\.amount \}\}/);
+    const prep = sfc('resources/js/Pages/Merchant/Inventory/PrepItemEditor.vue').template;
+    assert.match(prep, /t\('prep_items\.unit_cost', \{ unit: costUnit\(form\.unit\) \}\)/);
+    assert.match(prep, /friendlyCost\(unitCost, form\.unit\)\.amount/);
 });
 
 test('every item-kind string exists in English and Arabic', () => {

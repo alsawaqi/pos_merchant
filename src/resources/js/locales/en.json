@@ -18,6 +18,7 @@
         },
         "choose": "Choose what kind of item it is.",
         "cost_per": "Cost per {unit}",
+        "per_unit": "per {unit}",
         "stored_in": "Stored in {unit}",
         "locked": "The kind cannot change: this ingredient already has stock, movements, or recipe/add-on usage. Remove those references first, then create a new ingredient of the other kind.",
         "holds": "holds",

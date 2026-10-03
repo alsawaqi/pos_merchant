@@ -30,7 +30,18 @@ import {
     type PrepItem,
     type PrepUnit,
 } from '@/lib/api/prepItems';
-import { holdsEntry, ITEM_KINDS, KIND_STORED_UNIT, kindOfUnit, kindUnits, toStoredAmount, trimAmount, type ItemKind } from '@/lib/itemKind';
+import {
+    costUnit,
+    friendlyCost,
+    holdsEntry,
+    ITEM_KINDS,
+    KIND_STORED_UNIT,
+    kindOfUnit,
+    kindUnits,
+    toStoredAmount,
+    trimAmount,
+    type ItemKind,
+} from '@/lib/itemKind';
 import { canWriteRecipes } from '@/lib/permissions';
 import {
     lineEntry,
@@ -387,8 +398,9 @@ onMounted(async () => {
                             <p class="text-base font-semibold tabular-nums text-amber-900">{{ money(batchCost) }} <span class="text-[10px] font-normal text-amber-600">OMR</span></p>
                         </div>
                         <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-                            <p class="text-[10px] font-semibold uppercase tracking-wide text-amber-700">{{ t('prep_items.unit_cost', { unit: form.unit }) }}</p>
-                            <p class="text-base font-semibold tabular-nums text-amber-900">{{ unitCost ?? '—' }} <span class="text-[10px] font-normal text-amber-600">OMR</span></p>
+                            <!-- F1 — per kg / l for a g / ml prep item. -->
+                            <p class="text-[10px] font-semibold uppercase tracking-wide text-amber-700">{{ t('prep_items.unit_cost', { unit: costUnit(form.unit) }) }}</p>
+                            <p class="text-base font-semibold tabular-nums text-amber-900" data-test="prep-cost-per-unit">{{ unitCost === null ? '—' : friendlyCost(unitCost, form.unit).amount }} <span class="text-[10px] font-normal text-amber-600">OMR</span></p>
                         </div>
                     </div>
 

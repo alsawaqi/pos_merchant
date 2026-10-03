@@ -124,7 +124,9 @@ import {
 import ProductStockDialog from '@/Pages/Merchant/Catalogue/ProductStockDialog.vue';
 import {
     ITEM_KINDS,
+    costUnit,
     friendlyAmount,
+    friendlyCost,
     holdsEntry,
     isLegacyStoredUnit,
     kindOfUnit,
@@ -132,6 +134,7 @@ import {
     PIECE_UNIT,
     storedUnitForKind,
     toStoredAmount,
+    toStoredCost,
     trimAmount,
     type ItemKind,
     type KindUnit,
@@ -258,7 +261,9 @@ const ingForm = reactive<{
     container_amount: string;
     container_unit: string;
     allow_fractional_pieces: boolean;
+    /** F1 — the cost as typed, per cost_unit (per kg / l by default); sent per stored unit. */
     default_unit_cost: string;
+    cost_unit: string;
     min_stock_threshold: string;
     /** A7 — the unit of the kind the minimum is typed in (sent in the stored unit). */
     min_stock_unit: string;
@@ -274,6 +279,7 @@ const ingForm = reactive<{
     container_unit: '',
     allow_fractional_pieces: true,
     default_unit_cost: '0.000',
+    cost_unit: '',
     min_stock_threshold: '',
     min_stock_unit: '',
     primary_supplier_id: null,
@@ -348,8 +354,24 @@ watch(
         const allowed = holdUnits.value.map((u) => u.value);
         if (!allowed.includes(ingForm.container_unit)) ingForm.container_unit = allowed[0] ?? '';
         if (!allowed.includes(ingForm.min_stock_unit)) ingForm.min_stock_unit = allowed[0] ?? '';
+        // F1 — the cost is per kg / l by default.
+        if (!allowed.includes(ingForm.cost_unit)) ingForm.cost_unit = ingForm.unit === '' ? '' : costUnit(ingForm.unit);
     },
 );
+
+/**
+ * F1 — the cost per STORED unit: "0.150" per l on a ml item → "0.00015".
+ * Unchanged on edit: the saved value goes back as it was (no audit noise);
+ * anything that does not convert goes as typed (the server explains).
+ */
+function costInStoredUnit(storedUnit: string): string {
+    const text = String(ingForm.default_unit_cost ?? '').trim();
+    const stored = toStoredCost(text, ingForm.cost_unit, storedUnit);
+    if (text === '' || stored === null) return text;
+    const saved = ingModalTarget.value?.default_unit_cost ?? null;
+    if (saved !== null && ingModalTarget.value?.unit === storedUnit && Math.abs(parseFloat(saved) - stored) < 1e-9) return saved;
+    return String(stored);
+}
 
 /**
  * A7 — the minimum stock in the stored unit: "5" kg on a g item → "5000".
@@ -937,6 +959,7 @@ function openCreateIngredient(): void {
     ingForm.container_unit = '';
     ingForm.allow_fractional_pieces = true;
     ingForm.default_unit_cost = '0.000';
+    ingForm.cost_unit = '';
     ingForm.min_stock_threshold = '';
     ingForm.min_stock_unit = '';
     ingForm.primary_supplier_id = null;
@@ -961,7 +984,9 @@ function openEditIngredient(ingredient: Ingredient): void {
     ingForm.container_amount = holds.amount;
     ingForm.container_unit = holds.amount !== '' ? holds.unit : (kindUnits(ingredient.unit)[0]?.value ?? '');
     ingForm.allow_fractional_pieces = ingredient.allow_fractional_pieces;
-    ingForm.default_unit_cost = ingredient.default_unit_cost;
+    // F1 — 0.00015 per ml reopens as 0.150 per l.
+    ingForm.default_unit_cost = friendlyCost(ingredient.default_unit_cost, ingredient.unit).amount;
+    ingForm.cost_unit = costUnit(ingredient.unit);
     // A7 — a 5000 g minimum reopens as 5 kg (exactly, or in the stored unit).
     const minimum = holdsEntry(ingredient.min_stock_threshold, ingredient.unit);
     ingForm.min_stock_threshold = ingredient.min_stock_threshold === null ? '' : (minimum.amount === '' ? trimAmount(parseFloat(ingredient.min_stock_threshold)) : minimum.amount);
@@ -999,7 +1024,8 @@ async function submitIngredient(): Promise<void> {
             // A5 — "bottle holds 1.5 l" → 1500 (ml).
             units_per_piece: containerUnitsPerPiece(unit),
             allow_fractional_pieces: ingForm.allow_fractional_pieces,
-            default_unit_cost: ingForm.default_unit_cost,
+            // F1 — typed per kg / l, sent per stored unit (6 decimals).
+            default_unit_cost: costInStoredUnit(unit),
             // The bound input is type="number", so Vue casts this to a
             // number as soon as the user types — String() keeps the
             // empty-check safe for both the number and blank-string cases.
@@ -2451,7 +2477,8 @@ async function submitSuggestions(): Promise<void> {
                                     {{ t(`item_kind.kinds.${kindOfUnit(ing.unit)}`) }}
                                     <span v-if="isLegacyStoredUnit(ing.unit)" class="block text-[10px] text-slate-400">{{ t('item_kind.stored_in', { unit: ing.unit }) }}</span>
                                 </td>
-                                <td class="px-5 py-4 text-end text-sm tabular-nums text-slate-950">{{ ing.default_unit_cost }} <span class="text-[10px] text-slate-400">OMR / {{ ing.unit }}</span></td>
+                                <!-- F1 — "0.150 OMR / l", not "0.00015 OMR / ml". -->
+                                <td class="px-5 py-4 text-end text-sm tabular-nums text-slate-950" data-test="ingredient-cost">{{ friendlyCost(ing.default_unit_cost, ing.unit).amount }} <span class="text-[10px] text-slate-400">OMR / {{ friendlyCost(ing.default_unit_cost, ing.unit).unit }}</span></td>
                                 <td class="px-5 py-4 text-end text-sm tabular-nums text-slate-500">{{ ing.min_stock_threshold !== null ? qty(ing.min_stock_threshold, ing.unit) : '—' }}</td>
                                 <td class="px-5 py-4 text-sm text-slate-700">{{ ing.primary_supplier?.name ?? '—' }}</td>
                                 <td class="px-5 py-4">
@@ -2817,7 +2844,7 @@ async function submitSuggestions(): Promise<void> {
                                     {{ friendlyAmount(m.quantity, m.ingredient?.unit).amount }}
                                     <span class="ms-1 text-[10px] font-normal text-slate-400">{{ friendlyAmount(m.quantity, m.ingredient?.unit).unit }}</span>
                                 </td>
-                                <td class="px-5 py-4 text-end text-xs tabular-nums text-slate-500">{{ m.unit_cost_at_time }} <span class="text-[10px] text-slate-400">OMR</span></td>
+                                <td class="px-5 py-4 text-end text-xs tabular-nums text-slate-500">{{ friendlyCost(m.unit_cost_at_time, m.ingredient?.unit).amount }} <span class="text-[10px] text-slate-400">OMR / {{ friendlyCost(m.unit_cost_at_time, m.ingredient?.unit).unit }}</span></td>
                                 <td class="px-5 py-4 text-xs text-slate-600 max-w-xs truncate" :title="m.note ?? ''">{{ m.note ?? '—' }}</td>
                                 <td class="px-5 py-4 text-xs text-slate-500">{{ m.recorded_by?.name ?? '—' }}</td>
                             </tr>
@@ -3254,9 +3281,16 @@ async function submitSuggestions(): Promise<void> {
                     </fieldset>
                     <div class="grid gap-3 sm:grid-cols-2">
                         <label class="block">
-                            <!-- The cost is per stored unit: say which, now that no unit is picked on screen. -->
-                            <span class="text-sm font-medium text-slate-700">{{ ingForm.unit !== '' ? t('item_kind.cost_per', { unit: ingForm.unit }) : t('inventory.fields.default_unit_cost') }} (OMR)</span>
-                            <input v-model="ingForm.default_unit_cost" type="number" step="0.000001" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                            <!-- F1 — the cost is typed per kg / l (or per g / ml, or per piece)
+                                 and sent per stored unit. -->
+                            <span class="text-sm font-medium text-slate-700">{{ ingForm.unit !== '' ? t('item_kind.cost_per', { unit: ingForm.cost_unit }) : t('inventory.fields.default_unit_cost') }} (OMR)</span>
+                            <div class="mt-1 flex gap-2">
+                                <input v-model="ingForm.default_unit_cost" type="number" step="0.000001" min="0" class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                                <select v-model="ingForm.cost_unit" :disabled="holdUnits.length === 0" :title="t('item_kind.pack_sizes.unit')" data-test="cost-unit" class="w-24 shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100 disabled:bg-slate-50">
+                                    <option v-for="u in holdUnits" :key="u.value" :value="u.value">{{ t('item_kind.per_unit', { unit: holdUnitLabel(u.value) }) }}</option>
+                                </select>
+                            </div>
+                            <p v-if="ingModalErrors.default_unit_cost" class="mt-1 text-xs text-rose-600">{{ ingModalErrors.default_unit_cost[0] }}</p>
                         </label>
                         <label class="block">
                             <span class="text-sm font-medium text-slate-700">{{ t('inventory.fields.min_stock_threshold') }}</span>

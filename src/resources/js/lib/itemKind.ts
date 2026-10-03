@@ -115,6 +115,52 @@ export function toStoredAmount(amount: string | number | null | undefined, unit:
     return stored > 0 ? stored : null;
 }
 
+/**
+ * F1 — the unit a cost is typed and shown per: kg for a Weighed item, l for
+ * a Liquid one (whatever it is stored in), else its own count unit.
+ */
+export function costUnit(storedUnit: string | null | undefined): string {
+    const kind = kindOfUnit(storedUnit);
+    if (kind === 'weighed') return 'kg';
+    if (kind === 'liquid') return 'l';
+    return storedUnit ?? '';
+}
+
+/** A cost (OMR) with at least 3 decimals and at most 6 ("0.150", "0.00035", "1.2345"). */
+export function formatCost(value: number): string {
+    if (!Number.isFinite(value)) return '';
+    const fixed = (Math.round((value + Number.EPSILON * Math.sign(value)) * 1e6) / 1e6).toFixed(6);
+    const [whole, decimals = ''] = fixed.split('.');
+    const trimmed = decimals.replace(/0+$/, '');
+    const text = `${whole}.${trimmed.padEnd(3, '0')}`;
+    return text.startsWith('-') && parseFloat(text) === 0 ? text.slice(1) : text;
+}
+
+/**
+ * F1 — a cost per STORED unit as people read it: per kg or per l for a g /
+ * ml item ("0.150 OMR / l", not "0.00015 OMR / ml"); a counted item keeps its
+ * own unit.
+ */
+export function friendlyCost(costPerStored: string | number | null | undefined, storedUnit: string | null | undefined): { amount: string; unit: string } {
+    const n = typeof costPerStored === 'number' ? costPerStored : parseFloat(String(costPerStored ?? ''));
+    const unit = costUnit(storedUnit);
+    if (!Number.isFinite(n)) return { amount: String(costPerStored ?? ''), unit };
+    const factor = kindUnits(storedUnit).find((u) => u.value === unit)?.factor ?? 1;
+    return { amount: formatCost(n * factor), unit };
+}
+
+/**
+ * F1 — a cost typed per one of the kind's units (per kg, per l …), as the
+ * cost per STORED unit the server keeps (6 decimals): 0.150 per l of a ml
+ * item → 0.00015. Null when it is not a number ≥ 0 or the unit is not of the kind.
+ */
+export function toStoredCost(cost: string | number | null | undefined, unit: string, storedUnit: string | null | undefined): number | null {
+    const n = typeof cost === 'number' ? cost : parseFloat(String(cost ?? '').trim());
+    const factor = kindUnits(storedUnit).find((u) => u.value === unit)?.factor;
+    if (!Number.isFinite(n) || n < 0 || factor === undefined) return null;
+    return Math.round((n / factor + Number.EPSILON) * 1e6) / 1e6;
+}
+
 /** The token that names an ingredient's count container (its piece unit) on the wire. */
 export const PIECE_UNIT = '@piece';
 
