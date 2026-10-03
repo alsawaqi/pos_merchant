@@ -35,6 +35,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'delivery_provider_id',
     'company_id',
     'price',
+    // LAUNCH-P4 — false hides the product on this provider; price NULL =
+    // the product's delivery price, else its base price.
+    'listed',
 ])]
 class ProductDeliveryPrice extends Model
 {
@@ -50,6 +53,7 @@ class ProductDeliveryPrice extends Model
     {
         return [
             'price' => 'decimal:3',
+            'listed' => 'boolean',
         ];
     }
 

@@ -72,6 +72,8 @@ use Illuminate\Support\Str;
     'delivery_punched_at',
     'delivery_confirmed_at',
     'delivery_confirmed_by_user_id',
+    // LAUNCH-P4 — true = grand_total already contains tax_total.
+    'prices_include_tax',
 ])]
 class Order extends Model
 {
@@ -102,6 +104,7 @@ class Order extends Model
             'delivery_variance' => 'decimal:3',
             'delivery_punched_at' => 'datetime',
             'delivery_confirmed_at' => 'datetime',
+            'prices_include_tax' => 'boolean',
         ];
     }
 

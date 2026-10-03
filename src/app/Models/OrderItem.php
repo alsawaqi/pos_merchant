@@ -39,6 +39,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'recipe_snapshot_json',
     'status',
     'notes',
+    // LAUNCH-P4 combos — a child line points at its combo line.
+    'parent_order_item_id',
+    'combo_slot_id',
+    'combo_extra_price',
 ])]
 class OrderItem extends Model
 {
@@ -61,7 +65,18 @@ class OrderItem extends Model
             // to array on read, encodes on write.
             'recipe_snapshot_json' => 'array',
             'status' => OrderItemStatus::class,
+            'combo_extra_price' => 'decimal:3',
         ];
+    }
+
+    /**
+     * LAUNCH-P4 — the items chosen inside this combo line (empty otherwise).
+     *
+     * @return HasMany<OrderItem, $this>
+     */
+    public function comboChildren(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_order_item_id')->orderBy('id');
     }
 
     /**

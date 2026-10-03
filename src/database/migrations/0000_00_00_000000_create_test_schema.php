@@ -61,6 +61,10 @@ return new class extends Migration
             // (pos_admin 2026_05_17_120000). Mirror the production column name.
             $table->string('cr_number')->nullable();
             $table->string('tax_number')->nullable();
+            // pos_admin 2026_05_17_120000 — the VAT registration on the company
+            // record (LAUNCH-P4: shown read-only on the Taxes page).
+            $table->string('vat_number')->nullable();
+            $table->date('vat_registered_at')->nullable();
             $table->string('contact_name')->nullable();
             $table->string('contact_phone')->nullable();
             $table->string('contact_email')->nullable();
@@ -271,6 +275,18 @@ return new class extends Migration
             // available, start > end wraps midnight).
             $table->string('available_from', 8)->nullable();
             $table->string('available_until', 8)->nullable();
+            // LAUNCH-P4 data contract (pos_admin owns the migration):
+            //   product_type 'standard' | 'combo' (a combo is untracked, no
+            //   recipe, no components); in-store / delivery channel switches;
+            //   branch_scope 'all' (every branch except a row with
+            //   is_available=false) | 'selected' (only rows with
+            //   is_available=true) — stock rows never restrict; Arabic
+            //   description.
+            $table->string('product_type', 16)->default('standard');
+            $table->boolean('sold_in_store')->default(true);
+            $table->boolean('sold_on_delivery')->default(true);
+            $table->string('branch_scope', 16)->default('all');
+            $table->text('description_ar')->nullable();
             $table->timestamps();
             $table->softDeletes();
             // Sqlite UNIQUE accepts multiple NULLs natively, so
@@ -279,6 +295,17 @@ return new class extends Migration
             $table->unique(['company_id', 'sku'], 'pos_products_company_sku_unique');
             $table->unique(['company_id', 'barcode'], 'pos_products_company_barcode_unique');
         });
+        // The contract's CHECK constraints on product_type / branch_scope.
+        // Sqlite cannot ADD CONSTRAINT to a table built by the Blueprint, so
+        // triggers stand in for them (same refusal on a bad value).
+        foreach (['INSERT', 'UPDATE'] as $event) {
+            $name = strtolower($event);
+            DB::statement(
+                "CREATE TRIGGER pos_products_type_check_{$name} BEFORE {$event} ON pos_products ".
+                "WHEN NEW.product_type NOT IN ('standard', 'combo') OR NEW.branch_scope NOT IN ('all', 'selected') ".
+                "BEGIN SELECT RAISE(ABORT, 'CHECK constraint failed: pos_products product_type / branch_scope'); END"
+            );
+        }
 
         // ---- pos_addon_groups + pos_addons + pivot (Phase 4.9) ---
         // Blueprint §5.5.4 + §10.4. selection_mode = single|multi.
@@ -1150,9 +1177,60 @@ return new class extends Migration
             // skip the join, and the Action layer can cross-
             // check that product.company == provider.company.
             $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
-            $table->decimal('price', 12, 3);
+            // LAUNCH-P4: NULL price = the product's delivery price, else its
+            // base price; listed=false hides the product on that provider.
+            $table->decimal('price', 12, 3)->nullable();
+            $table->boolean('listed')->default(true);
             $table->timestamps();
             $table->unique(['product_id', 'delivery_provider_id'], 'pos_product_delivery_prices_product_provider_unique');
+        });
+
+        // ---- LAUNCH-P4 combos + sold out (data contract) -------------
+        // A combo's choice slots and the options in each. Raw DDL so the
+        // contract's CHECK constraints exist in sqlite too.
+        DB::statement('CREATE TABLE pos_combo_slots (
+            id integer primary key autoincrement not null,
+            uuid varchar not null,
+            company_id integer not null references pos_companies(id) on delete cascade,
+            combo_product_id integer not null references pos_products(id) on delete cascade,
+            name varchar(64) not null,
+            name_ar varchar(64) null,
+            min_choices integer not null default 1,
+            max_choices integer not null default 1,
+            sort_order integer not null default 0,
+            created_at datetime null,
+            updated_at datetime null,
+            CONSTRAINT pos_combo_slots_choices_check CHECK (min_choices >= 0 AND max_choices >= 1 AND max_choices >= min_choices)
+        )');
+        DB::statement('CREATE UNIQUE INDEX pos_combo_slots_uuid_unique ON pos_combo_slots (uuid)');
+        DB::statement('CREATE INDEX pos_combo_slots_combo_idx ON pos_combo_slots (combo_product_id)');
+
+        DB::statement('CREATE TABLE pos_combo_slot_options (
+            id integer primary key autoincrement not null,
+            company_id integer not null references pos_companies(id) on delete cascade,
+            slot_id integer not null references pos_combo_slots(id) on delete cascade,
+            product_id integer not null references pos_products(id) on delete restrict,
+            extra_price numeric(12, 3) not null default 0,
+            is_default tinyint(1) not null default 0,
+            sort_order integer not null default 0,
+            created_at datetime null,
+            updated_at datetime null,
+            CONSTRAINT pos_combo_slot_options_extra_price_check CHECK (extra_price >= 0)
+        )');
+        DB::statement('CREATE UNIQUE INDEX pos_combo_slot_options_slot_product_unique ON pos_combo_slot_options (slot_id, product_id)');
+
+        // A row present = sold out at that branch; deleting it puts the
+        // product back on sale. Manual only — never driven by stock.
+        Schema::create('pos_product_sold_out', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->foreignId('product_id')->constrained('pos_products')->cascadeOnDelete();
+            $table->unsignedBigInteger('set_by_user_id')->nullable();
+            $table->unsignedBigInteger('set_by_pos_staff_id')->nullable();
+            $table->timestamp('set_at')->useCurrent();
+            $table->timestamps();
+            $table->unique(['branch_id', 'product_id'], 'pos_product_sold_out_branch_product_unique');
         });
 
         // QR-001 P1 — one row per station QR rotation. The first scan binds
@@ -1240,6 +1318,9 @@ return new class extends Migration
             $table->timestamp('delivery_punched_at')->nullable();
             $table->timestamp('delivery_confirmed_at')->nullable();
             $table->unsignedBigInteger('delivery_confirmed_by_user_id')->nullable();
+            // LAUNCH-P4 — stamped from the order: true = grand_total already
+            // contains tax_total (menu prices include VAT).
+            $table->boolean('prices_include_tax')->default(false);
             $table->timestamps();
             $table->index(['company_id', 'receipt_number'], 'pos_orders_company_receipt_idx');
             $table->index(['company_id', 'delivery_provider_id'], 'pos_orders_company_provider_idx');
@@ -1272,6 +1353,13 @@ return new class extends Migration
             $table->string('cancel_disposition', 16)->nullable();
             $table->timestamp('cancelled_at')->nullable();
             $table->text('notes')->nullable();
+            // LAUNCH-P4 combos: a child line is one chosen item of the combo
+            // line it points at (qty = parent qty × component qty, unit price
+            // and line total 0 — the revenue sits on the parent). Every
+            // revenue query excludes children.
+            $table->foreignId('parent_order_item_id')->nullable()->constrained('pos_order_items')->cascadeOnDelete();
+            $table->unsignedBigInteger('combo_slot_id')->nullable();
+            $table->decimal('combo_extra_price', 12, 3)->default(0);
             $table->timestamps();
         });
 
@@ -1972,6 +2060,9 @@ return new class extends Migration
 
         // Drop in reverse dependency order. Tests use :memory: so
         // this is essentially never called, but symmetry is cheap.
+        Schema::dropIfExists('pos_product_sold_out');
+        Schema::dropIfExists('pos_combo_slot_options');
+        Schema::dropIfExists('pos_combo_slots');
         Schema::dropIfExists('pos_payment_reversal_results');
         Schema::dropIfExists('pos_payment_reversal_lines');
         Schema::dropIfExists('pos_payment_reversals');

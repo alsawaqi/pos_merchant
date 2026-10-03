@@ -77,6 +77,14 @@ use Illuminate\Support\Str;
     // available, start > end wraps midnight (pos_discounts convention).
     'available_from',
     'available_until',
+    // LAUNCH-P4 data contract — 'standard' | 'combo'; the in-store and
+    // delivery channel switches; the branch rule ('all' | 'selected');
+    // the Arabic description.
+    'product_type',
+    'sold_in_store',
+    'sold_on_delivery',
+    'branch_scope',
+    'description_ar',
 ])]
 class Product extends Model
 {
@@ -106,7 +114,24 @@ class Product extends Model
             'status' => ProductStatus::class,
             'show_on_customer_tablet' => 'boolean',
             'is_internal' => 'boolean',
+            'sold_in_store' => 'boolean',
+            'sold_on_delivery' => 'boolean',
         ];
+    }
+
+    /** LAUNCH-P4 — product_type values. */
+    public const TYPE_STANDARD = 'standard';
+
+    public const TYPE_COMBO = 'combo';
+
+    /** LAUNCH-P4 — branch_scope values. */
+    public const SCOPE_ALL = 'all';
+
+    public const SCOPE_SELECTED = 'selected';
+
+    public function isCombo(): bool
+    {
+        return $this->product_type === self::TYPE_COMBO;
     }
 
     protected static function booted(): void
@@ -259,7 +284,9 @@ class Product extends Model
                 ->first();
         }
 
-        if ($override !== null) {
+        // LAUNCH-P4 — a provider row with a NULL price only carries the
+        // listed flag: the price falls through to the next step.
+        if ($override !== null && $override->price !== null) {
             return (string) $override->price;
         }
 
@@ -294,6 +321,26 @@ class Product extends Model
     public function branchProducts(): HasMany
     {
         return $this->hasMany(BranchProduct::class);
+    }
+
+    /**
+     * LAUNCH-P4 — a combo's choice slots (empty for a standard product).
+     *
+     * @return HasMany<ComboSlot, $this>
+     */
+    public function comboSlots(): HasMany
+    {
+        return $this->hasMany(ComboSlot::class, 'combo_product_id')->orderBy('sort_order')->orderBy('id');
+    }
+
+    /**
+     * LAUNCH-P4 — the branches where this product is switched to sold out.
+     *
+     * @return HasMany<ProductSoldOut, $this>
+     */
+    public function soldOutRows(): HasMany
+    {
+        return $this->hasMany(ProductSoldOut::class);
     }
 
     /**
