@@ -108,6 +108,26 @@ export function friendlyAmount(quantity: string | number | null | undefined, uni
     return { amount: trimAmount(n), unit: u };
 }
 
+/** G3 — how the stock lists show amounts: Auto (the friendly rule), always kg / l, or always g / ml. */
+export type AmountDisplay = 'auto' | 'large' | 'small';
+
+export const AMOUNT_DISPLAYS: AmountDisplay[] = ['auto', 'large', 'small'];
+
+/**
+ * G3 (owner addendum 2026-10-03) — a stored amount in the chosen display:
+ * Auto = {@link friendlyAmount}; 'large' always in kg / l; 'small' always
+ * in g / ml (up to 4 decimals). Counted items are unaffected.
+ */
+export function displayAmount(quantity: string | number | null | undefined, unit: string | null | undefined, mode: AmountDisplay = 'auto'): { amount: string; unit: string } {
+    const kind = kindOfUnit(unit);
+    if (mode === 'auto' || kind === 'counted') return friendlyAmount(quantity, unit);
+    const n = typeof quantity === 'number' ? quantity : parseFloat(String(quantity ?? ''));
+    if (!Number.isFinite(n)) return { amount: String(quantity ?? ''), unit: unit ?? '' };
+    const target = mode === 'large' ? (kind === 'weighed' ? 'kg' : 'l') : (kind === 'weighed' ? 'g' : 'ml');
+    const factor = kindUnits(unit).find((u) => u.value === target)?.factor ?? 1;
+    return { amount: trimAmount(n / factor), unit: target };
+}
+
 /** F7 — friendlyAmount as one string ("24 l"); '—' for a missing amount. */
 export function formatQuantity(quantity: string | number | null | undefined, unit: string | null | undefined): string {
     if (quantity === null || quantity === undefined || String(quantity).trim() === '') return '—';

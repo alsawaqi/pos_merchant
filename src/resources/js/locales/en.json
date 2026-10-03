@@ -32,6 +32,12 @@
         "prep_locked": "The kind cannot change while recipes use this prep item.",
         "count_unit": "Counted in",
         "conversions": "Show in other units",
+        "show_in": "Show in:",
+        "show_modes": {
+            "auto": "Auto",
+            "large": "kg · l",
+            "small": "g · ml"
+        },
         "column": "Kind",
         "prep_yield_hint": "Type it in any unit of the kind, e.g. one batch makes 2 l.",
         "container": {

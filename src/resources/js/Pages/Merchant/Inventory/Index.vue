@@ -52,6 +52,8 @@ import BaseModal from '@/Components/BaseModal.vue';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import IngredientStockDialog from './IngredientStockDialog.vue';
 import PrepItemsTab from './PrepItemsTab.vue';
+import AmountDisplaySwitch from './AmountDisplaySwitch.vue';
+import { useAmountDisplay } from '@/composables/useAmountDisplay';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
 import { listBranches, type Branch } from '@/lib/api/branches';
@@ -127,6 +129,7 @@ import {
     ITEM_KINDS,
     conversionsOf,
     costUnit,
+    displayAmount,
     friendlyAmount,
     hasConversions,
     friendlyCost,
@@ -1596,6 +1599,15 @@ function unitLabel(unit: IngredientUnit | '' | null): string {
     return t(`inventory.units.${unit}`);
 }
 
+// G3 — "Show in: Auto / kg·l / g·ml" on the branch stock list (remembered per browser).
+const { mode: amountDisplay } = useAmountDisplay();
+
+/** G3 — a branch stock amount in the chosen display, as one string. */
+function shownAmount(quantity: string | number | null | undefined, unit: string | null | undefined): string {
+    const shown = displayAmount(quantity, unit, amountDisplay.value);
+    return shown.unit === '' ? shown.amount : `${shown.amount} ${shown.unit}`;
+}
+
 // G2 — which branch stock row shows its amount in every unit (one at a time).
 const conversionsOpenId = ref<number | null>(null);
 
@@ -2745,6 +2757,9 @@ async function submitSuggestions(): Promise<void> {
                         </button>
                     </div>
 
+                    <!-- G3 — Show in: Auto / kg·l / g·ml (remembered per browser). -->
+                    <AmountDisplaySwitch />
+
                     <div v-if="(canViewInventory || canManage) && ingredients.length > 0" class="flex flex-wrap justify-end gap-2">
                         <button
                             v-if="canViewInventory && selectedBranchUuid"
@@ -2819,9 +2834,9 @@ async function submitSuggestions(): Promise<void> {
                                     <span v-if="row.ingredient?.name_ar" class="block text-xs text-slate-500" dir="rtl">{{ row.ingredient.name_ar }}</span>
                                 </td>
                                 <td class="px-5 py-4 text-end text-sm font-semibold tabular-nums" :class="stockQuantityClass(row.stock_status)">
-                                    <!-- A8 — "24 l", not "24000.000 ml". -->
-                                    {{ friendlyAmount(row.quantity, row.ingredient?.unit).amount }}
-                                    <span class="ms-1 text-[10px] font-normal text-slate-400">{{ friendlyAmount(row.quantity, row.ingredient?.unit).unit }}</span>
+                                    <!-- A8 — "24 l", not "24000.000 ml"; G3 — or always kg / l, g / ml. -->
+                                    {{ displayAmount(row.quantity, row.ingredient?.unit, amountDisplay).amount }}
+                                    <span class="ms-1 text-[10px] font-normal text-slate-400">{{ displayAmount(row.quantity, row.ingredient?.unit, amountDisplay).unit }}</span>
                                     <!-- G2 — the same amount in every unit the item knows. -->
                                     <button
                                         v-if="hasConversions(stockRowIngredient(row))"
@@ -2835,7 +2850,7 @@ async function submitSuggestions(): Promise<void> {
                                     >
                                         <ArrowLeftRight class="size-3" />
                                     </button>
-                                    <span v-if="row.ingredient?.min_stock_threshold" class="block text-[10px] font-normal text-slate-400">{{ t('inventory.stock.minimum', { quantity: qty(row.ingredient.min_stock_threshold, row.ingredient.unit) }) }}</span>
+                                    <span v-if="row.ingredient?.min_stock_threshold" class="block text-[10px] font-normal text-slate-400">{{ t('inventory.stock.minimum', { quantity: shownAmount(row.ingredient.min_stock_threshold, row.ingredient.unit) }) }}</span>
                                     <bdi v-if="conversionsOpenId === row.ingredient_id" dir="ltr" class="mt-1 block text-[11px] font-normal text-slate-600" data-test="conversions">{{ conversionsOf(row.quantity, stockRowIngredient(row), locale).join(' = ') }}</bdi>
                                 </td>
                                 <td class="px-5 py-4 text-end text-sm tabular-nums" :class="Number(row.stock_value) < 0 ? 'text-rose-600' : 'text-slate-700'">{{ row.stock_value }}</td>

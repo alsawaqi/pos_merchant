@@ -31,7 +31,9 @@ import {
 import { listTaxes, type Tax } from '@/lib/api/taxes';
 import type { Ingredient } from '@/lib/api/inventory';
 import { ArrowLeftRight } from 'lucide-vue-next';
-import { conversionsOf, costUnit, entryUnitOptions, friendlyAmount, hasConversions } from '@/lib/itemKind';
+import { conversionsOf, costUnit, displayAmount, entryUnitOptions, hasConversions } from '@/lib/itemKind';
+import { useAmountDisplay } from '@/composables/useAmountDisplay';
+import AmountDisplaySwitch from './AmountDisplaySwitch.vue';
 
 const props = withDefaults(defineProps<{
     open: boolean;
@@ -49,6 +51,8 @@ const props = withDefaults(defineProps<{
 }>(), { singleStockIn: true, ingredient: null });
 
 const { t, locale } = useI18n();
+// G3 — the stock lists' "Show in" choice (shared with the branch stock list).
+const { mode: amountDisplay } = useAmountDisplay();
 
 const emit = defineEmits<{ (e: 'close'): void }>();
 
@@ -135,11 +139,11 @@ function toggleConversions(key: string): void {
     conversionsOpen.value = conversionsOpen.value === key ? null : key;
 }
 
-/** F4 — a balance as people read it: "24 l", not "24000.000 ml". */
+/** F4 — a balance as people read it: "24 l", not "24000.000 ml"; G3 — or always kg / l, g / ml. */
 function amount(quantity: string | null | undefined): string {
     if (quantity === null || quantity === undefined) return '—';
-    const friendly = friendlyAmount(quantity, unit.value);
-    return `${friendly.amount} ${friendly.unit}`;
+    const shown = displayAmount(quantity, unit.value, amountDisplay.value);
+    return `${shown.amount} ${shown.unit}`;
 }
 
 const allocateTotal = computed(() =>
@@ -373,13 +377,17 @@ function fmtType(t: string): string {
                 <p v-else-if="loading" class="text-sm text-slate-500">Loading…</p>
 
                 <template v-if="summary && !loading">
+                    <!-- G3 — Show in: Auto / kg·l / g·ml (remembered per browser). -->
+                    <div class="flex justify-end">
+                        <AmountDisplaySwitch />
+                    </div>
                     <!-- Central warehouse + branch balances -->
                     <div class="grid gap-4 sm:grid-cols-[200px_1fr]">
                         <div class="rounded-xl border border-teal-200 bg-teal-50 p-4">
                             <p class="text-[11px] font-semibold uppercase tracking-wider text-teal-700">Warehouse</p>
                             <p class="mt-1 text-2xl font-black tabular-nums text-teal-900">
-                                <span data-test="warehouse-central">{{ friendlyAmount(summary.central_quantity, unit).amount }}</span>
-                                <span class="text-sm font-semibold text-teal-700">{{ friendlyAmount(summary.central_quantity, unit).unit }}</span>
+                                <span data-test="warehouse-central">{{ displayAmount(summary.central_quantity, unit, amountDisplay).amount }}</span>
+                                <span class="text-sm font-semibold text-teal-700">{{ displayAmount(summary.central_quantity, unit, amountDisplay).unit }}</span>
                                 <!-- G2 — the same amount in every unit the item knows. -->
                                 <button
                                     v-if="hasConversions(conversionSource)"

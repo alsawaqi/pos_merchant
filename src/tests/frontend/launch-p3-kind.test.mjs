@@ -25,6 +25,7 @@
 // Owner addendum 2026-10-03:
 //   G1 gallon / fl oz (Liquid) and lb / oz (Weighed) wherever kg/g or l/ml are;
 //   G2 a conversions button on the branch and warehouse stock lists;
+//   G3 a "Show in: Auto / kg·l / g·ml" switch on those lists;
 //   every new string exists in English AND Arabic.
 // Run: node --test tests/frontend/launch-p3-kind.test.mjs
 import assert from 'node:assert/strict';
@@ -307,8 +308,9 @@ test('A8 inventory screens show 1000 g / ml and above in kg / l, up to 4 decimal
     assert.match(template, /qty\(ing\.min_stock_threshold, ing\.unit\)/);
     // Branch stock (and its minimum), movements, waste, counts, transfers, restock requests.
     for (const pattern of [
-        /friendlyAmount\(row\.quantity, row\.ingredient\?\.unit\)\.amount/,
-        /qty\(row\.ingredient\.min_stock_threshold, row\.ingredient\.unit\)/,
+        // (G3: the branch stock list follows the "Show in" switch, Auto = this rule.)
+        /displayAmount\(row\.quantity, row\.ingredient\?\.unit, amountDisplay\)\.amount/,
+        /shownAmount\(row\.ingredient\.min_stock_threshold, row\.ingredient\.unit\)/,
         /friendlyAmount\(m\.quantity, m\.ingredient\?\.unit\)\.amount/,
         /-\{\{ friendlyAmount\(w\.quantity, w\.unit_at_set\)\.amount \}\}/,
         /qty\(line\.counted_units, line\.ingredient\?\.unit\)/,
@@ -423,7 +425,7 @@ test('F4 the warehouse dialog types amounts in the kind\'s units, pack sizes or 
     // kg / l by default for a weighed / liquid item.
     assert.match(script, /const big = costUnit\(unit\.value\);/);
     // Balances read friendly.
-    assert.match(template, /data-test="warehouse-central">\{\{ friendlyAmount\(summary\.central_quantity, unit\)\.amount \}\}/);
+    assert.match(template, /data-test="warehouse-central">\{\{ displayAmount\(summary\.central_quantity, unit, amountDisplay\)\.amount \}\}/);
     assert.match(template, /\{\{ amount\(b\.quantity\) \}\}/);
     assert.match(template, /\{\{ amount\(m\.quantity\) \}\}/);
     assert.doesNotMatch(template, /Stock \(\{\{ unit \}\}\)|Total received \(\{\{ unit \}\}\)/);
@@ -565,6 +567,37 @@ test('G2 a conversions button shows a stock amount in every unit the item knows'
     assert.equal((dialog.match(/data-test="warehouse-conversions-button"/g) ?? []).length, 2, 'warehouse total and each branch');
     assert.match(dialog, /conversionsOf\(summary\.central_quantity, conversionSource, locale\)\.join\(' = '\)/);
     assert.match(dialog, /conversionsOf\(b\.quantity, conversionSource, locale\)\.join\(' = '\)/);
+});
+
+test('G3 the stock lists switch "Show in: Auto / kg·l / g·ml", remembered per browser; counted items unaffected', () => {
+    const { displayAmount, AMOUNT_DISPLAYS } = lib('itemKind');
+    const plain = (q, u, m) => { const d = displayAmount(q, u, m); return `${d.amount} ${d.unit}`; };
+    assert.deepEqual([...AMOUNT_DISPLAYS], ['auto', 'large', 'small']);
+    assert.equal(plain('750.000', 'ml', 'auto'), '750 ml');
+    assert.equal(plain('750.000', 'ml', 'large'), '0.75 l');
+    assert.equal(plain('24000.000', 'ml', 'auto'), '24 l');
+    assert.equal(plain('24000.000', 'ml', 'small'), '24000 ml');
+    assert.equal(plain('1.5000', 'kg', 'small'), '1500 g');
+    assert.equal(plain('2500.000', 'g', 'large'), '2.5 kg');
+    assert.equal(plain('12.000', 'piece', 'large'), '12 piece');
+    assert.equal(plain('12.000', 'piece', 'small'), '12 piece');
+
+    // Remembered per browser, storage failures swallowed.
+    const composable = read('resources/js/composables/useAmountDisplay.ts');
+    assert.match(composable, /try \{\s*const value = window\.localStorage\.getItem\(AMOUNT_DISPLAY_KEY\);[\s\S]*?\} catch \{\s*return 'auto';\s*\}/);
+    assert.match(composable, /try \{\s*window\.localStorage\.setItem\(AMOUNT_DISPLAY_KEY, value\);\s*\} catch \{/);
+    const toggle = sfc('resources/js/Pages/Merchant/Inventory/AmountDisplaySwitch.vue').template;
+    assert.match(toggle, /v-for="m in AMOUNT_DISPLAYS"/);
+    assert.match(toggle, /@click="mode = m"/);
+    assert.match(toggle, /t\(`item_kind\.show_modes\.\$\{m\}`\)/);
+    // On the branch stock list and in the warehouse dialog.
+    const index = sfc('resources/js/Pages/Merchant/Inventory/Index.vue');
+    assert.match(index.template, /<AmountDisplaySwitch \/>/);
+    assert.match(index.script, /const \{ mode: amountDisplay \} = useAmountDisplay\(\);/);
+    const dialog = sfc('resources/js/Pages/Merchant/Inventory/IngredientStockDialog.vue');
+    assert.match(dialog.template, /<AmountDisplaySwitch \/>/);
+    assert.match(dialog.script, /const shown = displayAmount\(quantity, unit\.value, amountDisplay\.value\);/);
+    assert.notEqual(ar.item_kind.show_modes.large, en.item_kind.show_modes.large);
 });
 
 test('every item-kind string exists in English and Arabic', () => {
