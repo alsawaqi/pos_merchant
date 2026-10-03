@@ -38,6 +38,9 @@ export const MerchantPermission = {
     // + yield) and add-on stock usage. catalogue.manage alone no longer
     // changes them; without it the editors show the recipe read-only.
     CatalogueRecipesManage: 'catalogue.recipes.manage',
+    // LAUNCH-P4 B4 — "Mark sold out" at a branch (catalogue.manage also
+    // allows it); branch-limited users for their own branches only.
+    CatalogueSoldOut: 'catalogue.sold_out.manage',
     // Phase 5a — inventory (ingredients, suppliers, branch
     // stock, movements). Single gate for all four because in
     // practice nobody manages stock without seeing ingredients
@@ -121,4 +124,13 @@ export type MerchantRoleValue = (typeof MerchantRole)[keyof typeof MerchantRole]
  */
 export function canWriteRecipes(can: (permission: string) => boolean): boolean {
     return can(MerchantPermission.CatalogueRecipesManage) && can(MerchantPermission.CatalogueView);
+}
+
+/**
+ * LAUNCH-P4 B4 — who may switch an item sold out / back on sale at a branch:
+ * "Manage catalogue" or "Mark sold out". The server applies the same rule and
+ * keeps branch-limited users to their own branches.
+ */
+export function canMarkSoldOut(can: (permission: string) => boolean): boolean {
+    return can(MerchantPermission.CatalogueManage) || can(MerchantPermission.CatalogueSoldOut);
 }

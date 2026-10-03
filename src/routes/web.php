@@ -391,6 +391,9 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
 
         Route::put('products/{product:uuid}/branches', [ProductsController::class, 'syncBranches'])
             ->name('products.sync-branches');
+        // LAUNCH-P4 B4 — sold out / back on sale at one branch.
+        Route::put('products/{product:uuid}/sold-out', [ProductsController::class, 'setSoldOut'])
+            ->name('products.sold-out');
 
         // Phase 5b — product recipe replace. Idempotent — caller
         // PUTs the full desired list of recipe lines. Empty = no

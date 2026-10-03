@@ -24,6 +24,8 @@ use App\Models\Shift;
 use App\Models\StockMovement;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Spatie\Permission\PermissionRegistrar;
 
 uses(RefreshDatabase::class);
 
@@ -31,15 +33,21 @@ it('lists products carried at the branch with per-branch availability + unit sto
     $ctx = makeMerchantActor();
     $latte = Product::factory()->for($ctx['company'], 'company')->create(['name' => 'Latte', 'base_price' => '2.500', 'stock_mode' => 'unit']);
     $cake = Product::factory()->for($ctx['company'], 'company')->create(['name' => 'Cake', 'base_price' => '5.000', 'stock_mode' => 'untracked']);
-    // A product NOT carried at this branch (no pivot row) — excluded.
+    // LAUNCH-P4 H6 — with the default branch rule ('all') a product with no
+    // pivot row IS sold here, so it is listed too (no shelf count).
     Product::factory()->for($ctx['company'], 'company')->create(['name' => 'Juice']);
+    // ... while a product sold only at other branches is not.
+    $other = Branch::factory()->for($ctx['company'], 'company')->create();
+    $tea = Product::factory()->for($ctx['company'], 'company')->create(['name' => 'Tea']);
+    DB::table('pos_products')->where('id', $tea->id)->update(['branch_scope' => 'selected']);
+    BranchProduct::create(['branch_id' => $other->id, 'product_id' => $tea->id, 'is_available' => true, 'stock_qty' => null]);
 
     BranchProduct::create(['branch_id' => $ctx['branch']->id, 'product_id' => $latte->id, 'is_available' => true, 'stock_qty' => '12.000']);
     BranchProduct::create(['branch_id' => $ctx['branch']->id, 'product_id' => $cake->id, 'is_available' => false, 'stock_qty' => null]);
 
     $data = $this->getJson("/api/pos/branches/{$ctx['branch']->uuid}/products")->assertOk()->json('data');
 
-    expect($data)->toHaveCount(2);
+    expect(collect($data)->pluck('name')->sort()->values()->all())->toBe(['Cake', 'Juice', 'Latte']);
     $byName = collect($data)->keyBy('name');
     expect($byName['Latte']['is_available'])->toBeTrue();
     expect($byName['Latte']['stock_qty'])->toBe('12.000');
@@ -204,7 +212,7 @@ it('does not leak another tenant branch (404 on every section)', function (): vo
 it('gates each section behind its own permission', function (): void {
     $ctx = makeMerchantActor();
     $ctx['user']->syncRoles([]);
-    app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
 
     $this->getJson("/api/pos/branches/{$ctx['branch']->uuid}/products")->assertForbidden();
     $this->getJson("/api/pos/branches/{$ctx['branch']->uuid}/staff")->assertForbidden();

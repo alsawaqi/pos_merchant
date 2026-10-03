@@ -103,7 +103,7 @@ class BranchesController extends Controller
      * action layer enforces the merchant-editable whitelist + the
      * extra BranchesTransitionStatus gate on status.
      */
-    public function update(UpdateMerchantBranchRequest $request, Branch $branch): BranchResource | JsonResponse
+    public function update(UpdateMerchantBranchRequest $request, Branch $branch): BranchResource|JsonResponse
     {
         $this->ensure($request, MerchantPermission::BranchesUpdate);
         $this->refuseIfNotInTenant($branch);
@@ -117,6 +117,7 @@ class BranchesController extends Controller
             // 403 because that's a permission boundary, not a
             // validation error.
             $isPermissionError = str_contains($e->getMessage(), 'permission');
+
             return response()->json(['message' => $e->getMessage()], $isPermissionError ? 403 : 422);
         }
 
@@ -164,9 +165,15 @@ class BranchesController extends Controller
     /**
      * GET /api/pos/branches/{branch:uuid}/products  (v2 #11)
      *
-     * Products carried at this branch (have a pos_branch_product row),
-     * with the per-branch availability + unit stock from the pivot.
-     * catalogue.view gated. NULL stock_qty = not unit-tracked here.
+     * LAUNCH-P4 — the products this branch sells (the product's branch rule,
+     * H6: 'all' = every branch except a row with is_available=false;
+     * 'selected' = only rows with is_available=true) plus any product with a
+     * stock row here, with:
+     *   - is_available: sold at this branch under its rule;
+     *   - sold_out (B4): switched sold out here;
+     *   - stock_qty for unit AND cooked products (M6), and below_zero when
+     *     the shelf count is under zero (sell-but-warn allows it).
+     * catalogue.view gated. NULL stock_qty = no shelf count here.
      */
     public function products(Request $request, Branch $branch): JsonResponse
     {
@@ -175,24 +182,38 @@ class BranchesController extends Controller
 
         $products = Product::query()
             ->where('company_id', $this->tenant->requiredId())
-            ->whereHas('branchProducts', fn ($q) => $q->where('branch_id', $branch->id))
             ->with(['branchProducts' => fn ($q) => $q->where('branch_id', $branch->id)])
+            ->withExists(['soldOutRows as sold_out_here' => fn ($q) => $q->where('branch_id', $branch->id)])
             ->orderBy('name')
             ->get();
 
-        $data = $products->map(static function (Product $p): array {
+        $data = $products->map(static function (Product $p): ?array {
             $bp = $p->branchProducts->first();
+            $soldHere = ($p->branch_scope ?? Product::SCOPE_ALL) === Product::SCOPE_SELECTED
+                ? $bp !== null && (bool) $bp->is_available
+                : $bp === null || (bool) $bp->is_available;
+            // Physical items show only where they hold stock; a sellable
+            // product shows where it is sold or holds stock.
+            if ($bp === null && ($p->is_internal || ! $soldHere)) {
+                return null;
+            }
+            $qty = $bp !== null && $bp->stock_qty !== null ? (string) $bp->stock_qty : null;
 
             return [
                 'product_id' => (int) $p->id,
                 'uuid' => $p->uuid,
                 'name' => (string) $p->name,
+                'name_ar' => $p->name_ar,
                 'base_price' => (string) $p->base_price,
                 'stock_mode' => (string) $p->stock_mode,
-                'is_available' => $bp !== null ? (bool) $bp->is_available : true,
-                'stock_qty' => $bp !== null && $bp->stock_qty !== null ? (string) $bp->stock_qty : null,
+                'product_type' => (string) ($p->product_type ?? Product::TYPE_STANDARD),
+                'is_internal' => (bool) $p->is_internal,
+                'is_available' => $soldHere,
+                'sold_out' => (bool) $p->sold_out_here,
+                'stock_qty' => $qty,
+                'below_zero' => $qty !== null && (float) $qty < 0,
             ];
-        })->values()->all();
+        })->filter()->values()->all();
 
         return response()->json(['data' => $data]);
     }

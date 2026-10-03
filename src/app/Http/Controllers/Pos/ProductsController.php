@@ -9,6 +9,7 @@ use App\Actions\Pos\Catalogue\CreateProductAction;
 use App\Actions\Pos\Catalogue\CreateProductWizardAction;
 use App\Actions\Pos\Catalogue\DeleteProductAction;
 use App\Actions\Pos\Catalogue\ImportProductsAction;
+use App\Actions\Pos\Catalogue\SetProductSoldOutAction;
 use App\Actions\Pos\Catalogue\SyncProductAddOnGroupsAction;
 use App\Actions\Pos\Catalogue\SyncProductBranchesAction;
 use App\Actions\Pos\Catalogue\UpdateProductAction;
@@ -20,6 +21,7 @@ use App\Http\Requests\Pos\Catalogue\CreateAddOnGroupRequest;
 use App\Http\Requests\Pos\Catalogue\CreateProductRequest;
 use App\Http\Requests\Pos\Catalogue\CreateProductWizardRequest;
 use App\Http\Requests\Pos\Catalogue\ImportProductsRequest;
+use App\Http\Requests\Pos\Catalogue\SetProductSoldOutRequest;
 use App\Http\Requests\Pos\Catalogue\SyncProductAddOnGroupsRequest;
 use App\Http\Requests\Pos\Catalogue\SyncProductBranchesRequest;
 use App\Http\Requests\Pos\Catalogue\UpdateProductComponentsRequest;
@@ -28,8 +30,10 @@ use App\Http\Requests\Pos\Catalogue\UpdateProductRequest;
 use App\Http\Resources\Pos\Catalogue\AddOnGroupResource;
 use App\Http\Resources\Pos\Catalogue\ProductResource;
 use App\Models\AddOnGroup;
+use App\Models\Branch;
 use App\Models\Product;
 use App\Models\ProductCategory;
+use App\Models\ProductSoldOut;
 use App\Support\BranchScope;
 use App\Support\MerchantTenantContext;
 use App\Support\Recipes\ProductRecipeHistory;
@@ -93,7 +97,18 @@ class ProductsController extends Controller
             // round-trips.
             // P-G2 — components + their product so the Physical items
             // section pre-populates without an extra round-trip.
-            ->with(['category', 'addOnGroups', 'recipeLines.ingredient.altUnits', ...$this->branchProductsEager($request), 'components.component']);
+            ->with(['category', 'addOnGroups', 'recipeLines.ingredient.altUnits', ...$this->branchProductsEager($request), ...$this->soldOutEager($request), 'components.component']);
+
+        // LAUNCH-P4 B4 — ?sold_out=1: only products sold out at one of the
+        // user's branches; ?sold_out_branch={id}: at that branch.
+        $allowed = $request->user()?->allowedBranchIds();
+        if ($request->filled('sold_out_branch')) {
+            $branchId = (int) $request->query('sold_out_branch');
+            BranchScope::ensureBranch($request->user(), $branchId);
+            $query->whereHas('soldOutRows', fn ($q) => $q->where('branch_id', $branchId));
+        } elseif ($request->boolean('sold_out')) {
+            $query->whereHas('soldOutRows', fn ($q) => $q->when($allowed !== null, fn ($qq) => $qq->whereIn('branch_id', $allowed)));
+        }
 
         // Optional ?category=<uuid> filter. Unknown / cross-
         // tenant uuid silently yields zero results (no leak).
@@ -126,6 +141,56 @@ class ProductsController extends Controller
                 ->orderBy('name')
                 ->paginate($perPage),
         );
+    }
+
+    /**
+     * PUT /api/products/{product:uuid}/sold-out  { branch_id, sold_out }
+     *
+     * LAUNCH-P4 B4 — switch a product sold out (or back on sale) at one
+     * branch, on every channel, until switched back (owner decision 4).
+     * Allowed with "Manage catalogue" or "Mark sold out"; branch-limited
+     * users only for their own branches.
+     */
+    public function setSoldOut(SetProductSoldOutRequest $request, Product $product, SetProductSoldOutAction $action): JsonResponse
+    {
+        $user = $request->user();
+        if ($user === null || ! ($user->can(MerchantPermission::CatalogueManage->value) || $user->can(MerchantPermission::CatalogueSoldOut->value))) {
+            abort(403);
+        }
+        $this->refuseIfNotInTenant($product);
+        $this->refuseIfPhysicalItem($product);
+
+        $branch = Branch::query()
+            ->where('company_id', $this->tenant->requiredId())
+            ->find((int) $request->validated()['branch_id']);
+        if ($branch === null) {
+            return response()->json(['message' => 'The branch does not belong to your company.', 'errors' => ['branch_id' => ['The branch does not belong to your company.']]], 422);
+        }
+        BranchScope::ensureBranch($user, $branch);
+
+        $soldOut = $action->handle($product, $branch, $request->boolean('sold_out'), $user);
+
+        return response()->json(['data' => [
+            'product_uuid' => $product->uuid,
+            'branch_id' => (int) $branch->id,
+            'sold_out' => $soldOut,
+            'sold_out_branch_ids' => $this->soldOutBranchIds($product, $user->allowedBranchIds()),
+        ]]);
+    }
+
+    /**
+     * @param  list<int>|null  $allowed
+     * @return list<int>
+     */
+    private function soldOutBranchIds(Product $product, ?array $allowed): array
+    {
+        return ProductSoldOut::query()
+            ->where('product_id', $product->id)
+            ->when($allowed !== null, fn ($q) => $q->whereIn('branch_id', $allowed))
+            ->orderBy('branch_id')
+            ->pluck('branch_id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
     }
 
     public function store(CreateProductRequest $request): JsonResponse
@@ -640,6 +705,22 @@ class ProductsController extends Controller
      *
      * @return array<int|string, \Closure|string>
      */
+    /**
+     * LAUNCH-P4 B4 — the sold-out rows, limited to the user's branches.
+     *
+     * @return array<string, \Closure>
+     */
+    private function soldOutEager(Request $request): array
+    {
+        $allowed = $request->user()?->allowedBranchIds();
+
+        return ['soldOutRows' => static function ($q) use ($allowed): void {
+            if ($allowed !== null) {
+                $q->whereIn('branch_id', $allowed);
+            }
+        }];
+    }
+
     private function branchProductsEager(Request $request): array
     {
         $allowed = $request->user()?->allowedBranchIds();

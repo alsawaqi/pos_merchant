@@ -62,7 +62,8 @@ import {
     updateDeliveryProvider,
     type DeliveryProvider,
 } from '@/lib/api/deliveryProviders';
-import { canWriteRecipes, MerchantPermission } from '@/lib/permissions';
+import { canMarkSoldOut, canWriteRecipes, MerchantPermission } from '@/lib/permissions';
+import SoldOutDialog from './SoldOutDialog.vue';
 
 const { t, locale } = useI18n();
 const { can } = usePermissions();
@@ -76,6 +77,8 @@ const canManage = computed(() => can(MerchantPermission.CatalogueManage));
 // recipe write: "Edit recipes" + catalogue.view; such a role opens an
 // option for its stock usage only.
 const canEditRecipes = computed(() => canWriteRecipes(can));
+// LAUNCH-P4 B4 — "Manage catalogue" or "Mark sold out".
+const canSoldOut = computed(() => canMarkSoldOut(can));
 
 type TabKey = 'categories' | 'products' | 'addons' | 'providers';
 const activeTab = ref<TabKey>('categories');
@@ -111,6 +114,9 @@ const productCategoryFilter = ref<string>('');
 // carries the paginator totals. search is debounced; changing the
 // search text OR the category resets back to page 1.
 const productSearch = ref<string>('');
+// LAUNCH-P4 B4 — the "Sold out" filter (sold out at one of my branches).
+const soldOutOnly = ref<boolean>(false);
+const soldOutTarget = ref<Product | null>(null);
 const productPage = ref<number>(1);
 const productsLoading = ref(false);
 const productsMeta = ref<{ current_page: number; last_page: number; per_page: number; total: number }>({
@@ -244,6 +250,7 @@ async function fetchProducts(): Promise<void> {
             search: productSearch.value.trim() || undefined,
             category: productCategoryFilter.value === '' ? undefined : productCategoryFilter.value,
             page: productPage.value,
+            sold_out: soldOutOnly.value,
         });
         products.value = response.data;
         productsMeta.value = response.meta;
@@ -265,10 +272,22 @@ watch(productSearch, () => {
     }, 250);
 });
 
-watch(productCategoryFilter, () => {
+watch([productCategoryFilter, soldOutOnly], () => {
     productPage.value = 1;
     void fetchProducts();
 });
+
+/** LAUNCH-P4 B4 — the names of the branches where an item is sold out. */
+function soldOutBranchNames(prod: Product): string[] {
+    return (prod.sold_out_branch_ids ?? []).map((id) => branches.value.find((b) => b.id === id)?.name ?? `#${id}`);
+}
+
+function onSoldOutUpdated(ids: number[]): void {
+    const target = soldOutTarget.value;
+    if (!target) return;
+    const row = products.value.find((p) => p.uuid === target.uuid);
+    if (row) row.sold_out_branch_ids = ids;
+}
 
 function goProductPage(page: number): void {
     productPage.value = page;
@@ -1001,6 +1020,11 @@ async function performProviderDelete(): Promise<void> {
                                 <option v-for="cat in categories" :key="cat.uuid" :value="cat.uuid">{{ cat.name }}</option>
                             </select>
                         </label>
+                        <!-- LAUNCH-P4 B4 — the "Sold out" filter. -->
+                        <label class="inline-flex items-center gap-2 pb-2.5 text-sm font-medium text-slate-700">
+                            <input v-model="soldOutOnly" type="checkbox" class="rounded border-slate-300 text-rose-600 focus:ring-2 focus:ring-rose-200" data-test="sold-out-filter">
+                            {{ t('sold_out.filter') }}
+                        </label>
                     </div>
                     <div v-if="canManage" class="flex flex-wrap gap-2">
                         <!-- LAUNCH-P4 B2 — combos have their own editor. -->
@@ -1046,6 +1070,8 @@ async function performProviderDelete(): Promise<void> {
                                 <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.table_recipe_col') }}</th>
                                 <!-- LAUNCH-P4 B3 — channel icons. -->
                                 <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('channels.column') }}</th>
+                                <!-- LAUNCH-P4 B4 — sold out per branch. -->
+                                <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('sold_out.column') }}</th>
                                 <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.table.status') }}</th>
                                 <th class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.table.actions') }}</th>
                             </tr>
@@ -1127,6 +1153,21 @@ async function performProviderDelete(): Promise<void> {
                                             <component :is="CHANNEL_ICONS[badge.key]" class="size-3.5" />
                                         </span>
                                     </span>
+                                </td>
+                                <td class="px-5 py-4" data-test="sold-out-cell">
+                                    <div class="flex flex-wrap items-center gap-1">
+                                        <span v-for="name in soldOutBranchNames(prod)" :key="name" class="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-700">{{ t('sold_out.at', { branch: name }) }}</span>
+                                        <span v-if="soldOutBranchNames(prod).length === 0" class="text-xs text-slate-400">{{ t('sold_out.on_sale') }}</span>
+                                        <button
+                                            v-if="canSoldOut"
+                                            type="button"
+                                            class="ms-1 rounded border border-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-50"
+                                            data-test="sold-out-open"
+                                            @click="soldOutTarget = prod"
+                                        >
+                                            {{ t('sold_out.change') }}
+                                        </button>
+                                    </div>
                                 </td>
                                 <td class="px-5 py-4">
                                     <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider" :class="statusBadgeClass(prod.status)">
@@ -1777,6 +1818,14 @@ async function performProviderDelete(): Promise<void> {
                 </div>
             </template>
         </BaseModal>
+
+        <SoldOutDialog
+            v-if="soldOutTarget"
+            :product="soldOutTarget"
+            :branches="branches"
+            @updated="onSoldOutUpdated"
+            @close="soldOutTarget = null"
+        />
 
         <ProductStockDialog
             :open="stockDialogProduct !== null"

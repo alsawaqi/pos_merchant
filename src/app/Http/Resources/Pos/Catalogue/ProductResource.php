@@ -54,6 +54,14 @@ class ProductResource extends JsonResource
             'sold_in_store' => (bool) ($this->sold_in_store ?? true),
             'sold_on_delivery' => (bool) ($this->sold_on_delivery ?? true),
             'branch_scope' => (string) ($this->branch_scope ?? 'all'),
+            // LAUNCH-P4 B4 — the branches (of the user's scope) where it is
+            // switched sold out, when the controller eager-loaded them.
+            'sold_out_branch_ids' => $this->whenLoaded('soldOutRows', fn (): array => $this->soldOutRows
+                ->pluck('branch_id')
+                ->map(static fn ($id): int => (int) $id)
+                ->sort()
+                ->values()
+                ->all()),
             'base_price' => (string) $this->base_price,
             // Phase 4.9 — per-product delivery override. NULL
             // means "no markup, use base_price for delivery too".

@@ -167,6 +167,9 @@ final class SeedMerchantRolesAction
                     // (existing Manager roles: pos_admin migration
                     // 2026_10_02_100004).
                     MerchantPermission::CatalogueRecipesManage->value,
+                    // LAUNCH-P4 B4: managers mark items sold out at a
+                    // branch (they hold catalogue.manage too).
+                    MerchantPermission::CatalogueSoldOut->value,
                     // Inventory (Phase 5a): managers run the
                     // day-to-day buying, adjusting, and waste
                     // reporting.

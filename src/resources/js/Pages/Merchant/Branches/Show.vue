@@ -37,7 +37,8 @@ import {
 import { ApiError } from '@/lib/api';
 import { friendlyAmount } from '@/lib/itemKind';
 import { usePermissions } from '@/composables/usePermissions';
-import { MerchantPermission } from '@/lib/permissions';
+import { canMarkSoldOut, MerchantPermission } from '@/lib/permissions';
+import { setProductSoldOut } from '@/lib/api/catalogue';
 
 const route = useRoute();
 const { t } = useI18n();
@@ -65,6 +66,25 @@ const canManageBranch = can(MerchantPermission.BranchesUpdate);
 const canDeviceLive = can(MerchantPermission.DevicesLiveView);
 const canInventoryManage = can(MerchantPermission.InventoryManage);
 const canStaffCreate = can(MerchantPermission.PosStaffCreate);
+// LAUNCH-P4 B4 — "Manage catalogue" or "Mark sold out" switches items sold
+// out at this branch (the server keeps branch-limited users to theirs).
+const canSoldOut = canMarkSoldOut(can);
+const soldOutBusy = ref<number | null>(null);
+const soldOutError = ref<string | null>(null);
+
+async function toggleSoldOut(p: BranchProductRow): Promise<void> {
+    if (!branch.value || soldOutBusy.value !== null) return;
+    soldOutBusy.value = p.product_id;
+    soldOutError.value = null;
+    try {
+        const res = await setProductSoldOut(p.uuid, branch.value.id, !p.sold_out);
+        p.sold_out = res.data.sold_out;
+    } catch (err) {
+        soldOutError.value = err instanceof ApiError && err.status === 403 ? t('sold_out.not_allowed') : t('sold_out.save_failed');
+    } finally {
+        soldOutBusy.value = null;
+    }
+}
 
 // Inline control-center dialogs.
 const showAddStock = ref(false);
@@ -351,6 +371,8 @@ onMounted(() => {
                                 <th class="px-5 py-2 text-end">{{ t('catalogue.fields.base_price') }}</th>
                                 <th class="px-5 py-2 text-end">{{ t('branches.show.stock') }}</th>
                                 <th class="px-5 py-2 text-end">{{ t('branches.show.available') }}</th>
+                                <!-- LAUNCH-P4 B4 -->
+                                <th class="px-5 py-2 text-end">{{ t('sold_out.column') }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -366,9 +388,25 @@ onMounted(() => {
                                         {{ p.is_available ? t('branches.show.available') : t('branches.show.unavailable') }}
                                     </span>
                                 </td>
+                                <td class="px-5 py-2 text-end" data-test="branch-sold-out">
+                                    <button
+                                        v-if="canSoldOut && !p.is_internal"
+                                        type="button"
+                                        :disabled="soldOutBusy !== null"
+                                        class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold transition disabled:opacity-60"
+                                        :class="p.sold_out ? 'bg-rose-100 text-rose-700 hover:bg-rose-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
+                                        :title="p.sold_out ? t('sold_out.put_back') : t('sold_out.mark')"
+                                        data-test="branch-sold-out-toggle"
+                                        @click="toggleSoldOut(p)"
+                                    >
+                                        {{ p.sold_out ? t('sold_out.sold_out') : t('sold_out.on_sale') }}
+                                    </button>
+                                    <span v-else-if="p.sold_out" class="inline-flex rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-semibold text-rose-700">{{ t('sold_out.sold_out') }}</span>
+                                </td>
                             </tr>
                         </tbody>
                     </table>
+                    <p v-if="soldOutError" class="px-5 pb-3 text-xs text-rose-600">{{ soldOutError }}</p>
                     <div v-else class="p-6 text-center text-sm text-slate-400">{{ t('branches.show.no_products') }}</div>
                 </section>
 

@@ -61,6 +61,8 @@ export interface Product {
     sold_on_delivery?: boolean;
     /** LAUNCH-P4 H6 — 'all' branches, or only the 'selected' ones. */
     branch_scope?: BranchScope;
+    /** LAUNCH-P4 B4 — branches (of the user's scope) where it is sold out. */
+    sold_out_branch_ids?: number[];
     /** OMR with 3 decimals — keep as string for precision. */
     base_price: string;
     /**
@@ -509,6 +511,8 @@ export interface ListProductsParams {
     page?: number;
     /** Default 50 server-side, clamped 1–200. */
     per_page?: number;
+    /** LAUNCH-P4 B4 — only items sold out at one of the user's branches. */
+    sold_out?: boolean;
 }
 
 export function listProducts(params: ListProductsParams = {}): Promise<PaginatedProducts> {
@@ -518,8 +522,26 @@ export function listProducts(params: ListProductsParams = {}): Promise<Paginated
             category: params.category,
             page: params.page,
             per_page: params.per_page,
+            sold_out: params.sold_out ? 1 : undefined,
         },
     });
+}
+
+/** LAUNCH-P4 B4 — the answer of a sold-out switch. */
+export interface SoldOutResult {
+    product_uuid: string;
+    branch_id: number;
+    sold_out: boolean;
+    /** Every branch (of the user's scope) where the item is now sold out. */
+    sold_out_branch_ids: number[];
+}
+
+/** LAUNCH-P4 B4 — switch an item sold out (or back on sale) at one branch. */
+export function setProductSoldOut(productUuid: string, branchId: number, soldOut: boolean): Promise<{ data: SoldOutResult }> {
+    return apiPut<{ data: SoldOutResult }>(
+        `/api/products/${productUuid}/sold-out`,
+        { branch_id: branchId, sold_out: soldOut } as unknown as JsonValue,
+    );
 }
 
 export function createProduct(payload: CreateProductPayload): Promise<{ data: Product }> {

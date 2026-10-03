@@ -3646,5 +3646,19 @@
             "slot_name": "Name slot {n}.",
             "slot": "Fix slot {n}."
         }
+    },
+    "sold_out": {
+        "column": "Sold out",
+        "filter": "Sold out only",
+        "dialog_title": "Sold out: {name}",
+        "hint": "Tick a branch to stop selling this item there, on the till, the handheld, the QR menu and delivery. It stays sold out until you untick it. Stock never changes this.",
+        "sold_out": "Sold out",
+        "on_sale": "On sale",
+        "at": "Sold out at {branch}",
+        "change": "Sold out…",
+        "mark": "Mark sold out at this branch",
+        "put_back": "Put back on sale at this branch",
+        "not_allowed": "You cannot change this branch.",
+        "save_failed": "Could not save. Try again."
     }
 }

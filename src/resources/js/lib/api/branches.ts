@@ -168,9 +168,17 @@ export interface BranchProductRow {
     base_price: string;
     /** 'unit' | 'ingredient' | 'untracked'. */
     stock_mode: string;
+    /** LAUNCH-P4 H6 — sold at this branch under the product's branch rule. */
     is_available: boolean;
     /** decimal:3 string, or null when not unit-tracked at this branch. */
     stock_qty: string | null;
+    name_ar?: string | null;
+    product_type?: string;
+    is_internal?: boolean;
+    /** LAUNCH-P4 B4 — switched sold out at this branch. */
+    sold_out?: boolean;
+    /** LAUNCH-P4 M6 — the shelf count is below zero. */
+    below_zero?: boolean;
 }
 
 export interface BranchStaffMember {

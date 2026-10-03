@@ -84,6 +84,13 @@ enum MerchantPermission: string
     // who and what (version rows + audit).
     case CatalogueRecipesManage = 'catalogue.recipes.manage';
 
+    // LAUNCH-P4 B4 — "Mark sold out" (owner decision 4): switch a product
+    // sold out / back on sale at a branch, during service, without the rest
+    // of catalogue.manage. Default: Super Admin + Manager. Branch-limited
+    // users do it for their own branches only. catalogue.manage also allows
+    // it.
+    case CatalogueSoldOut = 'catalogue.sold_out.manage';
+
     // Phase 5a — inventory. One catalog for ingredients,
     // suppliers, branch stock + movements (manage covers all
     // four). Same rationale as the others: splitting into

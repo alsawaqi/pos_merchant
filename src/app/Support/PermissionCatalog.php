@@ -169,6 +169,12 @@ final class PermissionCatalog
                         'label_en' => 'Edit recipes (product recipes, prep items, add-on stock usage) — needs "See categories + products + add-ons"',
                         'label_ar' => 'تعديل الوصفات (وصفات المنتجات، المستحضرات، استهلاك الإضافات من المخزون) — تحتاج صلاحية "عرض الفئات والمنتجات والإضافات"',
                     ],
+                    // LAUNCH-P4 B4.
+                    [
+                        'key' => MerchantPermission::CatalogueSoldOut->value,
+                        'label_en' => 'Mark sold out (switch an item off at a branch during service; branch-limited users: their own branches)',
+                        'label_ar' => 'تحديد نفاد الصنف (إيقاف صنف في فرع أثناء العمل؛ المستخدم المقيد بفروع: فروعه فقط)',
+                    ],
                 ],
             ],
             [
