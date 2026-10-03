@@ -1226,9 +1226,11 @@ return new class extends Migration
             $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
             $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
             $table->foreignId('product_id')->constrained('pos_products')->cascadeOnDelete();
-            $table->unsignedBigInteger('set_by_user_id')->nullable();
-            $table->unsignedBigInteger('set_by_pos_staff_id')->nullable();
-            $table->timestamp('set_at')->useCurrent();
+            // pos_admin 2026_10_03_100005: who set it (portal user or POS
+            // staff); set_at has no default — the writer stamps it.
+            $table->foreignId('set_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->foreignId('set_by_pos_staff_id')->nullable()->constrained('pos_staff')->nullOnDelete();
+            $table->timestamp('set_at');
             $table->timestamps();
             $table->unique(['branch_id', 'product_id'], 'pos_product_sold_out_branch_product_unique');
         });

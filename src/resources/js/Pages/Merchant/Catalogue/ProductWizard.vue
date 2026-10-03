@@ -1059,6 +1059,12 @@ onMounted(async () => {
                 getProduct(editUuid!),
                 listProductDeliveryPrices(editUuid!).catch(() => ({ data: [] })),
             ]);
+            // LAUNCH-P4 B2 — a combo opens in the combo editor.
+            if (productRes.data.product_type === 'combo') {
+                leavingAfterSave.value = true;
+                void router.replace(`/catalogue/combos/${editUuid}/edit`);
+                return;
+            }
             prefillFromProduct(productRes.data);
             providerRows.value = providerRowsFrom(activeProviders.value, pricesRes.data);
             await loadOwnedAddonGroups().catch(() => { ownedAddonGroups.value = []; });

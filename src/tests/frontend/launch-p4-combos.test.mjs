@@ -61,6 +61,8 @@ test('B2 combos appear in the catalogue list with a Combo badge and open in the 
     const router = read('resources/js/router.ts');
     assert.match(router, /path: '\/catalogue\/combos\/new'/);
     assert.match(router, /name: 'merchant\.catalogue\.combo-edit'/);
+    // A combo opened through the product wizard URL goes to the combo editor.
+    assert.match(sfc('resources/js/Pages/Merchant/Catalogue/ProductWizard.vue').script, /product_type === 'combo'[\s\S]*?router\.replace\(`\/catalogue\/combos\/\$\{editUuid\}\/edit`\)/);
 });
 
 test('B2 every combo text exists in English and Arabic', () => {
