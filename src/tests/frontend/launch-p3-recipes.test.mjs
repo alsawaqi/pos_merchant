@@ -127,7 +127,8 @@ test('P3-4 prep items have their own editor, an Inventory tab, and are offered f
     assert.match(router, /path: '\/inventory\/prep-items\/new',\s*name: 'merchant\.prep-items\.create'/);
     assert.match(router, /path: '\/inventory\/prep-items\/:uuid',\s*name: 'merchant\.prep-items\.edit'/);
     const editor = sfc('resources/js/Pages/Merchant/Inventory/PrepItemEditor.vue');
-    assert.match(editor.script, /const prepUnits: PrepUnit\[\] = \['g', 'ml', 'piece'\];/);
+    // LAUNCH item kind, A6: the kind question stores the small unit (g / ml / piece).
+    assert.match(editor.script, /form\.unit = KIND_STORED_UNIT\[kind\];/);
     assert.match(editor.script, /listIngredients\(\{ includePrep: true \}\)/);
     assert.match(editor.template, /recipeUnitOptions\(ingredientByUuid\(line\.ingredient_uuid\), locale\)/);
     assert.match(editor.template, /data-test="prep-live-cost"/);

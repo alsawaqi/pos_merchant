@@ -2,8 +2,10 @@
 /**
  * LAUNCH-P3 P3-4 — create / edit a PREP ITEM (sauce, dough …).
  *
- * A name, a SMALL base unit (g, ml or piece), a yield (what one batch makes,
- * in that unit) and a recipe of ingredients or other prep items (at most 3
+ * A name, what KIND of item it is (LAUNCH item kind, A6: Weighed / Liquid /
+ * Counted, stored in the small unit g, ml or piece), a yield (what one batch
+ * makes, typed in any unit of the kind — "one batch makes 2 l" — and kept in
+ * the stored unit) and a recipe of ingredients or other prep items (at most 3
  * levels), each line typed with the recipe unit picker (P3-1). The live cost
  * per batch and per base unit follows the explode rule. Saving needs "Edit
  * recipes" (P3-3); without it the page is read-only. Every change is kept in
@@ -28,6 +30,7 @@ import {
     type PrepItem,
     type PrepUnit,
 } from '@/lib/api/prepItems';
+import { holdsEntry, ITEM_KINDS, KIND_STORED_UNIT, kindOfUnit, kindUnits, toStoredAmount, trimAmount, type ItemKind } from '@/lib/itemKind';
 import { canWriteRecipes } from '@/lib/permissions';
 import {
     lineEntry,
@@ -52,8 +55,6 @@ const canEditRecipes = computed(() => canWriteRecipes(can));
 const editUuid = route.name === 'merchant.prep-items.edit' ? String(route.params.uuid) : null;
 const isEdit = editUuid !== null;
 
-const prepUnits: PrepUnit[] = ['g', 'ml', 'piece'];
-
 const ingredients = ref<Ingredient[]>([]);
 const current = ref<PrepItem | null>(null);
 const pageLoading = ref(true);
@@ -67,10 +68,29 @@ const form = reactive<{
     name: string;
     name_ar: string;
     unit: PrepUnit;
+    /** A6 — the yield as typed, in yield_unit (a unit of the kind): "2" + "l". */
     prep_yield_quantity: string;
+    yield_unit: string;
     lines: { ingredient_uuid: string; quantity: string; unit: string }[];
     note: string;
-}>({ name: '', name_ar: '', unit: 'g', prep_yield_quantity: '', lines: [], note: '' });
+}>({ name: '', name_ar: '', unit: 'g', prep_yield_quantity: '', yield_unit: 'g', lines: [], note: '' });
+
+// LAUNCH item kind, A6 — the prep form asks what KIND of item it is, like the
+// ingredient form, in place of its g / ml / piece dropdown. A prep item is
+// always stored in the small unit of its kind.
+const prepKind = computed<ItemKind>(() => kindOfUnit(form.unit));
+/** The units "one batch makes" can be typed in: kg/g, l/ml or pieces. */
+const yieldUnits = computed(() => kindUnits(form.unit));
+
+function chooseKind(kind: ItemKind): void {
+    if (!canEditRecipes.value || unitLocked.value) return;
+    form.unit = KIND_STORED_UNIT[kind];
+    if (!yieldUnits.value.some((u) => u.value === form.yield_unit)) form.yield_unit = form.unit;
+}
+
+function yieldUnitLabel(unit: string): string {
+    return unit === 'piece' ? t('inventory.units.piece') : unit;
+}
 
 /** The components a prep recipe can use: every ingredient and every OTHER prep item. */
 const pickable = computed(() => ingredients.value.filter((i) => i.uuid !== editUuid));
@@ -119,19 +139,10 @@ const batchCost = computed<number>(() => {
     return total;
 });
 
-const yieldNumber = computed<number | null>(() => {
-    const n = parseFloat(String(form.prep_yield_quantity ?? '').trim());
-    return Number.isFinite(n) && n > 0 ? n : null;
-});
+/** A6 — what one batch makes in the STORED unit ("2 l" → 2000 ml), null while not a positive amount. */
+const yieldNumber = computed<number | null>(() => toStoredAmount(form.prep_yield_quantity, form.yield_unit, form.unit));
 
 const unitCost = computed<string | null>(() => (yieldNumber.value === null ? null : (batchCost.value / yieldNumber.value).toFixed(6)));
-
-/** "2000 ml = 2 l" — the yield is typed in the base unit; show the big unit too. */
-const yieldHint = computed<string | null>(() => {
-    if (yieldNumber.value === null || form.unit === 'piece') return null;
-    const big = form.unit === 'g' ? 'kg' : 'l';
-    return `${yieldNumber.value} ${form.unit} = ${+(yieldNumber.value / 1000).toFixed(4)} ${big}`;
-});
 
 const hasDuplicates = computed<boolean>(() => {
     const seen = new Set<string>();
@@ -177,7 +188,8 @@ async function save(): Promise<void> {
         name: form.name.trim(),
         name_ar: form.name_ar.trim() || null,
         unit: form.unit,
-        prep_yield_quantity: String(form.prep_yield_quantity).trim(),
+        // A6 — "one batch makes 2 l" is kept as 2000 (ml).
+        prep_yield_quantity: yieldNumber.value === null ? String(form.prep_yield_quantity).trim() : trimAmount(yieldNumber.value),
         lines: completeLines.value.map((l) => ({ ingredient_uuid: l.ingredient_uuid, quantity: String(l.quantity).trim(), unit: wireRecipeUnit(l.unit) })),
         note: form.note.trim() || null,
     };
@@ -235,7 +247,10 @@ onMounted(async () => {
             form.name = item.data.name;
             form.name_ar = item.data.name_ar ?? '';
             form.unit = item.data.unit;
-            form.prep_yield_quantity = item.data.prep_yield_quantity;
+            // A6 — 2000 ml reopens as "one batch makes 2 l".
+            const batch = holdsEntry(item.data.prep_yield_quantity, item.data.unit);
+            form.prep_yield_quantity = batch.amount;
+            form.yield_unit = batch.unit;
             // P3-1 — each line reopens exactly as typed.
             form.lines = (item.data.lines ?? []).map((line) => ({
                 ingredient_uuid: line.ingredient?.uuid ?? '',
@@ -278,20 +293,39 @@ onMounted(async () => {
                         <span class="text-sm font-medium text-slate-700">{{ t('prep_items.fields.name_ar') }}</span>
                         <input v-model="form.name_ar" type="text" dir="rtl" maxlength="191" :disabled="!canEditRecipes" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100 disabled:bg-slate-50">
                     </label>
-                    <label class="block">
-                        <span class="text-sm font-medium text-slate-700">{{ t('prep_items.fields.unit') }}</span>
-                        <select v-model="form.unit" :disabled="!canEditRecipes || unitLocked" data-test="prep-unit" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100 disabled:bg-slate-50">
-                            <option v-for="u in prepUnits" :key="u" :value="u">{{ t(`prep_items.units.${u}`) }}</option>
-                        </select>
-                        <span class="mt-1 block text-xs text-slate-500">{{ unitLocked ? t('prep_items.unit_locked') : t('prep_items.unit_hint') }}</span>
-                    </label>
+                    <!-- LAUNCH item kind, A6 — the same kind question as the ingredient
+                         form, in place of the g / ml / piece dropdown. -->
+                    <fieldset class="sm:col-span-2" data-test="prep-kind" :disabled="!canEditRecipes || unitLocked">
+                        <legend class="text-sm font-medium text-slate-700">{{ t('item_kind.question') }}</legend>
+                        <div class="mt-1 grid gap-2 sm:grid-cols-3">
+                            <label
+                                v-for="k in ITEM_KINDS"
+                                :key="k"
+                                class="flex flex-col rounded-lg border px-3 py-2.5 transition"
+                                :class="[
+                                    prepKind === k ? 'border-teal-500 bg-teal-50 ring-2 ring-teal-100' : 'border-slate-200',
+                                    !canEditRecipes || unitLocked ? (prepKind === k ? 'cursor-not-allowed' : 'cursor-not-allowed opacity-50') : 'cursor-pointer hover:bg-slate-50',
+                                ]"
+                            >
+                                <span class="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
+                                    <input type="radio" name="prep-kind" :value="k" :checked="prepKind === k" :disabled="!canEditRecipes || unitLocked" class="size-4 border-slate-300 text-teal-600 focus:ring-teal-500" @change="chooseKind(k)">
+                                    {{ t(`item_kind.kinds.${k}`) }}
+                                </span>
+                                <span class="mt-0.5 ps-6 text-xs text-slate-500">{{ t(`item_kind.prep_examples.${k}`) }}</span>
+                            </label>
+                        </div>
+                        <span class="mt-1 block text-xs" :class="unitLocked ? 'font-semibold text-amber-700' : 'text-slate-500'">{{ unitLocked ? t('item_kind.prep_locked') : t(`item_kind.entered_in.${prepKind}`) }}</span>
+                    </fieldset>
                     <label class="block">
                         <span class="text-sm font-medium text-slate-700">{{ t('prep_items.fields.yield') }}</span>
+                        <!-- A6 — "one batch makes [2] [l]", in any unit of the kind. -->
                         <div class="mt-1 flex items-center gap-2">
                             <input v-model="form.prep_yield_quantity" type="number" step="0.0001" min="0" :disabled="!canEditRecipes" data-test="prep-yield" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100 disabled:bg-slate-50">
-                            <span class="text-sm font-semibold text-slate-600">{{ form.unit }}</span>
+                            <select v-model="form.yield_unit" :disabled="!canEditRecipes" data-test="prep-yield-unit" class="w-28 shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100 disabled:bg-slate-50">
+                                <option v-for="u in yieldUnits" :key="u.value" :value="u.value">{{ yieldUnitLabel(u.value) }}</option>
+                            </select>
                         </div>
-                        <span class="mt-1 block text-xs text-slate-500">{{ yieldHint ?? t('prep_items.yield_hint') }}</span>
+                        <span class="mt-1 block text-xs text-slate-500">{{ t('item_kind.prep_yield_hint') }}</span>
                         <span v-if="firstError('prep_yield_quantity')" class="mt-1 block text-xs text-rose-600">{{ firstError('prep_yield_quantity') }}</span>
                     </label>
                 </section>

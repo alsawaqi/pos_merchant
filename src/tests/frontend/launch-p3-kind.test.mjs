@@ -8,6 +8,7 @@
 //   A4 the edit form's "Alternate units" become "Pack sizes" ("holds 12 l"),
 //      with the same holds input and no factor field;
 //   A5 the count container (piece unit) is typed as "bottle holds 1.5 l";
+//   A6 the prep item form asks the kind; the yield is typed in its units;
 //   every new string exists in English AND Arabic.
 // Run: node --test tests/frontend/launch-p3-kind.test.mjs
 import assert from 'node:assert/strict';
@@ -187,6 +188,33 @@ test('A5 the count container is typed as what it holds ("bottle holds 1.5 l"), n
     assert.match(script, /units_per_piece: containerUnitsPerPiece\(unit\),/);
     assert.match(script, /const stored = toStoredAmount\(text, ingForm\.container_unit, storedUnit\);/);
     assert.match(script, /const holds = holdsEntry\(ingredient\.units_per_piece, ingredient\.unit\);/);
+});
+
+test('A6 the prep item form asks the kind and takes the yield in the kind\'s units ("one batch makes 2 l")', () => {
+    const { toStoredAmount, holdsEntry, trimAmount } = lib('itemKind');
+    assert.equal(trimAmount(toStoredAmount('2', 'l', 'ml')), '2000');
+    assert.equal(trimAmount(toStoredAmount('1.25', 'kg', 'g')), '1250');
+    assert.equal(trimAmount(toStoredAmount('12', 'piece', 'piece')), '12');
+    const reopen = holdsEntry('2000.0000', 'ml');
+    assert.equal(`${reopen.amount} ${reopen.unit}`, '2 l');
+
+    const { script, template } = sfc('resources/js/Pages/Merchant/Inventory/PrepItemEditor.vue');
+    // The g / ml / piece dropdown is replaced by the kind question.
+    assert.doesNotMatch(template, /<select v-model="form\.unit"/);
+    assert.doesNotMatch(script, /const prepUnits/);
+    assert.match(template, /data-test="prep-kind"/);
+    assert.match(template, /v-for="k in ITEM_KINDS"/);
+    assert.match(template, /@change="chooseKind\(k\)"/);
+    assert.match(template, /:disabled="!canEditRecipes \|\| unitLocked"/);
+    assert.match(script, /form\.unit = KIND_STORED_UNIT\[kind\];/);
+    // The yield: an amount + a unit of the kind, kept in the stored unit.
+    assert.match(template, /<select v-model="form\.yield_unit"[^>]*data-test="prep-yield-unit"[^>]*>\s*<option v-for="u in yieldUnits"/);
+    assert.match(script, /const yieldUnits = computed\(\(\) => kindUnits\(form\.unit\)\);/);
+    assert.match(script, /const yieldNumber = computed<number \| null>\(\(\) => toStoredAmount\(form\.prep_yield_quantity, form\.yield_unit, form\.unit\)\);/);
+    assert.match(script, /prep_yield_quantity: yieldNumber\.value === null \? String\(form\.prep_yield_quantity\)\.trim\(\) : trimAmount\(yieldNumber\.value\),/);
+    assert.match(script, /const batch = holdsEntry\(item\.data\.prep_yield_quantity, item\.data\.unit\);/);
+    assert.doesNotMatch(en.prep_items.editor_hint, /base unit/);
+    assert.doesNotMatch(template, /prep_items\.yield_hint|prep_items\.unit_hint|prep_items\.fields\.unit/);
 });
 
 test('every item-kind string exists in English and Arabic', () => {
