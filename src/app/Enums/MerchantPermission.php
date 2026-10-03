@@ -89,7 +89,7 @@ enum MerchantPermission: string
     // of catalogue.manage. Default: Super Admin + Manager. Branch-limited
     // users do it for their own branches only. catalogue.manage also allows
     // it.
-    case CatalogueSoldOut = 'catalogue.sold_out.manage';
+    case CatalogueSoldOut = 'catalogue.sold_out';
 
     // Phase 5a — inventory. One catalog for ingredients,
     // suppliers, branch stock + movements (manage covers all

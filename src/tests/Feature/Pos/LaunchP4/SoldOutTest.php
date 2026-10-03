@@ -70,25 +70,25 @@ it('marks an item sold out at one branch, who and when, and puts it back on sale
 });
 
 it('adds "Mark sold out" to the catalogue permissions, held by Super Admin and Manager', function (): void {
-    expect(MerchantPermission::CatalogueSoldOut->value)->toBe('catalogue.sold_out.manage')
-        ->and(PermissionCatalog::allMerchantKeys())->toContain('catalogue.sold_out.manage');
+    expect(MerchantPermission::CatalogueSoldOut->value)->toBe('catalogue.sold_out')
+        ->and(PermissionCatalog::allMerchantKeys())->toContain('catalogue.sold_out');
 
     $ctx = makeMerchantActor();
     $entry = collect(collect($this->getJson('/api/roles/catalog')->assertOk()->json('data'))->firstWhere('key', 'catalogue')['permissions'])
-        ->firstWhere('key', 'catalogue.sold_out.manage');
+        ->firstWhere('key', 'catalogue.sold_out');
     expect($entry['label_en'])->toStartWith('Mark sold out')->and($entry['label_ar'])->toStartWith('تحديد نفاد الصنف');
 
     app(SeedMerchantRolesAction::class)->handle($ctx['company']->id);
     app(PermissionRegistrar::class)->setPermissionsTeamId($ctx['company']->id);
     $holders = collect(MerchantRole::values())
-        ->filter(fn (string $role): bool => Role::findByName($role, 'web')->hasPermissionTo('catalogue.sold_out.manage'))
+        ->filter(fn (string $role): bool => Role::findByName($role, 'web')->hasPermissionTo('catalogue.sold_out'))
         ->values()
         ->all();
     expect($holders)->toBe([MerchantRole::SuperAdmin->value, MerchantRole::Manager->value]);
 });
 
 it('lets a role with only "Mark sold out" switch it, but not a catalogue viewer', function (): void {
-    $ctx = p4ActorWith(['catalogue.view', 'catalogue.sold_out.manage']);
+    $ctx = p4ActorWith(['catalogue.view', 'catalogue.sold_out']);
     $product = p4Product($ctx['company'], 'Harees', '2.000');
     $this->putJson("/api/products/{$product->uuid}/sold-out", ['branch_id' => $ctx['branch']->id, 'sold_out' => true])->assertOk();
     // ... and nothing else of the catalogue.

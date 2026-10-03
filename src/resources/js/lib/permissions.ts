@@ -40,7 +40,7 @@ export const MerchantPermission = {
     CatalogueRecipesManage: 'catalogue.recipes.manage',
     // LAUNCH-P4 B4 — "Mark sold out" at a branch (catalogue.manage also
     // allows it); branch-limited users for their own branches only.
-    CatalogueSoldOut: 'catalogue.sold_out.manage',
+    CatalogueSoldOut: 'catalogue.sold_out',
     // Phase 5a — inventory (ingredients, suppliers, branch
     // stock, movements). Single gate for all four because in
     // practice nobody manages stock without seeing ingredients

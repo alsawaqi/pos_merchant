@@ -45,13 +45,19 @@ final readonly class SyncProductAddOnGroupsAction
 
     /**
      * @param  array<int, string>  $groupUuids  desired complete list of group uuids
-     * @return array<int, AddOnGroup>  fresh-loaded groups attached to the product, in display order
+     * @return array<int, AddOnGroup> fresh-loaded groups attached to the product, in display order
      */
     public function handle(Product $product, array $groupUuids, User $actor): array
     {
         $companyId = $this->tenant->requiredId();
         if ((int) $product->company_id !== $companyId) {
             abort(404);
+        }
+
+        // LAUNCH-P4 B2 — a combo takes no add-ons of its own (the device
+        // config sends none for combos): the items chosen in it keep theirs.
+        if ($product->isCombo() && $groupUuids !== []) {
+            throw new RuntimeException('A combo takes no add-ons of its own: the items in it keep their own add-ons.');
         }
 
         // Resolve every uuid up front — if ANY is bogus / cross-

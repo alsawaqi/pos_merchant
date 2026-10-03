@@ -90,6 +90,10 @@ final readonly class SaveComboAction
             $this->saveSlots($combo, (array) $data['slots'], $companyId);
             $after = $this->slotSnapshot($combo);
             if ($before !== $after) {
+                // The device config delta re-sends a product by its
+                // updated_at: a slot or option change (deletes included)
+                // must move it, or devices only catch up on a full sync.
+                $combo->touch();
                 $this->writeAuditLog->handle(new AuditLogData(
                     event: 'catalogue.combo.slots_saved',
                     actorUserId: $actor->getKey(),

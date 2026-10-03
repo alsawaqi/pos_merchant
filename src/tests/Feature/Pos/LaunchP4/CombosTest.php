@@ -120,6 +120,35 @@ it('saves a combo keeping slot ids, updating items and dropping removed slots', 
         ->and((string) $options->first()->extra_price)->toBe('0.100');
 });
 
+it('moves the combo updated_at when only its slots or options change, so devices re-read it', function (): void {
+    $ctx = makeMerchantActor();
+    $items = p4ComboItems($ctx['company']);
+    $payload = p4ComboPayload($items);
+    $uuid = $this->postJson('/api/combos', $payload)->assertCreated()->json('data.uuid');
+    DB::table('pos_products')->where('uuid', $uuid)->update(['updated_at' => now()->subDay()]);
+    $sides = Product::query()->where('uuid', $uuid)->sole()->comboSlots()->where('name', 'Side')->sole();
+
+    // Same product fields; one option deleted from the Side slot.
+    $payload['slots'][1]['id'] = $sides->id;
+    $payload['slots'][1]['options'] = [$payload['slots'][1]['options'][0]];
+    $this->putJson("/api/combos/{$uuid}", $payload)->assertOk();
+
+    expect(ComboSlotOption::query()->where('slot_id', $sides->id)->count())->toBe(1)
+        ->and(DB::table('pos_products')->where('uuid', $uuid)->value('updated_at'))->toBeGreaterThan(now()->subHour()->toDateTimeString());
+});
+
+it('gives a combo no add-ons of its own', function (): void {
+    $ctx = makeMerchantActor();
+    $items = p4ComboItems($ctx['company']);
+    $uuid = $this->postJson('/api/combos', p4ComboPayload($items))->json('data.uuid');
+    $shared = AddOnGroup::factory()->for($ctx['company'], 'company')->create(['name' => 'Sauces']);
+
+    $this->putJson("/api/products/{$uuid}/addon-groups", ['group_uuids' => [$shared->uuid]])->assertStatus(422);
+    $this->postJson("/api/products/{$uuid}/addon-groups", ['name' => 'Meal extras'])->assertStatus(422);
+    expect(AddOnGroup::query()->where('name', 'Meal extras')->exists())->toBeFalse()
+        ->and(DB::table('pos_addon_group_products')->count())->toBe(0);
+});
+
 it('refuses combo items that are not menu products of this company', function (): void {
     $ctx = makeMerchantActor();
     $items = p4ComboItems($ctx['company']);

@@ -9,7 +9,7 @@ import { assertBilingual, assertKeysExist, read, sfc } from './launch-p4-support
 
 test('B4 the permission rule: "Manage catalogue" or "Mark sold out"', () => {
     const perms = read('resources/js/lib/permissions.ts');
-    assert.match(perms, /CatalogueSoldOut: 'catalogue\.sold_out\.manage'/);
+    assert.match(perms, /CatalogueSoldOut: 'catalogue\.sold_out',/);
     assert.match(perms, /export function canMarkSoldOut[\s\S]*?can\(MerchantPermission\.CatalogueManage\) \|\| can\(MerchantPermission\.CatalogueSoldOut\)/);
 });
 

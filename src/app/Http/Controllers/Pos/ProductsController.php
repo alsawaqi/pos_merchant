@@ -650,6 +650,10 @@ class ProductsController extends Controller
     {
         $this->ensure($request, MerchantPermission::CatalogueManage);
         $this->refuseIfNotInTenant($product);
+        // LAUNCH-P4 B2 — a combo takes no add-ons of its own.
+        if ($product->isCombo()) {
+            return response()->json(['message' => 'A combo takes no add-ons of its own: the items in it keep their own add-ons.'], 422);
+        }
 
         $group = $this->createAddOnGroup->handle(
             array_merge($request->validated(), ['owner_product_id' => $product->id]),
