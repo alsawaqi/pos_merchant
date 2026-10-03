@@ -106,6 +106,7 @@ import {
     getRestockSuggestions,
     type RestockLinePayload,
     type RestockRequest,
+    type RestockRequestLine,
     type RestockRequestStatus,
     type RestockSuggestion,
     type StockMovementType,
@@ -606,6 +607,8 @@ interface SuggestionRow {
     suggestion: RestockSuggestion;
     include: boolean;
     qty: string;
+    /** F5 — the unit qty is typed in ('' = the stored unit). */
+    unit: string;
 }
 
 const suggestOpen = ref(false);
@@ -2099,14 +2102,47 @@ async function submitCancel(): Promise<void> {
     }
 }
 
+// F5 — the unit each line's allocation is typed in ('' = the stored unit), keyed like allocateOverrides.
+const allocateUnits = reactive<Record<string, string>>({});
+
+/**
+ * F5 — the ingredient behind a restock line for its unit picker (its pack
+ * sizes and container from the list; the line's own unit as a fallback).
+ */
+function restockLineIngredient(line: { ingredient?: { uuid: string } | null; unit_at_set: IngredientUnit }): Ingredient | { unit: IngredientUnit } {
+    return ingredientByUuid(line.ingredient?.uuid ?? '') ?? { unit: line.unit_at_set };
+}
+
+/** F5 — the ingredient behind a restock suggestion for its unit picker. */
+function suggestionIngredient(s: RestockSuggestion): Ingredient | { unit: IngredientUnit } {
+    return ingredientByUuid(s.ingredient_uuid) ?? { unit: s.unit as IngredientUnit };
+}
+
+/** F5 — what a stored amount reopens as in an amount + unit input: "36" + "l" for 36000 ml ('' = the stored unit). */
+function entryFor(quantity: string | number | null | undefined, storedUnit: string): { amount: string; unit: string } {
+    const holds = holdsEntry(quantity, storedUnit);
+    if (holds.amount === '') return { amount: trimAmount(parseFloat(String(quantity ?? '0')) || 0), unit: '' };
+    return { amount: holds.amount, unit: holds.unit === storedUnit ? '' : holds.unit };
+}
+
+/** F5 — a line's typed allocation in the stored unit (to compare with what was requested). */
+function allocatedStored(line: RestockRequestLine): number {
+    const typed = parseFloat(allocateOverrides[String(line.id)] ?? '0');
+    if (!Number.isFinite(typed)) return 0;
+    return typed * ingredientUnitFactor(restockLineIngredient(line), allocateUnits[String(line.id)] ?? '');
+}
+
 function openAllocate(req: RestockRequest): void {
     allocateTarget.value = req;
     // Default every line's allocate input to the requested
     // quantity. The user can then over-write the ones they're
-    // sending less of.
+    // sending less of. F5 — shown in the friendly unit (36 l, not 36000 ml).
     Object.keys(allocateOverrides).forEach((k) => delete allocateOverrides[k]);
+    Object.keys(allocateUnits).forEach((k) => delete allocateUnits[k]);
     for (const line of req.lines ?? []) {
-        allocateOverrides[String(line.id)] = line.quantity_requested;
+        const entry = entryFor(line.quantity_requested, line.unit_at_set);
+        allocateOverrides[String(line.id)] = entry.amount;
+        allocateUnits[String(line.id)] = entry.unit;
     }
     allocateError.value = null;
     allocateOpen.value = true;
@@ -2115,9 +2151,8 @@ function openAllocate(req: RestockRequest): void {
 const allocateHasOver = computed<boolean>(() => {
     if (!allocateTarget.value) return false;
     for (const line of allocateTarget.value.lines ?? []) {
-        const allocated = parseFloat(allocateOverrides[String(line.id)] ?? '0');
         const requested = parseFloat(line.quantity_requested);
-        if (allocated > requested) return true;
+        if (allocatedStored(line) > requested + 1e-9) return true;
     }
     return false;
 });
@@ -2129,11 +2164,15 @@ async function submitAllocate(): Promise<void> {
     try {
         // Build the allocations map. Convert string -> int key
         // on the way out (the API client takes Record<number,...>).
+        // F5 — each with the unit it was typed in; the server converts.
         const allocations: Record<number, string> = {};
+        const units: Record<number, string> = {};
         for (const line of allocateTarget.value.lines ?? []) {
             allocations[line.id] = allocateOverrides[String(line.id)] ?? line.quantity_requested;
+            const unit = allocateUnits[String(line.id)] ?? '';
+            if (unit !== '') units[line.id] = unit;
         }
-        await allocateRestockRequest(allocateTarget.value.uuid, { allocations });
+        await allocateRestockRequest(allocateTarget.value.uuid, Object.keys(units).length > 0 ? { allocations, units } : { allocations });
         allocateOpen.value = false;
         await Promise.all([
             fetchRestockRequests(),
@@ -2224,13 +2263,12 @@ async function fetchSuggestions(): Promise<void> {
             windowDays: suggestWindowDays.value,
             coverDays: suggestCoverDays.value,
         });
-        suggestRows.value = response.data.map((s) => ({
-            suggestion: s,
-            include: true,
-            // Keep the server's decimal:3 string verbatim — never
-            // round-trip through a Number.
-            qty: s.suggested_quantity,
-        }));
+        suggestRows.value = response.data.map((s) => {
+            // F5 — offered in the friendly unit (36 l, not 36000 ml) when it
+            // converts back exactly; else the server's string verbatim.
+            const entry = entryFor(s.suggested_quantity, s.unit);
+            return { suggestion: s, include: true, qty: entry.amount, unit: entry.unit };
+        });
         suggestLoaded.value = true;
     } catch (err) {
         suggestError.value = extractMessage(err, t('inventory.restock_suggestions.load_failed'));
@@ -2261,8 +2299,10 @@ async function submitSuggestions(): Promise<void> {
         .filter((r) => r.include && String(r.qty).trim() !== '')
         .map((r) => ({
             ingredient_uuid: r.suggestion.ingredient_uuid,
-            // Send the (possibly edited) quantity through as a string.
+            // Send the (possibly edited) quantity through as a string,
+            // F5 — with the unit it is typed in (the server converts).
             quantity_requested: r.qty,
+            unit: wireUnit(r.unit),
         }));
     if (lines.length === 0) {
         suggestError.value = t('inventory.restock_suggestions.no_selection');
@@ -4284,11 +4324,17 @@ async function submitSuggestions(): Promise<void> {
                                     {{ l.ingredient ? (isArabic && l.ingredient.name_ar ? l.ingredient.name_ar : l.ingredient.name) : '—' }}
                                 </td>
                                 <td class="px-3 py-2 text-end tabular-nums text-slate-700">{{ friendlyAmount(l.quantity_requested, l.unit_at_set).amount }} <span class="text-[10px] text-slate-500">{{ friendlyAmount(l.quantity_requested, l.unit_at_set).unit }}</span></td>
-                                <td class="px-3 py-2 text-end tabular-nums" :class="parseFloat(l.ingredient?.central_quantity ?? '0') < parseFloat(allocateOverrides[String(l.id)] ?? '0') ? 'font-semibold text-rose-600' : 'text-slate-700'">
+                                <td class="px-3 py-2 text-end tabular-nums" :class="parseFloat(l.ingredient?.central_quantity ?? '0') < allocatedStored(l) ? 'font-semibold text-rose-600' : 'text-slate-700'">
                                     {{ l.ingredient?.central_quantity != null ? qty(l.ingredient.central_quantity, l.unit_at_set) : '—' }}
                                 </td>
+                                <!-- F5 — typed in any unit of the line's item (36 l, 3 crates). -->
                                 <td class="px-3 py-2 text-end">
-                                    <input v-model="allocateOverrides[String(l.id)]" type="number" step="0.0001" min="0" :max="l.quantity_requested" class="w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-sm tabular-nums text-end">
+                                    <div class="inline-flex items-center gap-1.5">
+                                        <input v-model="allocateOverrides[String(l.id)]" type="number" step="0.0001" min="0" class="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-sm tabular-nums text-end">
+                                        <select v-model="allocateUnits[String(l.id)]" :title="t('inventory.fields.unit')" data-test="allocate-unit" class="w-32 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm">
+                                            <option v-for="u in ingredientUnitOptions(restockLineIngredient(l), locale)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
+                                        </select>
+                                    </div>
                                 </td>
                             </tr>
                         </tbody>
@@ -4401,18 +4447,24 @@ async function submitSuggestions(): Promise<void> {
                                 </td>
                                 <td class="px-3 py-2 font-medium text-slate-900">
                                     {{ row.suggestion.name }}
-                                    <span class="ms-1 text-[10px] font-normal text-slate-400">{{ row.suggestion.unit }}</span>
                                 </td>
+                                <!-- F5 — "24 l", not "24000.000 ml". -->
                                 <td class="px-3 py-2 text-end tabular-nums text-slate-700">{{ qty(row.suggestion.current_quantity, row.suggestion.unit) }}</td>
-                                <td class="px-3 py-2 text-end tabular-nums text-slate-700">{{ row.suggestion.avg_daily_consumption }}</td>
-                                <td class="px-3 py-2 text-end tabular-nums text-slate-700">{{ row.suggestion.target_level }}</td>
+                                <td class="px-3 py-2 text-end tabular-nums text-slate-700">{{ qty(row.suggestion.avg_daily_consumption, row.suggestion.unit) }}</td>
+                                <td class="px-3 py-2 text-end tabular-nums text-slate-700">{{ qty(row.suggestion.target_level, row.suggestion.unit) }}</td>
                                 <td class="px-3 py-2">
                                     <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider" :class="reasonBadgeClass(row.suggestion.reason)">
                                         {{ reasonLabel(row.suggestion.reason) }}
                                     </span>
                                 </td>
+                                <!-- F5 — typed in any unit of the item (the kind's units, pack sizes, container). -->
                                 <td class="px-3 py-2 text-end">
-                                    <input v-model="row.qty" :disabled="!row.include" type="number" step="0.0001" min="0" class="w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-sm tabular-nums text-end focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100 disabled:bg-slate-50 disabled:text-slate-400">
+                                    <div class="inline-flex items-center gap-1.5">
+                                        <input v-model="row.qty" :disabled="!row.include" type="number" step="0.0001" min="0" class="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-sm tabular-nums text-end focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100 disabled:bg-slate-50 disabled:text-slate-400">
+                                        <select v-model="row.unit" :disabled="!row.include" :title="t('inventory.fields.unit')" data-test="suggestion-unit" class="w-32 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm disabled:bg-slate-50 disabled:text-slate-400">
+                                            <option v-for="u in ingredientUnitOptions(suggestionIngredient(row.suggestion), locale)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
+                                        </select>
+                                    </div>
                                 </td>
                             </tr>
                         </tbody>

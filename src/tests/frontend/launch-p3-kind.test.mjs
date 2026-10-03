@@ -18,6 +18,7 @@
 //   F2 goods received: pack sizes first, kg / l before g / ml, friendly preview;
 //   F3 the receipt detail shows quantities, splits and costs the friendly way;
 //   F4 the warehouse dialog takes any unit the item knows;
+//   F5 restock allocation and suggestions too, shown friendly;
 //   every new string exists in English AND Arabic.
 // Run: node --test tests/frontend/launch-p3-kind.test.mjs
 import assert from 'node:assert/strict';
@@ -421,6 +422,23 @@ test('F4 the warehouse dialog types amounts in the kind\'s units, pack sizes or 
     assert.doesNotMatch(template, /Stock \(\{\{ unit \}\}\)|Total received \(\{\{ unit \}\}\)/);
     assert.match(sfc('resources/js/Pages/Merchant/Inventory/Index.vue').template, /:ingredient="warehouseDialogIngredient"/);
     assert.match(read('resources/js/lib/api/ingredientStock.ts'), /payload: \{ branch_uuid\?: string \| null; signed_quantity: string \| number; note: string \} & EntryUnitField,/);
+});
+
+test('F5 restock allocation and suggestions are typed in the kind\'s units, pack sizes or container and shown friendly', () => {
+    const { script, template } = sfc('resources/js/Pages/Merchant/Inventory/Index.vue');
+    // Allocation: an amount + a unit per line, opened in the friendly unit, capped in the stored unit.
+    assert.match(template, /<select v-model="allocateUnits\[String\(l\.id\)\]"[^>]*data-test="allocate-unit"[^>]*>\s*<option v-for="u in ingredientUnitOptions\(restockLineIngredient\(l\), locale\)"/);
+    assert.match(script, /const entry = entryFor\(line\.quantity_requested, line\.unit_at_set\);\s*allocateOverrides\[String\(line\.id\)\] = entry\.amount;\s*allocateUnits\[String\(line\.id\)\] = entry\.unit;/);
+    assert.match(script, /if \(allocatedStored\(line\) > requested \+ 1e-9\) return true;/);
+    assert.match(script, /await allocateRestockRequest\(allocateTarget\.value\.uuid, Object\.keys\(units\)\.length > 0 \? \{ allocations, units \} : \{ allocations \}\);/);
+    // Suggestions: offered friendly, typed in any unit, sent with the unit.
+    assert.match(template, /<select v-model="row\.unit"[^>]*data-test="suggestion-unit"[^>]*>\s*<option v-for="u in ingredientUnitOptions\(suggestionIngredient\(row\.suggestion\), locale\)"/);
+    assert.match(script, /const entry = entryFor\(s\.suggested_quantity, s\.unit\);/);
+    assert.match(script, /quantity_requested: r\.qty,\s*unit: wireUnit\(r\.unit\),/);
+    for (const field of ['current_quantity', 'avg_daily_consumption', 'target_level']) {
+        assert.match(template, new RegExp(`qty\\(row\\.suggestion\\.${field}, row\\.suggestion\\.unit\\)`), field);
+    }
+    assert.match(read('resources/js/lib/api/inventory.ts'), /units\?: Record<number, string>;/);
 });
 
 test('every item-kind string exists in English and Arabic', () => {

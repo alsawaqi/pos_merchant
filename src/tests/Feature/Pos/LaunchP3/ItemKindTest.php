@@ -18,7 +18,8 @@ declare(strict_types=1);
  *   A4 the pack-size endpoints take what a pack holds (amount + unit);
  *   A7 a portal stock count can be typed in any unit the item knows.
  * Follow-up fixes:
- *   F4 the warehouse endpoints take the unit the amounts were typed in.
+ *   F4 the warehouse endpoints take the unit the amounts were typed in;
+ *   F5 restock allocations take a unit per line (suggestions already could).
  */
 
 use App\Actions\Pos\Inventory\CreateIngredientAction;
@@ -27,6 +28,8 @@ use App\Models\BranchStock;
 use App\Models\Ingredient;
 use App\Models\IngredientAltUnit;
 use App\Models\IngredientStock;
+use App\Models\RestockRequest;
+use App\Models\RestockRequestLine;
 use App\Models\StockCountLine;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -257,4 +260,33 @@ it('F4 a warehouse amount in a unit the item does not know is refused, and nothi
         ->assertStatus(422)
         ->assertJsonPath('message', "Unit 'kg' is not defined for this ingredient.");
     expect((float) BranchStock::query()->where('branch_id', $ctx['branch']->id)->where('ingredient_id', $milk->id)->value('quantity'))->toBe(1000.0);
+});
+
+it('F5 a restock allocation is typed in any unit of the line item (l, a pack size), capped at what was requested', function (): void {
+    $ctx = makeMerchantActor();
+    $milk = p3Ingredient($ctx['company'], 'Milk', 'ml', '0.0004');
+    $this->postJson("/api/ingredients/{$milk->uuid}/units", ['name' => 'crate', 'amount' => '12', 'unit' => 'l'])->assertCreated();
+    IngredientStock::query()->forceCreate(['company_id' => $ctx['company']->id, 'ingredient_id' => $milk->id, 'quantity' => '100000']);
+    $request = RestockRequest::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->approved()->create();
+    $line = RestockRequestLine::factory()->for($request, 'request')->for($milk, 'ingredient')->create(['quantity_requested' => '36000', 'unit_at_set' => 'ml']);
+
+    // 4 crates = 48 l is more than the 36 l requested.
+    $this->postJson("/api/restock-requests/{$request->uuid}/allocate", ['allocations' => [(string) $line->id => '4'], 'units' => [(string) $line->id => 'crate']])
+        ->assertStatus(422);
+
+    $this->postJson("/api/restock-requests/{$request->uuid}/allocate", ['allocations' => [(string) $line->id => '30'], 'units' => [(string) $line->id => 'l']])
+        ->assertOk();
+    expect((float) $line->fresh()->quantity_allocated)->toBe(30000.0);
+    expect((float) BranchStock::query()->where('branch_id', $ctx['branch']->id)->where('ingredient_id', $milk->id)->value('quantity'))->toBe(30000.0);
+});
+
+it('F5 restock suggestions turn into a request typed in l or a pack size', function (): void {
+    $ctx = makeMerchantActor();
+    $milk = p3Ingredient($ctx['company'], 'Milk', 'ml', '0.0004');
+    $this->postJson("/api/ingredients/{$milk->uuid}/units", ['name' => 'crate', 'amount' => '12', 'unit' => 'l'])->assertCreated();
+
+    $this->postJson("/api/branches/{$ctx['branch']->uuid}/restock-requests", ['lines' => [
+        ['ingredient_uuid' => $milk->uuid, 'quantity_requested' => '3', 'unit' => 'crate'],
+    ]])->assertCreated();
+    expect((float) RestockRequestLine::query()->where('ingredient_id', $milk->id)->value('quantity_requested'))->toBe(36000.0);
 });

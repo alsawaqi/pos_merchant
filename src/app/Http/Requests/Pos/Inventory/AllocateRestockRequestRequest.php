@@ -33,6 +33,12 @@ class AllocateRestockRequestRequest extends FormRequest
             // the values with a wildcard. Laravel's array
             // wildcard with `.` treats this as "any string key".
             'allocations.*' => ['required', 'numeric', 'gte:0', 'max:999999.999'],
+            // LAUNCH item kind, F5 — line.id => the unit that line's
+            // allocation was typed in (kg / l, a pack size, '@piece'); a
+            // missing / null entry = the stored unit. Converted by the
+            // controller (IngredientUnitConverter) before the cap check.
+            'units' => ['nullable', 'array'],
+            'units.*' => ['nullable', 'string', 'max:32'],
         ];
     }
 }

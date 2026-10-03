@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Pos;
 use App\Actions\Pos\Inventory\AllocateRestockRequestAction;
 use App\Actions\Pos\Inventory\CancelRestockRequestAction;
 use App\Actions\Pos\Inventory\CreateRestockRequestAction;
+use App\Actions\Pos\Inventory\IngredientUnitConverter;
 use App\Actions\Pos\Inventory\ResolvePurchasedRestockRequestAction;
 use App\Actions\Pos\Inventory\ReviewRestockRequestAction;
 use App\Actions\Pos\Inventory\SubmitRestockRequestAction;
@@ -24,6 +25,7 @@ use App\Http\Resources\Pos\Inventory\RestockRequestResource;
 use App\Models\Branch;
 use App\Models\RestockRequest;
 use App\Support\MerchantTenantContext;
+use App\Support\StockDecimal;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -69,6 +71,7 @@ class RestockRequestsController extends Controller
         private readonly AllocateRestockRequestAction $allocate,
         private readonly ResolvePurchasedRestockRequestAction $resolvePurchased,
         private readonly SuggestRestockAction $suggest,
+        private readonly IngredientUnitConverter $units,
     ) {}
 
     public function index(Request $request): AnonymousResourceCollection
@@ -283,6 +286,22 @@ class RestockRequestsController extends Controller
         }
 
         try {
+            // LAUNCH item kind, F5 — an allocation typed in another unit of
+            // the line's ingredient (36 l of a ml line, 2 crates) is turned
+            // into the stored unit first, so the "≤ requested" cap compares
+            // like with like.
+            $units = $request->validated()['units'] ?? [];
+            if ($units !== []) {
+                $lines = $restockRequest->lines()->with('ingredient')->get()->keyBy('id');
+                foreach ($allocations as $lineId => $qty) {
+                    $unit = $units[$lineId] ?? $units[(string) $lineId] ?? null;
+                    $line = $lines->get($lineId);
+                    if (is_string($unit) && $unit !== '' && $line?->ingredient !== null) {
+                        $allocations[$lineId] = round($this->units->toBase($line->ingredient, $qty, $unit), StockDecimal::QUANTITY_SCALE);
+                    }
+                }
+            }
+
             $updated = $this->allocate->handle(
                 $restockRequest,
                 $allocations,

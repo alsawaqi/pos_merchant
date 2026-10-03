@@ -689,6 +689,11 @@ export interface AllocateRestockRequestPayload {
      * 0 is a legitimate value — skip that line.
      */
     allocations?: Record<number, string | number>;
+    /**
+     * LAUNCH item kind, F5 — line.id => the unit that line's allocation is
+     * typed in (kg / l, a pack size, '@piece'); omit = the stored unit.
+     */
+    units?: Record<number, string>;
 }
 
 // ---- Waste ------------------------------------------------------
