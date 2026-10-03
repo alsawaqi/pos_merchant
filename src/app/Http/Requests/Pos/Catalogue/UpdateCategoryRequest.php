@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\Pos\Catalogue;
 
 use App\Enums\CategoryStatus;
+use App\Enums\MerchantPermission;
 use App\Models\Branch;
 use App\Models\ProductCategory;
 use App\Support\MerchantTenantContext;
@@ -14,6 +15,12 @@ use Illuminate\Validation\Validator;
 
 class UpdateCategoryRequest extends FormRequest
 {
+    /** catalogue.manage before validation (a refused caller always gets 403). */
+    public function authorize(): bool
+    {
+        return (bool) $this->user()?->can(MerchantPermission::CatalogueManage->value);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -79,6 +86,12 @@ class UpdateCategoryRequest extends FormRequest
 
             // null = promote to top-level: always allowed (even with children).
             if ($parentId === null || $parentId === '') {
+                return;
+            }
+            // LAUNCH-P4 L6 — no new nesting while subcategories are hidden.
+            if (! ProductCategory::SUBCATEGORIES_ENABLED) {
+                $v->errors()->add('parent_id', ProductCategory::SUBCATEGORIES_HIDDEN_MESSAGE);
+
                 return;
             }
 

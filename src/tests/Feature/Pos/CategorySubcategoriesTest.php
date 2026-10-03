@@ -19,17 +19,17 @@ uses(RefreshDatabase::class);
 
 // =================== CREATE ===================
 
-it('creates a subcategory under a top-level parent', function (): void {
+// LAUNCH-P4 L6 — subcategories are hidden for the pilot: no new nesting
+// (these two tests used to create / re-parent successfully).
+it('refuses a new subcategory while subcategories are hidden', function (): void {
     $ctx = makeMerchantActor();
     $parent = ProductCategory::factory()->for($ctx['company'], 'company')->create(['name' => 'Drinks']);
 
-    $res = $this->postJson('/api/categories', ['name' => 'Hot Drinks', 'parent_id' => $parent->id])
-        ->assertCreated();
+    $this->postJson('/api/categories', ['name' => 'Hot Drinks', 'parent_id' => $parent->id])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['parent_id']);
 
-    expect($res->json('data.parent_id'))->toBe($parent->id);
-    $this->assertDatabaseHas('pos_product_categories', [
-        'name' => 'Hot Drinks', 'company_id' => $ctx['company']->id, 'parent_id' => $parent->id,
-    ]);
+    $this->assertDatabaseMissing('pos_product_categories', ['name' => 'Hot Drinks']);
 });
 
 it('rejects nesting more than one level deep on create', function (): void {
@@ -55,14 +55,15 @@ it('rejects a parent from another company on create', function (): void {
 
 // =================== UPDATE / RE-PARENT ===================
 
-it('re-parents a top-level category under another', function (): void {
+it('refuses re-parenting a top-level category while subcategories are hidden', function (): void {
     $ctx = makeMerchantActor();
     $parent = ProductCategory::factory()->for($ctx['company'], 'company')->create(['name' => 'Drinks']);
     $loner = ProductCategory::factory()->for($ctx['company'], 'company')->create(['name' => 'Smoothies']);
 
     $this->patchJson("/api/categories/{$loner->uuid}", ['parent_id' => $parent->id])
-        ->assertOk()
-        ->assertJsonPath('data.parent_id', $parent->id);
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['parent_id']);
+    expect($loner->fresh()->parent_id)->toBeNull();
 });
 
 it('promotes a subcategory back to top-level with parent_id null', function (): void {

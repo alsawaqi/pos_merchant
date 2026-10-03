@@ -14,6 +14,7 @@
 
 import { Beaker, Building2, Boxes, Clock3, FileSpreadsheet, Globe2, Image, Layers, Package, Pencil, Plus, QrCode, Sparkles, Store, Trash2, Truck } from 'lucide-vue-next';
 import { channelBadges, type ChannelKey } from '@/lib/channels';
+import { belowZeroBranchIds } from '@/lib/stockFlags';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
@@ -1118,6 +1119,14 @@ async function performProviderDelete(): Promise<void> {
                                     >
                                         <Clock3 class="size-3" />
                                         {{ availabilityWindowLabel(prod) }}
+                                    </span>
+                                    <!-- LAUNCH-P4 M6 — a shelf count below zero is flagged. -->
+                                    <span
+                                        v-if="belowZeroBranchIds(prod).length > 0"
+                                        class="mt-1 inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-700"
+                                        data-test="below-zero"
+                                    >
+                                        {{ t('stock_flags.below_zero_at', { branches: belowZeroBranchIds(prod).map((id) => branches.find((b) => b.id === id)?.name ?? `#${id}`).join(', ') }) }}
                                     </span>
                                     </div>
                                   </div>

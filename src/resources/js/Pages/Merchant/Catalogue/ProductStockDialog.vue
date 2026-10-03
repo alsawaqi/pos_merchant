@@ -6,7 +6,9 @@
  * decimal strings (never parsed for precision-critical math here).
  */
 import { computed, reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import BaseModal from '@/Components/BaseModal.vue';
+import { isBelowZero } from '@/lib/stockFlags';
 import PurchaseCostFields, { type PurchaseCostModel } from '@/Pages/Merchant/Inventory/PurchaseCostFields.vue';
 import { ApiError } from '@/lib/api';
 import { authState } from '@/stores/auth';
@@ -32,6 +34,8 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{ (e: 'close'): void }>();
+
+const { t } = useI18n();
 
 type Action = 'distribute' | 'receive' | 'allocate' | 'transfer' | 'adjust' | 'waste';
 
@@ -368,8 +372,10 @@ function fmtType(t: string): string {
                                 <tbody>
                                     <tr v-for="b in branches" :key="b.branch_uuid" class="border-b border-slate-50 last:border-0">
                                         <td class="px-3 py-2 text-slate-700">{{ b.branch_name }}</td>
-                                        <td class="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">
+                                        <td class="px-3 py-2 text-right font-semibold tabular-nums" :class="isBelowZero(b.stock_qty) ? 'text-rose-700' : 'text-slate-900'" data-test="stock-dialog-qty">
                                             {{ b.stock_qty ?? '—' }}
+                                            <!-- LAUNCH-P4 M6 — below zero is allowed but flagged. -->
+                                            <span v-if="isBelowZero(b.stock_qty)" class="ms-1 rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700" data-test="below-zero">{{ t('stock_flags.below_zero') }}</span>
                                         </td>
                                     </tr>
                                     <tr v-if="branches.length === 0">

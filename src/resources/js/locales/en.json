@@ -3775,5 +3775,9 @@
             "no_name_column": "The first row must hold the column names, with a \"name\" column. Use the template.",
             "rows_have_errors": "Fix the rows marked as errors, then try again. Nothing was saved."
         }
+    },
+    "stock_flags": {
+        "below_zero": "Below zero",
+        "below_zero_at": "Below zero at {branches}"
     }
 }

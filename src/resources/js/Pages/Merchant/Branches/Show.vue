@@ -39,6 +39,7 @@ import { friendlyAmount } from '@/lib/itemKind';
 import { usePermissions } from '@/composables/usePermissions';
 import { canMarkSoldOut, MerchantPermission } from '@/lib/permissions';
 import { setProductSoldOut } from '@/lib/api/catalogue';
+import { isBelowZero } from '@/lib/stockFlags';
 
 const route = useRoute();
 const { t } = useI18n();
@@ -379,8 +380,13 @@ onMounted(() => {
                             <tr v-for="p in products" :key="p.product_id" class="border-b border-slate-100 last:border-0">
                                 <td class="px-5 py-2 font-medium text-slate-900">{{ p.name }}</td>
                                 <td class="px-5 py-2 text-end tabular-nums text-slate-700">{{ p.base_price }}</td>
-                                <td class="px-5 py-2 text-end tabular-nums" :class="p.stock_qty !== null && Number(p.stock_qty) <= 0 ? 'text-rose-600 font-semibold' : 'text-slate-700'">
-                                    <span v-if="p.stock_mode === 'unit' && p.stock_qty !== null">{{ p.stock_qty }}</span>
+                                <!-- LAUNCH-P4 M6 — ready-made AND cooked shelf counts,
+                                     with a red badge below zero. -->
+                                <td class="px-5 py-2 text-end tabular-nums" :class="p.stock_qty !== null && Number(p.stock_qty) <= 0 ? 'text-rose-600 font-semibold' : 'text-slate-700'" data-test="branch-stock">
+                                    <template v-if="(p.stock_mode === 'unit' || p.stock_mode === 'cooked') && p.stock_qty !== null">
+                                        {{ p.stock_qty }}
+                                        <span v-if="isBelowZero(p.stock_qty)" class="ms-1 rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700" data-test="below-zero">{{ t('stock_flags.below_zero') }}</span>
+                                    </template>
                                     <span v-else class="text-slate-400">{{ t('branches.show.not_tracked') }}</span>
                                 </td>
                                 <td class="px-5 py-2 text-end">

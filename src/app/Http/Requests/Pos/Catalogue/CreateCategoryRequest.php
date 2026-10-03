@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Pos\Catalogue;
 
+use App\Enums\MerchantPermission;
 use App\Models\Branch;
 use App\Models\ProductCategory;
 use App\Support\MerchantTenantContext;
@@ -15,6 +16,12 @@ use Illuminate\Validation\Validator;
  */
 class CreateCategoryRequest extends FormRequest
 {
+    /** catalogue.manage before validation (a refused caller always gets 403). */
+    public function authorize(): bool
+    {
+        return (bool) $this->user()?->can(MerchantPermission::CatalogueManage->value);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -90,6 +97,11 @@ class CreateCategoryRequest extends FormRequest
     {
         $parentId = $this->input('parent_id');
         if ($parentId === null || $parentId === '') {
+            return;
+        }
+        if (! ProductCategory::SUBCATEGORIES_ENABLED) {
+            $v->errors()->add('parent_id', ProductCategory::SUBCATEGORIES_HIDDEN_MESSAGE);
+
             return;
         }
 

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Models\Concerns\BelongsToCompany;
 use App\Enums\CategoryStatus;
+use App\Models\Concerns\BelongsToCompany;
 use Database\Factories\ProductCategoryFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -48,6 +48,15 @@ class ProductCategory extends Model
     use BelongsToCompany, HasFactory, SoftDeletes;
 
     protected $table = 'pos_product_categories';
+
+    /**
+     * LAUNCH-P4 L6 — subcategories are hidden for the pilot (no page sets
+     * parent_id and no device reads it): the API refuses a new parent. An
+     * existing subcategory can still be moved back to the top level.
+     */
+    public const SUBCATEGORIES_ENABLED = false;
+
+    public const SUBCATEGORIES_HIDDEN_MESSAGE = 'Subcategories are not available yet. Keep the category at the top level.';
 
     /**
      * @return array<string, string>
