@@ -125,8 +125,10 @@ import {
 import ProductStockDialog from '@/Pages/Merchant/Catalogue/ProductStockDialog.vue';
 import {
     ITEM_KINDS,
+    conversionsOf,
     costUnit,
     friendlyAmount,
+    hasConversions,
     friendlyCost,
     holdsEntry,
     isLegacyStoredUnit,
@@ -1594,6 +1596,14 @@ function unitLabel(unit: IngredientUnit | '' | null): string {
     return t(`inventory.units.${unit}`);
 }
 
+// G2 — which branch stock row shows its amount in every unit (one at a time).
+const conversionsOpenId = ref<number | null>(null);
+
+/** G2 — the full ingredient behind a branch stock row (its pack sizes and container). */
+function stockRowIngredient(row: BranchStockRow): Ingredient | null {
+    return ingredients.value.find((i) => i.id === row.ingredient_id) ?? null;
+}
+
 /**
  * LAUNCH item kind, A8 — an amount as people read it on the inventory
  * screens: 1000 g or ml and above in kg or l ("24 l", not "24000.000 ml"),
@@ -2812,7 +2822,21 @@ async function submitSuggestions(): Promise<void> {
                                     <!-- A8 — "24 l", not "24000.000 ml". -->
                                     {{ friendlyAmount(row.quantity, row.ingredient?.unit).amount }}
                                     <span class="ms-1 text-[10px] font-normal text-slate-400">{{ friendlyAmount(row.quantity, row.ingredient?.unit).unit }}</span>
+                                    <!-- G2 — the same amount in every unit the item knows. -->
+                                    <button
+                                        v-if="hasConversions(stockRowIngredient(row))"
+                                        type="button"
+                                        class="ms-1 inline-grid size-5 place-items-center rounded text-slate-400 align-middle transition hover:bg-slate-100 hover:text-slate-700"
+                                        :title="t('item_kind.conversions')"
+                                        :aria-label="t('item_kind.conversions')"
+                                        :aria-expanded="conversionsOpenId === row.ingredient_id"
+                                        data-test="conversions-button"
+                                        @click="conversionsOpenId = conversionsOpenId === row.ingredient_id ? null : row.ingredient_id"
+                                    >
+                                        <ArrowLeftRight class="size-3" />
+                                    </button>
                                     <span v-if="row.ingredient?.min_stock_threshold" class="block text-[10px] font-normal text-slate-400">{{ t('inventory.stock.minimum', { quantity: qty(row.ingredient.min_stock_threshold, row.ingredient.unit) }) }}</span>
+                                    <bdi v-if="conversionsOpenId === row.ingredient_id" dir="ltr" class="mt-1 block text-[11px] font-normal text-slate-600" data-test="conversions">{{ conversionsOf(row.quantity, stockRowIngredient(row), locale).join(' = ') }}</bdi>
                                 </td>
                                 <td class="px-5 py-4 text-end text-sm tabular-nums" :class="Number(row.stock_value) < 0 ? 'text-rose-600' : 'text-slate-700'">{{ row.stock_value }}</td>
                                 <td class="px-5 py-4">

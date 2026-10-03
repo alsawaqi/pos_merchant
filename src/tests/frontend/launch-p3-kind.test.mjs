@@ -24,6 +24,7 @@
 //   F8 no mixed-unit Total qty tile on Loss & Waste / Restock & Purchasing;
 // Owner addendum 2026-10-03:
 //   G1 gallon / fl oz (Liquid) and lb / oz (Weighed) wherever kg/g or l/ml are;
+//   G2 a conversions button on the branch and warehouse stock lists;
 //   every new string exists in English AND Arabic.
 // Run: node --test tests/frontend/launch-p3-kind.test.mjs
 import assert from 'node:assert/strict';
@@ -536,6 +537,34 @@ test('G1 every weighed / liquid picker also offers gallon, fl oz, lb and oz, lab
     assert.match(ingredientForm().script, /: unitOptionLabel\(unit, locale\.value\);/);
     assert.match(sfc('resources/js/Pages/Merchant/Inventory/PrepItemEditor.vue').script, /: unitOptionLabel\(unit, locale\.value\);/);
     assert.equal(en.item_kind.entered_in.liquid, 'Amounts are typed in l, ml, gallons or fl oz.');
+});
+
+test('G2 a conversions button shows a stock amount in every unit the item knows', () => {
+    const { conversionsOf, hasConversions } = lib('itemKind');
+    const milk = {
+        unit: 'ml',
+        alt_units: [{ name: 'crate', factor: '12000.0000' }],
+        auto_units: [{ name: 'l', factor: '1000' }],
+        piece_unit_label: 'bottle',
+        piece_unit_label_ar: 'زجاجة',
+        units_per_piece: '1500.0000',
+    };
+    assert.equal(conversionsOf('1500.000', milk, 'en').join(' = '), '1.5 l = 1500 ml = 0.3963 gal = 50.721 fl oz = 0.125 crate = 1 bottle');
+    assert.equal(conversionsOf('1500.000', milk, 'ar').join(' = '), '1.5 l = 1500 ml = 0.3963 جالون = 50.721 أونصة سائلة = 0.125 crate = 1 زجاجة');
+    assert.equal(conversionsOf('2000', { unit: 'g', alt_units: [], auto_units: [] }).join(' = '), '2 kg = 2000 g = 4.4092 lb = 70.5479 oz');
+    assert.equal(conversionsOf('48', { unit: 'piece', alt_units: [{ name: 'box', factor: '24' }] }).join(' = '), '48 piece = 2 box');
+    assert.equal(hasConversions(milk), true);
+    assert.equal(hasConversions({ unit: 'piece', alt_units: [], auto_units: [] }), false);
+    assert.equal(hasConversions({ unit: 'piece', alt_units: [{ name: 'box', factor: '24' }] }), true);
+
+    const { script, template } = sfc('resources/js/Pages/Merchant/Inventory/Index.vue');
+    assert.match(template, /v-if="hasConversions\(stockRowIngredient\(row\)\)"[\s\S]*?data-test="conversions-button"/);
+    assert.match(template, /<bdi v-if="conversionsOpenId === row\.ingredient_id"[^>]*data-test="conversions">\{\{ conversionsOf\(row\.quantity, stockRowIngredient\(row\), locale\)\.join\(' = '\) \}\}/);
+    assert.match(script, /const conversionsOpenId = ref<number \| null>\(null\);/);
+    const dialog = sfc('resources/js/Pages/Merchant/Inventory/IngredientStockDialog.vue').template;
+    assert.equal((dialog.match(/data-test="warehouse-conversions-button"/g) ?? []).length, 2, 'warehouse total and each branch');
+    assert.match(dialog, /conversionsOf\(summary\.central_quantity, conversionSource, locale\)\.join\(' = '\)/);
+    assert.match(dialog, /conversionsOf\(b\.quantity, conversionSource, locale\)\.join\(' = '\)/);
 });
 
 test('every item-kind string exists in English and Arabic', () => {

@@ -30,7 +30,8 @@ import {
 } from '@/lib/api/ingredientStock';
 import { listTaxes, type Tax } from '@/lib/api/taxes';
 import type { Ingredient } from '@/lib/api/inventory';
-import { costUnit, entryUnitOptions, friendlyAmount } from '@/lib/itemKind';
+import { ArrowLeftRight } from 'lucide-vue-next';
+import { conversionsOf, costUnit, entryUnitOptions, friendlyAmount, hasConversions } from '@/lib/itemKind';
 
 const props = withDefaults(defineProps<{
     open: boolean;
@@ -47,7 +48,7 @@ const props = withDefaults(defineProps<{
     singleStockIn?: boolean;
 }>(), { singleStockIn: true, ingredient: null });
 
-const { locale } = useI18n();
+const { t, locale } = useI18n();
 
 const emit = defineEmits<{ (e: 'close'): void }>();
 
@@ -123,6 +124,15 @@ const entryUnitName = computed(() => {
 
 function wireUnit(): string | null {
     return entryUnit.value === '' ? null : entryUnit.value;
+}
+
+// G2 — the item behind the balances (its pack sizes and container), and which
+// balance ('central' or a branch uuid) shows its amount in every unit.
+const conversionSource = computed(() => props.ingredient ?? (unit.value ? { unit: unit.value } : null));
+const conversionsOpen = ref<string | null>(null);
+
+function toggleConversions(key: string): void {
+    conversionsOpen.value = conversionsOpen.value === key ? null : key;
 }
 
 /** F4 — a balance as people read it: "24 l", not "24000.000 ml". */
@@ -370,7 +380,21 @@ function fmtType(t: string): string {
                             <p class="mt-1 text-2xl font-black tabular-nums text-teal-900">
                                 <span data-test="warehouse-central">{{ friendlyAmount(summary.central_quantity, unit).amount }}</span>
                                 <span class="text-sm font-semibold text-teal-700">{{ friendlyAmount(summary.central_quantity, unit).unit }}</span>
+                                <!-- G2 — the same amount in every unit the item knows. -->
+                                <button
+                                    v-if="hasConversions(conversionSource)"
+                                    type="button"
+                                    class="ms-1 inline-grid size-6 place-items-center rounded text-teal-600 align-middle transition hover:bg-teal-100"
+                                    :title="t('item_kind.conversions')"
+                                    :aria-label="t('item_kind.conversions')"
+                                    :aria-expanded="conversionsOpen === 'central'"
+                                    data-test="warehouse-conversions-button"
+                                    @click="toggleConversions('central')"
+                                >
+                                    <ArrowLeftRight class="size-3.5" />
+                                </button>
                             </p>
+                            <bdi v-if="conversionsOpen === 'central'" dir="ltr" class="mt-1 block text-[11px] text-teal-800" data-test="warehouse-conversions">{{ conversionsOf(summary.central_quantity, conversionSource, locale).join(' = ') }}</bdi>
                         </div>
                         <div class="rounded-xl border border-slate-200">
                             <table class="w-full text-sm">
@@ -385,6 +409,19 @@ function fmtType(t: string): string {
                                         <td class="px-3 py-2 text-slate-700">{{ b.branch_name }}</td>
                                         <td class="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">
                                             {{ amount(b.quantity) }}
+                                            <button
+                                                v-if="b.quantity !== null && hasConversions(conversionSource)"
+                                                type="button"
+                                                class="ms-1 inline-grid size-5 place-items-center rounded text-slate-400 align-middle transition hover:bg-slate-100 hover:text-slate-700"
+                                                :title="t('item_kind.conversions')"
+                                                :aria-label="t('item_kind.conversions')"
+                                                :aria-expanded="conversionsOpen === b.branch_uuid"
+                                                data-test="warehouse-conversions-button"
+                                                @click="toggleConversions(b.branch_uuid)"
+                                            >
+                                                <ArrowLeftRight class="size-3" />
+                                            </button>
+                                            <bdi v-if="conversionsOpen === b.branch_uuid" dir="ltr" class="block text-[11px] font-normal text-slate-600">{{ conversionsOf(b.quantity, conversionSource, locale).join(' = ') }}</bdi>
                                         </td>
                                     </tr>
                                     <tr v-if="branches.length === 0">

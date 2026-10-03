@@ -256,6 +256,43 @@ export function entryUnitOptions(ingredient: EntryUnitSource | null | undefined,
     return options;
 }
 
+/** G1 — a unit's short name in a sentence: "gal" / "جالون"; any other unit as it is. */
+export function unitShortName(unit: string, locale?: string | null): string {
+    const us = NON_METRIC_UNITS[unit];
+    return us && locale === 'ar' ? us.ar : unit;
+}
+
+/** G2 — whether an item's amount can be shown in other units (weighed / liquid, or a pack size or container). */
+export function hasConversions(ingredient: EntryUnitSource | null | undefined): boolean {
+    if (!ingredient) return false;
+    return kindOfUnit(ingredient.unit) !== 'counted' || entryUnitOptions(ingredient).length > 1;
+}
+
+/**
+ * G2 (owner addendum 2026-10-03) — a stored amount in every unit the item
+ * knows: the metric pair, the US pair, each pack size and the count
+ * container, up to 4 decimals, trailing zeros trimmed:
+ * 1500 ml → ["1.5 l", "1500 ml", "0.3963 gal", "50.721 fl oz", "0.125 crate", "1 bottle"].
+ */
+export function conversionsOf(quantity: string | number | null | undefined, ingredient: EntryUnitSource | null | undefined, locale?: string | null): string[] {
+    const n = typeof quantity === 'number' ? quantity : parseFloat(String(quantity ?? ''));
+    if (!ingredient || !Number.isFinite(n)) return [];
+    const base = ingredient.unit;
+    const parts: string[] = kindOfUnit(base) === 'counted'
+        ? [`${trimAmount(n)} ${base}`]
+        : kindUnits(base).map((u) => `${trimAmount(n / u.factor)} ${unitShortName(u.value, locale)}`);
+    for (const pack of ingredient.alt_units ?? []) {
+        const factor = positiveNumber(pack.factor);
+        if (factor !== null) parts.push(`${trimAmount(n / factor)} ${pack.name}`);
+    }
+    const perPiece = positiveNumber(ingredient.units_per_piece);
+    if (ingredient.piece_unit_label && perPiece !== null && !(base === 'piece' && perPiece === 1)) {
+        const label = locale === 'ar' && ingredient.piece_unit_label_ar ? ingredient.piece_unit_label_ar : ingredient.piece_unit_label;
+        parts.push(`${trimAmount(n / perPiece)} ${label}`);
+    }
+    return parts;
+}
+
 /** Stored units per one of the selected unit (1 when unknown — the server re-validates). */
 export function entryUnitFactor(ingredient: EntryUnitSource | null | undefined, value: string): number {
     if (!ingredient || value.trim() === '' || value === ingredient.unit) return 1;
