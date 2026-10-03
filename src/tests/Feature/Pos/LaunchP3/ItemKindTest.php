@@ -19,7 +19,8 @@ declare(strict_types=1);
  *   A7 a portal stock count can be typed in any unit the item knows.
  * Follow-up fixes:
  *   F4 the warehouse endpoints take the unit the amounts were typed in;
- *   F5 restock allocations take a unit per line (suggestions already could).
+ *   F5 restock allocations take a unit per line (suggestions already could);
+ *   F6 no kind change while pack sizes or a count container exist.
  */
 
 use App\Actions\Pos\Inventory\CreateIngredientAction;
@@ -289,4 +290,23 @@ it('F5 restock suggestions turn into a request typed in l or a pack size', funct
         ['ingredient_uuid' => $milk->uuid, 'quantity_requested' => '3', 'unit' => 'crate'],
     ]])->assertCreated();
     expect((float) RestockRequestLine::query()->where('ingredient_id', $milk->id)->value('quantity_requested'))->toBe(36000.0);
+});
+
+it('F6 an unused ingredient with pack sizes or a count container cannot change kind until they are removed', function (): void {
+    $ctx = makeMerchantActor();
+    $message = 'Remove its pack sizes and count container before changing the kind.';
+
+    $withPack = p3Ingredient($ctx['company'], 'Milk', 'ml', '0.0004');
+    $crate = $this->postJson("/api/ingredients/{$withPack->uuid}/units", ['name' => 'crate', 'amount' => '12', 'unit' => 'l'])->assertCreated()->json('data');
+    $this->patchJson("/api/ingredients/{$withPack->uuid}", ['unit' => 'g'])->assertStatus(422)->assertJsonPath('message', $message);
+    expect($withPack->fresh()->unit->value)->toBe('ml');
+    // Removed → the kind can change.
+    $this->deleteJson("/api/ingredients/{$withPack->uuid}/units/{$crate['uuid']}")->assertNoContent();
+    $this->patchJson("/api/ingredients/{$withPack->uuid}", ['unit' => 'g'])->assertOk()->assertJsonPath('data.kind', 'weighed');
+
+    $withContainer = p3Ingredient($ctx['company'], 'Syrup', 'ml', '0.002', ['piece_unit_label' => 'bottle', 'units_per_piece' => '1500']);
+    $this->patchJson("/api/ingredients/{$withContainer->uuid}", ['unit' => 'piece'])->assertStatus(422)->assertJsonPath('message', $message);
+    // Clearing the container in the same save counts as removing it.
+    $this->patchJson("/api/ingredients/{$withContainer->uuid}", ['unit' => 'piece', 'piece_unit_label' => null, 'units_per_piece' => null])
+        ->assertOk()->assertJsonPath('data.kind', 'counted');
 });

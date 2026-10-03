@@ -19,6 +19,7 @@
 //   F3 the receipt detail shows quantities, splits and costs the friendly way;
 //   F4 the warehouse dialog takes any unit the item knows;
 //   F5 restock allocation and suggestions too, shown friendly;
+//   F6 no kind change while pack sizes or a count container exist;
 //   every new string exists in English AND Arabic.
 // Run: node --test tests/frontend/launch-p3-kind.test.mjs
 import assert from 'node:assert/strict';
@@ -439,6 +440,14 @@ test('F5 restock allocation and suggestions are typed in the kind\'s units, pack
         assert.match(template, new RegExp(`qty\\(row\\.suggestion\\.${field}, row\\.suggestion\\.unit\\)`), field);
     }
     assert.match(read('resources/js/lib/api/inventory.ts'), /units\?: Record<number, string>;/);
+});
+
+test('F6 the edit form says to remove pack sizes and the container before another kind is saved', () => {
+    const { script, form } = ingredientForm();
+    assert.match(script, /const kindChangeBlocked = computed<boolean>\(\(\) => ingModalMode\.value === 'edit'[\s\S]*?kindOfUnit\(ingForm\.unit\) !== kindOfUnit\(ingModalTarget\.value\.unit\)\s*&& \(altUnits\.value\.length > 0 \|\| ingForm\.piece_unit_label\.trim\(\) !== ''\)\);/);
+    assert.match(script, /if \(kindChangeBlocked\.value\) \{\s*ingModalErrors\.value = \{ unit: \[t\('item_kind\.kind_change_blocked'\)\] \};/);
+    assert.match(form, /v-else-if="kindChangeBlocked"[^>]*data-test="item-kind-change-blocked">\{\{ t\('item_kind\.kind_change_blocked'\) \}\}/);
+    assert.equal(en.item_kind.kind_change_blocked, 'Remove its pack sizes and count container before changing the kind.');
 });
 
 test('every item-kind string exists in English and Arabic', () => {

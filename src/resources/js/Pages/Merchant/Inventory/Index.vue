@@ -303,6 +303,18 @@ const kindLocked = computed<boolean>(() => ingModalMode.value === 'edit' && ingM
 /** A2 — an older ingredient stored in kg / l / pack / box: its kind plus a small "stored in kg" note. */
 const legacyStoredUnit = computed<string | null>(() => (ingForm.unit !== '' && isLegacyStoredUnit(ingForm.unit) ? ingForm.unit : null));
 
+/**
+ * F6 — an unused ingredient that already has pack sizes or a count container
+ * cannot change kind (they hold amounts of the stored unit): the form says
+ * so as soon as another kind is picked, and does not send it (the server
+ * refuses it too).
+ */
+const kindChangeBlocked = computed<boolean>(() => ingModalMode.value === 'edit'
+    && ingModalTarget.value !== null
+    && ingForm.unit !== ''
+    && kindOfUnit(ingForm.unit) !== kindOfUnit(ingModalTarget.value.unit)
+    && (altUnits.value.length > 0 || ingForm.piece_unit_label.trim() !== ''));
+
 function chooseKind(kind: ItemKind): void {
     if (kindLocked.value) return;
     // Back to the ingredient's own kind keeps its stored unit (an older kg stays kg).
@@ -1010,6 +1022,11 @@ async function submitIngredient(): Promise<void> {
     ingModalError.value = null;
     if (ingForm.unit === '') {
         ingModalErrors.value = { unit: [t('item_kind.choose')] };
+        ingModalError.value = t('inventory.validation_summary');
+        return;
+    }
+    if (kindChangeBlocked.value) {
+        ingModalErrors.value = { unit: [t('item_kind.kind_change_blocked')] };
         ingModalError.value = t('inventory.validation_summary');
         return;
     }
@@ -3317,6 +3334,8 @@ async function submitSuggestions(): Promise<void> {
                             <span v-if="legacyStoredUnit" class="ms-1 rounded bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-600" data-test="item-kind-stored-in">{{ t('item_kind.stored_in', { unit: legacyStoredUnit }) }}</span>
                         </p>
                         <p v-if="kindLocked" class="mt-1 text-xs font-semibold text-amber-700" data-test="item-kind-locked">{{ t('item_kind.locked') }}</p>
+                        <!-- F6 — pack sizes / a count container hold amounts of the stored unit. -->
+                        <p v-else-if="kindChangeBlocked" class="mt-1 text-xs font-semibold text-amber-700" data-test="item-kind-change-blocked">{{ t('item_kind.kind_change_blocked') }}</p>
                         <p v-if="ingModalErrors.unit" class="mt-1 text-xs text-rose-600">{{ ingModalErrors.unit[0] }}</p>
                     </fieldset>
                     <div class="grid gap-3 sm:grid-cols-2">

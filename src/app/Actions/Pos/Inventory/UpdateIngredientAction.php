@@ -30,6 +30,9 @@ use RuntimeException;
  */
 final readonly class UpdateIngredientAction
 {
+    /** LAUNCH item kind, F6. */
+    public const KIND_CHANGE_MESSAGE = 'Remove its pack sizes and count container before changing the kind.';
+
     private const MUTABLE_FIELDS = [
         'name',
         'name_ar',
@@ -79,9 +82,20 @@ final readonly class UpdateIngredientAction
         // mis-deduct them at sale (0.250 authored as kg, then read as grams,
         // deducts 1000x too little). The rule lives in IngredientUnitLock so
         // the ingredient list can lock the kind up front (LAUNCH item kind).
-        if (array_key_exists('unit', $attributes) && $attributes['unit'] !== $ingredient->unit?->value
-            && IngredientUnitLock::isLocked($ingredient)) {
-            throw new RuntimeException(IngredientUnitLock::MESSAGE);
+        if (array_key_exists('unit', $attributes) && $attributes['unit'] !== $ingredient->unit?->value) {
+            if (IngredientUnitLock::isLocked($ingredient)) {
+                throw new RuntimeException(IngredientUnitLock::MESSAGE);
+            }
+            // LAUNCH item kind, F6 — a pack size or the count container holds
+            // an amount OF THE STORED UNIT ("crate" = 12000 ml); after a kind
+            // change it would silently mean 12000 g. Refuse until they are
+            // removed (a container cleared in this same save counts as removed).
+            $containerLabel = array_key_exists('piece_unit_label', $attributes)
+                ? $attributes['piece_unit_label']
+                : $ingredient->piece_unit_label;
+            if ($ingredient->altUnits()->exists() || ($containerLabel !== null && trim((string) $containerLabel) !== '')) {
+                throw new RuntimeException(self::KIND_CHANGE_MESSAGE);
+            }
         }
 
         return DB::transaction(function () use ($ingredient, $attributes, $actor, $companyId): Ingredient {
