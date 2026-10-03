@@ -57,6 +57,64 @@ export function kindUnits(storedUnit: string | null | undefined): KindUnit[] {
     return pair.map((value) => ({ value, factor: METRIC_SIZE[value]! / METRIC_SIZE[storedUnit]! }));
 }
 
+function round4(value: number): number {
+    return Math.round((value + Number.EPSILON * Math.sign(value)) * 10000) / 10000;
+}
+
+/** Up to 4 decimals, trailing zeros trimmed ("24", "1.5", "0.0003"); never "-0". */
+export function trimAmount(value: number): string {
+    if (!Number.isFinite(value)) return '';
+    const text = round4(value).toFixed(4).replace(/\.?0+$/, '');
+    return text === '-0' ? '0' : text;
+}
+
+/**
+ * An amount as people read it: 1000 g or ml and above in kg or l ("24 l",
+ * not "24000.000 ml"); below 1000 it stays in g or ml. Up to 4 decimals,
+ * trailing zeros trimmed. Any other unit keeps its unit.
+ */
+export function friendlyAmount(quantity: string | number | null | undefined, unit: string | null | undefined): { amount: string; unit: string } {
+    const u = unit ?? '';
+    const n = typeof quantity === 'number' ? quantity : parseFloat(String(quantity ?? ''));
+    if (!Number.isFinite(n)) return { amount: String(quantity ?? ''), unit: u };
+    if ((u === 'g' || u === 'ml') && Math.abs(n) >= 1000) {
+        return { amount: trimAmount(n / 1000), unit: u === 'g' ? 'kg' : 'l' };
+    }
+    return { amount: trimAmount(n), unit: u };
+}
+
+/**
+ * What a stored amount reopens as in a "holds [amount] [unit]" input: the
+ * friendly unit when it converts back exactly at 4 decimals (12000 ml →
+ * 12 l), else the stored unit (1234.5678 ml stays ml), so saving an
+ * untouched row never changes it.
+ */
+export function holdsEntry(quantity: string | number | null | undefined, storedUnit: string | null | undefined): { amount: string; unit: string } {
+    const n = typeof quantity === 'number' ? quantity : parseFloat(String(quantity ?? ''));
+    const unit = storedUnit ?? '';
+    if (!Number.isFinite(n) || n <= 0) return { amount: '', unit };
+    const friendly = friendlyAmount(n, unit);
+    const back = kindUnits(unit).find((u) => u.value === friendly.unit)?.factor ?? 1;
+    if (friendly.unit !== unit && Math.abs(parseFloat(friendly.amount) * back - n) > 1e-9) {
+        return { amount: trimAmount(n), unit };
+    }
+    return friendly;
+}
+
+/**
+ * An amount typed in one of the kind's units, in the stored unit (4
+ * decimals) — null when it is not a positive number or the unit is not of
+ * the kind. Used where the portal converts itself (count container, prep
+ * yield, minimum stock); pack sizes are converted by the server.
+ */
+export function toStoredAmount(amount: string | number | null | undefined, unit: string, storedUnit: string | null | undefined): number | null {
+    const n = typeof amount === 'number' ? amount : parseFloat(String(amount ?? '').trim());
+    const factor = kindUnits(storedUnit).find((u) => u.value === unit)?.factor;
+    if (!Number.isFinite(n) || n <= 0 || factor === undefined) return null;
+    const stored = round4(n * factor);
+    return stored > 0 ? stored : null;
+}
+
 /** The stored unit for a kind choice: the item's own unit when it is already of that kind, else g / ml / piece. */
 export function storedUnitForKind(kind: ItemKind, currentUnit?: string | null): string {
     if (currentUnit && kindOfUnit(currentUnit) === kind) return currentUnit;

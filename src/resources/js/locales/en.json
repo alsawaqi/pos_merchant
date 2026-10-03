@@ -21,8 +21,12 @@
         "stored_in": "Stored in {unit}",
         "locked": "The kind cannot change: this ingredient already has stock, movements, or recipe/add-on usage. Remove those references first, then create a new ingredient of the other kind.",
         "holds": "holds",
+        "holds_amount": "holds {amount}",
         "pack_sizes": {
             "title": "How do you buy it? (optional)",
+            "title_edit": "Pack sizes",
+            "edit_hint": "How the item is bought: crate holds 12 l, sack holds 25 kg, box holds 24 pieces. Goods received, counts and recipes can then use them. Each row saves on its own.",
+            "empty": "No pack sizes yet.",
             "hint": "For example: crate holds 12 l, sack holds 25 kg, box holds 24 pieces. Receiving 3 crates then adds 36 l by itself. Skip it and type the total (e.g. 36 l) when receiving.",
             "name": "Pack",
             "name_placeholder": "e.g. crate, sack, box",
@@ -31,7 +35,14 @@
             "unit": "Unit",
             "add": "Add pack size",
             "remove": "Remove",
-            "choose_kind_first": "Choose the kind first."
+            "choose_kind_first": "Choose the kind first.",
+            "delete_confirm": "Remove this pack size?",
+            "name_immutable_hint": "The pack name can't be changed after it's created.",
+            "errors": {
+                "load_failed": "Could not load the pack sizes.",
+                "save_failed": "Could not save the pack size.",
+                "delete_failed": "Could not remove the pack size."
+            }
         }
     },
     "recipe_units": {

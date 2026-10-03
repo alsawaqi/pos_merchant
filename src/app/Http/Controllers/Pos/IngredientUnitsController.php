@@ -54,7 +54,8 @@ class IngredientUnitsController extends Controller
         $this->refuseIfIngredientNotInTenant($ingredient);
 
         try {
-            $unit = $this->create->handle($ingredient, $request->validated(), $request->user());
+            // LAUNCH item kind, A4 — "holds 12 l" (amount + unit) becomes the factor.
+            $unit = $this->create->handle($ingredient, $request->unitAttributes($ingredient), $request->user());
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
@@ -70,7 +71,11 @@ class IngredientUnitsController extends Controller
         $this->refuseIfIngredientNotInTenant($ingredient);
         $this->refuseIfUnitNotOnIngredient($unit, $ingredient);
 
-        $updated = $this->update->handle($unit, $request->validated(), $request->user());
+        try {
+            $updated = $this->update->handle($unit, $request->unitAttributes($ingredient), $request->user());
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
         return IngredientAltUnitResource::make($updated);
     }

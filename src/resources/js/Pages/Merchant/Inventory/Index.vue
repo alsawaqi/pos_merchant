@@ -122,7 +122,17 @@ import {
     type PhysicalItemPurpose,
 } from '@/lib/api/physicalItems';
 import ProductStockDialog from '@/Pages/Merchant/Catalogue/ProductStockDialog.vue';
-import { ITEM_KINDS, isLegacyStoredUnit, kindOfUnit, kindUnits, storedUnitForKind, type ItemKind, type KindUnit } from '@/lib/itemKind';
+import {
+    ITEM_KINDS,
+    friendlyAmount,
+    holdsEntry,
+    isLegacyStoredUnit,
+    kindOfUnit,
+    kindUnits,
+    storedUnitForKind,
+    type ItemKind,
+    type KindUnit,
+} from '@/lib/itemKind';
 import { MerchantPermission } from '@/lib/permissions';
 
 const { t, locale } = useI18n();
@@ -354,17 +364,24 @@ const altUnitsError = ref<string | null>(null);
 const altUnitFieldErrors = ref<Record<string, Record<string, string[]>>>({});
 // uuid of the row whose save/delete is currently in flight.
 const altUnitBusyUuid = ref<string | null>(null);
+// LAUNCH item kind, A4 — these are the item's PACK SIZES: each row says
+// what the pack holds ("crate holds 12 l", an amount + a unit of the kind);
+// the server works out the factor. Nobody types a factor.
 // New-row draft.
-const altUnitNew = reactive<{ name: string; name_ar: string; factor: string }>({
+const altUnitNew = reactive<{ name: string; name_ar: string; amount: string; unit: string }>({
     name: '',
     name_ar: '',
-    factor: '',
+    amount: '',
+    unit: '',
 });
 const altUnitNewBusy = ref(false);
 // Editable buffers for existing rows, keyed by unit uuid. Lets the
-// user tweak factor / Arabic name without mutating the source list
-// until they hit Save.
-const altUnitDrafts = reactive<Record<string, { name_ar: string; factor: string }>>({});
+// user tweak what it holds / Arabic name without mutating the source
+// list until they hit Save.
+const altUnitDrafts = reactive<Record<string, { name_ar: string; amount: string; unit: string }>>({});
+
+/** A4 — pack sizes are saved straight away, so they hold units of the SAVED kind. */
+const savedHoldUnits = computed<KindUnit[]>(() => kindUnits(ingModalTarget.value?.unit));
 
 // =================== Supplier modal ==============================
 
@@ -987,7 +1004,8 @@ function resetAltUnits(): void {
     altUnitBusyUuid.value = null;
     altUnitNew.name = '';
     altUnitNew.name_ar = '';
-    altUnitNew.factor = '';
+    altUnitNew.amount = '';
+    altUnitNew.unit = savedHoldUnits.value[0]?.value ?? '';
     altUnitNewBusy.value = false;
     for (const k of Object.keys(altUnitDrafts)) delete altUnitDrafts[k];
 }
@@ -998,13 +1016,31 @@ function seedAltUnits(units: IngredientAltUnit[]): void {
     syncAltUnitDrafts();
 }
 
-// Mirror the source list into editable drafts (factor + Arabic
-// name), so editing a row doesn't mutate the canonical data.
+// Mirror the source list into editable drafts (what it holds + Arabic
+// name), so editing a row doesn't mutate the canonical data. A4 — a
+// factor of 12000 on a ml item reopens as "holds 12 l".
 function syncAltUnitDrafts(): void {
     for (const k of Object.keys(altUnitDrafts)) delete altUnitDrafts[k];
     for (const u of altUnits.value) {
-        altUnitDrafts[u.uuid] = { name_ar: u.name_ar ?? '', factor: u.factor };
+        const holds = holdsEntry(u.factor, ingModalTarget.value?.unit);
+        altUnitDrafts[u.uuid] = { name_ar: u.name_ar ?? '', amount: holds.amount, unit: holds.unit };
     }
+}
+
+/** A4 — the first field error of a pack row ('' = the add-new row). */
+function altUnitError(uuid: string): string | null {
+    const errors = altUnitFieldErrors.value[uuid] ?? {};
+    for (const field of ['name', 'amount', 'unit', 'factor']) {
+        const messages = errors[field];
+        if (messages && messages.length > 0) return messages[0]!;
+    }
+    return null;
+}
+
+/** A4 — a saved pack size as people read it: "holds 12 l". */
+function packHoldsText(unit: IngredientAltUnit): string {
+    const holds = friendlyAmount(unit.factor, ingModalTarget.value?.unit);
+    return t('item_kind.holds_amount', { amount: `${holds.amount} ${holdUnitLabel(holds.unit)}` });
 }
 
 async function loadAltUnits(ingredientUuid: string): Promise<void> {
@@ -1016,7 +1052,7 @@ async function loadAltUnits(ingredientUuid: string): Promise<void> {
         syncAltUnitDrafts();
     } catch (err) {
         altUnitsError.value =
-            err instanceof Error ? err.message : t('inventory.alt_units.errors.load_failed');
+            err instanceof Error ? err.message : t('item_kind.pack_sizes.errors.load_failed');
     } finally {
         altUnitsLoading.value = false;
     }
@@ -1038,19 +1074,20 @@ async function addAltUnit(): Promise<void> {
         await createIngredientUnit(ingModalTarget.value.uuid, {
             name: altUnitNew.name.trim(),
             name_ar: altUnitNew.name_ar.trim() || null,
-            // Send the raw string through — decimal(14,4) server-side.
-            factor: altUnitNew.factor,
+            // A4 — what the pack holds; the server works out the factor.
+            amount: String(altUnitNew.amount).trim(),
+            unit: altUnitNew.unit,
         });
         altUnitNew.name = '';
         altUnitNew.name_ar = '';
-        altUnitNew.factor = '';
+        altUnitNew.amount = '';
         await loadAltUnits(ingModalTarget.value.uuid);
     } catch (err) {
         if (err instanceof ApiError && err.isValidationError()) {
             altUnitFieldErrors.value = { ...altUnitFieldErrors.value, '': err.payload.errors };
             altUnitsError.value = t('inventory.validation_summary');
         } else {
-            altUnitsError.value = altUnitErrorMessage(err, 'inventory.alt_units.errors.save_failed');
+            altUnitsError.value = altUnitErrorMessage(err, 'item_kind.pack_sizes.errors.save_failed');
         }
     } finally {
         altUnitNewBusy.value = false;
@@ -1064,10 +1101,11 @@ async function saveAltUnit(unit: IngredientAltUnit): Promise<void> {
     altUnitFieldErrors.value = { ...altUnitFieldErrors.value, [unit.uuid]: {} };
     const draft = altUnitDrafts[unit.uuid];
     try {
-        // name is IMMUTABLE — only factor + Arabic name go up.
+        // name is IMMUTABLE — only what it holds + Arabic name go up.
         await updateIngredientUnit(ingModalTarget.value.uuid, unit.uuid, {
             name_ar: draft.name_ar.trim() || null,
-            factor: draft.factor,
+            amount: String(draft.amount).trim(),
+            unit: draft.unit,
         });
         await loadAltUnits(ingModalTarget.value.uuid);
     } catch (err) {
@@ -1078,7 +1116,7 @@ async function saveAltUnit(unit: IngredientAltUnit): Promise<void> {
             };
             altUnitsError.value = t('inventory.validation_summary');
         } else {
-            altUnitsError.value = altUnitErrorMessage(err, 'inventory.alt_units.errors.save_failed');
+            altUnitsError.value = altUnitErrorMessage(err, 'item_kind.pack_sizes.errors.save_failed');
         }
     } finally {
         altUnitBusyUuid.value = null;
@@ -1087,14 +1125,14 @@ async function saveAltUnit(unit: IngredientAltUnit): Promise<void> {
 
 async function removeAltUnit(unit: IngredientAltUnit): Promise<void> {
     if (!ingModalTarget.value) return;
-    if (!window.confirm(t('inventory.alt_units.delete_confirm'))) return;
+    if (!window.confirm(t('item_kind.pack_sizes.delete_confirm'))) return;
     altUnitBusyUuid.value = unit.uuid;
     altUnitsError.value = null;
     try {
         await deleteIngredientUnit(ingModalTarget.value.uuid, unit.uuid);
         await loadAltUnits(ingModalTarget.value.uuid);
     } catch (err) {
-        altUnitsError.value = altUnitErrorMessage(err, 'inventory.alt_units.errors.delete_failed');
+        altUnitsError.value = altUnitErrorMessage(err, 'item_kind.pack_sizes.errors.delete_failed');
     } finally {
         altUnitBusyUuid.value = null;
     }
@@ -3189,7 +3227,7 @@ async function submitSuggestions(): Promise<void> {
                     <fieldset class="rounded-lg border border-slate-200 p-3">
                         <legend class="px-2 text-sm font-semibold text-slate-700">
                             <Boxes class="me-1 inline size-3.5 text-amber-600" />
-                            {{ ingModalMode === 'edit' ? t('inventory.alt_units.title') : t('item_kind.pack_sizes.title') }}
+                            {{ ingModalMode === 'edit' ? t('item_kind.pack_sizes.title_edit') : t('item_kind.pack_sizes.title') }}
                         </legend>
 
                         <!-- LAUNCH item kind, A3 — "How do you buy it?" on a new
@@ -3236,13 +3274,12 @@ async function submitSuggestions(): Promise<void> {
                             <p v-if="!ingKind" class="mt-1 text-[11px] text-slate-500">{{ t('item_kind.pack_sizes.choose_kind_first') }}</p>
                         </div>
 
+                        <!-- LAUNCH item kind, A4 — the item's PACK SIZES (once the
+                             "Alternate units"): each saved row reads "holds 12 l"
+                             and is edited as holds [amount] [unit]; no factor is
+                             typed. Each row persists through its own endpoint. -->
                         <template v-else>
-                            <p class="mb-2 text-xs text-slate-500">{{ t('inventory.alt_units.hint') }}</p>
-
-                            <!-- Base unit reference (read-only). -->
-                            <div class="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600">
-                                {{ t('inventory.alt_units.base_unit_label', { unit: unitLabel(ingForm.unit) }) }}
-                            </div>
+                            <p class="mb-2 text-xs text-slate-500">{{ t('item_kind.pack_sizes.edit_hint') }}</p>
 
                             <!-- Section-level error banner (rose). -->
                             <div v-if="altUnitsError" class="mb-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
@@ -3253,26 +3290,27 @@ async function submitSuggestions(): Promise<void> {
 
                             <template v-else>
                                 <div v-if="altUnits.length === 0" class="rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
-                                    {{ t('inventory.alt_units.empty') }}
+                                    {{ t('item_kind.pack_sizes.empty') }}
                                 </div>
-                                <ul v-else class="space-y-2">
+                                <ul v-else class="space-y-2" data-test="pack-sizes-edit">
                                     <li
                                         v-for="unit in altUnits"
                                         :key="unit.uuid"
                                         class="flex flex-wrap items-end gap-2 rounded border border-slate-200 bg-slate-50/50 p-2"
                                     >
                                         <label class="block flex-1 min-w-[8rem]">
-                                            <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.alt_units.name') }}</span>
+                                            <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.pack_sizes.name') }}</span>
                                             <input
                                                 :value="unit.name"
                                                 type="text"
                                                 readonly
-                                                :title="t('inventory.alt_units.name_immutable_hint')"
+                                                :title="t('item_kind.pack_sizes.name_immutable_hint')"
                                                 class="mt-1 w-full cursor-not-allowed rounded-lg border border-slate-200 bg-slate-100 px-2.5 py-1.5 text-sm text-slate-600"
                                             >
+                                            <span class="mt-0.5 block text-[11px] text-slate-500" data-test="pack-size-holds">{{ packHoldsText(unit) }}</span>
                                         </label>
-                                        <label v-if="altUnitDrafts[unit.uuid]" class="block w-36">
-                                            <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.alt_units.name_ar') }}</span>
+                                        <label v-if="altUnitDrafts[unit.uuid]" class="block w-32">
+                                            <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.pack_sizes.name_ar') }}</span>
                                             <input
                                                 v-model="altUnitDrafts[unit.uuid].name_ar"
                                                 type="text"
@@ -3281,19 +3319,27 @@ async function submitSuggestions(): Promise<void> {
                                                 class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100 disabled:bg-slate-50"
                                             >
                                         </label>
-                                        <label v-if="altUnitDrafts[unit.uuid]" class="block w-28">
-                                            <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.alt_units.factor') }}</span>
-                                            <input
-                                                v-model="altUnitDrafts[unit.uuid].factor"
-                                                type="number"
-                                                step="0.0001"
-                                                min="0"
-                                                inputmode="decimal"
-                                                :disabled="!canManage"
-                                                class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100 disabled:bg-slate-50"
-                                            >
-                                            <p v-if="altUnitFieldErrors[unit.uuid] && altUnitFieldErrors[unit.uuid].factor" class="mt-1 text-[11px] text-rose-600">{{ altUnitFieldErrors[unit.uuid].factor[0] }}</p>
-                                        </label>
+                                        <template v-if="altUnitDrafts[unit.uuid]">
+                                            <span class="pb-2 text-sm font-medium text-slate-600">{{ t('item_kind.holds') }}</span>
+                                            <label class="block w-24">
+                                                <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.pack_sizes.amount') }}</span>
+                                                <input
+                                                    v-model="altUnitDrafts[unit.uuid].amount"
+                                                    type="number"
+                                                    step="0.0001"
+                                                    min="0"
+                                                    inputmode="decimal"
+                                                    :disabled="!canManage"
+                                                    class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100 disabled:bg-slate-50"
+                                                >
+                                            </label>
+                                            <label class="block w-24">
+                                                <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.pack_sizes.unit') }}</span>
+                                                <select v-model="altUnitDrafts[unit.uuid].unit" :disabled="!canManage" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100 disabled:bg-slate-50">
+                                                    <option v-for="u in savedHoldUnits" :key="u.value" :value="u.value">{{ holdUnitLabel(u.value) }}</option>
+                                                </select>
+                                            </label>
+                                        </template>
                                         <div v-if="canManage" class="flex items-center gap-1">
                                             <button
                                                 type="button"
@@ -3308,60 +3354,68 @@ async function submitSuggestions(): Promise<void> {
                                                 type="button"
                                                 :disabled="altUnitBusyUuid === unit.uuid"
                                                 class="grid size-9 place-items-center rounded-lg border border-rose-200 text-rose-700 transition hover:bg-rose-50 disabled:cursor-wait disabled:opacity-60"
-                                                :title="t('inventory.alt_units.delete')"
+                                                :title="t('item_kind.pack_sizes.remove')"
                                                 @click="removeAltUnit(unit)"
                                             >
                                                 <Trash2 class="size-4" />
                                             </button>
                                         </div>
+                                        <p v-if="altUnitError(unit.uuid)" class="basis-full text-[11px] text-rose-600">{{ altUnitError(unit.uuid) }}</p>
                                     </li>
                                 </ul>
 
                                 <!-- Add-new row — manage-gated. -->
-                                <div v-if="canManage" class="mt-3 flex flex-wrap items-end gap-2 rounded border border-teal-100 bg-teal-50/40 p-2">
+                                <div v-if="canManage" class="mt-3 flex flex-wrap items-end gap-2 rounded border border-teal-100 bg-teal-50/40 p-2" data-test="pack-size-new">
                                     <label class="block flex-1 min-w-[8rem]">
-                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.alt_units.name') }} *</span>
+                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.pack_sizes.name') }} *</span>
                                         <input
                                             v-model="altUnitNew.name"
                                             type="text"
-                                            :placeholder="t('inventory.alt_units.name_placeholder')"
+                                            maxlength="32"
+                                            :placeholder="t('item_kind.pack_sizes.name_placeholder')"
                                             class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
                                         >
-                                        <p v-if="altUnitFieldErrors[''] && altUnitFieldErrors[''].name" class="mt-1 text-[11px] text-rose-600">{{ altUnitFieldErrors[''].name[0] }}</p>
                                     </label>
-                                    <label class="block w-36">
-                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.alt_units.name_ar') }}</span>
+                                    <label class="block w-32">
+                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.pack_sizes.name_ar') }}</span>
                                         <input
                                             v-model="altUnitNew.name_ar"
                                             type="text"
                                             dir="rtl"
+                                            maxlength="32"
                                             class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
                                         >
                                     </label>
-                                    <label class="block w-28">
-                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.alt_units.factor') }} *</span>
+                                    <span class="pb-2 text-sm font-medium text-slate-600">{{ t('item_kind.holds') }}</span>
+                                    <label class="block w-24">
+                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.pack_sizes.amount') }} *</span>
                                         <input
-                                            v-model="altUnitNew.factor"
+                                            v-model="altUnitNew.amount"
                                             type="number"
                                             step="0.0001"
                                             min="0"
                                             inputmode="decimal"
-                                            placeholder="0"
+                                            placeholder="12"
                                             class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
                                         >
-                                        <p v-if="altUnitFieldErrors[''] && altUnitFieldErrors[''].factor" class="mt-1 text-[11px] text-rose-600">{{ altUnitFieldErrors[''].factor[0] }}</p>
+                                    </label>
+                                    <label class="block w-24">
+                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.pack_sizes.unit') }}</span>
+                                        <select v-model="altUnitNew.unit" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                                            <option v-for="u in savedHoldUnits" :key="u.value" :value="u.value">{{ holdUnitLabel(u.value) }}</option>
+                                        </select>
                                     </label>
                                     <button
                                         type="button"
-                                        :disabled="altUnitNewBusy || !altUnitNew.name.trim() || String(altUnitNew.factor).trim() === ''"
+                                        :disabled="altUnitNewBusy || !altUnitNew.name.trim() || String(altUnitNew.amount).trim() === ''"
                                         class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 text-xs font-semibold text-teal-700 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-60"
                                         @click="addAltUnit"
                                     >
                                         <Plus class="size-3.5" />
-                                        {{ altUnitNewBusy ? t('inventory.alt_units.saving') : t('inventory.alt_units.add') }}
+                                        {{ altUnitNewBusy ? t('inventory.alt_units.saving') : t('item_kind.pack_sizes.add') }}
                                     </button>
+                                    <p v-if="altUnitError('')" class="basis-full text-[11px] text-rose-600">{{ altUnitError('') }}</p>
                                 </div>
-                                <p class="mt-2 text-[11px] text-slate-500">{{ t('inventory.alt_units.factor_hint') }}</p>
                             </template>
                         </template>
                     </fieldset>

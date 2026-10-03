@@ -5,6 +5,8 @@
 //      a "stored in kg" note for an older kg / l / pack / box ingredient;
 //   A3 optional "How do you buy it?" pack sizes on create, "holds [amount]
 //      [unit]" with the unit limited to the kind, sent with the ingredient;
+//   A4 the edit form's "Alternate units" become "Pack sizes" ("holds 12 l"),
+//      with the same holds input and no factor field;
 //   every new string exists in English AND Arabic.
 // Run: node --test tests/frontend/launch-p3-kind.test.mjs
 import assert from 'node:assert/strict';
@@ -129,6 +131,37 @@ test('A3 a new ingredient takes optional pack sizes ("crate holds 12 l") in the 
     assert.match(script, /await createIngredient\(packSizes\.length > 0 \? \{ \.\.\.payload, pack_sizes: packSizes \} : payload\);/);
     assert.match(script, /\.map\(\(d\) => \(\{ name: d\.name\.trim\(\), name_ar: d\.name_ar\.trim\(\) \|\| null, amount: String\(d\.amount \?\? ''\)\.trim\(\), unit: d\.unit \}\)\);/);
     assert.match(read('resources/js/lib/api/inventory.ts'), /pack_sizes\?: \{ name: string; name_ar\?: string \| null; amount: string \| number; unit: string \}\[\];/);
+});
+
+test('A4 the edit form lists Pack sizes as "holds 12 l", edited as holds [amount] [unit] with no factor field', () => {
+    const { friendlyAmount, holdsEntry, trimAmount } = lib('itemKind');
+    const plain = (x) => `${x.amount} ${x.unit}`;
+    assert.equal(plain(friendlyAmount('12000.0000', 'ml')), '12 l');
+    assert.equal(plain(friendlyAmount('24.0000', 'piece')), '24 piece');
+    assert.equal(plain(holdsEntry('12000.0000', 'ml')), '12 l');
+    assert.equal(plain(holdsEntry('25000.0000', 'g')), '25 kg');
+    assert.equal(plain(holdsEntry('0.5000', 'kg')), '0.5 kg');
+    // Reopens exactly: a factor the big unit cannot carry at 4 decimals stays in the stored unit.
+    assert.equal(plain(holdsEntry('1234.5678', 'ml')), '1234.5678 ml');
+    assert.equal(plain(holdsEntry('1234.5000', 'ml')), '1.2345 l');
+    assert.equal(trimAmount(-0.00001), '0');
+
+    const { script, form } = ingredientForm();
+    const edit = form.slice(form.indexOf('<template v-else>', form.indexOf('data-test="pack-sizes-create"')));
+    assert.match(form, /t\('item_kind\.pack_sizes\.title_edit'\)/);
+    assert.match(edit, /data-test="pack-sizes-edit"/);
+    assert.match(edit, /\{\{ packHoldsText\(unit\) \}\}/);
+    assert.match(edit, /v-model="altUnitDrafts\[unit\.uuid\]\.amount"/);
+    assert.match(edit, /v-model="altUnitDrafts\[unit\.uuid\]\.unit"/);
+    assert.match(edit, /v-model="altUnitNew\.amount"/);
+    assert.match(edit, /<select v-model="altUnitNew\.unit"[^>]*>\s*<option v-for="u in savedHoldUnits"/);
+    // No factor is typed, and no "base unit" text is shown.
+    assert.doesNotMatch(edit, /\.factor"|alt_units\.factor|base_unit_label|alt_units\.hint/);
+    assert.match(script, /amount: String\(altUnitNew\.amount\)\.trim\(\),\s*unit: altUnitNew\.unit,/);
+    assert.match(script, /amount: String\(draft\.amount\)\.trim\(\),\s*unit: draft\.unit,/);
+    assert.match(script, /const holds = holdsEntry\(u\.factor, ingModalTarget\.value\?\.unit\);/);
+    assert.match(script, /const savedHoldUnits = computed<KindUnit\[\]>\(\(\) => kindUnits\(ingModalTarget\.value\?\.unit\)\);/);
+    assert.equal(en.item_kind.holds_amount, 'holds {amount}');
 });
 
 test('every item-kind string exists in English and Arabic', () => {

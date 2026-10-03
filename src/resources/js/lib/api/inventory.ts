@@ -376,7 +376,11 @@ export function deleteIngredient(uuid: string): Promise<void> {
 export interface CreateIngredientUnitPayload {
     name: string;
     name_ar?: string | null;
-    factor: string | number;
+    /** A raw factor (API compatibility) — or, LAUNCH item kind A4, what it holds: */
+    factor?: string | number;
+    /** amount + a unit of the item's kind ("holds 12 l"); the server works out the factor. */
+    amount?: string | number;
+    unit?: string;
     sort_order?: number;
 }
 
@@ -384,6 +388,9 @@ export interface UpdateIngredientUnitPayload {
     /** name is IMMUTABLE — not sent on update. */
     name_ar?: string | null;
     factor?: string | number;
+    /** LAUNCH item kind, A4 — what it holds (amount + a unit of the item's kind). */
+    amount?: string | number;
+    unit?: string;
     sort_order?: number;
 }
 

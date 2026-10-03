@@ -14,7 +14,8 @@ declare(strict_types=1);
  *   A2 the list says each ingredient's kind, and whether it can still change
  *      (the unit-change rule, worked out up front for the edit form);
  *   A3 optional pack sizes on create ("crate holds 12 l"), saved in the same
- *      request and transaction, with the factor worked out, never typed.
+ *      request and transaction, with the factor worked out, never typed;
+ *   A4 the pack-size endpoints take what a pack holds (amount + unit).
  */
 
 use App\Actions\Pos\Inventory\CreateIngredientAction;
@@ -145,4 +146,37 @@ it('A3 saves the pack sizes in the same transaction: a refused one rolls the ing
 
     expect(Ingredient::query()->where('name', 'Syrup')->exists())->toBeFalse();
     expect(IngredientAltUnit::query()->count())->toBe(0);
+});
+
+it('A4 adds and re-sizes a pack size on an existing ingredient from what it holds, never a typed factor', function (): void {
+    $ctx = makeMerchantActor();
+    $milk = p3Ingredient($ctx['company'], 'Milk', 'ml', '0.0004');
+
+    $crate = $this->postJson("/api/ingredients/{$milk->uuid}/units", ['name' => 'crate', 'amount' => '12', 'unit' => 'l'])
+        ->assertCreated()
+        ->assertJsonPath('data.factor', '12000.0000')
+        ->json('data');
+    $this->patchJson("/api/ingredients/{$milk->uuid}/units/{$crate['uuid']}", ['amount' => '500', 'unit' => 'ml', 'name_ar' => 'صندوق'])
+        ->assertOk()
+        ->assertJsonPath('data.factor', '500.0000')
+        ->assertJsonPath('data.name_ar', 'صندوق');
+
+    // An older kg ingredient: a 500 g bag is half a kg.
+    $saffron = p3Ingredient($ctx['company'], 'Saffron', 'kg', '50');
+    $this->postJson("/api/ingredients/{$saffron->uuid}/units", ['name' => 'bag', 'amount' => '500', 'unit' => 'g'])
+        ->assertCreated()
+        ->assertJsonPath('data.factor', '0.5000');
+});
+
+it('A4 refuses a pack size in a unit outside the kind, or named like a unit of the item', function (): void {
+    $ctx = makeMerchantActor();
+    $milk = p3Ingredient($ctx['company'], 'Milk', 'ml', '0.0004');
+
+    $this->postJson("/api/ingredients/{$milk->uuid}/units", ['name' => 'sack', 'amount' => '25', 'unit' => 'kg'])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['unit']);
+    $this->postJson("/api/ingredients/{$milk->uuid}/units", ['name' => 'l', 'amount' => '1', 'unit' => 'l'])
+        ->assertStatus(422)
+        ->assertJsonPath('message', "'l' is already a unit of this item — give the pack its own name (crate, sack, box).");
+    expect(IngredientAltUnit::query()->where('ingredient_id', $milk->id)->count())->toBe(0);
 });
