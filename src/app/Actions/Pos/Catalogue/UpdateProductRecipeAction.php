@@ -12,6 +12,8 @@ use App\Models\ProductRecipe;
 use App\Models\ProductRecipeVersion;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
+use App\Support\Recipes\ExplodedPrecision;
+use App\Support\Recipes\PrepGraph;
 use App\Support\Recipes\RecipeEditGate;
 use App\Support\Recipes\RecipeLineChanges;
 use App\Support\Recipes\RecipeQuantity;
@@ -116,6 +118,14 @@ final readonly class UpdateProductRecipeAction
         }
 
         RecipeEditGate::ensure($actor);
+
+        // LAUNCH-P3 M1-a — a prep line must still record accurately once it is
+        // exploded per ONE unit sold (the copy pos_api freezes at sale).
+        $perUnit = [];
+        foreach ($resolved as $line) {
+            $perUnit[(int) $line['ingredient']->id] = $line['quantity'];
+        }
+        ExplodedPrecision::assertRecordable(PrepGraph::forCompany($companyId), $perUnit, '"'.$product->name.'"');
 
         return DB::transaction(function () use ($product, $resolved, $before, $after, $actor, $note, $companyId): Product {
             // Step 1: snapshot the PRE-edit recipe as a version.

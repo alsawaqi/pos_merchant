@@ -12,6 +12,8 @@ use App\Models\Ingredient;
 use App\Models\Product;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
+use App\Support\Recipes\ExplodedPrecision;
+use App\Support\Recipes\PrepGraph;
 use App\Support\Recipes\RecipeEditGate;
 use App\Support\Recipes\RecipeQuantity;
 use App\Support\StockDecimal;
@@ -111,6 +113,18 @@ final readonly class SyncAddOnConsumptionAction
         RecipeEditGate::ensure($actor);
 
         $this->assertLineKinds($resolved, $products, $addon);
+
+        // LAUNCH-P3 M1-a — a prep line must still record accurately once it is
+        // exploded per ONE selection (the copy pos_api freezes at sale).
+        ExplodedPrecision::assertOptionRecordable(
+            PrepGraph::forCompany($companyId),
+            array_map(static fn (array $l): array => [
+                'ingredient_id' => (int) $l['ingredient_id'],
+                'direction' => $l['direction'],
+                'quantity' => $l['quantity'],
+            ], array_values(array_filter($resolved, static fn (array $l): bool => $l['ingredient_id'] !== null))),
+            (string) $addon->name,
+        );
 
         return DB::transaction(function () use ($addon, $resolved, $actor, $companyId, $currentShape, $newShape): AddOn {
             $addon->consumptionLines()->delete();

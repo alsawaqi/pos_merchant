@@ -11,6 +11,7 @@ use App\Models\Ingredient;
 use App\Models\IngredientRecipe;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
+use App\Support\Recipes\ExplodedPrecision;
 use App\Support\Recipes\PrepGraph;
 use App\Support\Recipes\PrepUsage;
 use App\Support\Recipes\RecipeEditGate;
@@ -30,7 +31,10 @@ use RuntimeException;
  *   - every component belongs to the same company (company-scoped lookups);
  *   - a component may itself be a prep item, at most 3 levels deep;
  *   - cycles are refused (P cannot use itself, directly or indirectly);
- *   - yield > 0; no line rounds to 0 in its base unit.
+ *   - yield > 0; no line rounds to 0 in its base unit;
+ *   - fix order 1, M1-a: every dish and add-on option that uses the prep
+ *     item, directly or through another prep item, still records each raw
+ *     ingredient accurately per ONE unit sold ({@see ExplodedPrecision}).
  * Depth and cycles are checked on the WHOLE company graph with the edit
  * applied ({@see PrepGraph::assertValid()}), so deepening P can never push a
  * prep item that uses P past the limit.
@@ -181,9 +185,13 @@ final readonly class SavePrepItemAction
                 $graphLines = $resolved !== null
                     ? self::graphLines($resolved)
                     : array_map(static fn (array $l): string => $l['quantity'], $after);
-                PrepGraph::load($companyId)
-                    ->withRecipe((int) $prep->id, $yield, $graphLines, $scalars['name'] ?? $prep->name)
-                    ->assertValid((int) $prep->id);
+                $graph = PrepGraph::load($companyId)
+                    ->withRecipe((int) $prep->id, $yield, $graphLines, $scalars['name'] ?? $prep->name);
+                $graph->assertValid((int) $prep->id);
+                // LAUNCH-P3 M1-a — every dish and option that uses this prep
+                // item (directly or through another prep item) must still
+                // record accurately per ONE unit with the new explosion.
+                ExplodedPrecision::assertUsersRecordable($graph, (int) $prep->id);
             }
 
             $oldScalars = [];

@@ -48,12 +48,14 @@ final class PrepGraph
      * @param  array<int, string>  $names  ingredient id => name (messages only)
      * @param  list<int>  $deleted  soft-deleted prep items: still exploded and costed (an old
      *                              recipe version may name one) but never validated as a root
+     * @param  array<int, string>  $units  ingredient id => base unit (messages only)
      */
     public function __construct(
         private array $prep,
         private readonly array $costs = [],
         private readonly array $names = [],
         private readonly array $deleted = [],
+        private readonly array $units = [],
     ) {}
 
     /**
@@ -85,15 +87,17 @@ final class PrepGraph
     {
         $rows = DB::table('pos_ingredients')
             ->where('company_id', $companyId)
-            ->get(['id', 'name', 'default_unit_cost', 'is_prep', 'prep_yield_quantity', 'deleted_at']);
+            ->get(['id', 'name', 'unit', 'default_unit_cost', 'is_prep', 'prep_yield_quantity', 'deleted_at']);
 
         $prep = [];
         $costs = [];
         $names = [];
         $deleted = [];
+        $units = [];
         foreach ($rows as $row) {
             $id = (int) $row->id;
             $names[$id] = (string) $row->name;
+            $units[$id] = (string) $row->unit;
             if ((bool) $row->is_prep) {
                 if ($row->deleted_at !== null) {
                     $deleted[] = $id;
@@ -118,7 +122,7 @@ final class PrepGraph
             }
         }
 
-        return new self($prep, $costs, $names, $deleted);
+        return new self($prep, $costs, $names, $deleted, $units);
     }
 
     public function isPrep(int $ingredientId): bool
@@ -142,6 +146,12 @@ final class PrepGraph
         return $this->names[$ingredientId] ?? ('#'.$ingredientId);
     }
 
+    /** The base unit of an ingredient ('' when unknown). */
+    public function unit(int $ingredientId): string
+    {
+        return $this->units[$ingredientId] ?? '';
+    }
+
     /**
      * The graph with one prep recipe replaced — what saving it WOULD give,
      * for {@see assertValid()} before anything is written.
@@ -160,7 +170,7 @@ final class PrepGraph
             $names[$prepId] = $name;
         }
 
-        return new self($prep, $this->costs, $names, $this->deleted);
+        return new self($prep, $this->costs, $names, $this->deleted, $this->units);
     }
 
     /**
@@ -187,6 +197,24 @@ final class PrepGraph
         }
 
         return $out;
+    }
+
+    /**
+     * Explode recipe lines into raw ingredients, merged and EXACT (no
+     * rounding) — what one unit really uses, before a copy rounds it.
+     *
+     * @param  array<int, string|int|float|BigNumber>  $lines  ingredient id => base quantity (a prep id is exploded)
+     * @return array<int, BigRational> raw ingredient id => exact quantity
+     */
+    public function explodeExact(array $lines): array
+    {
+        /** @var array<int, BigRational> $raw */
+        $raw = [];
+        foreach ($lines as $ingredientId => $quantity) {
+            $this->collect((int) $ingredientId, self::rational($quantity), $raw, []);
+        }
+
+        return $raw;
     }
 
     /** Exact cost of ONE base unit (raw: the weighted average; prep: its recipe ÷ yield). */
