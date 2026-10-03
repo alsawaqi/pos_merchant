@@ -77,13 +77,18 @@ type ApexSeries = { name: string; data: number[] }[];
                 <h2 class="border-b border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700">{{ t('reports.product_performance.top_by_revenue') }}</h2>
                 <table class="w-full text-sm">
                     <thead class="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                        <tr><th class="px-5 py-2 text-start">Product</th><th class="px-5 py-2 text-end">Revenue</th><th class="px-5 py-2 text-end">Qty</th><th class="px-5 py-2 text-end">As add-on</th></tr>
+                        <tr><th class="px-5 py-2 text-start">Product</th><th class="px-5 py-2 text-end">Revenue</th><th class="px-5 py-2 text-end">Qty</th><th class="px-5 py-2 text-end">{{ t('report_combos.inside_combos') }}</th><th class="px-5 py-2 text-end">As add-on</th></tr>
                     </thead>
                     <tbody>
                         <tr v-for="r in payload.top_by_revenue" :key="r.product_id" class="border-b border-slate-100 last:border-0">
-                            <td class="px-5 py-2 font-medium text-slate-900">{{ r.product_name }}</td>
+                            <td class="px-5 py-2 font-medium text-slate-900">
+                                {{ r.product_name }}
+                                <span v-if="r.product_type === 'combo'" class="ms-1 rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-indigo-700" data-test="report-combo-badge">{{ t('combos.badge') }}</span>
+                            </td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.revenue }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.qty_sold }}</td>
+                            <!-- LAUNCH-P4 B8 — the same item that went out inside combos. -->
+                            <td class="px-5 py-2 text-end tabular-nums text-slate-500" data-test="inside-combos">{{ num(r.inside_combos_qty) > 0 ? r.inside_combos_qty : '—' }}</td>
                             <!-- P-G3 — units sold as an add-on inside other products. -->
                             <td class="px-5 py-2 text-end tabular-nums text-slate-500">{{ num(r.addon_units) > 0 ? r.addon_units : '—' }}</td>
                         </tr>
@@ -95,12 +100,13 @@ type ApexSeries = { name: string; data: number[] }[];
                 <h2 class="border-b border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700">{{ t('reports.product_performance.top_by_qty') }}</h2>
                 <table class="w-full text-sm">
                     <thead class="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                        <tr><th class="px-5 py-2 text-start">Product</th><th class="px-5 py-2 text-end">Qty</th><th class="px-5 py-2 text-end">Revenue</th></tr>
+                        <tr><th class="px-5 py-2 text-start">Product</th><th class="px-5 py-2 text-end">Qty</th><th class="px-5 py-2 text-end">{{ t('report_combos.inside_combos') }}</th><th class="px-5 py-2 text-end">Revenue</th></tr>
                     </thead>
                     <tbody>
                         <tr v-for="r in payload.top_by_qty" :key="r.product_id" class="border-b border-slate-100 last:border-0">
                             <td class="px-5 py-2 font-medium text-slate-900">{{ r.product_name }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.qty_sold }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums text-slate-500">{{ num(r.inside_combos_qty) > 0 ? r.inside_combos_qty : '—' }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.revenue }}</td>
                         </tr>
                     </tbody>

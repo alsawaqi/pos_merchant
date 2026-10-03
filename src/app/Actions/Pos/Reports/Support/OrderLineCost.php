@@ -234,6 +234,12 @@ final class OrderLineCost
         if ($product === null) {
             return BigDecimal::zero();
         }
+        // LAUNCH-P4 B8 — a combo line costs nothing itself: its cost is the
+        // cost of the items chosen in it (its child lines), never also a
+        // cost price set on the combo.
+        if (($product->product_type ?? 'standard') === 'combo') {
+            return BigDecimal::zero();
+        }
         if ($product->stock_mode === 'cooked') {
             return $this->pieceCost($productId, $branchId, $soldAt, 'cooked');
         }
@@ -351,7 +357,7 @@ final class OrderLineCost
         $ids = array_values(array_unique($ids));
 
         foreach (array_chunk($ids, 1000) as $chunk) {
-            foreach (DB::table('pos_products')->where('company_id', $this->companyId)->whereIn('id', $chunk)->get(['id', 'stock_mode', 'cost_price']) as $row) {
+            foreach (DB::table('pos_products')->where('company_id', $this->companyId)->whereIn('id', $chunk)->get(['id', 'stock_mode', 'cost_price', 'product_type']) as $row) {
                 $this->products[(int) $row->id] = $row;
             }
         }

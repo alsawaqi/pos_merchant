@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Pos\Reports;
 
+use App\Actions\Pos\Reports\Support\RevenueSql;
 use App\Enums\OrderStatus;
 use App\Models\Order;
 use App\Models\Production;
@@ -91,10 +92,12 @@ final readonly class BranchActivityAction
             ->where('pos_orders.branch_id', $branchId)
             ->where('pos_orders.status', OrderStatus::Paid->value)
             ->whereBetween('pos_orders.opened_at', [$from, $to])
+            // LAUNCH-P4 B8 — no combo children; revenue excluding VAT.
+            ->whereNull('pos_order_items.parent_order_item_id')
             ->selectRaw('
                 pos_order_items.product_name_snapshot AS product_name,
                 COALESCE(SUM(pos_order_items.qty), 0) AS qty_sold,
-                COALESCE(SUM(pos_order_items.line_total), 0) AS revenue
+                COALESCE(SUM('.RevenueSql::lineRevenue().'), 0) AS revenue
             ')
             ->groupBy('pos_order_items.product_id', 'pos_order_items.product_name_snapshot')
             ->orderByDesc('qty_sold')

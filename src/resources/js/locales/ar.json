@@ -3779,5 +3779,13 @@
     "stock_flags": {
         "below_zero": "أقل من صفر",
         "below_zero_at": "أقل من صفر في {branches}"
+    },
+    "report_combos": {
+        "inside_combos": "داخل الكومبو"
+    },
+    "report_vat": {
+        "sales_excl_vat": "إجمالي وصافي المبيعات معروضة بدون ضريبة القيمة المضافة.",
+        "inclusive_orders": "{count} طلبات كانت أسعارها شاملة الضريبة؛ وقد استُخرجت منها.",
+        "included_in_prices": "شاملة في الأسعار"
     }
 }

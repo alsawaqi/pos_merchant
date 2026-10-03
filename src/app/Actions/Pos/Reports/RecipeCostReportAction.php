@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Pos\Reports;
 
 use App\Actions\Pos\Reports\Support\OrderLineCost;
+use App\Actions\Pos\Reports\Support\RevenueSql;
 use App\Data\Reports\ReportFilter;
 use App\Enums\OrderStatus;
 use App\Models\Product;
@@ -125,6 +126,10 @@ final readonly class RecipeCostReportAction
             ->whereBetween('pos_orders.opened_at', [$filter->dateFrom, $filter->dateTo])
             ->when($branchScope !== null, static fn ($q) => $q->whereIn('pos_orders.branch_id', $branchScope))
             ->whereIn('pos_order_items.product_id', $productIds)
+            // LAUNCH-P4 B8 — an item inside a combo has no revenue of its own
+            // (the combo line carries it), so combo children stay out of this
+            // per-product margin.
+            ->whereNull('pos_order_items.parent_order_item_id')
             ->select(
                 'pos_order_items.id',
                 'pos_order_items.product_id',
@@ -135,6 +140,8 @@ final readonly class RecipeCostReportAction
                 'pos_orders.branch_id',
             )
             ->selectRaw('COALESCE(pos_orders.closed_at, pos_orders.opened_at) AS sold_at')
+            // LAUNCH-P4 B8 — revenue excluding VAT.
+            ->selectRaw(RevenueSql::lineRevenue().' AS revenue_ex_vat')
             ->get();
 
         $costs = (new OrderLineCost($companyId))->costs($rows);
@@ -144,7 +151,7 @@ final readonly class RecipeCostReportAction
             $pid = (int) $row->product_id;
             $out[$pid] ??= ['units' => '0', 'revenue' => '0', 'recipe_baisas' => 0];
             $out[$pid]['units'] = (string) BigDecimal::of($out[$pid]['units'])->plus((string) $row->qty);
-            $out[$pid]['revenue'] = (string) BigDecimal::of($out[$pid]['revenue'])->plus((string) $row->line_total);
+            $out[$pid]['revenue'] = (string) BigDecimal::of($out[$pid]['revenue'])->plus(BigDecimal::of((string) $row->revenue_ex_vat)->toScale(3, RoundingMode::HALF_UP));
             $out[$pid]['recipe_baisas'] += $costs[(int) $row->id]['recipe'] ?? 0;
         }
 

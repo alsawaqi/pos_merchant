@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Pos\Reports;
 
 use App\Actions\Pos\Reports\Support\OrderLineCost;
+use App\Actions\Pos\Reports\Support\RevenueSql;
 use App\Data\Reports\ReportFilter;
 use App\Enums\ExpenseStatus;
 use App\Enums\OrderStatus;
@@ -21,7 +22,9 @@ use Illuminate\Support\Facades\DB;
  *
  * HEADLINE METRICS:
  *   - gross_sales         Σ paid orders' subtotal (before discount,
- *                          before tax)
+ *                          before tax) — LAUNCH-P4: excluding VAT, so on an
+ *                          order whose prices include VAT the VAT inside the
+ *                          subtotal is taken out
  *   - discount_total      Σ paid orders' discount_total
  *   - net_sales           gross_sales - discount_total
  *   - tax_total           Σ paid orders' tax_total
@@ -91,13 +94,17 @@ final readonly class SalesReportAction
             $refundedQuery->whereIn('branch_id', $branchScope);
         }
 
-        // Headline aggregate (one query)
+        // Headline aggregate (one query). LAUNCH-P4 B8 — sales are excluding
+        // VAT: on an order whose prices include VAT the subtotal holds the
+        // VAT, so it is taken out (RevenueSql::orderGross); net sales of such
+        // an order are then grand − tax.
         $headline = (clone $paidQuery)
             ->selectRaw('
-                COALESCE(SUM(subtotal), 0) AS gross_sales,
+                COALESCE(SUM('.RevenueSql::orderGross().'), 0) AS gross_sales,
                 COALESCE(SUM(discount_total), 0) AS discount_total,
                 COALESCE(SUM(tax_total), 0) AS tax_total,
                 COALESCE(SUM(grand_total), 0) AS grand_total,
+                COALESCE(SUM(CASE WHEN prices_include_tax THEN 1 ELSE 0 END), 0) AS vat_inclusive_orders,
                 COUNT(*) AS order_count
             ')
             ->first();
@@ -204,6 +211,9 @@ final readonly class SalesReportAction
                 'pending_net' => self::fmt($settlement['pending_net']),
                 'net_profit' => self::fmt($netProfit),
                 'order_count' => (int) ($headline?->order_count ?? 0),
+                // LAUNCH-P4 B8 — how many of them had VAT inside the prices
+                // (taken out of gross / net sales above).
+                'vat_inclusive_orders' => (int) ($headline?->vat_inclusive_orders ?? 0),
                 'refund_count' => (int) ($refundsRow?->refund_count ?? 0),
                 // Convenience: avg ticket size on paid orders.
                 'avg_ticket' => self::fmt(

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Pos\Reports;
 
 use App\Actions\Pos\Reports\Support\OrderLineCost;
+use App\Actions\Pos\Reports\Support\RevenueSql;
 use App\Data\Reports\ReportFilter;
 use App\Enums\OrderStatus;
 use App\Support\MerchantTenantContext;
@@ -49,7 +50,18 @@ final readonly class ProductPerformanceReportAction
         }
 
         // Per-product COGS from the frozen order-line copies (LAUNCH-P3 P3-5).
+        // LAUNCH-P4 B8 — a combo's cost is its child lines' cost.
         $costByProduct = $this->costByProduct($itemsBase, $companyId);
+
+        // LAUNCH-P4 B8 — items that went out inside combos: the child lines'
+        // quantity (parent qty × component qty), per chosen product. Never
+        // revenue (the combo line carries it).
+        $insideCombos = (clone $itemsBase)
+            ->whereNotNull('pos_order_items.parent_order_item_id')
+            ->whereNotNull('pos_order_items.product_id')
+            ->selectRaw('pos_order_items.product_id AS product_id, COALESCE(SUM(pos_order_items.qty), 0) AS qty')
+            ->groupBy('pos_order_items.product_id')
+            ->pluck('qty', 'product_id');
 
         // P-G3 — product-as-add-on sales count into the product's numbers
         // (agreed default): units = parent line qty per attach, revenue =
@@ -72,19 +84,22 @@ final readonly class ProductPerformanceReportAction
             ->get()
             ->keyBy('product_id');
 
-        // Per-product aggregate.
-        $perProduct = (clone $itemsBase)
+        // Per-product aggregate. LAUNCH-P4 B8 — top-level lines only (a combo
+        // is its own product; its items are counted in inside_combos_qty),
+        // revenue excluding VAT.
+        $perProduct = RevenueSql::topLevel((clone $itemsBase))
             ->join('pos_products', 'pos_products.id', '=', 'pos_order_items.product_id')
             ->selectRaw('
                 pos_products.id AS product_id,
                 pos_products.name AS product_name,
+                pos_products.product_type AS product_type,
                 COALESCE(SUM(pos_order_items.qty), 0) AS qty_sold,
-                COALESCE(SUM(pos_order_items.line_total), 0) AS revenue
+                COALESCE(SUM('.RevenueSql::lineRevenue().'), 0) AS revenue
             ')
-            ->groupBy('pos_products.id', 'pos_products.name')
+            ->groupBy('pos_products.id', 'pos_products.name', 'pos_products.product_type')
             ->orderByDesc('revenue')
             ->get()
-            ->map(static function ($r) use ($costByProduct, $addonSales): array {
+            ->map(static function ($r) use ($costByProduct, $addonSales, $insideCombos): array {
                 $qty = (float) $r->qty_sold;
                 $revenue = (float) $r->revenue;
                 // recipe_cost from the line recipe snapshots (Phase 8 data).
@@ -96,7 +111,10 @@ final readonly class ProductPerformanceReportAction
                 return [
                     'product_id' => (int) $r->product_id,
                     'product_name' => (string) $r->product_name,
+                    'product_type' => (string) ($r->product_type ?? 'standard'),
                     'qty_sold' => number_format($qty, 3, '.', ''),
+                    // LAUNCH-P4 B8 — the same item that went out inside combos.
+                    'inside_combos_qty' => number_format((float) ($insideCombos[(int) $r->product_id] ?? 0), 3, '.', ''),
                     'revenue' => number_format($revenue, 3, '.', ''),
                     'recipe_cost' => number_format($cost, 3, '.', ''),
                     'profit' => number_format($profit, 3, '.', ''),
@@ -108,23 +126,31 @@ final readonly class ProductPerformanceReportAction
             });
 
         // P-G3 — products sold ONLY as add-ons in the window still earn a
-        // row (qty_sold 0, the add-on columns carry the story).
+        // row (qty_sold 0, the add-on columns carry the story). LAUNCH-P4 —
+        // and products that went out ONLY inside combos.
         $standaloneIds = $perProduct->pluck('product_id')->all();
-        $addonOnlyIds = $addonSales->keys()->reject(fn ($id) => in_array((int) $id, $standaloneIds, true))->all();
-        if ($addonOnlyIds !== []) {
-            $names = DB::table('pos_products')->whereIn('id', $addonOnlyIds)->pluck('name', 'id');
-            foreach ($addonOnlyIds as $productId) {
+        $otherIds = collect($addonSales->keys())->merge($insideCombos->keys())
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->reject(fn (int $id) => in_array($id, $standaloneIds, true))
+            ->values()
+            ->all();
+        if ($otherIds !== []) {
+            $names = DB::table('pos_products')->whereIn('id', $otherIds)->pluck('name', 'id');
+            foreach ($otherIds as $productId) {
                 $addon = $addonSales->get($productId);
                 $perProduct->push([
-                    'product_id' => (int) $productId,
+                    'product_id' => $productId,
                     'product_name' => (string) ($names[$productId] ?? ('#'.$productId)),
+                    'product_type' => 'standard',
                     'qty_sold' => '0.000',
+                    'inside_combos_qty' => number_format((float) ($insideCombos[$productId] ?? 0), 3, '.', ''),
                     'revenue' => '0.000',
                     'recipe_cost' => '0.000',
                     'profit' => '0.000',
                     'margin_pct' => 0.0,
-                    'addon_units' => number_format((float) $addon->addon_units, 3, '.', ''),
-                    'addon_revenue' => number_format((float) $addon->addon_revenue, 3, '.', ''),
+                    'addon_units' => number_format((float) ($addon->addon_units ?? 0), 3, '.', ''),
+                    'addon_revenue' => number_format((float) ($addon->addon_revenue ?? 0), 3, '.', ''),
                 ]);
             }
         }
@@ -194,7 +220,11 @@ final readonly class ProductPerformanceReportAction
      */
     private function costByProduct($itemsBase, int $companyId): array
     {
+        // LAUNCH-P4 B8 — every line, children included; a child line's cost
+        // goes to its combo (the parent line's product): COGS of a combo =
+        // the cost of the items chosen in it.
         $rows = (clone $itemsBase)
+            ->leftJoin('pos_order_items as combo_parent', 'combo_parent.id', '=', 'pos_order_items.parent_order_item_id')
             ->select(
                 'pos_order_items.id',
                 'pos_order_items.product_id',
@@ -203,6 +233,7 @@ final readonly class ProductPerformanceReportAction
                 'pos_order_items.component_snapshot_json',
                 'pos_orders.branch_id',
             )
+            ->selectRaw('COALESCE(combo_parent.product_id, pos_order_items.product_id) AS cost_product_id')
             ->selectRaw('COALESCE(pos_orders.closed_at, pos_orders.opened_at) AS sold_at')
             ->get();
 
@@ -210,10 +241,10 @@ final readonly class ProductPerformanceReportAction
 
         $cost = [];
         foreach ($rows as $row) {
-            if ($row->product_id === null) {
+            if ($row->cost_product_id === null) {
                 continue;
             }
-            $pid = (int) $row->product_id;
+            $pid = (int) $row->cost_product_id;
             $cost[$pid] = ($cost[$pid] ?? 0) + ($costs[(int) $row->id]['total'] ?? 0);
         }
 

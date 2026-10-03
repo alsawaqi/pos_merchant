@@ -129,6 +129,8 @@ export interface SalesReportPayload {
         pending_net: string;
         net_profit: string;
         order_count: number;
+        /** LAUNCH-P4 B8 — orders whose prices included VAT (taken out of the sales above). */
+        vat_inclusive_orders?: number;
         refund_count: number;
         avg_ticket: string;
     };
@@ -207,6 +209,10 @@ export interface ProductPerformanceRow {
     /** P-G3 — sold as an add-on inside other products. */
     addon_units?: string;
     addon_revenue?: string;
+    /** LAUNCH-P4 B8 — 'combo' rows are combos (their own product). */
+    product_type?: string;
+    /** LAUNCH-P4 B8 — the same item that went out inside combos (no revenue of its own). */
+    inside_combos_qty?: string;
 }
 
 export interface ProductPerformanceReportPayload {
@@ -859,6 +865,8 @@ export interface OrderDetailItem {
     addons: { name: string; price_delta: string }[];
     discounts: OrderDetailDiscount[];
     comps: OrderDetailComp[];
+    /** LAUNCH-P4 B8 — the items chosen inside a combo line. */
+    components?: { product_name: string; qty: string; extra_price: string; notes: string | null; addons: { name: string; price_delta: string }[] }[];
 }
 
 export interface OrderDetailPayment {
@@ -906,7 +914,7 @@ export interface OrderDetailPayload {
         delivery: OrderDetailDelivery | null;
         /** Why a void order was voided (label snapshot; null otherwise). */
         void_reason: string | null;
-        totals: { subtotal: string; discount_total: string; comp_total: string; tax_total: string; grand_total: string };
+        totals: { subtotal: string; discount_total: string; comp_total: string; tax_total: string; grand_total: string; prices_include_tax?: boolean };
     };
     items: OrderDetailItem[];
     order_discounts: OrderDetailDiscount[];

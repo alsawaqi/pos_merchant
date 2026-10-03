@@ -136,6 +136,11 @@ type ApexSeries = { name: string; data: number[] }[];
                     { label: t('reports.sales.headline_labels.average_ticket'), value: payload.headline.avg_ticket },
                 ]"
             />
+            <!-- LAUNCH-P4 B8 — sales are excluding VAT; say so when some orders had it inside the prices. -->
+            <p class="text-xs text-slate-500" data-test="vat-excluded-hint">
+                {{ t('report_vat.sales_excl_vat') }}
+                <template v-if="(payload.headline.vat_inclusive_orders ?? 0) > 0"> {{ t('report_vat.inclusive_orders', { count: payload.headline.vat_inclusive_orders ?? 0 }) }}</template>
+            </p>
             <!-- LAUNCH-P3 P3-5 — what the cost of goods covers. -->
             <p class="text-xs text-slate-500" data-test="cogs-scope-hint">{{ t('reports.shared.cogs_scope_hint') }}</p>
 

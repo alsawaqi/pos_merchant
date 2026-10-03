@@ -3779,5 +3779,13 @@
     "stock_flags": {
         "below_zero": "Below zero",
         "below_zero_at": "Below zero at {branches}"
+    },
+    "report_combos": {
+        "inside_combos": "Inside combos"
+    },
+    "report_vat": {
+        "sales_excl_vat": "Gross and net sales are shown excluding VAT.",
+        "inclusive_orders": "{count} orders had VAT inside their prices; it was taken out.",
+        "included_in_prices": "included in prices"
     }
 }

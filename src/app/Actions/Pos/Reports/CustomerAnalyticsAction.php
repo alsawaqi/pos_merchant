@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Pos\Reports;
 
+use App\Actions\Pos\Reports\Support\RevenueSql;
 use App\Enums\OrderStatus;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Carbon;
@@ -85,11 +86,13 @@ final readonly class CustomerAnalyticsAction
             ->when($branchIds !== null, fn ($q) => $q->whereIn('pos_orders.branch_id', $branchIds))
             ->where('pos_orders.customer_id', $customerId)
             ->where('pos_orders.status', OrderStatus::Paid->value)
+            // LAUNCH-P4 B8 — no combo children; revenue excluding VAT.
+            ->whereNull('pos_order_items.parent_order_item_id')
             ->selectRaw('
                 pos_order_items.product_id AS product_id,
                 pos_order_items.product_name_snapshot AS product_name,
                 COALESCE(SUM(pos_order_items.qty), 0) AS total_qty,
-                COALESCE(SUM(pos_order_items.line_total), 0) AS total_revenue,
+                COALESCE(SUM('.RevenueSql::lineRevenue().'), 0) AS total_revenue,
                 COUNT(*) AS line_count
             ')
             ->groupBy('pos_order_items.product_id', 'pos_order_items.product_name_snapshot')

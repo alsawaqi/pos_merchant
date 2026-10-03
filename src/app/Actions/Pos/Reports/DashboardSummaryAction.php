@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Pos\Reports;
 
+use App\Actions\Pos\Reports\Support\RevenueSql;
 use App\Enums\OrderStatus;
 use App\Enums\StockMovementType;
 use App\Support\MerchantTenantContext;
@@ -240,10 +241,12 @@ final readonly class DashboardSummaryAction
             ->when($branchIds !== null, fn ($q) => $q->whereIn('pos_orders.branch_id', $branchIds))
             ->where('pos_orders.status', OrderStatus::Paid->value)
             ->whereBetween('pos_orders.opened_at', [$from, $to])
+            // LAUNCH-P4 B8 — no combo children; revenue excluding VAT.
+            ->whereNull('pos_order_items.parent_order_item_id')
             ->selectRaw('
                 pos_order_items.product_id AS product_id,
                 pos_order_items.product_name_snapshot AS product_name,
-                COALESCE(SUM(pos_order_items.qty * pos_order_items.unit_price_snapshot), 0) AS revenue
+                COALESCE(SUM('.RevenueSql::lineRevenue(amount: 'pos_order_items.qty * pos_order_items.unit_price_snapshot').'), 0) AS revenue
             ')
             ->groupBy('pos_order_items.product_id', 'pos_order_items.product_name_snapshot')
             ->orderByDesc('revenue')
@@ -485,10 +488,12 @@ final readonly class DashboardSummaryAction
             ->when($branchIds !== null, fn ($q) => $q->whereIn('pos_orders.branch_id', $branchIds))
             ->where('pos_orders.status', OrderStatus::Paid->value)
             ->whereBetween('pos_orders.opened_at', [$from, $to])
+            // LAUNCH-P4 B8 — no combo children; revenue excluding VAT.
+            ->whereNull('pos_order_items.parent_order_item_id')
             ->selectRaw('
                 pos_order_items.product_id AS product_id,
                 pos_order_items.product_name_snapshot AS product_name,
-                COALESCE(SUM(pos_order_items.qty * pos_order_items.unit_price_snapshot), 0) AS revenue
+                COALESCE(SUM('.RevenueSql::lineRevenue(amount: 'pos_order_items.qty * pos_order_items.unit_price_snapshot').'), 0) AS revenue
             ')
             ->groupBy('pos_order_items.product_id', 'pos_order_items.product_name_snapshot')
             ->orderByDesc('revenue')

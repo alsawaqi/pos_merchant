@@ -52,6 +52,8 @@ final readonly class OrderDetailAction
                 'device:id,name',
                 'table:id,label',
                 'displayItems.addons',
+                // LAUNCH-P4 B8 — the items chosen inside a combo line.
+                'displayItems.comboChildren.addons',
                 'payments',
             ])
             ->where('company_id', $companyId)
@@ -133,6 +135,19 @@ final readonly class OrderDetailAction
                 'discounts' => $lineDiscountNames[(int) $item->id] ?? [],
                 // Comp/gift rows that hit this specific line, if any.
                 'comps' => $lineComps[(int) $item->id] ?? [],
+                // LAUNCH-P4 B8 — a combo line lists the items chosen in it
+                // (qty for the whole line; the extra each cost; their own
+                // add-ons). The revenue is on the combo line.
+                'components' => $item->comboChildren->map(static fn ($child): array => [
+                    'product_name' => (string) $child->product_name_snapshot,
+                    'qty' => (string) $child->qty,
+                    'extra_price' => (string) $child->combo_extra_price,
+                    'notes' => $child->notes,
+                    'addons' => $child->addons->map(static fn ($a): array => [
+                        'name' => (string) $a->add_on_name_snapshot,
+                        'price_delta' => (string) $a->price_delta_snapshot,
+                    ])->all(),
+                ])->values()->all(),
             ];
         })->all();
 
@@ -209,6 +224,9 @@ final readonly class OrderDetailAction
                         ? number_format((float) $order->comp_total, 3, '.', '') : '0.000',
                     'tax_total' => (string) $order->tax_total,
                     'grand_total' => (string) $order->grand_total,
+                    // LAUNCH-P4 B8 — true: the prices (and grand_total)
+                    // already include tax_total.
+                    'prices_include_tax' => (bool) $order->prices_include_tax,
                 ],
             ],
             'items' => $items,

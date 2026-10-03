@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Pos\Reports;
 
+use App\Actions\Pos\Reports\Support\RevenueSql;
 use App\Data\Reports\ReportFilter;
 use App\Enums\OrderStatus;
 use App\Support\MerchantTenantContext;
@@ -51,7 +52,7 @@ final readonly class DiscountReportAction
         $headline = (clone $paidQuery)
             ->selectRaw('
                 COALESCE(SUM(discount_total), 0) AS total_discount,
-                COALESCE(SUM(subtotal), 0) AS gross_sales,
+                COALESCE(SUM('.RevenueSql::orderGross().'), 0) AS gross_sales,
                 COUNT(*) AS order_count,
                 SUM(CASE WHEN discount_total > 0 THEN 1 ELSE 0 END) AS discounted_order_count
             ')
@@ -68,7 +69,7 @@ final readonly class DiscountReportAction
             ->selectRaw('
                 branch_id,
                 COALESCE(SUM(discount_total), 0) AS total_discount,
-                COALESCE(SUM(subtotal), 0) AS gross_sales,
+                COALESCE(SUM('.RevenueSql::orderGross().'), 0) AS gross_sales,
                 SUM(CASE WHEN discount_total > 0 THEN 1 ELSE 0 END) AS discounted_order_count
             ')
             ->groupBy('branch_id')

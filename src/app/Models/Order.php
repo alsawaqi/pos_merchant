@@ -208,7 +208,11 @@ class Order extends Model
      */
     public function displayItems(): HasMany
     {
+        // LAUNCH-P4 B8 — a combo is ONE bill line: the items chosen inside it
+        // (child lines) are shown under it ({@see OrderItem::comboChildren}),
+        // never as lines or counts of their own.
         return $this->items()->where('qty', '>', 0)
+            ->whereNull('parent_order_item_id')
             ->where(function (Builder $query): void {
                 $query->where('status', '!=', OrderItemStatus::Void->value)
                     ->orWhereHas('order', fn (Builder $order): Builder => $order->where('status', OrderStatus::Void->value));

@@ -219,6 +219,14 @@ function commissionStatusClass(status: string): string {
                                     <ul v-if="item.addons.length" class="mt-0.5 ps-4 text-xs text-slate-500">
                                         <li v-for="(a, i) in item.addons" :key="i">+ {{ a.name }} <span class="tabular-nums">({{ a.price_delta }})</span></li>
                                     </ul>
+                                    <!-- LAUNCH-P4 B8 — the items chosen inside a combo. -->
+                                    <ul v-if="item.components && item.components.length" class="mt-0.5 space-y-0.5 border-s-2 border-indigo-100 ps-3 text-xs text-slate-600" data-test="combo-components">
+                                        <li v-for="(c, i) in item.components" :key="`k${i}`">
+                                            <span class="tabular-nums text-slate-400">{{ c.qty }}×</span> {{ c.product_name }}
+                                            <span v-if="Number(c.extra_price) > 0" class="tabular-nums text-slate-400">(+{{ c.extra_price }})</span>
+                                            <span v-for="(a, j) in c.addons" :key="j" class="block ps-3 text-slate-500">+ {{ a.name }}</span>
+                                        </li>
+                                    </ul>
                                     <p v-for="(d, i) in item.discounts" :key="i" class="mt-0.5 text-xs font-medium text-rose-600">
                                         − {{ d.name }} <span class="tabular-nums">({{ d.amount }})</span>
                                         <span v-if="d.is_offer" class="ms-1 inline-flex rounded-full bg-violet-100 px-1.5 py-px text-[10px] font-semibold uppercase text-violet-700">{{ t('orders.detail.offer') }}</span>
@@ -277,7 +285,7 @@ function commissionStatusClass(status: string): string {
                         <div class="flex justify-between"><dt class="text-slate-500">{{ t('orders.detail.subtotal') }}</dt><dd class="tabular-nums text-slate-900">{{ detail.order.totals.subtotal }}</dd></div>
                         <div class="flex justify-between"><dt class="text-slate-500">{{ t('orders.detail.discount') }}</dt><dd class="tabular-nums text-rose-600">−{{ detail.order.totals.discount_total }}</dd></div>
                         <div v-if="Number(detail.order.totals.comp_total) > 0" class="flex justify-between"><dt class="text-slate-500">{{ t('orders.detail.comp') }}</dt><dd class="tabular-nums text-emerald-700">−{{ detail.order.totals.comp_total }}</dd></div>
-                        <div class="flex justify-between"><dt class="text-slate-500">{{ t('orders.detail.tax') }}</dt><dd class="tabular-nums text-slate-900">{{ detail.order.totals.tax_total }}</dd></div>
+                        <div class="flex justify-between"><dt class="text-slate-500">{{ t('orders.detail.tax') }}<span v-if="detail.order.totals.prices_include_tax" class="ms-1 text-xs text-slate-400" data-test="tax-included">({{ t('report_vat.included_in_prices') }})</span></dt><dd class="tabular-nums text-slate-900">{{ detail.order.totals.tax_total }}</dd></div>
                         <div class="flex justify-between border-t border-slate-200 pt-1.5 text-base font-bold">
                             <dt class="text-slate-900">{{ t('orders.detail.grand_total') }}</dt>
                             <dd class="tabular-nums text-slate-950">{{ detail.order.totals.grand_total }} <span class="text-xs font-medium text-slate-400">OMR</span></dd>

@@ -112,6 +112,8 @@ final readonly class OrdersListAction
                 'discount_total' => (string) $o->discount_total,
                 'tax_total' => (string) $o->tax_total,
                 'grand_total' => (string) $o->grand_total,
+                // LAUNCH-P4 B8 — the VAT is inside grand_total.
+                'prices_include_tax' => (bool) $o->prices_include_tax,
                 'opened_at' => $o->opened_at?->format('Y-m-d\TH:i:s'),
                 'closed_at' => $o->closed_at?->format('Y-m-d\TH:i:s'),
                 // Commission + payout status (settled-aware; final once paid).
