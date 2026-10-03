@@ -36,6 +36,8 @@ use RuntimeException;
  *   3. Compare the new shape to what's already on disk (base
  *      quantity AND the entered form). If identical, skip
  *      everything (no audit, no version row, no DB writes).
+ *      What is on disk is read inside the transaction, under a
+ *      row lock on the product (fix order 1, K5).
  *   4. Snapshot the CURRENT (pre-edit) recipe into
  *      pos_product_recipe_versions with denormalised ingredient
  *      name + current unit_cost_at_time (+ LAUNCH-P3: the entered
@@ -107,27 +109,34 @@ final readonly class UpdateProductRecipeAction
                 + $this->quantities->resolve($ing, $l['quantity'], $l['unit'] ?? null);
         }
 
-        $current = $product->recipeLines()->with('ingredient')->get();
-        $before = RecipeLineChanges::fromProductLines($current, $this->quantities);
         $after = RecipeLineChanges::fromResolved($resolved, $this->quantities);
 
-        // No-op skip — identical recipe = no version, no audit,
-        // no DB churn (a pre-P3 line re-saved in its base unit is identical).
-        if (RecipeLineChanges::same($before, $after)) {
-            return $product->fresh(['recipeLines.ingredient']);
-        }
+        return DB::transaction(function () use ($product, $resolved, $after, $actor, $note, $companyId): Product {
+            // LAUNCH-P3 K5 — lock the product, THEN read the recipe this save
+            // replaces: two saves of one product run one after the other, so
+            // the version row always holds the state the edit really replaced
+            // (read outside the lock, a concurrent save could slip in between
+            // and vanish from the history). No-op on SQLite.
+            Product::query()->whereKey($product->id)->lockForUpdate()->first(['id']);
+            $current = $product->recipeLines()->with('ingredient')->get();
+            $before = RecipeLineChanges::fromProductLines($current, $this->quantities);
 
-        RecipeEditGate::ensure($actor);
+            // No-op skip — identical recipe = no version, no audit,
+            // no DB churn (a pre-P3 line re-saved in its base unit is identical).
+            if (RecipeLineChanges::same($before, $after)) {
+                return $product->fresh(['recipeLines.ingredient']);
+            }
 
-        // LAUNCH-P3 M1-a — a prep line must still record accurately once it is
-        // exploded per ONE unit sold (the copy pos_api freezes at sale).
-        $perUnit = [];
-        foreach ($resolved as $line) {
-            $perUnit[(int) $line['ingredient']->id] = $line['quantity'];
-        }
-        ExplodedPrecision::assertRecordable(PrepGraph::forCompany($companyId), $perUnit, '"'.$product->name.'"');
+            RecipeEditGate::ensure($actor);
 
-        return DB::transaction(function () use ($product, $resolved, $before, $after, $actor, $note, $companyId): Product {
+            // LAUNCH-P3 M1-a — a prep line must still record accurately once it is
+            // exploded per ONE unit sold (the copy pos_api freezes at sale).
+            $perUnit = [];
+            foreach ($resolved as $line) {
+                $perUnit[(int) $line['ingredient']->id] = $line['quantity'];
+            }
+            ExplodedPrecision::assertRecordable(PrepGraph::forCompany($companyId), $perUnit, '"'.$product->name.'"');
+
             // Step 1: snapshot the PRE-edit recipe as a version.
             // Empty array is a valid snapshot (means "previous
             // state was no recipe").
