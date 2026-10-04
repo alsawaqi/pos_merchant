@@ -51,10 +51,11 @@ it('F2: counts a legacy row from a device that already sent auth_v as a problem,
     $p5 = p5Device($ctx['branch'], true);
     $old = p5Device($ctx['branch'], false);
 
-    $downgrade = p5Approval($ctx['branch'], 'table.cancel_line', 'legacy', ['device_id' => $p5, 'approved_at' => '2026-10-04 09:00:00']);
-    $oldApp = p5Approval($ctx['branch'], 'table.cancel_line', 'legacy', ['device_id' => $old, 'approved_at' => '2026-10-04 10:00:00']);
-    $noDevice = p5Approval($ctx['branch'], 'comp', 'legacy', ['device_id' => null, 'approved_at' => '2026-10-04 11:00:00']);
-    $failed = p5Approval($ctx['branch'], 'comp', 'failed', ['device_id' => $p5, 'approved_at' => '2026-10-04 12:00:00']);
+    // The P5 device's marker is 06:00 UTC.
+    $downgrade = p5Approval($ctx['branch'], 'table.cancel_line', 'legacy', ['device_id' => $p5, 'approved_at' => '2026-10-04 09:00:00', 'created_at' => '2026-10-04 09:00:05']);
+    $oldApp = p5Approval($ctx['branch'], 'table.cancel_line', 'legacy', ['device_id' => $old, 'approved_at' => '2026-10-04 10:00:00', 'created_at' => '2026-10-04 10:00:05']);
+    $noDevice = p5Approval($ctx['branch'], 'comp', 'legacy', ['device_id' => null, 'approved_at' => '2026-10-04 11:00:00', 'created_at' => '2026-10-04 11:00:05']);
+    $failed = p5Approval($ctx['branch'], 'comp', 'failed', ['device_id' => $p5, 'approved_at' => '2026-10-04 12:00:00', 'created_at' => '2026-10-04 12:00:05']);
 
     $data = $this->getJson('/api/reports/approvals?date_from=2026-10-04&date_to=2026-10-04')->assertOk()->json('data');
     $rows = collect($data['rows'])->keyBy('id');
@@ -69,6 +70,28 @@ it('F2: counts a legacy row from a device that already sent auth_v as a problem,
     $problems = collect($this->getJson('/api/reports/approvals?date_from=2026-10-04&date_to=2026-10-04&result=problems')->assertOk()->json('data.rows'))
         ->pluck('id')->sort()->values()->all();
     expect($problems)->toBe(collect([$downgrade, $failed])->sort()->values()->all());
+});
+
+it('F2 (1b): counts a legacy row only from the device marker on — before it is old-build history, at or after it is a problem', function (): void {
+    $ctx = makeMerchantActor(MerchantRole::Manager->value);
+    $p5 = p5Device($ctx['branch'], true);   // auth_v_seen_at = 2026-10-04 06:00:00
+
+    $before = p5Approval($ctx['branch'], 'table.cancel_line', 'legacy', ['device_id' => $p5, 'approved_at' => '2026-10-04 05:59:00', 'created_at' => '2026-10-04 05:59:59']);
+    $atMarker = p5Approval($ctx['branch'], 'table.cancel_line', 'legacy', ['device_id' => $p5, 'approved_at' => '2026-10-04 06:00:00', 'created_at' => '2026-10-04 06:00:00']);
+    $after = p5Approval($ctx['branch'], 'sold_out.toggle', 'legacy', ['device_id' => $p5, 'approved_at' => '2026-10-04 07:00:00', 'created_at' => '2026-10-04 07:00:01']);
+
+    $data = $this->getJson('/api/reports/approvals?date_from=2026-10-04&date_to=2026-10-04')->assertOk()->json('data');
+    $rows = collect($data['rows'])->keyBy('id');
+
+    expect($rows[$before])->toMatchArray(['problem' => false, 'legacy_from_p5_device' => false])
+        ->and($rows[$atMarker])->toMatchArray(['problem' => true, 'legacy_from_p5_device' => true])
+        ->and($rows[$after])->toMatchArray(['problem' => true, 'legacy_from_p5_device' => true])
+        ->and($data['summary'])->toMatchArray(['legacy' => 3, 'legacy_from_p5_devices' => 2, 'problems' => 2])
+        ->and($data['by_day'])->toBe([['day' => '2026-10-04', 'total' => 3, 'problems' => 2]]);
+
+    $problems = collect($this->getJson('/api/reports/approvals?date_from=2026-10-04&date_to=2026-10-04&result=problems')->assertOk()->json('data.rows'))
+        ->pluck('id')->sort()->values()->all();
+    expect($problems)->toBe(collect([$atMarker, $after])->sort()->values()->all());
 });
 
 // ---------------------------------------------------------------- F7

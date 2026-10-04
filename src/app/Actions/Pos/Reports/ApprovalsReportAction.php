@@ -8,6 +8,7 @@ use App\Data\Reports\ReportFilter;
 use App\Support\BusinessTime;
 use App\Support\MerchantTenantContext;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -26,9 +27,11 @@ use Illuminate\Support\Facades\DB;
  *
  * failed / missing / unverifiable are the "problems" the page highlights.
  *
- * Fix order 1, F2 — so is a `legacy` row from a device that has already
- * sent `auth_v: 1` (pos_devices.auth_v_seen_at is set): a P5 build leaving
- * the marker out is a downgrade, not an old app. Such rows carry
+ * Fix order 1, F2 (1b) — so is a `legacy` row recorded AT OR AFTER its
+ * device first sent `auth_v: 1` (created_at >= pos_devices.auth_v_seen_at):
+ * once a device runs a P5 build, leaving the marker out is a downgrade, not
+ * an old app. Rows from before the marker are the device's genuine old-build
+ * history and are not problems. Flagged rows carry
  * `legacy_from_p5_device: true`.
  *
  * Filters: the shared date + branch filter (on approved_at, the device time;
@@ -138,7 +141,7 @@ final readonly class ApprovalsReportAction
             $day = BusinessTime::day((string) ($r->approved_at ?? $r->created_at));
             $byDay[$day] ??= ['day' => $day, 'total' => 0, 'problems' => 0];
             $byDay[$day]['total']++;
-            $byDay[$day]['problems'] += self::isProblem((string) $r->result, $r->auth_v_seen_at !== null) ? 1 : 0;
+            $byDay[$day]['problems'] += self::isProblem((string) $r->result, self::afterMarker($r->created_at, $r->auth_v_seen_at)) ? 1 : 0;
         }
         krsort($byDay);
         $byDay = array_values($byDay);
@@ -182,8 +185,8 @@ final readonly class ApprovalsReportAction
             'branch_name' => (string) $r->branch_name,
             'action' => (string) $r->action,
             'result' => (string) $r->result,
-            'problem' => self::isProblem((string) $r->result, $r->device_auth_v_seen_at !== null),
-            'legacy_from_p5_device' => (string) $r->result === 'legacy' && $r->device_auth_v_seen_at !== null,
+            'problem' => self::isProblem((string) $r->result, self::afterMarker($r->created_at, $r->device_auth_v_seen_at)),
+            'legacy_from_p5_device' => (string) $r->result === 'legacy' && self::afterMarker($r->created_at, $r->device_auth_v_seen_at),
             'mode' => (string) $r->mode,
             'method' => $r->method !== null ? (string) $r->method : null,
             'actor_staff_id' => $r->actor_staff_id !== null ? (int) $r->actor_staff_id : null,
@@ -228,10 +231,23 @@ final readonly class ApprovalsReportAction
         return $payload;
     }
 
-    /** A problem row: failed / missing / unverifiable, or legacy from a P5 device (F2). */
-    public static function isProblem(string $result, bool $deviceSentAuthV): bool
+    /**
+     * A problem row: failed / missing / unverifiable, or legacy recorded at or
+     * after its device's P5 marker (F2, 1b).
+     */
+    public static function isProblem(string $result, bool $afterP5Marker): bool
     {
-        return in_array($result, self::PROBLEMS, true) || ($result === 'legacy' && $deviceSentAuthV);
+        return in_array($result, self::PROBLEMS, true) || ($result === 'legacy' && $afterP5Marker);
+    }
+
+    /** The row was recorded at or after its device first sent auth_v: 1. */
+    private static function afterMarker(mixed $createdAt, mixed $authVSeenAt): bool
+    {
+        if ($createdAt === null || $authVSeenAt === null) {
+            return false;
+        }
+
+        return Carbon::parse((string) $createdAt)->greaterThanOrEqualTo(Carbon::parse((string) $authVSeenAt));
     }
 
     /** The SQL form of {@see isProblem()} on `pos_approvals as a`. */
@@ -241,12 +257,16 @@ final readonly class ApprovalsReportAction
             ->orWhere(fn (Builder $q) => $q->where('a.result', 'legacy')->whereExists(fn (Builder $s) => $this->p5Device($s)));
     }
 
-    /** The row's device has already sent auth_v: 1 (pos_devices.auth_v_seen_at). */
+    /**
+     * The row's device had already sent auth_v: 1 when the row was recorded
+     * (created_at >= pos_devices.auth_v_seen_at).
+     */
     private function p5Device(Builder $q): Builder
     {
         return $q->selectRaw('1')->from('pos_devices as pd')
             ->whereColumn('pd.id', 'a.device_id')
-            ->whereNotNull('pd.auth_v_seen_at');
+            ->whereNotNull('pd.auth_v_seen_at')
+            ->whereColumn('a.created_at', '>=', 'pd.auth_v_seen_at');
     }
 
     /**
