@@ -195,7 +195,10 @@ function when(row: ApprovalsReportRow): string {
                                 </span>
                             </td>
                             <td class="px-4 py-2 text-end tabular-nums">{{ row.amount ?? '—' }}</td>
-                            <td class="px-4 py-2 text-xs text-slate-500">{{ row.reason ?? '' }}</td>
+                            <td class="px-4 py-2 text-xs text-slate-500">
+                                <span v-if="row.legacy_from_p5_device" class="block font-semibold text-rose-700" data-test="legacy-from-p5">{{ t('reports.approvals.legacy_from_p5_device') }}</span>
+                                {{ row.reason ?? '' }}
+                            </td>
                         </tr>
                     </tbody>
                 </table>

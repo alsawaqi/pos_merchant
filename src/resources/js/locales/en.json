@@ -2929,7 +2929,8 @@
                 "needs_review": "Needs review",
                 "total_payouts": "Pay-outs",
                 "total_late_sales": "Late cash sales",
-                "total_corrected_variance": "Corrected variance"
+                "total_corrected_variance": "Corrected variance",
+                "total_late_payouts": "Late pay-outs"
             },
             "columns": {
                 "opened": "Opened",
@@ -2944,7 +2945,8 @@
                 "payouts": "Pay-outs",
                 "late_sales": "Late cash sales",
                 "corrected_expected": "Corrected expected",
-                "corrected_variance": "Corrected variance"
+                "corrected_variance": "Corrected variance",
+                "late_payouts": "Late pay-outs"
             },
             "open": "Open",
             "closed": "Closed",
@@ -3263,7 +3265,8 @@
                 "bill_combine": "Combine bills"
             },
             "timezone_note": "Days and times are in Muscat time.",
-            "by_day": "Per day"
+            "by_day": "Per day",
+            "legacy_from_p5_device": "Sent as an old app by a device that already runs the new app."
         },
         "hours": {
             "page_title": "Hours",

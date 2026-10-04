@@ -103,6 +103,9 @@ it('saves ticks and limits as the full matrix and rewrites the four old lists fr
 
     $stored = p5CompanySetting($cid, 'position_permissions');
     $expected = p5FixtureMatrix();
+    // Fix order 1, L5: with no tick list yet, the start is the defaults plus
+    // the old lists — the empty kitchen list meant "kitchen only".
+    $expected['manager']['actions']['kitchen.screen'] = false;
     $expected['cashier']['actions']['comp'] = true;
     $expected['cashier']['discount_max_percent'] = 15;
     $expected['supervisor']['actions']['approvals.give'] = true;
@@ -113,8 +116,9 @@ it('saves ticks and limits as the full matrix and rewrites the four old lists fr
     // The four old keys, for old app builds.
     expect(p5CompanySetting($cid, 'manager_approval_positions'))->toBe(['supervisor', 'manager'])
         ->and(p5CompanySetting($cid, 'reports_positions'))->toBe(['supervisor', 'manager'])
-        ->and(p5CompanySetting($cid, 'kitchen_positions'))->toBe(['waiter', 'manager'])   // kitchen is implicit
-        ->and(p5CompanySetting($cid, 'order_cancel_positions'))->toBe(['manager']);        // from order.void_paid
+        ->and(p5CompanySetting($cid, 'kitchen_positions'))->toBe(['waiter'])                // kitchen is implicit
+        // Fix order 1, L4: the stored list ∪ order.void_paid, never narrowed.
+        ->and(p5CompanySetting($cid, 'order_cancel_positions'))->toBe(['cashier', 'manager']);
 });
 
 it('audits only the cells that changed, and nothing when a save changes nothing', function (): void {

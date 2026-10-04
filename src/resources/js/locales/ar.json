@@ -2929,7 +2929,8 @@
                 "needs_review": "تحتاج مراجعة",
                 "total_payouts": "المصروفات النقدية",
                 "total_late_sales": "مبيعات نقدية متأخرة",
-                "total_corrected_variance": "الفرق المصحح"
+                "total_corrected_variance": "الفرق المصحح",
+                "total_late_payouts": "مصروفات نقدية متأخرة"
             },
             "columns": {
                 "opened": "الافتتاح",
@@ -2944,7 +2945,8 @@
                 "payouts": "المصروفات النقدية",
                 "late_sales": "مبيعات نقدية متأخرة",
                 "corrected_expected": "المتوقع المصحح",
-                "corrected_variance": "الفرق المصحح"
+                "corrected_variance": "الفرق المصحح",
+                "late_payouts": "مصروفات نقدية متأخرة"
             },
             "open": "مفتوحة",
             "closed": "مغلقة",
@@ -3263,7 +3265,8 @@
                 "bill_combine": "دمج الفواتير"
             },
             "timezone_note": "الأيام والأوقات بتوقيت مسقط.",
-            "by_day": "لكل يوم"
+            "by_day": "لكل يوم",
+            "legacy_from_p5_device": "أُرسلت كتطبيق قديم من جهاز يعمل بالتطبيق الجديد."
         },
         "hours": {
             "page_title": "ساعات العمل",

@@ -35,8 +35,10 @@ use Illuminate\Support\Facades\DB;
  *     belong to the shift (the printed Z did not have them);
  *   - needs_review: the server flagged the shift (late sales, or a sale of
  *     this device that failed permanently; the note says which);
- *   - corrected expected cash = expected + late sales, and the corrected
- *     variance = counted - corrected expected: the true drawer position;
+ *   - corrected expected cash = expected + late sales - late pay-outs
+ *     (fix order 1, F7: drawer pay-outs that reached the server after the
+ *     close), and the corrected variance = counted - corrected expected:
+ *     the true drawer position;
  *   - reopenable: closed on today's Muscat business day (the re-open rule).
  */
 final readonly class ShiftReportAction
@@ -82,7 +84,8 @@ final readonly class ShiftReportAction
                 pos_shifts.close_device_id AS close_device_id,
                 pos_shifts.needs_review AS needs_review,
                 pos_shifts.late_sales_baisas AS late_sales_baisas,
-                pos_shifts.payouts_baisas AS payouts_baisas
+                pos_shifts.payouts_baisas AS payouts_baisas,
+                pos_shifts.late_payouts_baisas AS late_payouts_baisas
             ')
             ->orderByDesc('pos_shifts.opened_at')
             ->get();
@@ -93,8 +96,9 @@ final readonly class ShiftReportAction
             $expected = $r->expected_cash !== null ? (float) $r->expected_cash : null;
             $lateSales = ((int) ($r->late_sales_baisas ?? 0)) / 1000;
             $payouts = ((int) ($r->payouts_baisas ?? 0)) / 1000;
+            $latePayouts = ((int) ($r->late_payouts_baisas ?? 0)) / 1000;
             $counted = $r->closing_cash !== null ? (float) $r->closing_cash : null;
-            $correctedExpected = $expected !== null ? $expected + $lateSales : null;
+            $correctedExpected = $expected !== null ? $expected + $lateSales - $latePayouts : null;
 
             return [
                 'id' => (int) $r->id,
@@ -122,6 +126,7 @@ final readonly class ShiftReportAction
                 'close_device_id' => $r->close_device_id !== null ? (int) $r->close_device_id : null,
                 'payouts' => number_format($payouts, 3, '.', ''),
                 'late_sales' => number_format($lateSales, 3, '.', ''),
+                'late_payouts' => number_format($latePayouts, 3, '.', ''),
                 'needs_review' => (bool) $r->needs_review,
                 'note' => $r->note !== null ? (string) $r->note : null,
                 'corrected_expected_cash' => $correctedExpected !== null ? number_format($correctedExpected, 3, '.', '') : null,
@@ -160,6 +165,7 @@ final readonly class ShiftReportAction
                 'needs_review_count' => count(array_filter($shifts, static fn (array $s): bool => $s['needs_review'])),
                 'total_payouts' => number_format(array_sum(array_map(static fn (array $s): float => (float) $s['payouts'], $shifts)), 3, '.', ''),
                 'total_late_sales' => number_format(array_sum(array_map(static fn (array $s): float => (float) $s['late_sales'], $shifts)), 3, '.', ''),
+                'total_late_payouts' => number_format(array_sum(array_map(static fn (array $s): float => (float) $s['late_payouts'], $shifts)), 3, '.', ''),
                 'total_corrected_variance' => number_format($totalCorrected, 3, '.', ''),
                 'total_corrected_short' => number_format($totalCorrectedShort, 3, '.', ''),
             ],

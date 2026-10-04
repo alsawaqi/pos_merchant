@@ -527,6 +527,10 @@ return new class extends Migration
             $table->string('status', 32)->default('registered');
             $table->timestamp('assigned_at')->nullable();
             $table->timestamp('last_seen_at')->nullable();
+            // LAUNCH-P5 fix order 1, F2 — when the device first sent auth_v: 1
+            // (a P5 build); the Approvals report counts its later "legacy"
+            // rows as problems.
+            $table->timestamp('auth_v_seen_at')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -1781,6 +1785,9 @@ return new class extends Migration
             // shift; devices build the fixed close id from
             // "shift-close:{shift_uuid}:{reopen_count}".
             $table->integer('reopen_count')->default(0);
+            // LAUNCH-P5 fix order 1, F7 — drawer pay-outs that reached the
+            // server after the close (baisas).
+            $table->bigInteger('late_payouts_baisas')->default(0);
             $table->timestamps();
         });
 

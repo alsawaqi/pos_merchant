@@ -97,8 +97,9 @@ final readonly class CreatePosStaffAction
                 'hired_at' => $attributes['hired_at'] ?? null,
                 'created_by_user_id' => $actor->getKey(),
             ]);
-            $staff->forceFill($minted['verifier']);
             $staff->save();
+            // L7 — K in its own UPDATE, never in the INSERT's bindings.
+            $this->mintPin->storeVerifier((int) $staff->id, $minted['verifier']);
 
             $branches = $this->syncBranches->handle($staff, $attributes['branch_ids'] ?? null, $actor);
 

@@ -61,8 +61,9 @@ final readonly class ResetPosStaffPinAction
             $minted = $this->mintPin->handle($companyId, excludeStaffId: $staff->id);
 
             $staff->pin_hash = $minted['hash'];
-            $staff->forceFill($minted['verifier']);
             $staff->save();
+            // L7 — K in its own UPDATE, never in another statement's bindings.
+            $this->mintPin->storeVerifier((int) $staff->id, $minted['verifier']);
 
             $this->writeAuditLog->handle(new AuditLogData(
                 event: 'pos_staff.pin_reset',

@@ -9,7 +9,8 @@
  *
  * LAUNCH-P5 B5 — also who closed the drawer, pay-outs, cash sales that
  * arrived after the close, the "needs review" flag (amber row) and the
- * corrected expected cash / variance. "Today" for a re-open is the Muscat
+ * corrected expected cash / variance. Fix order 1, F7: late pay-outs too
+ * (corrected expected = expected + late sales − late pay-outs). "Today" for a re-open is the Muscat
  * business day, decided by the server (row.reopenable).
  */
 import { computed, ref } from 'vue';
@@ -43,7 +44,7 @@ function reopenable(row: ShiftReportRow): boolean {
 
 /** A corrected figure shown only when it differs from what the Z printed. */
 function corrected(row: ShiftReportRow): boolean {
-    return num(row.late_sales) !== 0;
+    return num(row.late_sales) !== 0 || num(row.late_payouts) !== 0;
 }
 
 const reopenBusyUuid = ref<string | null>(null);
@@ -79,6 +80,7 @@ async function doReopen(row: ShiftReportRow): Promise<void> {
                     { label: t('reports.shifts.headline_labels.needs_review'), value: payload.summary.needs_review_count },
                     { label: t('reports.shifts.headline_labels.total_payouts'), value: payload.summary.total_payouts },
                     { label: t('reports.shifts.headline_labels.total_late_sales'), value: payload.summary.total_late_sales },
+                    { label: t('reports.shifts.headline_labels.total_late_payouts'), value: payload.summary.total_late_payouts },
                     { label: t('reports.shifts.headline_labels.total_corrected_variance'), value: payload.summary.total_corrected_variance },
                 ]"
             />
@@ -104,6 +106,7 @@ async function doReopen(row: ShiftReportRow): Promise<void> {
                             <th class="px-4 py-2 text-end">{{ t('reports.shifts.columns.payouts') }}</th>
                             <th class="px-4 py-2 text-end">{{ t('reports.shifts.columns.expected') }}</th>
                             <th class="px-4 py-2 text-end">{{ t('reports.shifts.columns.late_sales') }}</th>
+                            <th class="px-4 py-2 text-end">{{ t('reports.shifts.columns.late_payouts') }}</th>
                             <th class="px-4 py-2 text-end">{{ t('reports.shifts.columns.corrected_expected') }}</th>
                             <th class="px-4 py-2 text-end">{{ t('reports.shifts.columns.counted') }}</th>
                             <th class="px-4 py-2 text-end">{{ t('reports.shifts.columns.variance') }}</th>
@@ -135,7 +138,8 @@ async function doReopen(row: ShiftReportRow): Promise<void> {
                             <td class="px-4 py-2 text-end tabular-nums">{{ row.opening_cash }}</td>
                             <td class="px-4 py-2 text-end tabular-nums">{{ num(row.payouts) !== 0 ? row.payouts : '—' }}</td>
                             <td class="px-4 py-2 text-end tabular-nums">{{ row.expected_cash ?? '—' }}</td>
-                            <td class="px-4 py-2 text-end tabular-nums" :class="corrected(row) ? 'font-semibold text-amber-700' : ''">{{ corrected(row) ? row.late_sales : '—' }}</td>
+                            <td class="px-4 py-2 text-end tabular-nums" :class="num(row.late_sales) !== 0 ? 'font-semibold text-amber-700' : ''">{{ num(row.late_sales) !== 0 ? row.late_sales : '—' }}</td>
+                            <td class="px-4 py-2 text-end tabular-nums" :class="num(row.late_payouts) !== 0 ? 'font-semibold text-amber-700' : ''" data-test="late-payouts">{{ num(row.late_payouts) !== 0 ? row.late_payouts : '—' }}</td>
                             <td class="px-4 py-2 text-end tabular-nums">{{ row.corrected_expected_cash ?? '—' }}</td>
                             <td class="px-4 py-2 text-end tabular-nums">{{ row.counted_cash ?? '—' }}</td>
                             <td class="px-4 py-2 text-end tabular-nums" :class="num(row.variance) < 0 ? 'font-semibold text-rose-600' : ''">

@@ -20,7 +20,12 @@ use Illuminate\Support\Facades\DB;
  * forced on, and the FULL resolved matrix is stored under
  * `position_permissions`. In the same transaction the four old position
  * lists are rewritten from it for old app builds
- * ({@see PositionPermissions::legacyLists()}).
+ * ({@see PositionPermissions::legacyLists()}); order_cancel_positions keeps
+ * every position it already had (fix order 1, L4).
+ *
+ * Fix order 1, L5 — "current" for a company with no row yet is the no-row
+ * rule (defaults + its old lists), so a first save keeps, e.g., supervisors
+ * as approvers when the old list had them.
  *
  * One audit row per save that changes anything
  * (`settings.position_permissions.updated`): only the changed cells, as
@@ -46,7 +51,7 @@ final readonly class SetPositionPermissionsAction
                 'company_id' => $companyId,
                 'key' => PositionPermissions::SETTING_KEY,
             ]);
-            $old = PositionPermissions::resolve($setting->exists ? $setting->value : null);
+            $old = PositionPermissions::forCompany($companyId);
 
             $next = PositionPermissions::overlay($old, $changes);
 
@@ -75,6 +80,9 @@ final readonly class SetPositionPermissionsAction
             foreach (PositionPermissions::legacyLists($next) as $key => $positions) {
                 $legacy = CompanySetting::query()->firstOrNew(['company_id' => $companyId, 'key' => $key]);
                 $current = is_array($legacy->value) ? array_values($legacy->value) : null;
+                if ($key === CompanySetting::KEY_ORDER_CANCEL_POSITIONS) {
+                    $positions = PositionPermissions::orderCancelList($next, $legacy->exists ? $legacy->value : null);
+                }
                 if ($current !== $positions) {
                     $legacy->value = $positions;
                     $legacy->save();

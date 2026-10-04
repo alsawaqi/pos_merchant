@@ -479,6 +479,8 @@ export interface ApprovalsReportRow {
     action: string;
     result: ApprovalResult;
     problem: boolean;
+    /** Fix order 1, F2 — a "legacy" row from a device that already runs a P5 build (a problem). */
+    legacy_from_p5_device: boolean;
     mode: 'position' | 'approval';
     method: 'offline' | 'online' | null;
     actor_staff_id: number | null;
@@ -495,7 +497,7 @@ export interface ApprovalsReportRow {
 
 export interface ApprovalsReportPayload {
     window: { from: string; to: string; timezone: string; branch_ids: number[] | null; action: string | null; approver_staff_id: number | null; actor_staff_id: number | null; result: string | null };
-    summary: Record<ApprovalResult, number> & { total: number; problems: number };
+    summary: Record<ApprovalResult, number> & { total: number; problems: number; legacy_from_p5_devices: number };
     /** Per Muscat business day, newest first. */
     by_day: { day: string; total: number; problems: number }[];
     rows: ApprovalsReportRow[];
@@ -614,9 +616,11 @@ export interface ShiftReportRow {
     payouts: string;
     /** Cash sales that reached the server after the close. */
     late_sales: string;
+    /** Fix order 1, F7 — drawer pay-outs that reached the server after the close. */
+    late_payouts: string;
     needs_review: boolean;
     note: string | null;
-    /** expected + late sales, and counted − that. */
+    /** expected + late sales − late pay-outs, and counted − that. */
     corrected_expected_cash: string | null;
     corrected_variance: string | null;
     /** Closed on today's Muscat business day (the server decides). */
@@ -633,6 +637,7 @@ export interface ShiftReportPayload {
         needs_review_count: number;
         total_payouts: string;
         total_late_sales: string;
+        total_late_payouts: string;
         total_corrected_variance: string;
         total_corrected_short: string;
     };

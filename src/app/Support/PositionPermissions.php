@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support;
 
 use App\Models\CompanySetting;
+use Illuminate\Support\Facades\DB;
 
 /**
  * LAUNCH-P5 D1 — the tick list per staff position ("what each position may
@@ -27,7 +28,17 @@ use App\Models\CompanySetting;
  *   reports_positions          ← reports.view
  *   kitchen_positions          ← kitchen.screen (the kitchen role is always
  *                                 implicit there, as the old page stored it)
- *   order_cancel_positions     ← order.void_paid
+ *   order_cancel_positions     ← the stored list ∪ order.void_paid
+ *                                 (fix order 1, L4: never narrowed)
+ *
+ * Fix order 1, L5 — the same rules as pos_api's resolver
+ * (App\Support\Staff\PositionPermissions at api 8d2e6e5):
+ *   - a company with NO `position_permissions` row resolves like the P5 data
+ *     migration would write it: the defaults plus the three old lists
+ *     ({@see fromOldLists()}; order_cancel_positions is never mapped);
+ *   - `discount_max_percent` is floored to a whole number.
+ * tests/Fixtures/launch-p5/resolver_corner_cases.json holds inputs and the
+ * matrices pos_api's resolver produced for them.
  */
 final class PositionPermissions
 {
@@ -103,6 +114,16 @@ final class PositionPermissions
         ],
     ];
 
+    /**
+     * The three old lists the no-row rule reads (pos_api's OLD_KEYS):
+     * order_cancel_positions is not mapped.
+     */
+    public const NO_ROW_LISTS = [
+        CompanySetting::KEY_MANAGER_APPROVAL_POSITIONS => 'approvals.give',
+        CompanySetting::KEY_REPORTS_POSITIONS => 'reports.view',
+        CompanySetting::KEY_KITCHEN_POSITIONS => 'kitchen.screen',
+    ];
+
     /** Old list key → the action it mirrors. */
     public const LEGACY_LISTS = [
         CompanySetting::KEY_ORDER_CANCEL_POSITIONS => 'order.void_paid',
@@ -148,7 +169,8 @@ final class PositionPermissions
 
             $out[$position] = [
                 'actions' => $resolved,
-                'discount_max_percent' => $validLimit ? $limit : $default['discount_max_percent'],
+                // L5 — floored to a whole number, as pos_api does.
+                'discount_max_percent' => $validLimit ? (int) floor($limit) : $default['discount_max_percent'],
             ];
         }
 
@@ -188,13 +210,78 @@ final class PositionPermissions
      */
     public static function forCompany(int $companyId): array
     {
-        $value = CompanySetting::query()
-            ->withoutGlobalScopes()
+        $rows = DB::table('pos_company_settings')
             ->where('company_id', $companyId)
-            ->where('key', self::SETTING_KEY)
-            ->value('value');
+            ->whereIn('key', [self::SETTING_KEY, ...array_keys(self::NO_ROW_LISTS)])
+            ->pluck('value', 'key')
+            ->all();
 
-        return self::resolve($value);
+        if (array_key_exists(self::SETTING_KEY, $rows)) {
+            return self::resolve($rows[self::SETTING_KEY]);
+        }
+
+        return self::fromOldLists(array_intersect_key($rows, self::NO_ROW_LISTS));
+    }
+
+    /**
+     * L5 — the matrix of a company with no `position_permissions` row, as the
+     * P5 data migration (and pos_api's fromOldLists) writes it: a listed
+     * position gets the action and an unlisted one loses it; a missing,
+     * malformed or known-position-free list keeps the default; a present but
+     * empty kitchen list means "kitchen only".
+     *
+     * @param  array<string, mixed>  $lists  old key => raw value
+     * @return array<string, array{actions: array<string, bool>, discount_max_percent: int}>
+     */
+    public static function fromOldLists(array $lists): array
+    {
+        $matrix = self::defaults();
+        foreach (self::NO_ROW_LISTS as $key => $action) {
+            if (! array_key_exists($key, $lists)) {
+                continue;
+            }
+            $raw = $lists[$key];
+            $value = is_string($raw) ? json_decode($raw, true) : $raw;
+            if (! is_array($value)) {
+                continue;
+            }
+            $listed = array_values(array_intersect(self::POSITIONS, array_map(
+                static fn ($p): string => is_string($p) ? trim($p) : '',
+                $value,
+            )));
+            if ($listed === [] && $action !== 'kitchen.screen') {
+                continue;
+            }
+            foreach (self::POSITIONS as $position) {
+                $matrix[$position]['actions'][$action] = in_array($position, $listed, true)
+                    || ($action === 'kitchen.screen' && $position === 'kitchen');
+            }
+        }
+
+        return $matrix;
+    }
+
+    /**
+     * L4 — order_cancel_positions for old builds: the stored list (its known
+     * positions) ∪ the positions holding order.void_paid, in the fixed
+     * order. An unrelated save never narrows it; it stays a superset until
+     * old builds are retired (on old builds it only opens the cancel screen,
+     * which still asks for a manager).
+     *
+     * @param  array<string, array{actions: array<string, bool>, discount_max_percent: int|float}>  $matrix
+     * @return list<string>
+     */
+    public static function orderCancelList(array $matrix, mixed $stored): array
+    {
+        $value = is_string($stored) ? json_decode($stored, true) : $stored;
+        $kept = is_array($value)
+            ? array_map(static fn ($p): string => is_string($p) ? trim($p) : '', $value)
+            : [];
+
+        return array_values(array_filter(
+            self::POSITIONS,
+            static fn (string $p): bool => in_array($p, $kept, true) || ($matrix[$p]['actions']['order.void_paid'] ?? false) === true,
+        ));
     }
 
     /**

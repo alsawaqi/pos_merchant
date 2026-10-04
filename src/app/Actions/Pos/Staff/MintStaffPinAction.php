@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use LogicException;
 use RuntimeException;
+use Throwable;
 
 /**
  * Mint a new 6-digit PIN that no other active or suspended staff member of
@@ -73,6 +74,24 @@ final readonly class MintStaffPinAction
         throw new RuntimeException(
             'Could not generate a unique PIN after 10 attempts. Either the keyspace is exhausted or the staff roster is too large for the current PIN length.',
         );
+    }
+
+    /**
+     * Fix order 1, L7 — write the verifier in its own UPDATE, so a database
+     * error can never carry K (a query exception's message holds the
+     * bindings) into a log or a response. The original error is dropped on
+     * purpose (not chained) for the same reason; the caller's transaction
+     * rolls back.
+     *
+     * @param  array{pin_offline_key: string, pin_offline_salt: string, pin_offline_iterations: int}  $verifier
+     */
+    public function storeVerifier(int $staffId, array $verifier): void
+    {
+        try {
+            DB::table('pos_staff')->where('id', $staffId)->update($verifier);
+        } catch (Throwable) {
+            throw new RuntimeException('Could not store the offline PIN check for this staff member. Please try again.');
+        }
     }
 
     /** SELECT id FROM pos_companies WHERE id = ? FOR UPDATE (PostgreSQL). */

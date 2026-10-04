@@ -83,6 +83,7 @@ class ShiftsController extends Controller
                 'needs_review' => (bool) $locked->getAttribute('needs_review'),
                 'late_sales_baisas' => (int) $locked->getAttribute('late_sales_baisas'),
                 'payouts_baisas' => (int) $locked->getAttribute('payouts_baisas'),
+                'late_payouts_baisas' => (int) $locked->getAttribute('late_payouts_baisas'),
                 'reopen_count' => (int) $locked->getAttribute('reopen_count'),
             ];
             $reopenCount = (int) $locked->getAttribute('reopen_count') + 1;
@@ -98,6 +99,7 @@ class ShiftsController extends Controller
                 'needs_review' => false,
                 'late_sales_baisas' => 0,
                 'payouts_baisas' => 0,
+                'late_payouts_baisas' => 0,
                 'reopen_count' => $reopenCount,
             ])->save();
 

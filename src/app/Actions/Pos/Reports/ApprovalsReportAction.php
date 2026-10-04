@@ -26,6 +26,11 @@ use Illuminate\Support\Facades\DB;
  *
  * failed / missing / unverifiable are the "problems" the page highlights.
  *
+ * Fix order 1, F2 — so is a `legacy` row from a device that has already
+ * sent `auth_v: 1` (pos_devices.auth_v_seen_at is set): a P5 build leaving
+ * the marker out is a downgrade, not an old app. Such rows carry
+ * `legacy_from_p5_device: true`.
+ *
  * Filters: the shared date + branch filter (on approved_at, the device time;
  * rows without one fall back to when the server recorded them), plus
  * action, approver, actor and result ('problems' = the three above).
@@ -105,7 +110,7 @@ final readonly class ApprovalsReportAction
         }
         if (isset($criteria['result'])) {
             $criteria['result'] === 'problems'
-                ? $filtered->whereIn('a.result', self::PROBLEMS)
+                ? $filtered->where(fn (Builder $q) => $this->problemCondition($q))
                 : $filtered->where('a.result', $criteria['result']);
         }
 
@@ -119,14 +124,21 @@ final readonly class ApprovalsReportAction
         foreach (self::PROBLEMS as $result) {
             $summary['problems'] += $summary[$result];
         }
+        // F2 — legacy rows from devices that already run a P5 build.
+        $summary['legacy_from_p5_devices'] = (clone $filtered)->where('a.result', 'legacy')
+            ->whereExists(fn (Builder $q) => $this->p5Device($q))->count();
+        $summary['problems'] += $summary['legacy_from_p5_devices'];
 
         // ---- Per Muscat day (of the filtered rows) ----
         $byDay = [];
-        foreach ((clone $filtered)->get(['a.approved_at', 'a.created_at', 'a.result']) as $r) {
+        $dayRows = (clone $filtered)
+            ->leftJoin('pos_devices as dv', 'dv.id', '=', 'a.device_id')
+            ->get(['a.approved_at', 'a.created_at', 'a.result', 'dv.auth_v_seen_at']);
+        foreach ($dayRows as $r) {
             $day = BusinessTime::day((string) ($r->approved_at ?? $r->created_at));
             $byDay[$day] ??= ['day' => $day, 'total' => 0, 'problems' => 0];
             $byDay[$day]['total']++;
-            $byDay[$day]['problems'] += in_array((string) $r->result, self::PROBLEMS, true) ? 1 : 0;
+            $byDay[$day]['problems'] += self::isProblem((string) $r->result, $r->auth_v_seen_at !== null) ? 1 : 0;
         }
         krsort($byDay);
         $byDay = array_values($byDay);
@@ -136,7 +148,9 @@ final readonly class ApprovalsReportAction
             ->join('pos_branches as b', 'b.id', '=', 'a.branch_id')
             ->leftJoin('pos_staff as actor', 'actor.id', '=', 'a.actor_staff_id')
             ->leftJoin('pos_staff as approver', 'approver.id', '=', 'a.approver_staff_id')
+            ->leftJoin('pos_devices as dv', 'dv.id', '=', 'a.device_id')
             ->selectRaw('
+                dv.auth_v_seen_at AS device_auth_v_seen_at,
                 a.id, a.uuid, a.approved_at, a.created_at, a.verified_at, a.branch_id, b.name AS branch_name,
                 a.device_id, a.action, a.result, a.mode, a.method, a.subject_type, a.subject_uuid,
                 a.amount, a.ref, a.reason, a.actor_staff_id, actor.name AS actor_name,
@@ -168,7 +182,8 @@ final readonly class ApprovalsReportAction
             'branch_name' => (string) $r->branch_name,
             'action' => (string) $r->action,
             'result' => (string) $r->result,
-            'problem' => in_array((string) $r->result, self::PROBLEMS, true),
+            'problem' => self::isProblem((string) $r->result, $r->device_auth_v_seen_at !== null),
+            'legacy_from_p5_device' => (string) $r->result === 'legacy' && $r->device_auth_v_seen_at !== null,
             'mode' => (string) $r->mode,
             'method' => $r->method !== null ? (string) $r->method : null,
             'actor_staff_id' => $r->actor_staff_id !== null ? (int) $r->actor_staff_id : null,
@@ -211,6 +226,27 @@ final readonly class ApprovalsReportAction
         ];
 
         return $payload;
+    }
+
+    /** A problem row: failed / missing / unverifiable, or legacy from a P5 device (F2). */
+    public static function isProblem(string $result, bool $deviceSentAuthV): bool
+    {
+        return in_array($result, self::PROBLEMS, true) || ($result === 'legacy' && $deviceSentAuthV);
+    }
+
+    /** The SQL form of {@see isProblem()} on `pos_approvals as a`. */
+    private function problemCondition(Builder $q): Builder
+    {
+        return $q->whereIn('a.result', self::PROBLEMS)
+            ->orWhere(fn (Builder $q) => $q->where('a.result', 'legacy')->whereExists(fn (Builder $s) => $this->p5Device($s)));
+    }
+
+    /** The row's device has already sent auth_v: 1 (pos_devices.auth_v_seen_at). */
+    private function p5Device(Builder $q): Builder
+    {
+        return $q->selectRaw('1')->from('pos_devices as pd')
+            ->whereColumn('pd.id', 'a.device_id')
+            ->whereNotNull('pd.auth_v_seen_at');
     }
 
     /**
