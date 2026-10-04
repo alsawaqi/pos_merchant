@@ -10,6 +10,7 @@ use App\Actions\Pos\Reports\CompReportAction;
 use App\Actions\Pos\Reports\CustomerReportAction;
 use App\Actions\Pos\Reports\DiscountedCompedProductsReportAction;
 use App\Actions\Pos\Reports\DiscountReportAction;
+use App\Actions\Pos\Reports\HoursReportAction;
 use App\Actions\Pos\Reports\InventoryConsumptionReportAction;
 use App\Actions\Pos\Reports\LossWasteReportAction;
 use App\Actions\Pos\Reports\PayoutBreakdownReportAction;
@@ -70,7 +71,26 @@ class ReportsController extends Controller
         private readonly DiscountedCompedProductsReportAction $discountedCompedProductsReport,
         private readonly PortionVarianceReportAction $portionVarianceReport,
         private readonly ApprovalsReportAction $approvalsReport,
+        private readonly HoursReportAction $hoursReport,
     ) {}
+
+    /**
+     * LAUNCH-P5 B4 — Hours report (clock in / out, per person and Muscat
+     * day, "no clock-out" rows flagged). reports.view gated; the edits are a
+     * separate endpoint behind staff.attendance.manage.
+     */
+    public function hours(ReportFilterRequest $request): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::ReportsView);
+
+        $filter = ReportFilter::fromArray($request->validated(), $request->user()?->allowedBranchIds());
+        $staffId = $request->query('staff_id');
+
+        return response()->json(['data' => $this->hoursReport->handle(
+            $filter,
+            is_numeric($staffId) && (int) $staffId > 0 ? ['staff_id' => (int) $staffId] : [],
+        )]);
+    }
 
     /**
      * LAUNCH-P5 B3 — Approvals report (pos_approvals): who did what, who
@@ -305,6 +325,7 @@ class ReportsController extends Controller
             'discounted-comped-products' => $this->discountedCompedProductsReport,
             'payouts' => $this->payoutBreakdownReport,
             'approvals' => $this->approvalsReport,
+            'hours' => $this->hoursReport,
         ];
 
         if (! array_key_exists($report, $reports)) {
@@ -315,9 +336,12 @@ class ReportsController extends Controller
         $filter = ReportFilter::fromArray($validated, $request->user()?->allowedBranchIds());
         // LAUNCH-P5 — the Approvals report exports every matching row, with
         // its own filters read from the same query string.
-        $payload = $report === 'approvals'
-            ? $this->approvalsReport->handle($filter, ApprovalsReportAction::criteriaFrom($request->query()), forExport: true)
-            : $reports[$report]->handle($filter);
+        $staffId = $request->query('staff_id');
+        $payload = match ($report) {
+            'approvals' => $this->approvalsReport->handle($filter, ApprovalsReportAction::criteriaFrom($request->query()), forExport: true),
+            'hours' => $this->hoursReport->handle($filter, is_numeric($staffId) && (int) $staffId > 0 ? ['staff_id' => (int) $staffId] : [], forExport: true),
+            default => $reports[$report]->handle($filter),
+        };
         $format = $request->exportFormat();
 
         [$body, $contentType] = match ($format) {

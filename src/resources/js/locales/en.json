@@ -2775,6 +2775,10 @@
                 "approvals": {
                     "title": "Approvals",
                     "desc": "Who approved what on the till and handheld, and whether the server could check it. Failed, missing and unverifiable approvals stand out."
+                },
+                "hours": {
+                    "title": "Hours",
+                    "desc": "Clock in and clock out per person and day, with totals. Missing clock-outs stand out and can be corrected with a reason."
                 }
             }
         },
@@ -3231,6 +3235,46 @@
                 "qr_payment_review": "QR payment review",
                 "qr_expired_cancel": "Cancel an expired QR order",
                 "bill_combine": "Combine bills"
+            }
+        },
+        "hours": {
+            "page_title": "Hours",
+            "filters": {
+                "staff": "Person",
+                "everyone": "Everyone"
+            },
+            "timezone_note": "Days and times are in Muscat time.",
+            "headline": {
+                "people": "People",
+                "total_hours": "Total hours",
+                "no_clock_out": "No clock-out",
+                "at_work": "At work now"
+            },
+            "no_clock_out_hint": "{count} record(s) have no clock-out after 16 hours. They are highlighted and not counted until corrected.",
+            "per_person": "Per person",
+            "per_day": "Per person and day",
+            "columns": {
+                "person": "Person",
+                "day": "Day",
+                "days": "Days",
+                "records": "Records",
+                "hours": "Hours",
+                "no_clock_out": "No clock-out",
+                "clock_in": "Clock in",
+                "clock_out": "Clock out",
+                "notes": "Notes"
+            },
+            "no_clock_out": "No clock-out",
+            "at_work": "At work",
+            "edited_by": "Corrected by {name}",
+            "edit": {
+                "button": "Correct",
+                "title": "Correct hours: {name}",
+                "still_at_work": "Still at work (no clock-out yet)",
+                "reason": "Reason",
+                "reason_placeholder": "For example: forgot to clock out, left at 17:15",
+                "audited": "The change and the reason are saved in the audit log.",
+                "failed": "Could not save the correction."
             }
         }
     },

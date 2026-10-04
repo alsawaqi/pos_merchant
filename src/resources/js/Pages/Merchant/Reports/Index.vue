@@ -28,6 +28,7 @@ import {
     Truck,
     HandHeart,
     ShieldCheck,
+    Timer,
     type LucideIcon,
 } from 'lucide-vue-next';
 import { useI18n } from 'vue-i18n';
@@ -53,6 +54,8 @@ const tiles: Tile[] = [
     { key: 'shifts', to: '/reports/shifts', icon: Clock4 },
     // LAUNCH-P5 B3 — who approved what (pos_approvals).
     { key: 'approvals', to: '/reports/approvals', icon: ShieldCheck },
+    // LAUNCH-P5 B4 — clock in / out per person and day.
+    { key: 'hours', to: '/reports/hours', icon: Timer },
     { key: 'payouts', to: '/reports/payouts', icon: Wallet },
     { key: 'product_performance', to: '/reports/product-performance', icon: Package2 },
     { key: 'recipe_cost', to: '/reports/recipe-cost', icon: ChefHat },

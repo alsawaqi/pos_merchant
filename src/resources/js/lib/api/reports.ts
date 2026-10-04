@@ -502,6 +502,52 @@ export function fetchApprovalsReport(filter: ApprovalsReportFilter): Promise<{ d
 }
 
 // ============================================================
+// LAUNCH-P5 B4 — Hours report (pos_staff_attendance)
+// ============================================================
+
+export interface HoursReportFilter extends ReportFilter {
+    staff_id?: number | null;
+}
+
+export interface HoursReportRow {
+    uuid: string;
+    staff_id: number;
+    staff_name: string;
+    branch_id: number;
+    branch_name: string;
+    /** The Muscat business date of the clock-in. */
+    day: string;
+    clock_in_at: string;
+    clock_out_at: string | null;
+    /** Muscat-local "Y-m-d H:i" (what the edit form shows and sends). */
+    clock_in_local: string;
+    clock_out_local: string | null;
+    hours: number | null;
+    /** No clock-out yet, still within 16 hours: at work. */
+    open: boolean;
+    /** No clock-out after 16 hours (or flagged by the server): highlighted. */
+    no_clock_out: boolean;
+    flags: string[];
+    source: 'device' | 'portal' | string;
+    edited: boolean;
+    edit_reason: string | null;
+    edited_by: string | null;
+}
+
+export interface HoursReportPayload {
+    window: { from: string; to: string; timezone: string; branch_ids: number[] | null; staff_id: number | null };
+    summary: { people: number; records: number; total_hours: number; no_clock_out: number; open: number };
+    people: { staff_id: number; staff_name: string; records: number; days: number; hours: number; no_clock_out: number }[];
+    days: { staff_id: number; staff_name: string; day: string; records: number; hours: number; no_clock_out: boolean }[];
+    rows: HoursReportRow[];
+    options: { staff: { id: number; name: string }[] };
+}
+
+export function fetchHoursReport(filter: HoursReportFilter): Promise<{ data: HoursReportPayload }> {
+    return apiGet<{ data: HoursReportPayload }>(reportPath('hours', filter));
+}
+
+// ============================================================
 // Discounted & Comped Products — which exact product was reduced
 // (offers / discounts / loyalty / comps / gifts), and by how much
 // ============================================================

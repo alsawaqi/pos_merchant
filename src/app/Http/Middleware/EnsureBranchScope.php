@@ -11,6 +11,7 @@ use App\Models\Floor;
 use App\Models\PosStaff;
 use App\Models\RestockRequest;
 use App\Models\Shift;
+use App\Models\StaffAttendance;
 use App\Models\Table;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
@@ -37,6 +38,7 @@ use Symfony\Component\HttpFoundation\Response;
  *                     BranchTransfer (it names two branches; writes go
  *                     through branch-bound routes + body checks)
  *   restockRequest  → restock_request.branch_id
+ *   attendance      → pos_staff_attendance.branch_id (LAUNCH-P5)
  *
  * CROSS-TENANT ORDERING: a model owned by ANOTHER company is left for
  * the controller's tenant check to 404 — scope must never turn a
@@ -115,6 +117,11 @@ class EnsureBranchScope
                 && ! $user->canAccessBranchId((int) $transfer->to_branch_id)) {
                 abort(403, 'Your account is restricted to specific branches.');
             }
+        }
+
+        $attendance = $route->parameter('attendance');
+        if ($attendance instanceof StaffAttendance && $this->inTenant($attendance->company_id, $tenantId)) {
+            $this->ensureAllowed($user, (int) $attendance->branch_id);
         }
 
         $restockRequest = $route->parameter('restockRequest');

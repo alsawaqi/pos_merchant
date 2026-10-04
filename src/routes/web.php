@@ -13,6 +13,7 @@ use App\Http\Controllers\Portal\BranchesController;
 use App\Http\Controllers\Portal\PortalUsersController;
 use App\Http\Controllers\Pos\AddOnGroupsController;
 use App\Http\Controllers\Pos\AddOnsController;
+use App\Http\Controllers\Pos\AttendanceController;
 use App\Http\Controllers\Pos\BranchesController as PosBranchesController;
 use App\Http\Controllers\Pos\BranchTargetsController;
 use App\Http\Controllers\Pos\BranchTransfersController;
@@ -921,6 +922,13 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // LAUNCH-P5 B3 — Approvals report (pos_approvals). reports.view gated.
         Route::get('reports/approvals', [ReportsController::class, 'approvals'])
             ->name('reports.approvals');
+        // LAUNCH-P5 B4 — Hours report (pos_staff_attendance), reports.view
+        // gated; correcting a clock-in / clock-out needs
+        // staff.attendance.manage and a reason (audited).
+        Route::get('reports/hours', [ReportsController::class, 'hours'])
+            ->name('reports.hours');
+        Route::patch('attendance/{attendance:uuid}', [AttendanceController::class, 'update'])
+            ->name('attendance.update');
         // Phase B — manager re-open of a closed shift (same business day).
         Route::post('shifts/{shift:uuid}/reopen', [ShiftsController::class, 'reopen'])
             ->name('shifts.reopen');

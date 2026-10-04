@@ -47,6 +47,7 @@ import ReportsDiscounts from '@/Pages/Merchant/Reports/Discounts.vue';
 import ReportsDiscountedCompedProducts from '@/Pages/Merchant/Reports/DiscountedCompedProducts.vue';
 import ReportsComps from '@/Pages/Merchant/Reports/Comps.vue';
 import ReportsApprovals from '@/Pages/Merchant/Reports/Approvals.vue';
+import ReportsHours from '@/Pages/Merchant/Reports/Hours.vue';
 import ReportsShifts from '@/Pages/Merchant/Reports/Shifts.vue';
 import ReportsPayouts from '@/Pages/Merchant/Reports/Payouts.vue';
 import ReportsProductPerformance from '@/Pages/Merchant/Reports/ProductPerformance.vue';
@@ -398,6 +399,8 @@ const routes: RouteRecordRaw[] = [
     { path: '/reports/shifts', name: 'merchant.reports.shifts', component: ReportsShifts, meta: { requiresAuth: true } },
     // LAUNCH-P5 B3 — Approvals report (pos_approvals).
     { path: '/reports/approvals', name: 'merchant.reports.approvals', component: ReportsApprovals, meta: { requiresAuth: true } },
+    // LAUNCH-P5 B4 — Hours report (clock in / out).
+    { path: '/reports/hours', name: 'merchant.reports.hours', component: ReportsHours, meta: { requiresAuth: true } },
     { path: '/reports/payouts', name: 'merchant.reports.payouts', component: ReportsPayouts, meta: { requiresAuth: true } },
     { path: '/reports/product-performance', name: 'merchant.reports.product-performance', component: ReportsProductPerformance, meta: { requiresAuth: true } },
     { path: '/reports/recipe-cost', name: 'merchant.reports.recipe-cost', component: ReportsRecipeCost, meta: { requiresAuth: true } },
