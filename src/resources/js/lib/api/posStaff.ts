@@ -74,8 +74,17 @@ export interface PosStaffWithPinResponse {
     plaintext_pin: string;
 }
 
-export function listPosStaff(): Promise<{ data: PosStaff[] }> {
-    return apiGet<{ data: PosStaff[] }>('/api/pos-staff');
+export interface PosStaffListResponse {
+    data: PosStaff[];
+    /**
+     * LAUNCH-P5 follow-up 1 — the positions that may approve (their tick list
+     * holds approvals.give); hiring into them needs pos_staff.change_position.
+     */
+    meta?: { approver_positions?: string[] };
+}
+
+export function listPosStaff(): Promise<PosStaffListResponse> {
+    return apiGet<PosStaffListResponse>('/api/pos-staff');
 }
 
 export function createPosStaff(

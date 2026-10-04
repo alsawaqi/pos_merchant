@@ -52,6 +52,13 @@ const { t, locale } = useI18n();
 const { can } = usePermissions();
 const canResetPin = computed(() => can(MerchantPermission.PosStaffResetPin));
 const canChangePosition = computed(() => can(MerchantPermission.PosStaffChangePosition));
+// LAUNCH-P5 follow-up 1 — positions that may approve; hiring into them also
+// needs PosStaffChangePosition (the server refuses with 403 otherwise).
+const approverPositions = ref<string[]>([]);
+
+function hireLocked(position: string): boolean {
+    return !canChangePosition.value && approverPositions.value.includes(position);
+}
 
 // ---- Table state -------------------------------------------------
 const staff = ref<PosStaff[]>([]);
@@ -206,6 +213,7 @@ async function fetchStaff(): Promise<void> {
     try {
         const response = await listPosStaff();
         staff.value = response.data;
+        approverPositions.value = response.meta?.approver_positions ?? [];
     } catch (err) {
         error.value = err instanceof Error ? err.message : 'Failed to load staff';
     } finally {
@@ -586,11 +594,12 @@ function readError(err: unknown): string {
 
                 <label class="block">
                     <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.position') }} *</span>
-                    <select v-model="createForm.position" required class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                        <option v-for="opt in positionOptions" :key="opt.value" :value="opt.value">
+                    <select v-model="createForm.position" required data-test="create-position" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        <option v-for="opt in positionOptions" :key="opt.value" :value="opt.value" :disabled="hireLocked(opt.value)">
                             {{ t(`pos_staff.positions.${opt.key}`) }}
                         </option>
                     </select>
+                    <p v-if="!canChangePosition && approverPositions.length" class="mt-1 text-xs text-slate-500" data-test="approver-hire-hint">{{ t('pos_staff.approver_hire_locked') }}</p>
                 </label>
 
                 <div class="grid grid-cols-2 gap-3">

@@ -1777,6 +1777,10 @@ return new class extends Migration
             $table->boolean('needs_review')->default(false);
             $table->bigInteger('late_sales_baisas')->default(0);
             $table->bigInteger('payouts_baisas')->default(0);
+            // LAUNCH-P5 follow-up 1 — how many times the portal re-opened the
+            // shift; devices build the fixed close id from
+            // "shift-close:{shift_uuid}:{reopen_count}".
+            $table->integer('reopen_count')->default(0);
             $table->timestamps();
         });
 

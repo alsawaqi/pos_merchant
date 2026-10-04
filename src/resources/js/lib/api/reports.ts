@@ -470,6 +470,10 @@ export interface ApprovalsReportRow {
     uuid: string;
     approved_at: string | null;
     recorded_at: string | null;
+    /** LAUNCH-P5 follow-up 1 — the Muscat business day and local times. */
+    day: string;
+    approved_local: string | null;
+    recorded_local: string | null;
     branch_id: number;
     branch_name: string;
     action: string;
@@ -490,8 +494,10 @@ export interface ApprovalsReportRow {
 }
 
 export interface ApprovalsReportPayload {
-    window: { from: string; to: string; branch_ids: number[] | null; action: string | null; approver_staff_id: number | null; actor_staff_id: number | null; result: string | null };
+    window: { from: string; to: string; timezone: string; branch_ids: number[] | null; action: string | null; approver_staff_id: number | null; actor_staff_id: number | null; result: string | null };
     summary: Record<ApprovalResult, number> & { total: number; problems: number };
+    /** Per Muscat business day, newest first. */
+    by_day: { day: string; total: number; problems: number }[];
     rows: ApprovalsReportRow[];
     meta: { current_page: number; per_page: number; last_page: number; total: number } | null;
     options: { actions: string[]; staff: { id: number; name: string }[] };

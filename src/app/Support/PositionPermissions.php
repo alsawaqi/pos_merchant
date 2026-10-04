@@ -198,6 +198,22 @@ final class PositionPermissions
     }
 
     /**
+     * The positions of a company whose tick list holds approvals.give (the
+     * people who may approve other people's actions), in the fixed order.
+     *
+     * @return list<string>
+     */
+    public static function approverPositions(int $companyId): array
+    {
+        $matrix = self::forCompany($companyId);
+
+        return array_values(array_filter(
+            self::POSITIONS,
+            static fn (string $p): bool => $matrix[$p]['actions']['approvals.give'],
+        ));
+    }
+
+    /**
      * The defaults in the resolved shape (what the page offers as "Restore
      * defaults").
      *

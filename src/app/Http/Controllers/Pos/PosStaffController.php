@@ -18,6 +18,7 @@ use App\Http\Resources\Pos\Staff\PosStaffResource;
 use App\Models\PosStaff;
 use App\Support\BranchScope;
 use App\Support\MerchantTenantContext;
+use App\Support\PositionPermissions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -48,6 +49,12 @@ use RuntimeException;
  * a position needs pos_staff.change_position — pos_staff.update alone no
  * longer allows either. The branches a person works at (`branch_ids`) stay
  * under pos_staff.update, inside the user's branch scope.
+ *
+ * LAUNCH-P5 follow-up 1: HIRING someone into a position whose tick list
+ * holds approvals.give (by default: manager) also needs
+ * pos_staff.change_position — hiring an approver hands out an approving PIN
+ * exactly like promoting someone does. Other positions need only
+ * pos_staff.create.
  */
 class PosStaffController extends Controller
 {
@@ -84,7 +91,11 @@ class PosStaffController extends Controller
             ->orderByDesc('created_at')
             ->get();
 
-        return PosStaffResource::collection($staff);
+        // LAUNCH-P5 follow-up 1 — the form greys out hiring into these
+        // positions for users without pos_staff.change_position.
+        return PosStaffResource::collection($staff)->additional(['meta' => [
+            'approver_positions' => PositionPermissions::approverPositions($this->tenant->requiredId()),
+        ]]);
     }
 
     /**
@@ -98,6 +109,16 @@ class PosStaffController extends Controller
         // branch and every extra branch).
         BranchScope::ensureBranch($request->user(), (int) $request->validated()['branch_id']);
         $this->ensureBranchIdsInScope($request);
+
+        // LAUNCH-P5 follow-up 1 — hiring into an approving position needs
+        // pos_staff.change_position too.
+        $position = (string) $request->validated()['position'];
+        if (in_array($position, PositionPermissions::approverPositions($this->tenant->requiredId()), true)) {
+            $user = $request->user();
+            if ($user === null || ! $user->can(MerchantPermission::PosStaffChangePosition->value)) {
+                abort(403, 'Hiring into a position that can approve needs the "Change a staff member\'s position" permission.');
+            }
+        }
 
         try {
             $result = $this->create->handle($request->validated(), $request->user());

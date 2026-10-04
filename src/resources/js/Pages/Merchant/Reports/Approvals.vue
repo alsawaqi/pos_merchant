@@ -9,6 +9,9 @@
  * plus action, approver, the person who did it, and result ("Problems only"
  * = the three red results). Export (reports.export) carries the same
  * filters and every matching row. reports.view gated.
+ *
+ * LAUNCH-P5 follow-up 1 — days and times are Muscat business days (the
+ * server's window and local times), with a per-day summary.
  */
 import { computed, reactive } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -72,9 +75,9 @@ function actionName(action: string): string {
     return key ? t(key) : action;
 }
 
+/** The Muscat-local time the server sends (never the browser's own zone). */
 function when(row: ApprovalsReportRow): string {
-    const iso = row.approved_at ?? row.recorded_at;
-    return iso ? new Date(iso).toLocaleString() : '—';
+    return row.approved_local ?? row.recorded_local ?? '—';
 }
 </script>
 
@@ -133,6 +136,28 @@ function when(row: ApprovalsReportRow): string {
             <p v-if="payload.summary.problems > 0" class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700" data-test="problems-banner">
                 {{ t('reports.approvals.problems_hint', { count: payload.summary.problems }) }}
             </p>
+
+            <p class="text-xs text-slate-500">{{ t('reports.approvals.timezone_note') }}</p>
+
+            <section v-if="payload.by_day.length" class="rounded-xl border border-slate-200 bg-white shadow-sm" data-test="approvals-by-day">
+                <h2 class="border-b border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700">{{ t('reports.approvals.by_day') }}</h2>
+                <table class="w-full text-sm">
+                    <thead class="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                            <th class="px-5 py-2 text-start">{{ t('reports.approvals.columns.day') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.approvals.headline.total') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('reports.approvals.headline.problems') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="d in payload.by_day" :key="d.day" class="border-b border-slate-100 last:border-0">
+                            <td class="px-5 py-2 text-slate-700">{{ d.day }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ d.total }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums" :class="d.problems > 0 ? 'font-semibold text-rose-600' : 'text-slate-400'">{{ d.problems }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
 
             <section v-if="payload.rows.length" class="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
                 <table class="w-full text-sm">

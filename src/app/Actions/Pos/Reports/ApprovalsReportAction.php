@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Pos\Reports;
 
 use App\Data\Reports\ReportFilter;
+use App\Support\BusinessTime;
 use App\Support\MerchantTenantContext;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
@@ -29,6 +30,11 @@ use Illuminate\Support\Facades\DB;
  * rows without one fall back to when the server recorded them), plus
  * action, approver, actor and result ('problems' = the three above).
  * Newest first. The JSON endpoint pages the rows; the export takes them all.
+ *
+ * LAUNCH-P5 follow-up 1 — days are MUSCAT business days
+ * (pos.business_timezone), like the Hours report: the date filter covers
+ * Muscat midnight to midnight, each row carries its Muscat day and local
+ * time, and `by_day` totals the filtered rows per Muscat day.
  */
 final readonly class ApprovalsReportAction
 {
@@ -74,12 +80,15 @@ final readonly class ApprovalsReportAction
     {
         $companyId = $this->tenant->requiredId();
         $branchScope = $filter->branchScope();
+        $fromDate = $filter->dateFrom->format('Y-m-d');
+        $toDate = $filter->dateTo->format('Y-m-d');
+        [$from, $to] = BusinessTime::window($fromDate, $toDate);
 
         $window = DB::table('pos_approvals as a')
             ->where('a.company_id', $companyId)
-            ->where(fn (Builder $q) => $q->whereBetween('a.approved_at', [$filter->dateFrom, $filter->dateTo])
+            ->where(fn (Builder $q) => $q->whereBetween('a.approved_at', [$from, $to])
                 ->orWhere(fn (Builder $q) => $q->whereNull('a.approved_at')
-                    ->whereBetween('a.created_at', [$filter->dateFrom, $filter->dateTo])));
+                    ->whereBetween('a.created_at', [$from, $to])));
         if ($branchScope !== null) {
             $window->whereIn('a.branch_id', $branchScope);
         }
@@ -111,6 +120,17 @@ final readonly class ApprovalsReportAction
             $summary['problems'] += $summary[$result];
         }
 
+        // ---- Per Muscat day (of the filtered rows) ----
+        $byDay = [];
+        foreach ((clone $filtered)->get(['a.approved_at', 'a.created_at', 'a.result']) as $r) {
+            $day = BusinessTime::day((string) ($r->approved_at ?? $r->created_at));
+            $byDay[$day] ??= ['day' => $day, 'total' => 0, 'problems' => 0];
+            $byDay[$day]['total']++;
+            $byDay[$day]['problems'] += in_array((string) $r->result, self::PROBLEMS, true) ? 1 : 0;
+        }
+        krsort($byDay);
+        $byDay = array_values($byDay);
+
         // ---- Rows, newest first ----
         $rowsQuery = (clone $filtered)
             ->join('pos_branches as b', 'b.id', '=', 'a.branch_id')
@@ -140,6 +160,10 @@ final readonly class ApprovalsReportAction
             'uuid' => (string) $r->uuid,
             'approved_at' => $r->approved_at !== null ? (string) $r->approved_at : null,
             'recorded_at' => $r->created_at !== null ? (string) $r->created_at : null,
+            // Muscat business day and local times (what the page shows).
+            'day' => BusinessTime::day((string) ($r->approved_at ?? $r->created_at)),
+            'approved_local' => BusinessTime::local($r->approved_at),
+            'recorded_local' => BusinessTime::local($r->created_at),
             'branch_id' => (int) $r->branch_id,
             'branch_name' => (string) $r->branch_name,
             'action' => (string) $r->action,
@@ -161,8 +185,9 @@ final readonly class ApprovalsReportAction
 
         $payload = [
             'window' => [
-                'from' => $filter->dateFrom->format('Y-m-d\TH:i:s'),
-                'to' => $filter->dateTo->format('Y-m-d\TH:i:s'),
+                'from' => $fromDate,
+                'to' => $toDate,
+                'timezone' => BusinessTime::timezone(),
                 'branch_ids' => $branchScope,
                 'action' => $criteria['action'] ?? null,
                 'approver_staff_id' => $criteria['approver_staff_id'] ?? null,
@@ -170,6 +195,7 @@ final readonly class ApprovalsReportAction
                 'result' => $criteria['result'] ?? null,
             ],
             'summary' => $summary,
+            'by_day' => $byDay,
             'rows' => $rows,
         ];
 

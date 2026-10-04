@@ -43,8 +43,10 @@ async function submit(): Promise<void> {
         createdPin.value = res.plaintext_pin;
         emit('saved');
     } catch (e) {
+        // LAUNCH-P5 follow-up 1 — hiring into a position that can approve
+        // needs "Change a staff member's position".
         error.value = e instanceof ApiError
-            ? (e.firstValidationMessage() ?? e.message ?? t('branches.assign_staff.failed'))
+            ? (e.status === 403 ? t('pos_staff.approver_hire_locked') : (e.firstValidationMessage() ?? e.message ?? t('branches.assign_staff.failed')))
             : t('branches.assign_staff.failed');
     } finally {
         busy.value = false;

@@ -683,7 +683,8 @@
             "hint": "The same PIN works at every branch ticked here. The home branch is always included.",
             "locked": "Branches outside your access stay as they are.",
             "also_at": "Also at: {names}"
-        }
+        },
+        "approver_hire_locked": "Hiring someone into a position that can approve (for example manager) needs the \"Change a staff member's position\" permission."
     },
     "branches": {
         "section_label": "Locations",
@@ -3242,7 +3243,8 @@
                 "approver": "Approved by",
                 "result": "Result",
                 "amount": "Amount",
-                "details": "Details"
+                "details": "Details",
+                "day": "Day"
             },
             "own_position": "Own position",
             "methods": {
@@ -3259,7 +3261,9 @@
                 "qr_payment_review": "QR payment review",
                 "qr_expired_cancel": "Cancel an expired QR order",
                 "bill_combine": "Combine bills"
-            }
+            },
+            "timezone_note": "Days and times are in Muscat time.",
+            "by_day": "Per day"
         },
         "hours": {
             "page_title": "Hours",
