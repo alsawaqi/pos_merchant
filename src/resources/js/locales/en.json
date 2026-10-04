@@ -2771,6 +2771,10 @@
                 "round_up_donation": {
                     "title": "Round-Up Donations",
                     "desc": "Total raised, donations by status, by branch."
+                },
+                "approvals": {
+                    "title": "Approvals",
+                    "desc": "Who approved what on the till and handheld, and whether the server could check it. Failed, missing and unverifiable approvals stand out."
                 }
             }
         },
@@ -2884,7 +2888,7 @@
                 "gifted_orders": "Gifted orders"
             },
             "by_reason": "By reason",
-            "by_staff": "By approving manager",
+            "by_staff": "By approver",
             "reason": "Reason",
             "count": "Count",
             "recent": "Recent comps",
@@ -2892,7 +2896,10 @@
             "scope": "Scope",
             "note": "Note",
             "whole_order": "Whole order",
-            "single_line": "Single line"
+            "single_line": "Single line",
+            "approver": "Approved by",
+            "not_verified": "Not verified",
+            "approver_hint": "Only approvals the server checked are credited to a person. Older comps, and comps whose approval failed or is missing, show as \"Not verified\"."
         },
         "shifts": {
             "page_title": "Shift Report",
@@ -3046,7 +3053,7 @@
                 "orders_paid": "Orders paid",
                 "revenue": "Revenue",
                 "avg_ticket": "Avg ticket",
-                "voids": "Voids",
+                "voids": "Voids performed",
                 "discounts": "Discounts",
                 "hours_logged": "Hours"
             }
@@ -3066,7 +3073,24 @@
             }
         },
         "loss_waste": {
-            "table_cancellations": {"title": "Table cancellations", "note": "Breakdown of waste already listed above; not added again to the headline.", "time": "Date / time", "table": "Table", "item": "Item / add-ons", "qty": "Cancelled quantity", "prepared": "Prepared", "cost": "Waste cost (OMR)", "staff": "Cancelled by", "manager": "Approved by", "reason": "Reason", "whole": "Whole bill", "yes": "Yes", "no": "No", "unmatched": "Some shelf waste could not be matched uniquely.", "total": "Period total"},
+            "table_cancellations": {
+                "title": "Table cancellations",
+                "note": "Breakdown of waste already listed above; not added again to the headline.",
+                "time": "Date / time",
+                "table": "Table",
+                "item": "Item / add-ons",
+                "qty": "Cancelled quantity",
+                "prepared": "Prepared",
+                "cost": "Waste cost (OMR)",
+                "staff": "Cancelled by",
+                "manager": "Approved by",
+                "reason": "Reason",
+                "whole": "Whole bill",
+                "yes": "Yes",
+                "no": "No",
+                "unmatched": "Some shelf waste could not be matched uniquely.",
+                "total": "Period total"
+            },
             "page_title": "Loss / Waste Report",
             "headline_labels": {
                 "total_value": "Total value",
@@ -3158,6 +3182,55 @@
                 "pending": "Pending",
                 "fail": "Failed",
                 "void": "Void"
+            }
+        },
+        "approvals": {
+            "page_title": "Approvals",
+            "filters": {
+                "action": "Action",
+                "approver": "Approved by",
+                "actor": "Done by",
+                "result": "Result",
+                "all": "All",
+                "problems": "Problems only"
+            },
+            "results": {
+                "verified": "Verified",
+                "position_ok": "Allowed for the position",
+                "failed": "Failed",
+                "missing": "Missing",
+                "unverifiable": "Could not check",
+                "legacy": "Old app"
+            },
+            "headline": {
+                "total": "Approvals",
+                "problems": "Problems"
+            },
+            "problems_hint": "{count} approval(s) failed, are missing, or could not be checked. They are shown in red.",
+            "columns": {
+                "when": "When",
+                "action": "Action",
+                "actor": "Done by",
+                "approver": "Approved by",
+                "result": "Result",
+                "amount": "Amount",
+                "details": "Details"
+            },
+            "own_position": "Own position",
+            "methods": {
+                "offline": "offline",
+                "online": "online"
+            },
+            "previous": "Previous",
+            "next": "Next",
+            "page_of": "Page {page} of {pages}",
+            "online_actions": {
+                "card_reverse": "Card void or refund",
+                "production_cancel": "Cancel a kitchen batch",
+                "disposition": "Day-end give-away",
+                "qr_payment_review": "QR payment review",
+                "qr_expired_cancel": "Cancel an expired QR order",
+                "bill_combine": "Combine bills"
             }
         }
     },

@@ -4,6 +4,14 @@
  * shape the editor.
  */
 
+/** The 19 tick-list action keys, in the shared fixture's order. */
+export const TICK_LIST_ACTIONS = [
+    'order.void_unpaid', 'order.void_paid', 'table.cancel_line', 'table.cancel_bill',
+    'discount.manual', 'comp', 'gift', 'loyalty.redeem', 'sold_out.toggle',
+    'receipt.reprint', 'kitchen.reprint', 'reports.view', 'kitchen.screen',
+    'shift.close_other', 'payout', 'stock.waste', 'stock.count', 'training.use', 'approvals.give',
+];
+
 export interface PositionRow {
     actions: Record<string, boolean>;
     discount_max_percent: number;

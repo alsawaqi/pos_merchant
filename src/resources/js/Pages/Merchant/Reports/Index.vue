@@ -27,6 +27,7 @@ import {
     Scale,
     Truck,
     HandHeart,
+    ShieldCheck,
     type LucideIcon,
 } from 'lucide-vue-next';
 import { useI18n } from 'vue-i18n';
@@ -50,6 +51,8 @@ const tiles: Tile[] = [
     { key: 'discounted_comped_products', to: '/reports/discounted-comped-products', icon: BadgePercent },
     { key: 'comps', to: '/reports/comps', icon: Gift },
     { key: 'shifts', to: '/reports/shifts', icon: Clock4 },
+    // LAUNCH-P5 B3 — who approved what (pos_approvals).
+    { key: 'approvals', to: '/reports/approvals', icon: ShieldCheck },
     { key: 'payouts', to: '/reports/payouts', icon: Wallet },
     { key: 'product_performance', to: '/reports/product-performance', icon: Package2 },
     { key: 'recipe_cost', to: '/reports/recipe-cost', icon: ChefHat },

@@ -1,5 +1,11 @@
 <script setup lang="ts">
-/** Phase B — Comp Report (Additions §1.2: manager write-offs). */
+/**
+ * Phase B — Comp Report (Additions §1.2: manager write-offs).
+ *
+ * LAUNCH-P5 B3 — "by approver" credits only approvals the server checked;
+ * the rest (including every comp from before P5, which named the cashier)
+ * shows as one "Not verified" row, and the recent list says who approved.
+ */
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { fetchCompReport, type CompReportPayload } from '@/lib/api/reports';
@@ -28,7 +34,7 @@ const reasonChart = computed(() => {
 const staffChart = computed(() => {
     const rows = payload.value?.by_staff ?? [];
     return {
-        categories: rows.map((r) => r.staff_name),
+        categories: rows.map((r) => (r.verified ? (r.staff_name ?? '—') : t('reports.comps.not_verified'))),
         series: [{ name: t('reports.comps.headline_labels.total_value'), data: rows.map((r) => num(r.value)) }] as ApexSeries,
     };
 });
@@ -110,6 +116,23 @@ type ApexSeries = { name: string; data: number[] }[];
                 </section>
             </div>
 
+            <section v-if="payload.by_staff.length" class="rounded-xl border border-slate-200 bg-white shadow-sm" data-test="comps-by-approver">
+                <h2 class="border-b border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700">{{ t('reports.comps.by_staff') }}</h2>
+                <p class="px-5 pt-3 text-xs text-slate-500">{{ t('reports.comps.approver_hint') }}</p>
+                <table class="w-full text-sm">
+                    <thead class="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                        <tr><th class="px-5 py-2 text-start">{{ t('reports.comps.approver') }}</th><th class="px-5 py-2 text-end">{{ t('reports.shared.value') }}</th><th class="px-5 py-2 text-end">{{ t('reports.comps.count') }}</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="r in payload.by_staff" :key="r.staff_id ?? 'unverified'" class="border-b border-slate-100 last:border-0" :class="r.verified ? '' : 'bg-amber-50/70'">
+                            <td class="px-5 py-2 font-medium" :class="r.verified ? 'text-slate-900' : 'text-amber-800'">{{ r.verified ? r.staff_name : t('reports.comps.not_verified') }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ r.value }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums">{{ r.comp_count }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
             <section v-if="payload.recent.length" class="rounded-xl border border-slate-200 bg-white shadow-sm">
                 <h2 class="border-b border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700">{{ t('reports.comps.recent') }}</h2>
                 <table class="w-full text-sm">
@@ -119,6 +142,7 @@ type ApexSeries = { name: string; data: number[] }[];
                             <th class="px-5 py-2 text-start">{{ t('reports.comps.reason') }}</th>
                             <th class="px-5 py-2 text-start">{{ t('reports.comps.scope') }}</th>
                             <th class="px-5 py-2 text-end">{{ t('reports.shared.value') }}</th>
+                            <th class="px-5 py-2 text-start">{{ t('reports.comps.approver') }}</th>
                             <th class="px-5 py-2 text-start">{{ t('reports.comps.note') }}</th>
                         </tr>
                     </thead>
@@ -132,6 +156,10 @@ type ApexSeries = { name: string; data: number[] }[];
                                 </span>
                             </td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.amount }}</td>
+                            <td class="px-5 py-2 text-sm">
+                                <span v-if="r.approval_verified" class="text-slate-700">{{ r.approved_by ?? '—' }}</span>
+                                <span v-else class="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700">{{ t('reports.comps.not_verified') }}</span>
+                            </td>
                             <td class="px-5 py-2 text-xs text-slate-500">{{ r.note ?? '—' }}</td>
                         </tr>
                     </tbody>

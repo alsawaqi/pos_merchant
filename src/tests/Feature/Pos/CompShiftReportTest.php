@@ -10,7 +10,9 @@ declare(strict_types=1);
 use App\Enums\MerchantRole;
 use App\Enums\ShiftStatus;
 use App\Models\Order;
+use App\Models\PosStaff;
 use App\Models\Shift;
+use App\Support\MerchantTenantContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -63,7 +65,7 @@ function seedCompedOrder(array $ctx, array $comp = []): int
 
 it('aggregates comps by reason, branch, staff with a recent drill-down', function (): void {
     $ctx = makeMerchantActor();
-    $staff = \App\Models\PosStaff::factory()->for($ctx['company'], 'company')->create(['name' => 'Sara']);
+    $staff = PosStaff::factory()->for($ctx['company'], 'company')->create(['name' => 'Sara']);
 
     seedCompedOrder($ctx, ['approved_by_pos_staff_id' => $staff->id]);
     seedCompedOrder($ctx, [
@@ -84,7 +86,10 @@ it('aggregates comps by reason, branch, staff with a recent drill-down', functio
     expect($byReason->firstWhere('code', 'staff_meal')['value'])->toBe('3.000');
     expect($byReason->firstWhere('code', 'long_wait')['comp_count'])->toBe(1);
 
-    expect(collect($data['by_staff'])->firstWhere('staff_name', 'Sara')['value'])->toBe('4.000');
+    // LAUNCH-P5 B3: with no checked approval (pos_approvals) the stored
+    // approver is not credited; both comps sit in the "not verified" bucket.
+    expect(collect($data['by_staff'])->firstWhere('staff_name', 'Sara'))->toBeNull();
+    expect(collect($data['by_staff'])->firstWhere('verified', false)['value'])->toBe('4.000');
     expect($data['recent'])->toHaveCount(2);
     expect($data['by_branch'][0]['value'])->toBe('4.000');
 });
@@ -125,7 +130,7 @@ it('scopes the comp report to the tenant', function (): void {
     $other = makeMerchantActor();
     seedCompedOrder($other); // belongs to the OTHER company
 
-    app(\App\Support\MerchantTenantContext::class)->set($ctx['company']->id);
+    app(MerchantTenantContext::class)->set($ctx['company']->id);
     $this->actingAs($ctx['user']);
 
     $data = $this->getJson('/api/reports/comps?date_from=2026-06-01&date_to=2026-06-30')
@@ -137,7 +142,7 @@ it('scopes the comp report to the tenant', function (): void {
 
 it('breaks voided orders down by reason and staff in the loss/waste report', function (): void {
     $ctx = makeMerchantActor();
-    $staff = \App\Models\PosStaff::factory()->for($ctx['company'], 'company')->create(['name' => 'Omar']);
+    $staff = PosStaff::factory()->for($ctx['company'], 'company')->create(['name' => 'Omar']);
 
     DB::table('pos_orders')->insert([
         [
@@ -184,7 +189,7 @@ it('breaks voided orders down by reason and staff in the loss/waste report', fun
 
 it('lists shifts with cash variance and a short-exposure summary', function (): void {
     $ctx = makeMerchantActor();
-    $staff = \App\Models\PosStaff::factory()->for($ctx['company'], 'company')->create(['name' => 'Aisha']);
+    $staff = PosStaff::factory()->for($ctx['company'], 'company')->create(['name' => 'Aisha']);
 
     Shift::query()->create([
         'company_id' => $ctx['company']->id,
@@ -285,7 +290,7 @@ it('blocks reopen cross-tenant and without orders.cancel', function (): void {
         'opening_cash' => '0.000',
     ]);
 
-    app(\App\Support\MerchantTenantContext::class)->set($ctx['company']->id);
+    app(MerchantTenantContext::class)->set($ctx['company']->id);
     $this->actingAs($ctx['user']);
     $this->postJson("/api/shifts/{$foreign->uuid}/reopen")->assertNotFound();
 

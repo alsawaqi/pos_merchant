@@ -31,9 +31,10 @@ it('aggregates per-staff orders_paid + revenue + voids + discounts', function ()
         'discount_total' => '5.000',
         'opened_at' => '2026-06-11 13:00:00',
     ]);
-    // A voided order
+    // A voided order — LAUNCH-P5: voids count the person who voided it.
     Order::factory()->for($ctx['company'], 'company')->for($ctx['branch'], 'branch')->voided()->create([
         'staff_id' => $staff->id,
+        'voided_by_staff_id' => $staff->id,
         'grand_total' => '0.000',
         'opened_at' => '2026-06-12 14:00:00',
     ]);

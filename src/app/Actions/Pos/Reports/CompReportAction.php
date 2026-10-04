@@ -7,6 +7,7 @@ namespace App\Actions\Pos\Reports;
 use App\Data\Reports\ReportFilter;
 use App\Enums\OrderStatus;
 use App\Support\MerchantTenantContext;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -16,7 +17,16 @@ use Illuminate\Support\Facades\DB;
  *   - Total comp value in window + comp count + comped-order count
  *   - By reason (snapshot — renamed/deleted reasons still read)
  *   - By branch
- *   - By the STAFF WHO APPROVED (comps always carry an approver)
+ *   - By the STAFF WHO APPROVED — LAUNCH-P5 B3 fix: only an approval the
+ *     server checked counts. Before P5 every device sent no approver, so
+ *     pos_order_comps.approved_by_pos_staff_id held the CASHIER; such rows
+ *     (and any comp whose approval failed or is missing) now land in one
+ *     "not verified" bucket (staff_id null, verified false) instead of
+ *     crediting the cashier. A comp is credited to its approver when
+ *     pos_approvals has a row for the same order (subject_uuid = the
+ *     order uuid) and action ('comp', or 'gift' for gift rows) with result
+ *     verified / position_ok whose approver (or, for position_ok, actor) is
+ *     the stored approved_by_pos_staff_id.
  *   - Recent comps drill-down (newest 25, with the order reference)
  *
  * Driven by pos_order_comps — the comp-application records the
@@ -113,8 +123,9 @@ final readonly class CompReportAction
                 'comp_count' => (int) $r->comp_count,
             ])->all();
 
-        // ---- By approving staff ----
+        // ---- By approving staff (LAUNCH-P5: checked approvals only) ----
         $byStaff = (clone $base)
+            ->whereExists(fn (Builder $q) => $this->checkedApproval($q))
             ->join('pos_staff', 'pos_staff.id', '=', 'oc.approved_by_pos_staff_id')
             ->selectRaw('
                 oc.approved_by_pos_staff_id AS staff_id,
@@ -128,21 +139,42 @@ final readonly class CompReportAction
             ->map(static fn ($r): array => [
                 'staff_id' => (int) $r->staff_id,
                 'staff_name' => (string) $r->staff_name,
+                'verified' => true,
                 'value' => number_format((float) $r->value, 3, '.', ''),
                 'comp_count' => (int) $r->comp_count,
             ])->all();
 
+        $unverified = (clone $base)
+            ->whereNotExists(fn (Builder $q) => $this->checkedApproval($q))
+            ->selectRaw('COALESCE(SUM(oc.amount), 0) AS value, COUNT(*) AS comp_count')
+            ->first();
+        if ((int) ($unverified?->comp_count ?? 0) > 0) {
+            $byStaff[] = [
+                'staff_id' => null,
+                'staff_name' => null,
+                'verified' => false,
+                'value' => number_format((float) $unverified->value, 3, '.', ''),
+                'comp_count' => (int) $unverified->comp_count,
+            ];
+        }
+
         // ---- Recent comps (drill-down) ----
         $recent = (clone $base)
-            ->selectRaw('
-                oc.id AS id,
-                oc.reason_name_snapshot AS reason,
-                oc.amount AS amount,
-                oc.order_item_id AS order_item_id,
-                oc.note AS note,
-                oc.applied_at AS applied_at,
-                pos_orders.uuid AS order_uuid
-            ')
+            ->leftJoin('pos_staff as approver', 'approver.id', '=', 'oc.approved_by_pos_staff_id')
+            ->select([
+                'oc.id AS id',
+                'oc.reason_name_snapshot AS reason',
+                'oc.amount AS amount',
+                'oc.order_item_id AS order_item_id',
+                'oc.note AS note',
+                'oc.applied_at AS applied_at',
+                'pos_orders.uuid AS order_uuid',
+                'approver.name AS approver_name',
+            ])
+            ->selectSub(
+                fn (Builder $q) => $this->checkedApproval($q->selectRaw('COUNT(*)')),
+                'checked',
+            )
             ->orderByDesc('oc.applied_at')
             ->orderByDesc('oc.id')
             ->limit(25)
@@ -155,6 +187,9 @@ final readonly class CompReportAction
                 'note' => $r->note !== null ? (string) $r->note : null,
                 'applied_at' => $r->applied_at !== null ? (string) $r->applied_at : null,
                 'order_uuid' => (string) $r->order_uuid,
+                // LAUNCH-P5 — the approver only when the server checked it.
+                'approved_by' => (int) $r->checked > 0 && $r->approver_name !== null ? (string) $r->approver_name : null,
+                'approval_verified' => (int) $r->checked > 0,
             ])->all();
 
         return [
@@ -179,5 +214,21 @@ final readonly class CompReportAction
             'by_staff' => $byStaff,
             'recent' => $recent,
         ];
+    }
+
+    /**
+     * LAUNCH-P5 — a checked pos_approvals row for this comp row: same company,
+     * same order (subject_uuid), action 'comp' ('gift' for a gift row), result
+     * verified or position_ok, and its approver (or, for position_ok, its
+     * actor) is the comp's stored approver.
+     */
+    private function checkedApproval(Builder $q): Builder
+    {
+        return $q->from('pos_approvals as pa')
+            ->whereColumn('pa.company_id', 'oc.company_id')
+            ->whereColumn('pa.subject_uuid', 'pos_orders.uuid')
+            ->whereRaw("pa.action = CASE WHEN oc.is_gift THEN 'gift' ELSE 'comp' END")
+            ->whereIn('pa.result', ['verified', 'position_ok'])
+            ->whereRaw('COALESCE(pa.approver_staff_id, pa.actor_staff_id) = oc.approved_by_pos_staff_id');
     }
 }

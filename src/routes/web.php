@@ -918,6 +918,9 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('reports.comps');
         Route::get('reports/shifts', [ReportsController::class, 'shifts'])
             ->name('reports.shifts');
+        // LAUNCH-P5 B3 — Approvals report (pos_approvals). reports.view gated.
+        Route::get('reports/approvals', [ReportsController::class, 'approvals'])
+            ->name('reports.approvals');
         // Phase B — manager re-open of a closed shift (same business day).
         Route::post('shifts/{shift:uuid}/reopen', [ShiftsController::class, 'reopen'])
             ->name('shifts.reopen');

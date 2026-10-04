@@ -27,6 +27,13 @@ export interface ReportFilter {
 }
 
 /**
+ * LAUNCH-P5 — a report's own extra filters (Approvals: action / approver /
+ * actor / result; Hours: staff), carried on the filter object so the same
+ * URL builder serves the page and its export.
+ */
+const EXTRA_FILTER_KEYS = ['action', 'approver_staff_id', 'actor_staff_id', 'result', 'staff_id', 'page', 'per_page'] as const;
+
+/**
  * Build the query object expected by apiGet's `query` option.
  * Drops null/empty filters so the URL stays clean.
  */
@@ -37,6 +44,13 @@ function buildQuery(filter: ReportFilter): Record<string, string | number | bool
     };
     if (filter.consolidated !== undefined) {
         q.consolidated = filter.consolidated;
+    }
+    const extras = filter as ReportFilter & Partial<Record<(typeof EXTRA_FILTER_KEYS)[number], string | number | null>>;
+    for (const key of EXTRA_FILTER_KEYS) {
+        const value = extras[key];
+        if (value !== undefined && value !== null && value !== '') {
+            q[key] = value;
+        }
     }
     return q;
 }
@@ -412,7 +426,11 @@ export interface CompReportPayload {
     gifts: { total_value: string; gift_count: number; gifted_order_count: number };
     by_reason: { code: string; name: string; value: string; comp_count: number }[];
     by_branch: { branch_id: number; branch_name: string; value: string; comp_count: number }[];
-    by_staff: { staff_id: number; staff_name: string; value: string; comp_count: number }[];
+    /**
+     * LAUNCH-P5 B3 — by APPROVER, only when the server checked the approval;
+     * everything else is one row with verified = false and no staff.
+     */
+    by_staff: { staff_id: number | null; staff_name: string | null; verified: boolean; value: string; comp_count: number }[];
     recent: {
         id: number;
         reason: string;
@@ -421,11 +439,66 @@ export interface CompReportPayload {
         note: string | null;
         applied_at: string | null;
         order_uuid: string;
+        /** LAUNCH-P5 — the approver's name when the approval was checked. */
+        approved_by: string | null;
+        approval_verified: boolean;
     }[];
 }
 
 export function fetchCompReport(filter: ReportFilter): Promise<{ data: CompReportPayload }> {
     return apiGet<{ data: CompReportPayload }>(reportPath('comps', filter));
+}
+
+// ============================================================
+// LAUNCH-P5 B3 — Approvals report (pos_approvals)
+// ============================================================
+
+export type ApprovalResult = 'position_ok' | 'verified' | 'failed' | 'missing' | 'unverifiable' | 'legacy';
+
+export interface ApprovalsReportFilter extends ReportFilter {
+    action?: string | null;
+    approver_staff_id?: number | null;
+    actor_staff_id?: number | null;
+    /** One result, or 'problems' (failed + missing + unverifiable). */
+    result?: ApprovalResult | 'problems' | null;
+    page?: number;
+    per_page?: number;
+}
+
+export interface ApprovalsReportRow {
+    id: number;
+    uuid: string;
+    approved_at: string | null;
+    recorded_at: string | null;
+    branch_id: number;
+    branch_name: string;
+    action: string;
+    result: ApprovalResult;
+    problem: boolean;
+    mode: 'position' | 'approval';
+    method: 'offline' | 'online' | null;
+    actor_staff_id: number | null;
+    actor_name: string | null;
+    approver_staff_id: number | null;
+    approver_name: string | null;
+    amount: string | null;
+    subject_type: string | null;
+    subject_uuid: string | null;
+    ref: string | null;
+    reason: string | null;
+    device_id: number | null;
+}
+
+export interface ApprovalsReportPayload {
+    window: { from: string; to: string; branch_ids: number[] | null; action: string | null; approver_staff_id: number | null; actor_staff_id: number | null; result: string | null };
+    summary: Record<ApprovalResult, number> & { total: number; problems: number };
+    rows: ApprovalsReportRow[];
+    meta: { current_page: number; per_page: number; last_page: number; total: number } | null;
+    options: { actions: string[]; staff: { id: number; name: string }[] };
+}
+
+export function fetchApprovalsReport(filter: ApprovalsReportFilter): Promise<{ data: ApprovalsReportPayload }> {
+    return apiGet<{ data: ApprovalsReportPayload }>(reportPath('approvals', filter));
 }
 
 // ============================================================

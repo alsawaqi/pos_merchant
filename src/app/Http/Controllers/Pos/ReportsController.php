@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Pos;
 
+use App\Actions\Pos\Reports\ApprovalsReportAction;
 use App\Actions\Pos\Reports\AuditLogReportAction;
 use App\Actions\Pos\Reports\CompReportAction;
 use App\Actions\Pos\Reports\CustomerReportAction;
@@ -11,8 +12,8 @@ use App\Actions\Pos\Reports\DiscountedCompedProductsReportAction;
 use App\Actions\Pos\Reports\DiscountReportAction;
 use App\Actions\Pos\Reports\InventoryConsumptionReportAction;
 use App\Actions\Pos\Reports\LossWasteReportAction;
-use App\Actions\Pos\Reports\PortionVarianceReportAction;
 use App\Actions\Pos\Reports\PayoutBreakdownReportAction;
+use App\Actions\Pos\Reports\PortionVarianceReportAction;
 use App\Actions\Pos\Reports\ProductPerformanceReportAction;
 use App\Actions\Pos\Reports\RecipeCostReportAction;
 use App\Actions\Pos\Reports\RestockPurchasingReportAction;
@@ -23,6 +24,7 @@ use App\Actions\Pos\Reports\StaffActivityReportAction;
 use App\Data\Reports\ReportFilter;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Pos\Reports\ApprovalsReportRequest;
 use App\Http\Requests\Pos\Reports\AuditLogFilterRequest;
 use App\Http\Requests\Pos\Reports\ReportExportRequest;
 use App\Http\Requests\Pos\Reports\ReportFilterRequest;
@@ -67,7 +69,28 @@ class ReportsController extends Controller
         private readonly ShiftReportAction $shiftReport,
         private readonly DiscountedCompedProductsReportAction $discountedCompedProductsReport,
         private readonly PortionVarianceReportAction $portionVarianceReport,
+        private readonly ApprovalsReportAction $approvalsReport,
     ) {}
+
+    /**
+     * LAUNCH-P5 B3 — Approvals report (pos_approvals): who did what, who
+     * approved it and the server's verdict, with failed / missing /
+     * unverifiable highlighted. reports.view gated; paged.
+     */
+    public function approvals(ApprovalsReportRequest $request): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::ReportsView);
+
+        $validated = $request->validated();
+        $filter = ReportFilter::fromArray($validated, $request->user()?->allowedBranchIds());
+
+        return response()->json(['data' => $this->approvalsReport->handle(
+            $filter,
+            ApprovalsReportAction::criteriaFrom($validated),
+            (int) ($validated['page'] ?? 1),
+            (int) ($validated['per_page'] ?? 50),
+        )]);
+    }
 
     /** Discounted & comped products — which exact product was reduced, by what type. */
     public function discountedCompedProducts(ReportFilterRequest $request): JsonResponse
@@ -281,6 +304,7 @@ class ReportsController extends Controller
             'round-up-donation' => $this->roundUpDonationReport,
             'discounted-comped-products' => $this->discountedCompedProductsReport,
             'payouts' => $this->payoutBreakdownReport,
+            'approvals' => $this->approvalsReport,
         ];
 
         if (! array_key_exists($report, $reports)) {
@@ -289,7 +313,11 @@ class ReportsController extends Controller
 
         $validated = $request->validated();
         $filter = ReportFilter::fromArray($validated, $request->user()?->allowedBranchIds());
-        $payload = $reports[$report]->handle($filter);
+        // LAUNCH-P5 — the Approvals report exports every matching row, with
+        // its own filters read from the same query string.
+        $payload = $report === 'approvals'
+            ? $this->approvalsReport->handle($filter, ApprovalsReportAction::criteriaFrom($request->query()), forExport: true)
+            : $reports[$report]->handle($filter);
         $format = $request->exportFormat();
 
         [$body, $contentType] = match ($format) {
