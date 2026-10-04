@@ -203,12 +203,7 @@ class BranchesController extends Controller
 
         $devices = Device::query()
             ->where('company_id', $this->tenant->requiredId())
-            ->where(fn ($q) => $q->where('branch_id', $branch->id)
-                ->orWhereExists(fn ($sub) => $sub->selectRaw('1')
-                    ->from('pos_staff_branches')
-                    ->whereColumn('pos_staff_branches.staff_id', 'pos_staff.id')
-                    ->where('pos_staff_branches.branch_id', $branch->id)))
-            ->with(['branch', 'branches'])
+            ->where('branch_id', $branch->id)
             ->orderBy('name')
             ->get();
 
