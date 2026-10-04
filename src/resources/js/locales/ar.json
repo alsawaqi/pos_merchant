@@ -2911,7 +2911,11 @@
                 "shift_count": "الورديات",
                 "closed_count": "المغلقة",
                 "total_variance": "إجمالي الفرق",
-                "total_short": "إجمالي العجز"
+                "total_short": "إجمالي العجز",
+                "needs_review": "تحتاج مراجعة",
+                "total_payouts": "المصروفات النقدية",
+                "total_late_sales": "مبيعات نقدية متأخرة",
+                "total_corrected_variance": "الفرق المصحح"
             },
             "columns": {
                 "opened": "الافتتاح",
@@ -2921,12 +2925,19 @@
                 "expected": "النقد المتوقع",
                 "counted": "النقد المعدود",
                 "variance": "الفرق",
-                "cash_collected": "النقد المحصّل"
+                "cash_collected": "النقد المحصّل",
+                "closed_by": "أغلقها",
+                "payouts": "المصروفات النقدية",
+                "late_sales": "مبيعات نقدية متأخرة",
+                "corrected_expected": "المتوقع المصحح",
+                "corrected_variance": "الفرق المصحح"
             },
             "open": "مفتوحة",
             "closed": "مغلقة",
             "reopen": "إعادة فتح",
-            "reopening": "جارٍ إعادة الفتح…"
+            "reopening": "جارٍ إعادة الفتح…",
+            "needs_review": "تحتاج مراجعة",
+            "needs_review_hint": "{count} وردية تحتاج مراجعة: وصلت عملية بيع نقدية بعد الإغلاق، أو تعذّر حفظ عملية بيع من الجهاز. الأعمدة المصححة تشمل المبيعات المتأخرة، أما تقرير Z المطبوع فلم يشملها."
         },
         "payouts": {
             "page_title": "المستحقات والعمولة",

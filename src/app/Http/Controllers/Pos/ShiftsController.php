@@ -10,9 +10,11 @@ use App\Enums\MerchantPermission;
 use App\Enums\ShiftStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Shift;
+use App\Support\BusinessTime;
 use App\Support\MerchantTenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 
 /**
  * Phase B — re-open a closed shift (Additions §1.2: "Manager can
@@ -25,6 +27,13 @@ use Illuminate\Http\Request;
  * re-opening clears the closing capture (counted/expected/variance)
  * so the next close recomputes from the full shift window. Gated on
  * orders.cancel — the same manager-grade money lever as voids.
+ *
+ * LAUNCH-P5 B5 — "the same business day" is the MUSCAT day
+ * (pos.business_timezone), not the UTC day: a shift closed at 01:30 Muscat
+ * can be re-opened that morning. Re-opening also clears what pos_api
+ * records at the close (closed_by, close device, pay-outs, late sales and
+ * the needs-review flag); the next close recomputes them. The old values go
+ * into the audit row.
  */
 class ShiftsController extends Controller
 {
@@ -45,7 +54,7 @@ class ShiftsController extends Controller
         if ($shift->status !== ShiftStatus::Closed) {
             return response()->json(['message' => 'Only a closed shift can be re-opened.'], 422);
         }
-        if ($shift->closed_at === null || ! $shift->closed_at->isToday()) {
+        if ($shift->closed_at === null || ! BusinessTime::sameDay($shift->closed_at, Carbon::now())) {
             return response()->json([
                 'message' => 'A shift can only be re-opened on the same business day it was closed.',
             ], 422);
@@ -56,6 +65,11 @@ class ShiftsController extends Controller
             'closing_cash' => (string) $shift->closing_cash,
             'expected_cash' => (string) $shift->expected_cash,
             'variance' => (string) $shift->variance,
+            'closed_by_staff_id' => $shift->getAttribute('closed_by_staff_id'),
+            'close_device_id' => $shift->getAttribute('close_device_id'),
+            'needs_review' => (bool) $shift->getAttribute('needs_review'),
+            'late_sales_baisas' => (int) $shift->getAttribute('late_sales_baisas'),
+            'payouts_baisas' => (int) $shift->getAttribute('payouts_baisas'),
         ];
 
         $shift->forceFill([
@@ -64,6 +78,11 @@ class ShiftsController extends Controller
             'closing_cash' => null,
             'expected_cash' => null,
             'variance' => null,
+            'closed_by_staff_id' => null,
+            'close_device_id' => null,
+            'needs_review' => false,
+            'late_sales_baisas' => 0,
+            'payouts_baisas' => 0,
         ])->save();
 
         $this->writeAuditLog->handle(new AuditLogData(

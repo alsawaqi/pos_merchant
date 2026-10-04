@@ -600,11 +600,36 @@ export interface ShiftReportRow {
     counted_cash: string | null;
     variance: string | null;
     cash_collected: string | null;
+    // LAUNCH-P5 B5 — recorded by pos_api at and after the close.
+    closed_by_staff_id: number | null;
+    closed_by_name: string | null;
+    close_device_id: number | null;
+    /** Cash paid out of the drawer (already off the expected cash). */
+    payouts: string;
+    /** Cash sales that reached the server after the close. */
+    late_sales: string;
+    needs_review: boolean;
+    note: string | null;
+    /** expected + late sales, and counted − that. */
+    corrected_expected_cash: string | null;
+    corrected_variance: string | null;
+    /** Closed on today's Muscat business day (the server decides). */
+    reopenable: boolean;
 }
 
 export interface ShiftReportPayload {
     window: { from: string; to: string; consolidated: boolean; branch_ids: number[] | null };
-    summary: { shift_count: number; closed_count: number; total_variance: string; total_short: string };
+    summary: {
+        shift_count: number;
+        closed_count: number;
+        total_variance: string;
+        total_short: string;
+        needs_review_count: number;
+        total_payouts: string;
+        total_late_sales: string;
+        total_corrected_variance: string;
+        total_corrected_short: string;
+    };
     shifts: ShiftReportRow[];
 }
 

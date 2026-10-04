@@ -2911,7 +2911,11 @@
                 "shift_count": "Shifts",
                 "closed_count": "Closed",
                 "total_variance": "Total variance",
-                "total_short": "Total short"
+                "total_short": "Total short",
+                "needs_review": "Needs review",
+                "total_payouts": "Pay-outs",
+                "total_late_sales": "Late cash sales",
+                "total_corrected_variance": "Corrected variance"
             },
             "columns": {
                 "opened": "Opened",
@@ -2921,12 +2925,19 @@
                 "expected": "Expected cash",
                 "counted": "Counted cash",
                 "variance": "Variance",
-                "cash_collected": "Cash collected"
+                "cash_collected": "Cash collected",
+                "closed_by": "Closed by",
+                "payouts": "Pay-outs",
+                "late_sales": "Late cash sales",
+                "corrected_expected": "Corrected expected",
+                "corrected_variance": "Corrected variance"
             },
             "open": "Open",
             "closed": "Closed",
             "reopen": "Re-open",
-            "reopening": "Re-opening…"
+            "reopening": "Re-opening…",
+            "needs_review": "Needs review",
+            "needs_review_hint": "{count} shift(s) need review: a cash sale arrived after the close, or a sale from the device could not be saved. The corrected columns include the late sales; the printed Z did not."
         },
         "payouts": {
             "page_title": "Payouts & Commission",
