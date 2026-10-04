@@ -36,7 +36,7 @@ import ProductionIndex from '@/Pages/Merchant/Production/Index.vue';
 import PortalUsersIndex from '@/Pages/Merchant/PortalUsers/Index.vue';
 import PosStaffIndex from '@/Pages/Merchant/PosStaff/Index.vue';
 import RolesIndex from '@/Pages/Merchant/Roles/Index.vue';
-import SettingsOrderCancellation from '@/Pages/Merchant/Settings/OrderCancellation.vue';
+import SettingsStaffPermissions from '@/Pages/Merchant/Settings/StaffPermissions.vue';
 import SettingsOrderNumbering from '@/Pages/Merchant/Settings/OrderNumbering.vue';
 import SettingsDineInRoundMode from '@/Pages/Merchant/Settings/DineInRoundMode.vue';
 import SettingsQrTableCards from '@/Pages/Merchant/Settings/QrTableCards.vue';
@@ -406,15 +406,18 @@ const routes: RouteRecordRaw[] = [
     { path: '/reports/round-up-donation', name: 'merchant.reports.round-up-donation', component: ReportsRoundUpDonation, meta: { requiresAuth: true } },
 
     {
-        // Order Cancellation policy (v2 #14) — which staff positions
-        // may cancel an order at the POS. Server enforces orders.cancel
-        // on both GET + PUT; SPA hides the nav entry for users without
-        // it.
-        path: '/settings/order-cancellation',
-        name: 'merchant.settings.order-cancellation',
-        component: SettingsOrderCancellation,
+        // LAUNCH-P5 B1 — Staff permissions: per position, what it may do on
+        // the till and handheld without a manager's approval (+ the void and
+        // comp reasons). Server enforces staff.permissions.manage on the
+        // matrix and orders.cancel on the reasons.
+        path: '/settings/staff-permissions',
+        name: 'merchant.settings.staff-permissions',
+        component: SettingsStaffPermissions,
         meta: { requiresAuth: true },
     },
+    // The page it replaced (Settings → Order cancellation): old links land on
+    // the new page.
+    { path: '/settings/order-cancellation', redirect: '/settings/staff-permissions' },
 
     {
         // Order Numbering policy (P-F8) — how POS order numbers look

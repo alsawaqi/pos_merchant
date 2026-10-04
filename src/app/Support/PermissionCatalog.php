@@ -97,13 +97,33 @@ final class PermissionCatalog
                     ],
                     [
                         'key' => MerchantPermission::PosStaffUpdate->value,
-                        'label_en' => 'Edit staff + reset PIN',
-                        'label_ar' => 'تعديل بيانات الموظفين وإعادة تعيين الرمز',
+                        'label_en' => 'Edit staff details + branches',
+                        'label_ar' => 'تعديل بيانات الموظفين وفروعهم',
+                    ],
+                    [
+                        'key' => MerchantPermission::PosStaffResetPin->value,
+                        'label_en' => 'Reset a staff PIN (the new PIN is shown)',
+                        'label_ar' => 'إعادة تعيين رمز PIN للموظف (يظهر الرمز الجديد)',
+                    ],
+                    [
+                        'key' => MerchantPermission::PosStaffChangePosition->value,
+                        'label_en' => 'Change a staff member\'s position',
+                        'label_ar' => 'تغيير المنصب الوظيفي للموظف',
                     ],
                     [
                         'key' => MerchantPermission::PosStaffRevoke->value,
                         'label_en' => 'Suspend + terminate',
                         'label_ar' => 'إيقاف وإنهاء التوظيف',
+                    ],
+                    [
+                        'key' => MerchantPermission::StaffPermissionsManage->value,
+                        'label_en' => 'Set what each position may do on the POS',
+                        'label_ar' => 'تحديد ما يمكن لكل منصب فعله في نقطة البيع',
+                    ],
+                    [
+                        'key' => MerchantPermission::StaffAttendanceManage->value,
+                        'label_en' => 'Correct staff hours (clock in / out)',
+                        'label_ar' => 'تصحيح ساعات عمل الموظفين (تسجيل الحضور والانصراف)',
                     ],
                 ],
             ],
@@ -322,8 +342,8 @@ final class PermissionCatalog
                 'permissions' => [
                     [
                         'key' => MerchantPermission::OrdersCancel->value,
-                        'label_en' => 'Set which staff positions can cancel orders at the POS',
-                        'label_ar' => 'تحديد المناصب الوظيفية التي يمكنها إلغاء الطلبات في نقطة البيع',
+                        'label_en' => 'Manage void + comp reasons, order numbering and shift re-open',
+                        'label_ar' => 'إدارة أسباب الإلغاء والضيافة وترقيم الطلبات وإعادة فتح الورديات',
                     ],
                 ],
             ],

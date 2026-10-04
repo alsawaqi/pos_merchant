@@ -153,6 +153,14 @@ final class SeedMerchantRolesAction
                     MerchantPermission::PosStaffCreate->value,
                     MerchantPermission::PosStaffUpdate->value,
                     MerchantPermission::PosStaffRevoke->value,
+                    // LAUNCH-P5 (M6): PIN reset and position change are their
+                    // own permissions now; managers keep both, and they own
+                    // the staff permissions page and hours corrections
+                    // (existing Manager roles: pos_admin's P5 grant migration).
+                    MerchantPermission::PosStaffResetPin->value,
+                    MerchantPermission::PosStaffChangePosition->value,
+                    MerchantPermission::StaffPermissionsManage->value,
+                    MerchantPermission::StaffAttendanceManage->value,
                     MerchantPermission::BranchesView->value,
                     MerchantPermission::BranchesUpdate->value,
                     MerchantPermission::RolesView->value,

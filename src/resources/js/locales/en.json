@@ -339,7 +339,8 @@
         "order_numbering": "Order Numbering",
         "dine_in_round_mode": "Dine-in QR round handling",
         "qr_table_cards": "QR table cards",
-        "profile": "My Profile"
+        "profile": "My Profile",
+        "staff_permissions": "Staff permissions"
     },
     "purchase_tax": {
         "label": "Tax paid",
@@ -3552,6 +3553,102 @@
             "delete": "Delete",
             "delete_title": "Delete reason",
             "delete_confirm": "Delete \"{name}\"? Historical orders keep their snapshot of it."
+        },
+        "staff_permissions": {
+            "title": "Staff permissions",
+            "subtitle": "Tick what each position may do on the till and handheld. Anything not ticked needs a person who may approve to type their PIN on the device. Also set the largest manual discount each position may give.",
+            "action_column": "Action",
+            "forbidden": "You don't have permission to change staff permissions.",
+            "legend": "Ticked = allowed without approval. Not ticked = someone who may approve must type their PIN on the device.",
+            "always_on": "The kitchen position always opens the kitchen screen.",
+            "discount_limit_label": "Largest manual discount (%)",
+            "discount_limit_help": "When the manual discount is ticked, a discount up to this % of the order needs no approval. An amount discount counts as a % of the order subtotal.",
+            "no_approver": "At least one position must be able to approve, or nothing that needs an approval could be done.",
+            "invalid_limit": "Each limit must be a whole number from 0 to 100.",
+            "unsaved": "Unsaved changes",
+            "restore_defaults": "Restore defaults",
+            "discard": "Discard changes",
+            "save": "Save permissions",
+            "save_success": "Staff permissions saved. Devices pick them up at their next settings refresh.",
+            "save_failed": "Could not save. Please try again.",
+            "actions": {
+                "order_void_unpaid": {
+                    "label": "Void an unpaid order",
+                    "help": "Discard a held order, void a QR order on the till's QR board, or void an open order already sent."
+                },
+                "order_void_paid": {
+                    "label": "Cancel a paid order",
+                    "help": "Cancel a whole paid order from Order History."
+                },
+                "table_cancel_line": {
+                    "label": "Cancel a sent item",
+                    "help": "Reduce or remove an item already sent to the kitchen."
+                },
+                "table_cancel_bill": {
+                    "label": "Cancel a table bill",
+                    "help": "Cancel a whole table bill."
+                },
+                "discount_manual": {
+                    "label": "Manual discount",
+                    "help": "Give a manual discount up to the position's largest discount (next row)."
+                },
+                "comp": {
+                    "label": "Comp",
+                    "help": "Give an item or the bill free with a comp reason, within the reason's cap."
+                },
+                "gift": {
+                    "label": "Gift",
+                    "help": "Give one line or the whole bill as a gift."
+                },
+                "loyalty_redeem": {
+                    "label": "Redeem loyalty points",
+                    "help": "Use a customer's points on the cart or a table bill."
+                },
+                "sold_out_toggle": {
+                    "label": "Mark sold out",
+                    "help": "Switch an item sold out or back on sale."
+                },
+                "receipt_reprint": {
+                    "label": "Reprint a receipt",
+                    "help": "Reprint a customer receipt."
+                },
+                "kitchen_reprint": {
+                    "label": "Reprint a kitchen ticket",
+                    "help": "Reprint a ticket for the kitchen."
+                },
+                "reports_view": {
+                    "label": "Device reports",
+                    "help": "Open the branch reports screen, the X report and Z reprints."
+                },
+                "kitchen_screen": {
+                    "label": "Kitchen screen",
+                    "help": "Open the kitchen screen (the kitchen PIN is still asked)."
+                },
+                "shift_close_other": {
+                    "label": "Close another cashier's drawer",
+                    "help": "Close a drawer someone else opened, for example at a handover."
+                },
+                "payout": {
+                    "label": "Pay out from the drawer",
+                    "help": "Take cash out of the drawer as a pay-out."
+                },
+                "stock_waste": {
+                    "label": "Record waste",
+                    "help": "Record wasted stock."
+                },
+                "stock_count": {
+                    "label": "Stock count",
+                    "help": "Submit a stock count."
+                },
+                "training_use": {
+                    "label": "Training mode",
+                    "help": "Practise on the device. Nothing is sent or saved as a sale."
+                },
+                "approvals_give": {
+                    "label": "Approve for others",
+                    "help": "Approve other people's actions by typing one's own PIN on the device."
+                }
+            }
         }
     },
     "tax_settings": {

@@ -30,10 +30,10 @@ interface NavItem {
     icon: Component;
     /**
      * When null, the entry is always visible. When set, the entry
-     * is gated by usePermissions().can(permission). Server-side
-     * is still the real enforcement.
+     * is gated by usePermissions().can(permission); a list means any one
+     * of them. Server-side is still the real enforcement.
      */
-    permission: MerchantPermissionValue | null;
+    permission: MerchantPermissionValue | MerchantPermissionValue[] | null;
 }
 
 const { t, locale } = useI18n();
@@ -80,14 +80,17 @@ const navigationCatalog: readonly NavItem[] = [
     { key: 'portal_users', to: '/portal-users', icon: Users, permission: MerchantPermission.PortalUsersView },
     { key: 'pos_staff', to: '/pos-staff', icon: BadgeCheck, permission: MerchantPermission.PosStaffView },
     { key: 'roles', to: '/roles', icon: KeyRound, permission: MerchantPermission.RolesView },
-    { key: 'order_cancellation', to: '/settings/order-cancellation', icon: Settings, permission: MerchantPermission.OrdersCancel },
+    // LAUNCH-P5 B1 — the tick list (staff.permissions.manage) and, on the same
+    // page, the void + comp reasons (orders.cancel).
+    { key: 'staff_permissions', to: '/settings/staff-permissions', icon: Settings, permission: [MerchantPermission.StaffPermissionsManage, MerchantPermission.OrdersCancel] },
     { key: 'order_numbering', to: '/settings/order-numbering', icon: Hash, permission: MerchantPermission.OrdersCancel },
     { key: 'dine_in_round_mode', to: '/settings/dine-in-round-mode', icon: ChefHat, permission: MerchantPermission.BranchesView },
     { key: 'qr_table_cards', to: '/settings/qr-table-cards', icon: ChefHat, permission: MerchantPermission.BranchesView },
 ];
 
 const visibleNavigation = computed(() =>
-    navigationCatalog.filter((item) => item.permission === null || can(item.permission)),
+    navigationCatalog.filter((item) => item.permission === null
+        || (Array.isArray(item.permission) ? item.permission.some((p) => can(p)) : can(item.permission))),
 );
 
 const userInitials = computed(() => {

@@ -35,12 +35,9 @@ use App\Http\Controllers\Pos\IngredientsController;
 use App\Http\Controllers\Pos\IngredientStockController;
 use App\Http\Controllers\Pos\IngredientUnitsController;
 use App\Http\Controllers\Pos\InventorySettingsController;
-use App\Http\Controllers\Pos\KitchenPositionsSettingController;
 use App\Http\Controllers\Pos\LoyaltyController;
-use App\Http\Controllers\Pos\ManagerApprovalSettingController;
 use App\Http\Controllers\Pos\MenuImportController;
 use App\Http\Controllers\Pos\OffersController;
-use App\Http\Controllers\Pos\OrderCancellationSettingController;
 use App\Http\Controllers\Pos\OrderNumberingSettingController;
 use App\Http\Controllers\Pos\OrdersController;
 use App\Http\Controllers\Pos\PayoutsController;
@@ -55,12 +52,12 @@ use App\Http\Controllers\Pos\PurchaseReceiptController;
 use App\Http\Controllers\Pos\PurchaseTaxRecoverableSettingController;
 use App\Http\Controllers\Pos\QrTableCardsSettingController;
 use App\Http\Controllers\Pos\ReportsController;
-use App\Http\Controllers\Pos\ReportsPositionsSettingController;
 use App\Http\Controllers\Pos\RestockRequestsController;
 use App\Http\Controllers\Pos\RolesController;
 use App\Http\Controllers\Pos\SavedViewsController;
 use App\Http\Controllers\Pos\ShiftsController;
 use App\Http\Controllers\Pos\StaffMessagesController;
+use App\Http\Controllers\Pos\StaffPermissionsController;
 use App\Http\Controllers\Pos\StockController;
 use App\Http\Controllers\Pos\StockCountsController;
 use App\Http\Controllers\Pos\SuppliersController;
@@ -1014,41 +1011,17 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         Route::post('settings/tax/add-vat', [TaxSettingsController::class, 'addVat'])
             ->name('settings.tax.add-vat');
 
-        // v2 #14 — order cancellation policy: which staff positions may cancel a
-        // completed order at the POS. Emitted in /device/config + enforced on the
-        // device. Gated under orders.cancel (Manager + SuperAdmin).
-        Route::get('settings/order-cancellation', [OrderCancellationSettingController::class, 'show'])
-            ->name('settings.order-cancellation.show');
-        Route::put('settings/order-cancellation', [OrderCancellationSettingController::class, 'update'])
-            ->name('settings.order-cancellation.update');
-
-        // P-F1 — manager approval policy: which staff positions may authorize
-        // sensitive POS actions (comps, cancellations, gifts) by PIN — the
-        // manager-fingerprint fallback. Emitted in /device/config + verified by
-        // pos_api on /device/auth/verify-manager-pin. Same orders.cancel gate
-        // as the cancellation policy it rides with.
-        Route::get('settings/manager-approval', [ManagerApprovalSettingController::class, 'show'])
-            ->name('settings.manager-approval.show');
-        Route::put('settings/manager-approval', [ManagerApprovalSettingController::class, 'update'])
-            ->name('settings.manager-approval.update');
-
-        // P-F6 — device reports access policy: which staff positions may
-        // open the Reports dashboard on the POS device. Emitted in
-        // /device/config + enforced on the device. Same orders.cancel gate
-        // as the two sibling position policies it rides with.
-        Route::get('settings/reports-positions', [ReportsPositionsSettingController::class, 'show'])
-            ->name('settings.reports-positions.show');
-        Route::put('settings/reports-positions', [ReportsPositionsSettingController::class, 'update'])
-            ->name('settings.reports-positions.update');
-
-        // P-G1 — device Kitchen-section access policy: which staff positions
-        // may open the Kitchen production screen and run cooked-product
-        // batches. Emitted in /device/config + enforced on the device. Same
-        // orders.cancel gate as the sibling position policies.
-        Route::get('settings/kitchen-positions', [KitchenPositionsSettingController::class, 'show'])
-            ->name('settings.kitchen-positions.show');
-        Route::put('settings/kitchen-positions', [KitchenPositionsSettingController::class, 'update'])
-            ->name('settings.kitchen-positions.update');
+        // LAUNCH-P5 B1 — the staff permissions page: per staff position, what it
+        // may do on the till and handheld without a manager's approval, and its
+        // maximum manual discount %. Emitted to devices by pos_api
+        // (settings.position_permissions). Gated by staff.permissions.manage. It
+        // replaces the four position lists (order cancellation, manager
+        // approval, device reports, kitchen access), which are now written
+        // from this matrix for old app builds; their old endpoints are gone.
+        Route::get('settings/staff-permissions', [StaffPermissionsController::class, 'show'])
+            ->name('settings.staff-permissions.show');
+        Route::put('settings/staff-permissions', [StaffPermissionsController::class, 'update'])
+            ->name('settings.staff-permissions.update');
 
         // P-F8 — order numbering policy: how POS order numbers look
         // (prefix + zero-padded counter, e.g. KLD-0042), per-branch vs

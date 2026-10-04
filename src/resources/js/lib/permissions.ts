@@ -14,6 +14,14 @@ export const MerchantPermission = {
     PosStaffCreate: 'pos_staff.create',
     PosStaffUpdate: 'pos_staff.update',
     PosStaffRevoke: 'pos_staff.revoke',
+    // LAUNCH-P5 (M6) — split out of pos_staff.update: resetting a PIN (the
+    // new PIN is shown) and changing a position.
+    PosStaffResetPin: 'pos_staff.reset_pin',
+    PosStaffChangePosition: 'pos_staff.change_position',
+    // LAUNCH-P5 B1 — the staff permissions page (tick list per position).
+    StaffPermissionsManage: 'staff.permissions.manage',
+    // LAUNCH-P5 B4 — correct clock-in / clock-out times (with a reason).
+    StaffAttendanceManage: 'staff.attendance.manage',
     // Phase 4.7 — merchant-side branches CRUD. Status flip is
     // split because deactivating a branch has billing + fleet
     // blast radius separate from a rename / hours / contact

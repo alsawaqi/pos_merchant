@@ -38,6 +38,24 @@ enum MerchantPermission: string
     case PosStaffUpdate = 'pos_staff.update';
     case PosStaffRevoke = 'pos_staff.revoke';
 
+    // LAUNCH-P5 (M6) — a PIN reset (the new PIN is shown) and a position
+    // change (e.g. making someone a manager, who can then approve) are split
+    // out of pos_staff.update, so "edit staff" no longer implies either.
+    // Default: Super Admin + Manager (pos_admin grants them to existing
+    // roles; the Cashier Supervisor role does not get them).
+    case PosStaffResetPin = 'pos_staff.reset_pin';
+    case PosStaffChangePosition = 'pos_staff.change_position';
+
+    // LAUNCH-P5 B1 — the staff permissions page: what each position may do
+    // on the till and handheld without a manager's approval. Replaces
+    // orders.cancel as the gate of the old four position lists.
+    case StaffPermissionsManage = 'staff.permissions.manage';
+
+    // LAUNCH-P5 B4 — correct clock-in / clock-out times in the Hours report
+    // (a reason is required and every edit is audited). Viewing the report
+    // needs reports.view only.
+    case StaffAttendanceManage = 'staff.attendance.manage';
+
     // Branches — merchant-side CRUD on their OWN company's
     // branches (rename, edit hours, change contact details). No
     // create / delete on the merchant side; those are admin

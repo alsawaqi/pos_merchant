@@ -15,8 +15,8 @@ use Illuminate\Support\Facades\DB;
  * PT — set the per-company purchase_tax_recoverable flag. When ON, the Sales
  * report credits the tracked purchase tax back into net profit (a reclaimable
  * VAT receivable); when OFF (default) the tax is informational only. Upserts the
- * pos_company_settings row + writes an audit trail. Mirrors
- * {@see SetKitchenPositionsAction}.
+ * pos_company_settings row + writes an audit trail (the same pattern as the
+ * other company settings actions).
  */
 final readonly class SetPurchaseTaxRecoverableAction
 {

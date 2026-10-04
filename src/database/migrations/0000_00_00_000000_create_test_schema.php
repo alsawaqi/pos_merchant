@@ -198,6 +198,13 @@ return new class extends Migration
             $table->timestamp('terminated_at')->nullable();
             $table->timestamp('last_login_at')->nullable();
             $table->foreignId('created_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            // LAUNCH-P5 data contract (pos_admin owns the migration): the
+            // offline approver verifier, written by this portal at PIN mint and
+            // reset. pin_offline_key = lowercase hex of K (PBKDF2-HMAC-SHA256,
+            // 32 bytes); salt = 16 random bytes as hex. Hidden and never logged.
+            $table->text('pin_offline_key')->nullable();
+            $table->string('pin_offline_salt', 64)->nullable();
+            $table->integer('pin_offline_iterations')->nullable();
             $table->timestamps();
             $table->softDeletes();
 
@@ -207,6 +214,18 @@ return new class extends Migration
             // a faithful test mirror. Re-hires can reuse codes via
             // the soft-delete + (NULL vs NULL) trick.
             $table->unique(['company_id', 'staff_code'], 'pos_staff_company_code_unique');
+        });
+
+        // LAUNCH-P5 — the branches a staff member works at (one PIN at several
+        // branches). pos_staff.branch_id stays the home branch and is always
+        // in this list.
+        Schema::create('pos_staff_branches', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('staff_id')->constrained('pos_staff')->cascadeOnDelete();
+            $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->timestamps();
+            $table->unique(['staff_id', 'branch_id'], 'pos_staff_branches_staff_branch_unique');
         });
 
         // ---- pos_product_categories (Phase 6a) --------------------
@@ -1292,6 +1311,10 @@ return new class extends Migration
             // create-order flexibility; the live migration has the real FK).
             $table->unsignedBigInteger('void_reason_id')->nullable();
             $table->string('void_reason_label', 64)->nullable();
+            // LAUNCH-P5 — who voided the order and who approved it (pos_api
+            // writes both on order.void).
+            $table->foreignId('voided_by_staff_id')->nullable()->constrained('pos_staff')->nullOnDelete();
+            $table->foreignId('void_approved_by_staff_id')->nullable()->constrained('pos_staff')->nullOnDelete();
             $table->string('source', 32);
             $table->string('plate_number', 32)->nullable();
             $table->decimal('subtotal', 12, 3)->default(0);
@@ -1746,7 +1769,62 @@ return new class extends Migration
             $table->decimal('variance', 12, 3)->nullable();
             $table->string('status', 32)->default('open');
             $table->text('note')->nullable();
+            // LAUNCH-P5 data contract — who closed the drawer, on which device,
+            // the "needs review" flag, cash sales that arrived after the close
+            // and drawer pay-outs (both in baisas).
+            $table->foreignId('closed_by_staff_id')->nullable()->constrained('pos_staff')->nullOnDelete();
+            $table->foreignId('close_device_id')->nullable()->constrained('pos_devices')->nullOnDelete();
+            $table->boolean('needs_review')->default(false);
+            $table->bigInteger('late_sales_baisas')->default(0);
+            $table->bigInteger('payouts_baisas')->default(0);
             $table->timestamps();
+        });
+
+        // LAUNCH-P5 — clock in / clock out. Devices write through the outbox
+        // (source = device); the portal edits with a reason (audited).
+        Schema::create('pos_staff_attendance', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->foreignId('staff_id')->constrained('pos_staff')->cascadeOnDelete();
+            $table->foreignId('device_id')->nullable()->constrained('pos_devices')->nullOnDelete();
+            $table->timestamp('clock_in_at');
+            $table->timestamp('clock_out_at')->nullable();
+            $table->string('source', 16)->default('device');
+            $table->foreignId('edited_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->text('edit_reason')->nullable();
+            $table->json('flags')->nullable();
+            $table->timestamps();
+            $table->index(['company_id', 'staff_id', 'clock_in_at'], 'pos_staff_attendance_company_staff_in_idx');
+        });
+
+        // LAUNCH-P5 — one row per gated action, written by pos_api at sync
+        // (the Approvals report reads it).
+        Schema::create('pos_approvals', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('branch_id')->constrained('pos_branches')->cascadeOnDelete();
+            $table->unsignedBigInteger('device_id')->nullable();
+            $table->string('client_event_id', 64)->nullable();
+            $table->string('action', 64);
+            $table->string('subject_type', 64)->nullable();
+            $table->uuid('subject_uuid')->nullable();
+            $table->decimal('amount', 12, 3)->nullable();
+            $table->string('ref', 64)->nullable();
+            $table->unsignedBigInteger('actor_staff_id')->nullable();
+            $table->unsignedBigInteger('approver_staff_id')->nullable();
+            $table->string('mode', 16);
+            $table->string('method', 16)->nullable();
+            $table->timestamp('approved_at')->nullable();
+            $table->timestamp('verified_at')->nullable();
+            $table->string('result', 16);
+            $table->text('reason')->nullable();
+            $table->timestamp('created_at')->nullable();
+            $table->index(['company_id', 'branch_id', 'approved_at'], 'pos_approvals_company_branch_at_idx');
+            $table->index(['approver_staff_id', 'approved_at'], 'pos_approvals_approver_at_idx');
+            $table->index(['company_id', 'result'], 'pos_approvals_company_result_idx');
         });
 
         // ---- Expenses (Phase 6 backfill — blueprint §5.10 / §10.8) --
@@ -2067,6 +2145,9 @@ return new class extends Migration
 
         // Drop in reverse dependency order. Tests use :memory: so
         // this is essentially never called, but symmetry is cheap.
+        Schema::dropIfExists('pos_approvals');
+        Schema::dropIfExists('pos_staff_attendance');
+        Schema::dropIfExists('pos_staff_branches');
         Schema::dropIfExists('pos_product_sold_out');
         Schema::dropIfExists('pos_combo_slot_options');
         Schema::dropIfExists('pos_combo_slots');
