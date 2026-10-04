@@ -155,7 +155,12 @@ class BranchesController extends Controller
 
         $devices = Device::query()
             ->where('company_id', $this->tenant->requiredId())
-            ->where('branch_id', $branch->id)
+            ->where(fn ($q) => $q->where('branch_id', $branch->id)
+                ->orWhereExists(fn ($sub) => $sub->selectRaw('1')
+                    ->from('pos_staff_branches')
+                    ->whereColumn('pos_staff_branches.staff_id', 'pos_staff.id')
+                    ->where('pos_staff_branches.branch_id', $branch->id)))
+            ->with(['branch', 'branches'])
             ->orderBy('name')
             ->get();
 
@@ -221,8 +226,10 @@ class BranchesController extends Controller
     /**
      * GET /api/pos/branches/{branch:uuid}/staff  (v2 #11)
      *
-     * Staff assigned to this branch (pos_staff.branch_id). pos_staff.view
-     * gated. Phone is decrypted by the resource; pin_hash never serialized.
+     * Staff who work at this branch: home branch (pos_staff.branch_id) or
+     * one of their extra branches (LAUNCH-P5 pos_staff_branches).
+     * pos_staff.view gated. Phone is decrypted by the resource; pin_hash and
+     * the offline verifier are never serialized.
      */
     public function staff(Request $request, Branch $branch): AnonymousResourceCollection
     {
@@ -231,7 +238,12 @@ class BranchesController extends Controller
 
         $staff = PosStaff::query()
             ->where('company_id', $this->tenant->requiredId())
-            ->where('branch_id', $branch->id)
+            ->where(fn ($q) => $q->where('branch_id', $branch->id)
+                ->orWhereExists(fn ($sub) => $sub->selectRaw('1')
+                    ->from('pos_staff_branches')
+                    ->whereColumn('pos_staff_branches.staff_id', 'pos_staff.id')
+                    ->where('pos_staff_branches.branch_id', $branch->id)))
+            ->with(['branch', 'branches'])
             ->orderBy('name')
             ->get();
 

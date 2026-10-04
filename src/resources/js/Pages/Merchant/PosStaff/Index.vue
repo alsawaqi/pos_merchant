@@ -9,8 +9,15 @@
  * Permission gating:
  *   - Page visible when MerchantPermission.PosStaffView
  *   - "Hire teammate" only when PosStaffCreate
- *   - Edit + Reset PIN only when PosStaffUpdate
+ *   - Edit only when PosStaffUpdate; inside it, the position can be
+ *     changed only with PosStaffChangePosition (LAUNCH-P5 M6)
+ *   - Reset PIN only when PosStaffResetPin (LAUNCH-P5 M6)
  *   - Suspend / Reactivate / Terminate only when PosStaffRevoke
+ *
+ * LAUNCH-P5 B2 — one PIN at several branches: the form has the home branch
+ * plus "Also works at" ticks, limited to the user's own branches (the
+ * branch list is already scope-filtered); branches the user cannot see stay
+ * as they are and show as locked.
  *
  * Termination is the only destructive action that gets a confirm
  * dialog — it soft-deletes the row and removes them from the
@@ -39,9 +46,12 @@ import {
 import { listBranches, type Branch } from '@/lib/api/branches';
 import { MerchantPermission } from '@/lib/permissions';
 import { StaffPosition, StaffStatus, type StaffPositionValue, type StaffStatusValue } from '@/lib/staff';
+import { branchIdsPayload, lockedBranches, tickedOthers, type StaffBranchRef } from '@/lib/staffBranches';
 
 const { t, locale } = useI18n();
 const { can } = usePermissions();
+const canResetPin = computed(() => can(MerchantPermission.PosStaffResetPin));
+const canChangePosition = computed(() => can(MerchantPermission.PosStaffChangePosition));
 
 // ---- Table state -------------------------------------------------
 const staff = ref<PosStaff[]>([]);
@@ -70,6 +80,9 @@ const createForm = reactive<CreatePosStaffPayload>({
     hired_at: null,
 });
 
+// LAUNCH-P5 B2 — the other branches ticked in the create form.
+const createExtraBranches = ref<number[]>([]);
+
 // ---- One-shot PIN modal -----------------------------------------
 const pinModalOpen = ref(false);
 const pinModalStaff = ref<PosStaff | null>(null);
@@ -97,6 +110,25 @@ const editForm = reactive<{
     staff_code: '',
     hired_at: '',
 });
+
+// LAUNCH-P5 B2 — the other branches ticked in the edit form, and the
+// person's branches this user cannot see (kept as they are).
+const editExtraBranches = ref<number[]>([]);
+const editLockedBranches = ref<StaffBranchRef[]>([]);
+
+const visibleBranchIds = computed(() => branches.value.map((b) => b.id));
+
+function otherBranchesThan(homeId: number): Branch[] {
+    return branches.value.filter((b) => b.id !== homeId);
+}
+
+function toggleExtra(list: number[], id: number): number[] {
+    return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
+}
+
+function otherBranchNames(row: PosStaff): string {
+    return (row.branches ?? []).filter((b) => !b.home).map((b) => b.name ?? '—').join(', ');
+}
 
 // ---- Terminate confirm dialog -----------------------------------
 const terminateTarget = ref<PosStaff | null>(null);
@@ -204,6 +236,7 @@ function openCreate(): void {
     createForm.phone = '';
     createForm.staff_code = '';
     createForm.hired_at = null;
+    createExtraBranches.value = [];
     createFieldErrors.value = {};
     createError.value = null;
     createOpen.value = true;
@@ -221,6 +254,7 @@ async function submitCreate(): Promise<void> {
             phone: createForm.phone || null,
             staff_code: createForm.staff_code || null,
             hired_at: createForm.hired_at || null,
+            branch_ids: branchIdsPayload(createForm.branch_id, createExtraBranches.value),
         });
         createOpen.value = false;
         pinModalStaff.value = response.data;
@@ -268,6 +302,8 @@ function openEdit(row: PosStaff): void {
     editForm.phone = row.phone ?? '';
     editForm.staff_code = row.staff_code ?? '';
     editForm.hired_at = row.hired_at ?? '';
+    editExtraBranches.value = tickedOthers(row.branches, row.branch.id, visibleBranchIds.value);
+    editLockedBranches.value = lockedBranches(row.branches, visibleBranchIds.value);
     editFieldErrors.value = {};
     editError.value = null;
     editOpen.value = true;
@@ -282,10 +318,12 @@ async function submitEdit(): Promise<void> {
         await updatePosStaff(editTarget.value.uuid, {
             name: editForm.name,
             branch_id: editForm.branch_id,
-            position: editForm.position,
+            // M6 — the position is sent only by users who may change it.
+            ...(canChangePosition.value ? { position: editForm.position } : {}),
             phone: editForm.phone || null,
             staff_code: editForm.staff_code || null,
             hired_at: editForm.hired_at || null,
+            branch_ids: branchIdsPayload(editForm.branch_id, editExtraBranches.value),
         });
         editOpen.value = false;
         await fetchStaff();
@@ -441,7 +479,12 @@ function readError(err: unknown): string {
                                     <span v-if="row.staff_code" class="block text-xs font-mono text-slate-500">#{{ row.staff_code }}</span>
                                 </td>
                                 <td class="px-5 py-4 text-sm font-medium text-slate-700">{{ positionLabel(row.position) }}</td>
-                                <td class="px-5 py-4 text-sm text-slate-700">{{ row.branch.name ?? '—' }}</td>
+                                <td class="px-5 py-4 text-sm text-slate-700">
+                                    <span class="block">{{ row.branch.name ?? '—' }}</span>
+                                    <span v-if="otherBranchNames(row)" class="block text-xs text-slate-500" data-test="staff-other-branches">
+                                        {{ t('pos_staff.branches.also_at', { names: otherBranchNames(row) }) }}
+                                    </span>
+                                </td>
                                 <td class="px-5 py-4">
                                     <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold" :class="statusBadgeClass(row.status)">
                                         {{ statusLabel(row.status) }}
@@ -461,9 +504,10 @@ function readError(err: unknown): string {
                                             {{ t('pos_staff.actions.edit') }}
                                         </button>
                                         <button
-                                            v-if="can(MerchantPermission.PosStaffUpdate)"
+                                            v-if="canResetPin"
                                             type="button"
                                             class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                                            data-test="reset-pin"
                                             :disabled="rowBusy[row.id]"
                                             @click="onResetPin(row)"
                                         >
@@ -521,12 +565,24 @@ function readError(err: unknown): string {
                 </label>
 
                 <label class="block">
-                    <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.branch') }} *</span>
+                    <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.branches.home') }} *</span>
                     <select v-model.number="createForm.branch_id" required class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                         <option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option>
                     </select>
                     <p v-if="createFieldErrors.branch_id" class="mt-1 text-xs text-rose-600">{{ createFieldErrors.branch_id[0] }}</p>
                 </label>
+
+                <fieldset v-if="otherBranchesThan(createForm.branch_id).length" class="rounded-lg border border-slate-200 p-3" data-test="create-other-branches">
+                    <legend class="px-1 text-sm font-medium text-slate-700">{{ t('pos_staff.branches.also_works_at') }}</legend>
+                    <p class="text-xs text-slate-500">{{ t('pos_staff.branches.hint') }}</p>
+                    <div class="mt-2 flex flex-wrap gap-2">
+                        <label v-for="branch in otherBranchesThan(createForm.branch_id)" :key="branch.id" class="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm text-slate-700">
+                            <input type="checkbox" class="rounded border-slate-300 text-teal-600 focus:ring-teal-500" :checked="createExtraBranches.includes(branch.id)" @change="createExtraBranches = toggleExtra(createExtraBranches, branch.id)">
+                            {{ branch.name }}
+                        </label>
+                    </div>
+                    <p v-if="createFieldErrors.branch_ids" class="mt-1 text-xs text-rose-600">{{ createFieldErrors.branch_ids[0] }}</p>
+                </fieldset>
 
                 <label class="block">
                     <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.position') }} *</span>
@@ -631,20 +687,37 @@ function readError(err: unknown): string {
                 </label>
 
                 <label class="block">
-                    <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.branch') }}</span>
+                    <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.branches.home') }}</span>
                     <select v-model.number="editForm.branch_id" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                         <option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option>
                     </select>
                     <p v-if="editFieldErrors.branch_id" class="mt-1 text-xs text-rose-600">{{ editFieldErrors.branch_id[0] }}</p>
                 </label>
 
+                <fieldset class="rounded-lg border border-slate-200 p-3" data-test="edit-other-branches">
+                    <legend class="px-1 text-sm font-medium text-slate-700">{{ t('pos_staff.branches.also_works_at') }}</legend>
+                    <p class="text-xs text-slate-500">{{ t('pos_staff.branches.hint') }}</p>
+                    <div class="mt-2 flex flex-wrap gap-2">
+                        <label v-for="branch in otherBranchesThan(editForm.branch_id)" :key="branch.id" class="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm text-slate-700">
+                            <input type="checkbox" class="rounded border-slate-300 text-teal-600 focus:ring-teal-500" :checked="editExtraBranches.includes(branch.id)" @change="editExtraBranches = toggleExtra(editExtraBranches, branch.id)">
+                            {{ branch.name }}
+                        </label>
+                        <span v-for="branch in editLockedBranches" :key="`locked-${branch.id}`" class="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-2.5 py-1.5 text-sm text-slate-500" data-test="locked-branch" :title="t('pos_staff.branches.locked')">
+                            {{ branch.name ?? '—' }}
+                        </span>
+                    </div>
+                    <p v-if="editLockedBranches.length" class="mt-2 text-xs text-slate-500">{{ t('pos_staff.branches.locked') }}</p>
+                    <p v-if="editFieldErrors.branch_ids" class="mt-1 text-xs text-rose-600">{{ editFieldErrors.branch_ids[0] }}</p>
+                </fieldset>
+
                 <label class="block">
                     <span class="text-sm font-medium text-slate-700">{{ t('pos_staff.fields.position') }}</span>
-                    <select v-model="editForm.position" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                    <select v-model="editForm.position" :disabled="!canChangePosition" data-test="edit-position" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100 disabled:bg-slate-50 disabled:text-slate-500">
                         <option v-for="opt in positionOptions" :key="opt.value" :value="opt.value">
                             {{ t(`pos_staff.positions.${opt.key}`) }}
                         </option>
                     </select>
+                    <p v-if="!canChangePosition" class="mt-1 text-xs text-slate-500">{{ t('pos_staff.position_locked') }}</p>
                 </label>
 
                 <div class="grid grid-cols-2 gap-3">

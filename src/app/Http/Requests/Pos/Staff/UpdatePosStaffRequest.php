@@ -35,6 +35,10 @@ class UpdatePosStaffRequest extends FormRequest
             'phone' => ['sometimes', 'nullable', 'string', 'max:32'],
             'staff_code' => ['sometimes', 'nullable', 'string', 'max:64'],
             'hired_at' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
+            // LAUNCH-P5 B2 — the branches the person works at (the home
+            // branch_id is always included).
+            'branch_ids' => ['sometimes', 'nullable', 'array', 'max:100'],
+            'branch_ids.*' => ['integer', 'min:1'],
         ];
     }
 
@@ -54,6 +58,15 @@ class UpdatePosStaffRequest extends FormRequest
                     ->exists();
                 if (! $ownsBranch) {
                     $v->errors()->add('branch_id', 'The selected branch does not belong to your company.');
+                }
+            }
+
+            $ids = $this->input('branch_ids');
+            if (is_array($ids) && $ids !== []) {
+                $ids = array_values(array_unique(array_map('intval', $ids)));
+                $owned = Branch::query()->where('company_id', $companyId)->whereIn('id', $ids)->count();
+                if ($owned !== count($ids)) {
+                    $v->errors()->add('branch_ids', 'A selected branch does not belong to your company.');
                 }
             }
 

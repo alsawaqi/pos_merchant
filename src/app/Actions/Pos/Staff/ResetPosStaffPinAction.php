@@ -11,7 +11,6 @@ use App\Models\PosStaff;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use RuntimeException;
 
 /**
@@ -28,12 +27,18 @@ use RuntimeException;
  * Audit event: `pos_staff.pin_reset`. The new PIN is NEVER
  * logged (not the plaintext, not even the hash) — credential
  * material must not leak into the audit trail.
+ *
+ * LAUNCH-P5 B2: minted by {@see MintStaffPinAction} — under a lock on the
+ * company row (L3) and with a fresh offline approver verifier, so the old
+ * PIN stops working for offline approvals as soon as devices refresh their
+ * approver list. Gated by pos_staff.reset_pin (no longer pos_staff.update).
  */
 final readonly class ResetPosStaffPinAction
 {
     public function __construct(
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
+        private MintStaffPinAction $mintPin,
     ) {}
 
     /**
@@ -53,9 +58,10 @@ final readonly class ResetPosStaffPinAction
         }
 
         return DB::transaction(function () use ($staff, $actor, $companyId): array {
-            [$pin, $hash] = $this->mintUniquePin($companyId, excludeStaffId: $staff->id);
+            $minted = $this->mintPin->handle($companyId, excludeStaffId: $staff->id);
 
-            $staff->pin_hash = $hash;
+            $staff->pin_hash = $minted['hash'];
+            $staff->forceFill($minted['verifier']);
             $staff->save();
 
             $this->writeAuditLog->handle(new AuditLogData(
@@ -72,43 +78,8 @@ final readonly class ResetPosStaffPinAction
 
             return [
                 'staff' => $staff,
-                'plaintext_pin' => $pin,
+                'plaintext_pin' => $minted['pin'],
             ];
         });
-    }
-
-    /**
-     * @return array{0: string, 1: string}
-     */
-    private function mintUniquePin(int $companyId, int $excludeStaffId): array
-    {
-        $existing = PosStaff::query()
-            ->where('company_id', $companyId)
-            ->where('id', '!=', $excludeStaffId)
-            ->whereIn('status', [
-                StaffStatus::Active->value,
-                StaffStatus::Suspended->value,
-            ])
-            ->pluck('pin_hash');
-
-        for ($attempt = 0; $attempt < 10; $attempt++) {
-            $candidate = str_pad((string) random_int(0, 999_999), 6, '0', STR_PAD_LEFT);
-
-            $collides = false;
-            foreach ($existing as $hash) {
-                if (Hash::check($candidate, $hash)) {
-                    $collides = true;
-                    break;
-                }
-            }
-
-            if (! $collides) {
-                return [$candidate, Hash::make($candidate)];
-            }
-        }
-
-        throw new RuntimeException(
-            'Could not generate a unique PIN after 10 attempts.',
-        );
     }
 }

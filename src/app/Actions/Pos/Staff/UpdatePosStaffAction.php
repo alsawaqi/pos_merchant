@@ -27,16 +27,22 @@ use RuntimeException;
  *
  * Audit event: `pos_staff.updated` with old + new diffs for
  * every field that actually changed.
+ *
+ * LAUNCH-P5 B2: `branch_ids` (optional) sets the branches the person works
+ * at ({@see SyncStaffBranchesAction}; the home branch is always included and
+ * a home move without a list replaces the old home). A position change is
+ * gated by pos_staff.change_position in the controller (M6).
  */
 final readonly class UpdatePosStaffAction
 {
     public function __construct(
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
+        private SyncStaffBranchesAction $syncBranches,
     ) {}
 
     /**
-     * @param  array{name?: string, phone?: string|null, staff_code?: string|null, position?: string, branch_id?: int, hired_at?: string|null}  $attributes
+     * @param  array{name?: string, phone?: string|null, staff_code?: string|null, position?: string, branch_id?: int, hired_at?: string|null, branch_ids?: list<int>|null}  $attributes
      */
     public function handle(PosStaff $staff, array $attributes, User $actor): PosStaff
     {
@@ -73,6 +79,8 @@ final readonly class UpdatePosStaffAction
                 }
             }
 
+            $previousHomeId = (int) $staff->branch_id;
+
             // Branch move — re-check tenancy of the target.
             if (array_key_exists('branch_id', $attributes)
                 && (int) $attributes['branch_id'] !== (int) $staff->branch_id
@@ -95,6 +103,16 @@ final readonly class UpdatePosStaffAction
             }
 
             $staff->save();
+
+            if (array_key_exists('branch_ids', $attributes) || $previousHomeId !== (int) $staff->branch_id) {
+                $requested = array_key_exists('branch_ids', $attributes) && is_array($attributes['branch_ids'])
+                    ? $attributes['branch_ids']
+                    : null;
+                $branches = $this->syncBranches->handle($staff, $requested, $actor, $previousHomeId);
+                if ($branches['old'] !== $branches['new']) {
+                    $changes['branch_ids'] = ['old' => $branches['old'], 'new' => $branches['new']];
+                }
+            }
 
             if ($changes !== []) {
                 $this->writeAuditLog->handle(new AuditLogData(

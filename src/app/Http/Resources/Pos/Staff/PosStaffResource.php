@@ -42,6 +42,9 @@ class PosStaffResource extends JsonResource
                 'id' => $this->branch_id,
                 'name' => $this->whenLoaded('branch', fn () => $this->branch?->name),
             ],
+            // LAUNCH-P5 B2 — every branch the person works at, home first
+            // (only when the controller eager-loaded `branches`).
+            'branches' => $this->whenLoaded('branches', fn (): array => $this->branchList()),
             'creator' => [
                 'id' => $this->created_by_user_id,
                 'name' => $this->whenLoaded('creator', fn () => $this->creator?->name),
@@ -52,5 +55,22 @@ class PosStaffResource extends JsonResource
             'created_at' => $this->created_at?->toIso8601String(),
             'deleted_at' => $this->deleted_at?->toIso8601String(),
         ];
+    }
+
+    /**
+     * @return list<array{id: int, name: string|null, home: bool}>
+     */
+    private function branchList(): array
+    {
+        $names = $this->branches->pluck('name', 'id');
+        if ($this->relationLoaded('branch') && $this->branch !== null) {
+            $names[$this->branch_id] = $this->branch->name;
+        }
+
+        return array_map(fn (int $id): array => [
+            'id' => $id,
+            'name' => $names[$id] ?? null,
+            'home' => $id === (int) $this->branch_id,
+        ], $this->resource->branchIds());
     }
 }

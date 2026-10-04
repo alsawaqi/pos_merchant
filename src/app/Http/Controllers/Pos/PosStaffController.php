@@ -16,6 +16,7 @@ use App\Http\Requests\Pos\Staff\CreatePosStaffRequest;
 use App\Http\Requests\Pos\Staff\UpdatePosStaffRequest;
 use App\Http\Resources\Pos\Staff\PosStaffResource;
 use App\Models\PosStaff;
+use App\Support\BranchScope;
 use App\Support\MerchantTenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -42,6 +43,11 @@ use RuntimeException;
  * pattern as PortalUsersController — no Policy class, because
  * the spatie team_id has already been pinned by the SetMerchantTenantContext
  * middleware so $user->can() reads the right team).
+ *
+ * LAUNCH-P5 B2 (M6): resetting a PIN needs pos_staff.reset_pin and changing
+ * a position needs pos_staff.change_position — pos_staff.update alone no
+ * longer allows either. The branches a person works at (`branch_ids`) stay
+ * under pos_staff.update, inside the user's branch scope.
  */
 class PosStaffController extends Controller
 {
@@ -74,7 +80,7 @@ class PosStaffController extends Controller
         $staff = PosStaff::query()
             ->where('company_id', $this->tenant->requiredId())
             ->when($allowed !== null, fn ($q) => $q->whereIn('branch_id', $allowed))
-            ->with(['branch', 'creator'])
+            ->with(['branch', 'creator', 'branches'])
             ->orderByDesc('created_at')
             ->get();
 
@@ -88,8 +94,10 @@ class PosStaffController extends Controller
     {
         $this->ensure($request, MerchantPermission::PosStaffCreate);
 
-        // P-G5 — hire only into branches within the user's scope.
-        \App\Support\BranchScope::ensureBranch($request->user(), (int) $request->validated()['branch_id']);
+        // P-G5 — hire only into branches within the user's scope (the home
+        // branch and every extra branch).
+        BranchScope::ensureBranch($request->user(), (int) $request->validated()['branch_id']);
+        $this->ensureBranchIdsInScope($request);
 
         try {
             $result = $this->create->handle($request->validated(), $request->user());
@@ -97,7 +105,7 @@ class PosStaffController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $result['staff']->load(['branch', 'creator']);
+        $result['staff']->load(['branch', 'creator', 'branches']);
 
         return response()->json([
             'data' => (new PosStaffResource($result['staff']))->resolve($request),
@@ -108,7 +116,7 @@ class PosStaffController extends Controller
     /**
      * PATCH /api/pos-staff/{posStaff}
      */
-    public function update(UpdatePosStaffRequest $request, PosStaff $posStaff): PosStaffResource | JsonResponse
+    public function update(UpdatePosStaffRequest $request, PosStaff $posStaff): PosStaffResource|JsonResponse
     {
         $this->ensure($request, MerchantPermission::PosStaffUpdate);
         $this->refuseIfNotInTenant($posStaff);
@@ -117,7 +125,15 @@ class PosStaffController extends Controller
         // middleware; a re-assignment target must be in scope too.
         $newBranchId = $request->validated()['branch_id'] ?? null;
         if ($newBranchId !== null) {
-            \App\Support\BranchScope::ensureBranch($request->user(), (int) $newBranchId);
+            BranchScope::ensureBranch($request->user(), (int) $newBranchId);
+        }
+        $this->ensureBranchIdsInScope($request);
+
+        // LAUNCH-P5 M6 — a position CHANGE needs pos_staff.change_position (a
+        // form re-sending the same position is fine).
+        $newPosition = $request->validated()['position'] ?? null;
+        if ($newPosition !== null && $newPosition !== $posStaff->position?->value) {
+            $this->ensure($request, MerchantPermission::PosStaffChangePosition);
         }
 
         try {
@@ -126,7 +142,7 @@ class PosStaffController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $updated->load(['branch', 'creator']);
+        $updated->load(['branch', 'creator', 'branches']);
 
         return PosStaffResource::make($updated);
     }
@@ -134,7 +150,7 @@ class PosStaffController extends Controller
     /**
      * POST /api/pos-staff/{posStaff}/suspend
      */
-    public function suspend(Request $request, PosStaff $posStaff): PosStaffResource | JsonResponse
+    public function suspend(Request $request, PosStaff $posStaff): PosStaffResource|JsonResponse
     {
         $this->ensure($request, MerchantPermission::PosStaffRevoke);
         $this->refuseIfNotInTenant($posStaff);
@@ -145,7 +161,7 @@ class PosStaffController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $updated->load(['branch', 'creator']);
+        $updated->load(['branch', 'creator', 'branches']);
 
         return PosStaffResource::make($updated);
     }
@@ -153,7 +169,7 @@ class PosStaffController extends Controller
     /**
      * POST /api/pos-staff/{posStaff}/reactivate
      */
-    public function reactivate(Request $request, PosStaff $posStaff): PosStaffResource | JsonResponse
+    public function reactivate(Request $request, PosStaff $posStaff): PosStaffResource|JsonResponse
     {
         $this->ensure($request, MerchantPermission::PosStaffRevoke);
         $this->refuseIfNotInTenant($posStaff);
@@ -164,7 +180,7 @@ class PosStaffController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $updated->load(['branch', 'creator']);
+        $updated->load(['branch', 'creator', 'branches']);
 
         return PosStaffResource::make($updated);
     }
@@ -178,7 +194,7 @@ class PosStaffController extends Controller
         $this->refuseIfNotInTenant($posStaff);
 
         $updated = $this->terminate->handle($posStaff, $request->user());
-        $updated->load(['branch', 'creator']);
+        $updated->load(['branch', 'creator', 'branches']);
 
         return PosStaffResource::make($updated);
     }
@@ -188,7 +204,8 @@ class PosStaffController extends Controller
      */
     public function resetPin(Request $request, PosStaff $posStaff): JsonResponse
     {
-        $this->ensure($request, MerchantPermission::PosStaffUpdate);
+        // LAUNCH-P5 M6 — its own permission (the new PIN is shown to the user).
+        $this->ensure($request, MerchantPermission::PosStaffResetPin);
         $this->refuseIfNotInTenant($posStaff);
 
         try {
@@ -197,12 +214,24 @@ class PosStaffController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $result['staff']->load(['branch', 'creator']);
+        $result['staff']->load(['branch', 'creator', 'branches']);
 
         return response()->json([
             'data' => (new PosStaffResource($result['staff']))->resolve($request),
             'plaintext_pin' => $result['plaintext_pin'],
         ]);
+    }
+
+    /** P-G5 — every requested extra branch must be inside the user's scope (403). */
+    private function ensureBranchIdsInScope(Request $request): void
+    {
+        $ids = $request->input('branch_ids');
+        if (! is_array($ids)) {
+            return;
+        }
+        foreach ($ids as $id) {
+            BranchScope::ensureBranch($request->user(), (int) $id);
+        }
     }
 
     private function ensure(Request $request, MerchantPermission $permission): void

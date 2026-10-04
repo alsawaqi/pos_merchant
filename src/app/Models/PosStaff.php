@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Models\Concerns\BelongsToCompany;
 use App\Enums\StaffPosition;
 use App\Enums\StaffStatus;
+use App\Models\Concerns\BelongsToCompany;
 use App\Models\Concerns\DecryptsDefensively;
 use Database\Factories\PosStaffFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
@@ -46,7 +47,9 @@ use Illuminate\Support\Str;
     'last_login_at',
     'created_by_user_id',
 ])]
-#[Hidden(['pin_hash'])]
+// LAUNCH-P5 — the offline approver verifier (K, its salt and iterations) is
+// credential material like pin_hash: never serialised, never logged.
+#[Hidden(['pin_hash', 'pin_offline_key', 'pin_offline_salt', 'pin_offline_iterations'])]
 class PosStaff extends Model
 {
     /** @use HasFactory<PosStaffFactory> */
@@ -111,6 +114,37 @@ class PosStaff extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    /**
+     * LAUNCH-P5 — every branch this person works at (pos_staff_branches). The
+     * home branch (branch_id) is always one of them; one PIN works at all.
+     *
+     * @return BelongsToMany<Branch, $this>
+     */
+    public function branches(): BelongsToMany
+    {
+        return $this->belongsToMany(Branch::class, 'pos_staff_branches', 'staff_id', 'branch_id')
+            ->withPivot('company_id')
+            ->withTimestamps();
+    }
+
+    /**
+     * The branch ids this person works at, home branch first, then the
+     * others in id order. The home branch is included even if its pivot row
+     * is missing (rows written before the pivot existed).
+     *
+     * @return list<int>
+     */
+    public function branchIds(): array
+    {
+        $others = $this->relationLoaded('branches')
+            ? $this->branches->pluck('id')->all()
+            : $this->branches()->pluck('pos_branches.id')->all();
+        $others = array_map('intval', $others);
+        sort($others);
+
+        return array_values(array_unique([(int) $this->branch_id, ...$others]));
     }
 
     /**

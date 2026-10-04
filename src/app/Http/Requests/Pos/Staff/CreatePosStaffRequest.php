@@ -40,6 +40,10 @@ class CreatePosStaffRequest extends FormRequest
             'phone' => ['nullable', 'string', 'max:32'],
             'staff_code' => ['nullable', 'string', 'max:64'],
             'hired_at' => ['nullable', 'date_format:Y-m-d'],
+            // LAUNCH-P5 B2 — the other branches the person works at (the home
+            // branch_id is always included).
+            'branch_ids' => ['sometimes', 'nullable', 'array', 'max:100'],
+            'branch_ids.*' => ['integer', 'min:1'],
         ];
     }
 
@@ -63,6 +67,9 @@ class CreatePosStaffRequest extends FormRequest
                 }
             }
 
+            // LAUNCH-P5 B2 — every extra branch must belong to the company too.
+            $this->checkBranchIds($v, $companyId);
+
             // staff_code unique per company (active + suspended
             // only — terminated rows are soft-deleted and the
             // partial index already exempts them).
@@ -77,5 +84,18 @@ class CreatePosStaffRequest extends FormRequest
                 }
             }
         });
+    }
+
+    private function checkBranchIds(Validator $v, int $companyId): void
+    {
+        $ids = $this->input('branch_ids');
+        if (! is_array($ids) || $ids === []) {
+            return;
+        }
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+        $owned = Branch::query()->where('company_id', $companyId)->whereIn('id', $ids)->count();
+        if ($owned !== count($ids)) {
+            $v->errors()->add('branch_ids', 'A selected branch does not belong to your company.');
+        }
     }
 }

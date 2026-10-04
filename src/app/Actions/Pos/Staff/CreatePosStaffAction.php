@@ -12,8 +12,6 @@ use App\Models\PosStaff;
 use App\Models\User;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -46,16 +44,25 @@ use RuntimeException;
  * Audit event: `pos_staff.created` — name + position + branch +
  * staff_code captured in new_values. PIN never logged (not even
  * its hash — credential material must not leak into audit).
+ *
+ * LAUNCH-P5 B2:
+ *   - the PIN is minted by {@see MintStaffPinAction}: under a lock on the
+ *     company row (L3), and with the offline approver verifier
+ *     (pin_offline_key / _salt / _iterations) stored alongside the hash;
+ *   - `branch_ids` (optional) are the other branches the person works at;
+ *     the home branch is always included ({@see SyncStaffBranchesAction}).
  */
 final readonly class CreatePosStaffAction
 {
     public function __construct(
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
+        private MintStaffPinAction $mintPin,
+        private SyncStaffBranchesAction $syncBranches,
     ) {}
 
     /**
-     * @param  array{name: string, branch_id: int, position: string, phone?: string|null, staff_code?: string|null, hired_at?: string|null}  $attributes
+     * @param  array{name: string, branch_id: int, position: string, phone?: string|null, staff_code?: string|null, hired_at?: string|null, branch_ids?: list<int>|null}  $attributes
      * @return array{staff: PosStaff, plaintext_pin: string}
      */
     public function handle(array $attributes, User $actor): array
@@ -76,21 +83,24 @@ final readonly class CreatePosStaffAction
                 );
             }
 
-            [$pin, $hash] = $this->mintUniquePin($companyId);
+            $minted = $this->mintPin->handle($companyId);
 
-            /** @var PosStaff $staff */
-            $staff = PosStaff::query()->create([
+            $staff = new PosStaff([
                 'company_id' => $companyId,
                 'branch_id' => $branch->id,
                 'name' => $attributes['name'],
                 'phone' => $attributes['phone'] ?? null,
                 'staff_code' => $attributes['staff_code'] ?? null,
-                'pin_hash' => $hash,
+                'pin_hash' => $minted['hash'],
                 'position' => $attributes['position'],
                 'status' => StaffStatus::Active->value,
                 'hired_at' => $attributes['hired_at'] ?? null,
                 'created_by_user_id' => $actor->getKey(),
             ]);
+            $staff->forceFill($minted['verifier']);
+            $staff->save();
+
+            $branches = $this->syncBranches->handle($staff, $attributes['branch_ids'] ?? null, $actor);
 
             $this->writeAuditLog->handle(new AuditLogData(
                 event: 'pos_staff.created',
@@ -102,6 +112,7 @@ final readonly class CreatePosStaffAction
                     'name' => $staff->name,
                     'position' => $staff->position?->value,
                     'branch_id' => $staff->branch_id,
+                    'branch_ids' => $branches['new'],
                     'staff_code' => $staff->staff_code,
                     'hired_at' => $staff->hired_at?->toDateString(),
                 ],
@@ -109,50 +120,8 @@ final readonly class CreatePosStaffAction
 
             return [
                 'staff' => $staff,
-                'plaintext_pin' => $pin,
+                'plaintext_pin' => $minted['pin'],
             ];
         });
-    }
-
-    /**
-     * @return array{0: string, 1: string}  [plaintext_pin, bcrypt_hash]
-     */
-    private function mintUniquePin(int $companyId): array
-    {
-        // Hash::check across every non-terminated staff row in
-        // the company. Terminated rows are soft-deleted, so the
-        // default scope filters them out — re-hires can reuse a
-        // PIN the previous holder picked, which is fine.
-        $existing = PosStaff::query()
-            ->where('company_id', $companyId)
-            ->whereIn('status', [
-                StaffStatus::Active->value,
-                StaffStatus::Suspended->value,
-            ])
-            ->pluck('pin_hash');
-
-        for ($attempt = 0; $attempt < 10; $attempt++) {
-            // 6-digit numeric, leading zeros allowed (000000 →
-            // 999999). Str::random + ctype isn't quite what we
-            // want — random_int gives an even distribution over
-            // exactly the right range.
-            $candidate = str_pad((string) random_int(0, 999_999), 6, '0', STR_PAD_LEFT);
-
-            $collides = false;
-            foreach ($existing as $hash) {
-                if (Hash::check($candidate, $hash)) {
-                    $collides = true;
-                    break;
-                }
-            }
-
-            if (! $collides) {
-                return [$candidate, Hash::make($candidate)];
-            }
-        }
-
-        throw new RuntimeException(
-            'Could not generate a unique PIN after 10 attempts. Either the keyspace is exhausted or the staff roster is too large for the current PIN length.',
-        );
     }
 }

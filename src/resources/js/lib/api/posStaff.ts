@@ -31,6 +31,11 @@ export interface PosStaff {
         /** Only present when the resource eager-loaded `branch`. */
         name?: string | null;
     };
+    /**
+     * LAUNCH-P5 B2 — every branch the person works at, home first (one PIN
+     * works at all of them).
+     */
+    branches?: { id: number; name: string | null; home: boolean }[];
     creator: {
         id: number | null;
         name?: string | null;
@@ -49,6 +54,8 @@ export interface CreatePosStaffPayload {
     phone?: string | null;
     staff_code?: string | null;
     hired_at?: string | null;
+    /** LAUNCH-P5 B2 — all the branches the person works at (home included). */
+    branch_ids?: number[];
 }
 
 export interface UpdatePosStaffPayload {
@@ -58,6 +65,8 @@ export interface UpdatePosStaffPayload {
     phone?: string | null;
     staff_code?: string | null;
     hired_at?: string | null;
+    /** LAUNCH-P5 B2 — all the branches the person works at (home included). */
+    branch_ids?: number[];
 }
 
 export interface PosStaffWithPinResponse {

@@ -675,6 +675,14 @@
             "phone": "Phone (optional)",
             "staff_code": "Staff code (optional)",
             "hired_at": "Hired on"
+        },
+        "position_locked": "Changing the position needs the \"Change a staff member's position\" permission.",
+        "branches": {
+            "home": "Home branch",
+            "also_works_at": "Also works at",
+            "hint": "The same PIN works at every branch ticked here. The home branch is always included.",
+            "locked": "Branches outside your access stay as they are.",
+            "also_at": "Also at: {names}"
         }
     },
     "branches": {
