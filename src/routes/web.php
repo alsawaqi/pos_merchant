@@ -255,6 +255,12 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         Route::patch('pos/branches/{branch:uuid}', [PosBranchesController::class, 'update'])
             ->name('pos.branches.update');
         // Per-branch custom POS receipt template (header/CR/VAT/footer).
+        // LAUNCH-P5 B6 — the branch's shift-end reminder time (HH:MM, Muscat;
+        // null = off). Read: branches.view; write: branches.update.
+        Route::get('pos/branches/{branch:uuid}/shift-end-reminder', [PosBranchesController::class, 'shiftEndReminder'])
+            ->name('pos.branches.shift-end-reminder');
+        Route::put('pos/branches/{branch:uuid}/shift-end-reminder', [PosBranchesController::class, 'updateShiftEndReminder'])
+            ->name('pos.branches.shift-end-reminder.update');
         Route::put('pos/branches/{branch:uuid}/receipt-template', [PosBranchesController::class, 'updateReceiptTemplate'])
             ->name('pos.branches.receipt-template');
 

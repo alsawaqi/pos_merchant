@@ -793,7 +793,20 @@
             "kitchen_production": "Kitchen production",
             "last_days": "Last {days} days",
             "online": "Online",
-            "offline": "Offline"
+            "offline": "Offline",
+            "home_elsewhere": "Home branch: {name}",
+            "shift_reminder": {
+                "title": "Shift-end reminder",
+                "help": "At this time, anyone whose shift is still open on the till or handheld gets a banner and a sound, every 15 minutes until they close the shift. Leave it blank to turn it off.",
+                "off": "Off",
+                "clear": "Turn off",
+                "timezone": "Muscat time.",
+                "saved": "Saved. Devices remind at {time} from their next settings refresh.",
+                "saved_off": "Saved. The reminder is off.",
+                "invalid": "Enter a time as HH:MM, or leave it blank.",
+                "not_allowed": "You can't change this branch's settings.",
+                "save_failed": "Could not save the reminder time."
+            }
         },
         "add_stock": {
             "title": "Add stock to {branch}",

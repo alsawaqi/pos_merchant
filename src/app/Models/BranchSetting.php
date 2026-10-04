@@ -24,6 +24,12 @@ class BranchSetting extends Model
     public const KEY_DINE_IN_ROUND_MODE = 'dine_in_round_mode';
 
     /**
+     * LAUNCH-P5 B6 — the shift-end reminder: "HH:MM" (Muscat) or null = off.
+     * pos_api emits it as settings.shift_end_reminder_at.
+     */
+    public const KEY_SHIFT_END_REMINDER_AT = 'shift_end_reminder_at';
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

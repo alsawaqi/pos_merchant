@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Pos;
 use App\Actions\Pos\Branch\UpdateBranchReceiptTemplateAction;
 use App\Actions\Pos\Branch\UpdateMerchantBranchAction;
 use App\Actions\Pos\Reports\BranchActivityAction;
+use App\Actions\Pos\Settings\SetBranchShiftEndReminderAction;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Pos\Branch\UpdateBranchReceiptTemplateRequest;
@@ -22,6 +23,7 @@ use App\Support\MerchantTenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use InvalidArgumentException;
 use RuntimeException;
 
 /**
@@ -56,7 +58,53 @@ class BranchesController extends Controller
         private readonly UpdateMerchantBranchAction $update,
         private readonly UpdateBranchReceiptTemplateAction $updateReceiptTemplate,
         private readonly BranchActivityAction $branchActivity,
+        private readonly SetBranchShiftEndReminderAction $setShiftEndReminder,
     ) {}
+
+    /**
+     * GET /api/pos/branches/{branch:uuid}/shift-end-reminder  (LAUNCH-P5 B6)
+     *
+     * The branch's shift-end reminder time ("HH:MM", Muscat) or null (off).
+     * branches.view gated.
+     */
+    public function shiftEndReminder(Request $request, Branch $branch): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::BranchesView);
+        $this->refuseIfNotInTenant($branch);
+
+        return response()->json(['data' => [
+            'shift_end_reminder_at' => SetBranchShiftEndReminderAction::current($branch),
+        ]]);
+    }
+
+    /**
+     * PUT /api/pos/branches/{branch:uuid}/shift-end-reminder  (LAUNCH-P5 B6)
+     *
+     * {shift_end_reminder_at: "HH:MM" | null}. branches.update gated, inside
+     * the user's branch scope; audited by the action.
+     */
+    public function updateShiftEndReminder(Request $request, Branch $branch): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::BranchesUpdate);
+        $this->refuseIfNotInTenant($branch);
+        if (! $request->user()->canAccessBranchId((int) $branch->id)) {
+            abort(403, 'Your account is restricted to specific branches.');
+        }
+
+        $validated = $request->validate([
+            'shift_end_reminder_at' => ['present', 'nullable', 'string', 'regex:'.SetBranchShiftEndReminderAction::PATTERN],
+        ], [
+            'shift_end_reminder_at.regex' => 'The reminder time must be HH:MM (00:00 to 23:59).',
+        ]);
+
+        try {
+            $saved = $this->setShiftEndReminder->handle($branch, $validated['shift_end_reminder_at'] ?? null, $request->user());
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['data' => ['shift_end_reminder_at' => $saved]]);
+    }
 
     /**
      * GET /api/pos/branches

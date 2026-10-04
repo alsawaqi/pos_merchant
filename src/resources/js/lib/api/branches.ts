@@ -191,6 +191,8 @@ export interface BranchStaffMember {
     status: string | null;
     hired_at: string | null;
     last_login_at: string | null;
+    /** LAUNCH-P5 B2 — the person's home branch (may be another branch). */
+    branch?: { id: number; name?: string | null };
 }
 
 export interface BranchActivity {
@@ -249,4 +251,16 @@ export function getBranchStaff(uuid: string): Promise<{ data: BranchStaffMember[
 
 export function getBranchActivity(uuid: string): Promise<{ data: BranchActivity }> {
     return apiGet<{ data: BranchActivity }>(`/api/pos/branches/${uuid}/activity`);
+}
+
+/** LAUNCH-P5 B6 — the branch's shift-end reminder ("HH:MM", Muscat; null = off). */
+export function getShiftEndReminder(uuid: string): Promise<{ data: { shift_end_reminder_at: string | null } }> {
+    return apiGet<{ data: { shift_end_reminder_at: string | null } }>(`/api/pos/branches/${uuid}/shift-end-reminder`);
+}
+
+export function updateShiftEndReminder(uuid: string, time: string | null): Promise<{ data: { shift_end_reminder_at: string | null } }> {
+    return apiPut<{ data: { shift_end_reminder_at: string | null } }>(
+        `/api/pos/branches/${uuid}/shift-end-reminder`,
+        { shift_end_reminder_at: time },
+    );
 }

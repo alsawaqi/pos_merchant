@@ -8,6 +8,7 @@
  *   - staff assigned to the branch
  *   - admin-assigned devices (reused endpoint)
  *   - recent activity: orders (click → order drawer), shifts, movements
+ *   - LAUNCH-P5 B6: the shift-end reminder time (branches.update edits it)
  *
  * Each section is permission-gated to match the server, so a user
  * without catalogue/pos_staff/reports view just doesn't see it.
@@ -18,7 +19,7 @@ import { useRoute, RouterLink } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import {
     ArrowLeft, Package, Users, MonitorSmartphone, Receipt, Clock, Boxes, Activity,
-    Plus, UserPlus, TrendingUp, ChefHat,
+    Plus, UserPlus, TrendingUp, ChefHat, BellRing,
 } from 'lucide-vue-next';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import OrderDetailDrawer from '@/Pages/Merchant/Orders/components/OrderDetailDrawer.vue';
@@ -32,6 +33,7 @@ import BranchAddStockDialog from '@/Pages/Merchant/Branches/components/BranchAdd
 import BranchAssignStaffDialog from '@/Pages/Merchant/Branches/components/BranchAssignStaffDialog.vue';
 import {
     showMerchantBranch, getBranchProducts, getBranchStaff, getBranchActivity, listBranchDevices,
+    getShiftEndReminder, updateShiftEndReminder,
     type MerchantBranch, type BranchProductRow, type BranchStaffMember, type BranchActivity, type BranchDevice,
 } from '@/lib/api/branches';
 import { ApiError } from '@/lib/api';
@@ -40,6 +42,7 @@ import { usePermissions } from '@/composables/usePermissions';
 import { canMarkSoldOut, MerchantPermission } from '@/lib/permissions';
 import { setProductSoldOut } from '@/lib/api/catalogue';
 import { isBelowZero } from '@/lib/stockFlags';
+import { normalizeReminder } from '@/lib/shiftReminder';
 
 const route = useRoute();
 const { t } = useI18n();
@@ -84,6 +87,49 @@ async function toggleSoldOut(p: BranchProductRow): Promise<void> {
         soldOutError.value = err instanceof ApiError && err.status === 403 ? t('sold_out.not_allowed') : t('sold_out.save_failed');
     } finally {
         soldOutBusy.value = null;
+    }
+}
+
+// LAUNCH-P5 B6 — shift-end reminder: at this time (Muscat), while a person's
+// shift is open, the till and handheld remind them every 15 minutes until
+// they close it. Blank = off.
+const reminderTime = ref<string>('');
+const reminderLoaded = ref(false);
+const reminderSaving = ref(false);
+const reminderMessage = ref<string | null>(null);
+const reminderError = ref<string | null>(null);
+
+async function loadReminder(): Promise<void> {
+    try {
+        const res = await getShiftEndReminder(uuid);
+        reminderTime.value = res.data.shift_end_reminder_at ?? '';
+        reminderLoaded.value = true;
+    } catch {
+        reminderLoaded.value = false;
+    }
+}
+
+async function saveReminder(): Promise<void> {
+    const time = normalizeReminder(reminderTime.value);
+    reminderMessage.value = null;
+    reminderError.value = null;
+    if (time === undefined) {
+        reminderError.value = t('branches.show.shift_reminder.invalid');
+        return;
+    }
+    reminderSaving.value = true;
+    try {
+        const res = await updateShiftEndReminder(uuid, time);
+        reminderTime.value = res.data.shift_end_reminder_at ?? '';
+        reminderMessage.value = res.data.shift_end_reminder_at
+            ? t('branches.show.shift_reminder.saved', { time: res.data.shift_end_reminder_at })
+            : t('branches.show.shift_reminder.saved_off');
+    } catch (err) {
+        reminderError.value = err instanceof ApiError && err.status === 403
+            ? t('branches.show.shift_reminder.not_allowed')
+            : t('branches.show.shift_reminder.save_failed');
+    } finally {
+        reminderSaving.value = false;
     }
 }
 
@@ -190,6 +236,7 @@ onMounted(() => {
     if (canCatalogue) void safe(() => getBranchProducts(uuid), products);
     if (canStaff) void safe(() => getBranchStaff(uuid), staff);
     if (canReports) void safe(() => getBranchActivity(uuid), activity);
+    void loadReminder();
 });
 </script>
 
@@ -426,11 +473,57 @@ onMounted(() => {
                             <div>
                                 <p class="text-sm font-semibold text-slate-900">{{ s.name }}</p>
                                 <p class="text-xs capitalize text-slate-500">{{ humanize(s.position) }}<span v-if="s.phone"> · {{ s.phone }}</span></p>
+                                <p v-if="branch && s.branch && s.branch.id !== branch.id" class="text-xs text-slate-500" data-test="staff-home-elsewhere">
+                                    {{ t('branches.show.home_elsewhere', { name: s.branch.name ?? '—' }) }}
+                                </p>
                             </div>
                             <span class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize" :class="s.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'">{{ humanize(s.status) }}</span>
                         </li>
                     </ul>
                     <div v-else class="p-6 text-center text-sm text-slate-400">{{ t('branches.show.no_staff') }}</div>
+                </section>
+
+                <!-- LAUNCH-P5 B6 — shift-end reminder -->
+                <section v-if="reminderLoaded" class="rounded-2xl border border-slate-200 bg-white shadow-sm" data-test="shift-reminder">
+                    <h2 class="flex items-center gap-2 border-b border-slate-200 px-5 py-3 text-base font-semibold text-slate-950">
+                        <BellRing class="size-4 text-slate-500" />{{ t('branches.show.shift_reminder.title') }}
+                    </h2>
+                    <div class="space-y-3 p-5">
+                        <p class="text-sm text-slate-600">{{ t('branches.show.shift_reminder.help') }}</p>
+                        <div class="flex flex-wrap items-center gap-3">
+                            <input
+                                v-model="reminderTime"
+                                type="time"
+                                step="60"
+                                :disabled="!canManageBranch || reminderSaving"
+                                data-test="shift-reminder-time"
+                                class="rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100 disabled:bg-slate-50"
+                            >
+                            <span v-if="!reminderTime" class="text-xs font-semibold uppercase text-slate-400">{{ t('branches.show.shift_reminder.off') }}</span>
+                            <button
+                                v-if="canManageBranch"
+                                type="button"
+                                class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:opacity-60"
+                                :disabled="reminderSaving"
+                                data-test="shift-reminder-save"
+                                @click="saveReminder"
+                            >
+                                {{ reminderSaving ? t('common.saving') : t('common.save') }}
+                            </button>
+                            <button
+                                v-if="canManageBranch && reminderTime"
+                                type="button"
+                                class="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                                :disabled="reminderSaving"
+                                @click="reminderTime = ''"
+                            >
+                                {{ t('branches.show.shift_reminder.clear') }}
+                            </button>
+                        </div>
+                        <p class="text-xs text-slate-500">{{ t('branches.show.shift_reminder.timezone') }}</p>
+                        <p v-if="reminderMessage" class="text-sm text-emerald-700">{{ reminderMessage }}</p>
+                        <p v-if="reminderError" class="text-sm text-rose-600">{{ reminderError }}</p>
+                    </div>
                 </section>
 
                 <!-- Devices (reused endpoint) -->
