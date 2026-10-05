@@ -10,6 +10,7 @@ use App\Enums\ProductStatus;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\User;
+use App\Support\Catalogue\MenuExtras;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -103,6 +104,11 @@ final readonly class CreateProductAction
                 'sold_on_delivery' => (bool) ($attributes['sold_on_delivery'] ?? true),
                 'branch_scope' => $attributes['branch_scope'] ?? Product::SCOPE_ALL,
                 'product_type' => $attributes['product_type'] ?? Product::TYPE_STANDARD,
+                // LAUNCH review add-on — limited-time dates (NULL = no
+                // bound) and the cooking time (NULL = not set).
+                'on_sale_from' => MenuExtras::day($attributes['on_sale_from'] ?? null),
+                'on_sale_until' => MenuExtras::day($attributes['on_sale_until'] ?? null),
+                'cooking_minutes' => MenuExtras::minutes($attributes['cooking_minutes'] ?? null),
             ]);
 
             $this->writeAuditLog->handle(new AuditLogData(
@@ -117,7 +123,12 @@ final readonly class CreateProductAction
                     'sku' => $product->sku,
                     'base_price' => (string) $product->base_price,
                     'tax_rate' => $product->tax_rate !== null ? (string) $product->tax_rate : null,
-                ],
+                ] + array_filter([
+                    // LAUNCH review add-on — recorded when set.
+                    'on_sale_from' => $product->on_sale_from,
+                    'on_sale_until' => $product->on_sale_until,
+                    'cooking_minutes' => $product->cooking_minutes,
+                ], static fn ($value): bool => $value !== null),
             ));
 
             return $product;

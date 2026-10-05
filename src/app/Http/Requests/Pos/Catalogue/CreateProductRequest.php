@@ -6,6 +6,7 @@ namespace App\Http\Requests\Pos\Catalogue;
 
 use App\Models\Product;
 use App\Models\ProductCategory;
+use App\Support\Catalogue\MenuExtras;
 use App\Support\MerchantTenantContext;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
@@ -73,7 +74,19 @@ class CreateProductRequest extends FormRequest
             'available_from' => ['nullable', 'string', 'regex:/^[0-2]\d:[0-5]\d(:[0-5]\d)?$/'],
             'available_until' => ['nullable', 'string', 'regex:/^[0-2]\d:[0-5]\d(:[0-5]\d)?$/'],
             'display_order' => ['nullable', 'integer', 'between:0,999'],
+            // LAUNCH review add-on — limited-time dates and cooking time.
+            ...MenuExtras::productRules(),
         ];
+    }
+
+    /**
+     * LAUNCH review add-on — "Until" on or after "From".
+     *
+     * @return list<callable>
+     */
+    public function after(): array
+    {
+        return [fn (Validator $v) => MenuExtras::checkDates($v, $this->input('on_sale_from'), $this->input('on_sale_until'), 'on_sale_until')];
     }
 
     public function withValidator(Validator $validator): void

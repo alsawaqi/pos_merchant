@@ -6,6 +6,7 @@ namespace App\Actions\Pos\Catalogue;
 
 use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
+use App\Enums\AddOnSelectionMode;
 use App\Models\AddOnGroup;
 use App\Models\ProductCategory;
 use App\Models\User;
@@ -33,6 +34,9 @@ final readonly class UpdateAddOnGroupAction
         'is_global',
         'display_order',
         'status',
+        // LAUNCH review add-on — Extras or Quick instructions (the request
+        // refuses a product's own group and options that do not fit).
+        'kind',
     ];
 
     public function __construct(
@@ -54,6 +58,16 @@ final readonly class UpdateAddOnGroupAction
         // become global (it would then apply to every product).
         if ($group->owner_product_id !== null && (bool) ($attributes['is_global'] ?? false)) {
             throw new RuntimeException('A product-specific add-on group cannot be made global.');
+        }
+
+        // LAUNCH review add-on — a Remove list is managed from the recipe;
+        // Quick instructions are several-choice and never required.
+        if ($group->isRemoveGroup() || ($attributes['kind'] ?? null) === AddOnGroup::KIND_REMOVE) {
+            throw new RuntimeException('A Remove list follows the product\'s recipe ("Can be removed").');
+        }
+        if (($attributes['kind'] ?? $group->kindValue()) === AddOnGroup::KIND_INSTRUCTIONS) {
+            $attributes['selection_mode'] = AddOnSelectionMode::Multi->value;
+            $attributes['min_selections'] = null;
         }
 
         return DB::transaction(function () use ($group, $attributes, $actor, $companyId): AddOnGroup {

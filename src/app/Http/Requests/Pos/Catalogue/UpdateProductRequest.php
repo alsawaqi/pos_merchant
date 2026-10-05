@@ -7,6 +7,7 @@ namespace App\Http\Requests\Pos\Catalogue;
 use App\Enums\ProductStatus;
 use App\Models\Product;
 use App\Models\ProductCategory;
+use App\Support\Catalogue\MenuExtras;
 use App\Support\MerchantTenantContext;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -57,7 +58,26 @@ class UpdateProductRequest extends FormRequest
             'available_until' => ['sometimes', 'nullable', 'string', 'regex:/^[0-2]\d:[0-5]\d(:[0-5]\d)?$/'],
             'display_order' => ['sometimes', 'integer', 'between:0,999'],
             'status' => ['sometimes', 'string', Rule::in(ProductStatus::values())],
+            // LAUNCH review add-on — limited-time dates and cooking time.
+            ...MenuExtras::productRules(partial: true),
         ];
+    }
+
+    /**
+     * LAUNCH review add-on — "Until" on or after "From", against the merged
+     * (PATCH) state: a date not sent keeps its saved value.
+     *
+     * @return list<callable>
+     */
+    public function after(): array
+    {
+        return [function (Validator $v): void {
+            /** @var Product|null $current */
+            $current = $this->route('product');
+            $from = $this->has('on_sale_from') ? $this->input('on_sale_from') : $current?->on_sale_from;
+            $until = $this->has('on_sale_until') ? $this->input('on_sale_until') : $current?->on_sale_until;
+            MenuExtras::checkDates($v, $from, $until, $this->has('on_sale_until') ? 'on_sale_until' : 'on_sale_from');
+        }];
     }
 
     public function withValidator(Validator $validator): void

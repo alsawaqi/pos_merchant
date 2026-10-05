@@ -12,6 +12,7 @@ use App\Models\ComboSlotOption;
 use App\Models\DeliveryProvider;
 use App\Models\Product;
 use App\Models\User;
+use App\Support\Catalogue\MenuExtras;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -72,6 +73,14 @@ final readonly class SaveComboAction
             ];
             if (array_key_exists('display_order', $data) && $data['display_order'] !== null) {
                 $fields['display_order'] = (int) $data['display_order'];
+            }
+            // LAUNCH review add-on — limited-time dates and the combo's own
+            // cooking time; a payload without the key (an older open tab)
+            // keeps what is saved.
+            foreach (['on_sale_from', 'on_sale_until', 'cooking_minutes'] as $field) {
+                if (array_key_exists($field, $data)) {
+                    $fields[$field] = $field === 'cooking_minutes' ? MenuExtras::minutes($data[$field]) : MenuExtras::day($data[$field]);
+                }
             }
 
             if ($combo === null) {
@@ -137,6 +146,25 @@ final readonly class SaveComboAction
         $existing = ComboSlot::query()->where('combo_product_id', $combo->id)->get()->keyBy('id');
         $keep = [];
 
+        // LAUNCH review add-on — one main per combo (a partial unique index):
+        // clear the main flag of every saved slot that is no longer the main
+        // BEFORE another slot takes it.
+        // A payload without any is_main key (an older open tab) keeps the
+        // saved main.
+        $sendsMain = false;
+        $mainIds = [];
+        foreach ($slots as $slotData) {
+            $sendsMain = $sendsMain || array_key_exists('is_main', $slotData);
+            if (! empty($slotData['is_main']) && isset($slotData['id'])) {
+                $mainIds[] = (int) $slotData['id'];
+            }
+        }
+        foreach ($existing as $slot) {
+            if ($sendsMain && $slot->is_main && ! in_array((int) $slot->id, $mainIds, true)) {
+                $slot->forceFill(['is_main' => false])->save();
+            }
+        }
+
         foreach (array_values($slots) as $sort => $slotData) {
             $attributes = [
                 'name' => trim((string) $slotData['name']),
@@ -145,6 +173,9 @@ final readonly class SaveComboAction
                 'max_choices' => (int) $slotData['max_choices'],
                 'sort_order' => $sort,
             ];
+            if ($sendsMain) {
+                $attributes['is_main'] = ! empty($slotData['is_main']);
+            }
             $id = isset($slotData['id']) ? (int) $slotData['id'] : null;
             $slot = $id !== null ? $existing->get($id) : null;
             if ($slot === null) {
@@ -218,6 +249,9 @@ final readonly class SaveComboAction
                 'name_ar' => $slot->name_ar,
                 'min' => (int) $slot->min_choices,
                 'max' => (int) $slot->max_choices,
+                // LAUNCH review add-on — a main change audits and moves the
+                // combo's updated_at (devices re-read it by delta).
+                'is_main' => (bool) $slot->is_main,
                 'options' => $slot->options->map(static fn (ComboSlotOption $o): array => [
                     'product_id' => (int) $o->product_id,
                     'extra_price' => (string) $o->extra_price,

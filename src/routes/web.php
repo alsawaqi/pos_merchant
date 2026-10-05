@@ -47,6 +47,7 @@ use App\Http\Controllers\Pos\PortalMessagesController;
 use App\Http\Controllers\Pos\PosStaffController;
 use App\Http\Controllers\Pos\PrepItemsController;
 use App\Http\Controllers\Pos\ProductionsController;
+use App\Http\Controllers\Pos\ProductRemovableController;
 use App\Http\Controllers\Pos\ProductsController;
 use App\Http\Controllers\Pos\ProductStockController;
 use App\Http\Controllers\Pos\PurchaseReceiptController;
@@ -427,6 +428,13 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // LAUNCH-P3 P3-2 — the recipe's visible history (catalogue.view).
         Route::get('products/{product:uuid}/recipe-history', [ProductsController::class, 'recipeHistory'])
             ->name('products.recipe-history');
+        // LAUNCH review add-on — "Can be removed" on the recipe lines (the
+        // product's own Remove list): read on catalogue.view, save on
+        // catalogue.manage.
+        Route::get('products/{product:uuid}/removable', [ProductRemovableController::class, 'show'])
+            ->name('products.removable.show');
+        Route::put('products/{product:uuid}/removable', [ProductRemovableController::class, 'update'])
+            ->name('products.removable.update');
 
         // P-G2 — physical-item components (cups/lids consumed per unit
         // sold). Same idempotent full-replace shape as the recipe;

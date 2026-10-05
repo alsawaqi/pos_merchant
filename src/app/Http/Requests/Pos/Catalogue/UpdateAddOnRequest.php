@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Pos\Catalogue;
 
+use App\Models\AddOn;
+use App\Models\AddOnGroup;
+use App\Support\Catalogue\AddOnKindRules;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 class UpdateAddOnRequest extends FormRequest
 {
@@ -27,5 +31,20 @@ class UpdateAddOnRequest extends FormRequest
             // PD3b — key present (even []) replaces the stock-usage
             // lines; absent leaves them untouched.
         ] + CreateAddOnRequest::consumptionRules();
+    }
+
+    /**
+     * LAUNCH review add-on — an option of a Quick instructions group is free,
+     * uses no stock and sells no linked product.
+     *
+     * @return list<callable>
+     */
+    public function after(): array
+    {
+        return [function (Validator $v): void {
+            $addon = $this->route('addon');
+            $group = $addon instanceof AddOn ? AddOnGroup::query()->withTrashed()->find($addon->add_on_group_id) : null;
+            AddOnKindRules::checkOption($v, $group, $this->all());
+        }];
     }
 }

@@ -47,6 +47,10 @@ class AddOnsController extends Controller
     {
         $this->ensure($request, MerchantPermission::CatalogueManage);
         $this->refuseIfGroupNotInTenant($addonGroup);
+        // LAUNCH review add-on — a Remove list follows the recipe.
+        if ($addonGroup->isRemoveGroup()) {
+            return AddOnGroupsController::removeGroupRefusal();
+        }
 
         try {
             $addon = $this->create->handle($addonGroup, $request->validated(), $request->user());
@@ -70,6 +74,9 @@ class AddOnsController extends Controller
             abort(403);
         }
         $this->refuseIfNotInTenant($addon);
+        if (self::inRemoveGroup($addon)) {
+            return AddOnGroupsController::removeGroupRefusal();
+        }
 
         try {
             $updated = $this->update->handle($addon, $request->validated(), $request->user());
@@ -85,10 +92,21 @@ class AddOnsController extends Controller
     {
         $this->ensure($request, MerchantPermission::CatalogueManage);
         $this->refuseIfNotInTenant($addon);
+        if (self::inRemoveGroup($addon)) {
+            return AddOnGroupsController::removeGroupRefusal();
+        }
 
         $this->delete->handle($addon, $request->user());
 
         return response()->json(['data' => null], 204);
+    }
+
+    /** LAUNCH review add-on — an option of a product's Remove list. */
+    private static function inRemoveGroup(AddOn $addon): bool
+    {
+        $group = AddOnGroup::query()->withTrashed()->find($addon->add_on_group_id);
+
+        return $group !== null && $group->isRemoveGroup();
     }
 
     private function ensure(Request $request, MerchantPermission $permission): void

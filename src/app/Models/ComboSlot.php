@@ -28,6 +28,9 @@ use Illuminate\Support\Str;
     'min_choices',
     'max_choices',
     'sort_order',
+    // LAUNCH review add-on — the slot offered as "Make it a meal?" (at
+    // most one per combo, only on a slot with min = max = 1).
+    'is_main',
 ])]
 class ComboSlot extends Model
 {
@@ -44,6 +47,7 @@ class ComboSlot extends Model
             'min_choices' => 'integer',
             'max_choices' => 'integer',
             'sort_order' => 'integer',
+            'is_main' => 'boolean',
         ];
     }
 

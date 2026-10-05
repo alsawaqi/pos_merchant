@@ -70,6 +70,7 @@ final readonly class UpdateProductRecipeAction
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
         private RecipeQuantity $quantities,
+        private SyncRemovableIngredientsAction $removable,
     ) {}
 
     /**
@@ -176,6 +177,14 @@ final readonly class UpdateProductRecipeAction
             // gating availability on the stale recipe until their next full
             // sync.
             $product->touch();
+
+            // LAUNCH review add-on — a deleted recipe line can no longer be
+            // removed: retire its "NO …" option (the others stay).
+            $this->removable->retireDroppedLines(
+                $product,
+                array_map(static fn (array $line): int => (int) $line['ingredient']->id, $resolved),
+                $actor,
+            );
 
             // Step 3: audit row — counts + ids (as before) and, since
             // LAUNCH-P3, every line change in the entered unit + the note.

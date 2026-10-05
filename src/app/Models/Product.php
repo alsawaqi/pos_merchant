@@ -85,6 +85,12 @@ use Illuminate\Support\Str;
     'sold_on_delivery',
     'branch_scope',
     'description_ar',
+    // LAUNCH review add-on — limited-time dates ('YYYY-MM-DD', inclusive,
+    // Asia/Muscat; NULL = no bound) and the cooking time in minutes
+    // (0..240, NULL = not set).
+    'on_sale_from',
+    'on_sale_until',
+    'cooking_minutes',
 ])]
 class Product extends Model
 {
@@ -116,6 +122,9 @@ class Product extends Model
             'is_internal' => 'boolean',
             'sold_in_store' => 'boolean',
             'sold_on_delivery' => 'boolean',
+            // LAUNCH review add-on. The two dates stay plain 'YYYY-MM-DD'
+            // strings (no date cast: they are calendar days, not instants).
+            'cooking_minutes' => 'integer',
         ];
     }
 

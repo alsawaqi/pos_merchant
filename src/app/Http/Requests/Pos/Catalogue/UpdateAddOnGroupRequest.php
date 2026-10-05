@@ -7,6 +7,7 @@ namespace App\Http\Requests\Pos\Catalogue;
 use App\Enums\AddOnSelectionMode;
 use App\Models\AddOnGroup;
 use App\Models\ProductCategory;
+use App\Support\Catalogue\AddOnKindRules;
 use App\Support\MerchantTenantContext;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -34,7 +35,43 @@ class UpdateAddOnGroupRequest extends FormRequest
             // Phase B — full-list category binding sync.
             'category_ids' => ['sometimes', 'array', 'max:100'],
             'category_ids.*' => ['integer', 'min:1'],
+            // LAUNCH review add-on — Extras or Quick instructions.
+            'kind' => ['sometimes', 'string', Rule::in(AddOnKindRules::EDITABLE_KINDS)],
         ];
+    }
+
+    /**
+     * LAUNCH review add-on — the kind against the merged (PATCH) state: a
+     * product's own group stays Extras; Quick instructions are several-choice,
+     * never required, and every option has price 0, no stock and no linked
+     * product (a group turned into Quick instructions must already be so).
+     *
+     * @return list<callable>
+     */
+    public function after(): array
+    {
+        return [function (Validator $v): void {
+            /** @var AddOnGroup|null $current */
+            $current = $this->route('addonGroup');
+            if ($current === null) {
+                return;
+            }
+            $kind = $this->has('kind') ? (string) $this->input('kind') : $current->kindValue();
+            if ($this->has('kind') && $kind !== $current->kindValue() && $current->owner_product_id !== null) {
+                $v->errors()->add('kind', 'A product\'s own add-on group is an Extras group.');
+            }
+            // Only what is sent is checked: the action makes a group that
+            // becomes Quick instructions several-choice and not required.
+            AddOnKindRules::checkGroupShape(
+                $v,
+                $kind,
+                $this->has('selection_mode') ? $this->input('selection_mode') : null,
+                $this->has('min_selections') ? $this->input('min_selections') : null,
+            );
+            if ($kind === AddOnGroup::KIND_INSTRUCTIONS && ! $current->isInstructionsGroup()) {
+                AddOnKindRules::checkOptionsFitInstructions($v, $current);
+            }
+        }];
     }
 
     public function withValidator(Validator $validator): void

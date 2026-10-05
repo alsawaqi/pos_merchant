@@ -9,6 +9,7 @@ use App\Data\Security\AuditLogData;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\User;
+use App\Support\Catalogue\MenuExtras;
 use App\Support\MerchantTenantContext;
 use App\Support\Recipes\RecipeEditGate;
 use Illuminate\Support\Facades\DB;
@@ -67,7 +68,15 @@ final readonly class UpdateProductAction
         'description_ar',
         'sold_in_store',
         'sold_on_delivery',
+        // LAUNCH review add-on — limited-time dates and the cooking time
+        // (compared strictly: 0 minutes is not "not set").
+        'on_sale_from',
+        'on_sale_until',
+        'cooking_minutes',
     ];
+
+    /** LAUNCH review add-on — nullable fields where null and 0 / '' differ. */
+    private const STRICT_FIELDS = ['on_sale_from', 'on_sale_until', 'cooking_minutes'];
 
     /** The stock modes whose products carry a recipe (consumed at sale / at production). */
     private const RECIPE_MODES = ['ingredient', 'cooked'];
@@ -140,6 +149,10 @@ final readonly class UpdateProductAction
                 // comparison.
                 if (in_array($field, ['base_price', 'delivery_price', 'low_stock_threshold', 'cost_price', 'tax_rate'], true)) {
                     $sameValue = (string) $oldComparable === (string) $newValue;
+                } elseif (in_array($field, self::STRICT_FIELDS, true)) {
+                    $newValue = $field === 'cooking_minutes' ? MenuExtras::minutes($newValue) : MenuExtras::day($newValue);
+                    $sameValue = $oldComparable === $newValue
+                        || ($oldComparable !== null && $newValue !== null && (string) $oldComparable === (string) $newValue);
                 } else {
                     $sameValue = $oldComparable == $newValue;
                 }
