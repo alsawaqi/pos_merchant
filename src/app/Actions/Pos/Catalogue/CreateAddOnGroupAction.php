@@ -27,6 +27,7 @@ final readonly class CreateAddOnGroupAction
     public function __construct(
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
+        private SyncRemovableIngredientsAction $removable,
     ) {}
 
     /**
@@ -44,11 +45,28 @@ final readonly class CreateAddOnGroupAction
         // /device/config add-on group ids — no device/api change needed.
         $ownerProductId = $attributes['owner_product_id'] ?? null;
 
-        return DB::transaction(function () use ($attributes, $actor, $companyId, $ownerProductId): AddOnGroup {
+        // LAUNCH review add-on — Extras (default) or Quick instructions
+        // (several-choice, never required). A product's own group is Extras.
+        $kind = $ownerProductId === null && ($attributes['kind'] ?? null) === AddOnGroup::KIND_INSTRUCTIONS
+            ? AddOnGroup::KIND_INSTRUCTIONS
+            : AddOnGroup::KIND_EXTRAS;
+        if ($kind === AddOnGroup::KIND_INSTRUCTIONS) {
+            $attributes['selection_mode'] = AddOnSelectionMode::Multi->value;
+            $attributes['min_selections'] = null;
+        }
+
+        return DB::transaction(function () use ($attributes, $actor, $companyId, $ownerProductId, $kind): AddOnGroup {
+            // Fix order C-1, L3 — the product's hidden Remove list gives up
+            // the name the merchant picks (owned names are unique per product).
+            if ($ownerProductId !== null) {
+                $this->removable->yieldName($companyId, (int) $ownerProductId, (string) $attributes['name'], $actor);
+            }
+
             /** @var AddOnGroup $group */
             $group = AddOnGroup::query()->create([
                 'company_id' => $companyId,
                 'owner_product_id' => $ownerProductId,
+                'kind' => $kind,
                 'name' => $attributes['name'],
                 'name_ar' => $attributes['name_ar'] ?? null,
                 'selection_mode' => $attributes['selection_mode'] ?? AddOnSelectionMode::Single->value,
@@ -89,6 +107,7 @@ final readonly class CreateAddOnGroupAction
                     'name' => $group->name,
                     'selection_mode' => $group->selection_mode->value,
                     'is_global' => $group->is_global,
+                    'kind' => $kind,
                 ],
             ));
 

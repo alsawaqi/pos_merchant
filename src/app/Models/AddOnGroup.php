@@ -43,6 +43,8 @@ use Illuminate\Support\Str;
     'is_global',
     'display_order',
     'status',
+    // LAUNCH review add-on — 'extras' | 'remove' | 'instructions'.
+    'kind',
 ])]
 class AddOnGroup extends Model
 {
@@ -50,6 +52,37 @@ class AddOnGroup extends Model
     use BelongsToCompany, HasFactory, SoftDeletes;
 
     protected $table = 'pos_addon_groups';
+
+    /**
+     * LAUNCH review add-on — the group kinds (pos_addon_groups.kind):
+     *   - extras: today's groups (priced options, stock, linked products);
+     *   - remove: ONE per product, owned by it and managed only from its
+     *     recipe step ("Can be removed"); each option names the recipe
+     *     ingredient it leaves out (removes_ingredient_id), price 0;
+     *   - instructions: a tap list ("Well done", "Less spicy"), price 0, no
+     *     stock, no linked product, never required, several may be picked.
+     */
+    public const KIND_EXTRAS = 'extras';
+
+    public const KIND_REMOVE = 'remove';
+
+    public const KIND_INSTRUCTIONS = 'instructions';
+
+    /** The kind, with a row saved before the column existed read as extras. */
+    public function kindValue(): string
+    {
+        return (string) ($this->kind ?? self::KIND_EXTRAS);
+    }
+
+    public function isRemoveGroup(): bool
+    {
+        return $this->kindValue() === self::KIND_REMOVE;
+    }
+
+    public function isInstructionsGroup(): bool
+    {
+        return $this->kindValue() === self::KIND_INSTRUCTIONS;
+    }
 
     /**
      * @return array<string, string>
@@ -103,7 +136,12 @@ class AddOnGroup extends Model
             ->where('name', $name);
 
         if ($ownerProductId !== null) {
-            $query->where('owner_product_id', $ownerProductId);
+            // Fix order C-1, L3 — the product's hidden Remove list (managed
+            // from its recipe) never blocks a name the merchant picks: it
+            // moves to a free name instead
+            // (SyncRemovableIngredientsAction::yieldName).
+            $query->where('owner_product_id', $ownerProductId)
+                ->where('kind', '!=', self::KIND_REMOVE);
         } else {
             $query->whereNull('owner_product_id');
         }

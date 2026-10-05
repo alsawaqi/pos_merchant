@@ -430,7 +430,7 @@ class ProductsController extends Controller
             ->where('product_type', Product::TYPE_STANDARD)
             ->orderBy('name')
             ->limit(500)
-            ->get(['uuid', 'name', 'name_ar', 'stock_mode', 'base_price', 'status'])
+            ->get(['uuid', 'name', 'name_ar', 'stock_mode', 'base_price', 'status', 'on_sale_from', 'on_sale_until', 'cooking_minutes'])
             ->map(static fn (Product $p): array => [
                 'uuid' => $p->uuid,
                 'name' => $p->name,
@@ -438,6 +438,11 @@ class ProductsController extends Controller
                 'stock_mode' => $p->stock_mode,
                 'base_price' => (string) $p->base_price,
                 'status' => $p->status?->value,
+                // LAUNCH review add-on — the combo editor warns when every
+                // item of a required slot has sale dates.
+                'on_sale_from' => $p->on_sale_from,
+                'on_sale_until' => $p->on_sale_until,
+                'cooking_minutes' => $p->cooking_minutes,
             ]);
 
         return response()->json(['data' => $options]);
@@ -624,6 +629,9 @@ class ProductsController extends Controller
         $groups = AddOnGroup::query()
             ->where('company_id', $this->tenant->requiredId())
             ->where('owner_product_id', $product->id)
+            // LAUNCH review add-on — the Remove list follows the recipe
+            // ("Can be removed"); it is not one of the editable own groups.
+            ->where('kind', '!=', AddOnGroup::KIND_REMOVE)
             ->with(['addOns' => function ($q): void {
                 $q->orderBy('display_order')->orderBy('name');
             }])

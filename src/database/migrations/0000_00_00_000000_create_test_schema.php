@@ -306,6 +306,13 @@ return new class extends Migration
             $table->boolean('sold_on_delivery')->default(true);
             $table->string('branch_scope', 16)->default('all');
             $table->text('description_ar')->nullable();
+            // LAUNCH review add-on (pos_admin 2026_10_06_1000xx, migration
+            // 09): limited-time dates (DATE, both bounds inclusive, Asia/
+            // Muscat; NULL = no bound) and the cooking time in minutes
+            // (0..240, NULL = not set). CHECKs: triggers below.
+            $table->date('on_sale_from')->nullable();
+            $table->date('on_sale_until')->nullable();
+            $table->smallInteger('cooking_minutes')->nullable();
             $table->timestamps();
             $table->softDeletes();
             // Sqlite UNIQUE accepts multiple NULLs natively, so
@@ -323,6 +330,17 @@ return new class extends Migration
                 "CREATE TRIGGER pos_products_type_check_{$name} BEFORE {$event} ON pos_products ".
                 "WHEN NEW.product_type NOT IN ('standard', 'combo') OR NEW.branch_scope NOT IN ('all', 'selected') ".
                 "BEGIN SELECT RAISE(ABORT, 'CHECK constraint failed: pos_products product_type / branch_scope'); END"
+            );
+        }
+        // LAUNCH review add-on (migration 09): CHECK on_sale_until >=
+        // on_sale_from and cooking_minutes 0..240, as triggers (see above).
+        foreach (['INSERT', 'UPDATE'] as $event) {
+            $name = strtolower($event);
+            DB::statement(
+                "CREATE TRIGGER pos_products_menu_check_{$name} BEFORE {$event} ON pos_products ".
+                'WHEN (NEW.on_sale_from IS NOT NULL AND NEW.on_sale_until IS NOT NULL AND NEW.on_sale_until < NEW.on_sale_from) '.
+                'OR (NEW.cooking_minutes IS NOT NULL AND (NEW.cooking_minutes < 0 OR NEW.cooking_minutes > 240)) '.
+                "BEGIN SELECT RAISE(ABORT, 'CHECK constraint failed: pos_products on_sale dates / cooking_minutes'); END"
             );
         }
 
@@ -348,9 +366,21 @@ return new class extends Migration
             $table->boolean('is_global')->default(false);
             $table->unsignedSmallInteger('display_order')->default(0);
             $table->string('status', 32)->default('active');
+            // LAUNCH review add-on (migration 10): 'extras' (today's groups)
+            // | 'remove' (a product's own "NO …" list, managed from its
+            // recipe) | 'instructions' (price-0 tap list). CHECK: triggers.
+            $table->string('kind', 16)->default('extras');
             $table->timestamps();
             $table->softDeletes();
         });
+        foreach (['INSERT', 'UPDATE'] as $event) {
+            $name = strtolower($event);
+            DB::statement(
+                "CREATE TRIGGER pos_addon_groups_kind_check_{$name} BEFORE {$event} ON pos_addon_groups ".
+                "WHEN NEW.kind NOT IN ('extras', 'remove', 'instructions') ".
+                "BEGIN SELECT RAISE(ABORT, 'CHECK constraint failed: pos_addon_groups kind'); END"
+            );
+        }
         // LAUNCH-P4 M4 (pos_admin 2026_10_03_100009) — shared group names
         // unique per company among shared groups; a product's own group
         // names unique per owner product. No deleted_at filter: a
@@ -373,6 +403,11 @@ return new class extends Migration
             $table->string('ingredient_unit', 16)->nullable();
             // P-G3 — the add-on IS this product (consumes its real stock).
             $table->unsignedBigInteger('linked_product_id')->nullable();
+            // LAUNCH review add-on (migration 10): an option of a 'remove'
+            // group names the recipe ingredient it leaves out. No FK here
+            // (table-create order); the live column is an FK to
+            // pos_ingredients, nullOnDelete.
+            $table->unsignedBigInteger('removes_ingredient_id')->nullable();
             $table->unsignedSmallInteger('display_order')->default(0);
             $table->string('status', 32)->default('active');
             $table->timestamps();
@@ -1407,12 +1442,16 @@ return new class extends Migration
             min_choices integer not null default 1,
             max_choices integer not null default 1,
             sort_order integer not null default 0,
+            is_main tinyint(1) not null default 0,
             created_at datetime null,
             updated_at datetime null,
             CONSTRAINT pos_combo_slots_choices_check CHECK (min_choices >= 0 AND max_choices >= 1 AND max_choices >= min_choices)
         )');
         DB::statement('CREATE UNIQUE INDEX pos_combo_slots_uuid_unique ON pos_combo_slots (uuid)');
         DB::statement('CREATE INDEX pos_combo_slots_combo_idx ON pos_combo_slots (combo_product_id)');
+        // LAUNCH review add-on (migration 09): is_main marks the slot offered
+        // as "Make it a meal?"; at most one main per combo.
+        DB::statement('CREATE UNIQUE INDEX pos_combo_slots_one_main_unique ON pos_combo_slots (combo_product_id) WHERE is_main = 1');
 
         DB::statement('CREATE TABLE pos_combo_slot_options (
             id integer primary key autoincrement not null,
@@ -1575,6 +1614,9 @@ return new class extends Migration
             $table->foreignId('parent_order_item_id')->nullable()->constrained('pos_order_items')->cascadeOnDelete();
             $table->unsignedBigInteger('combo_slot_id')->nullable();
             $table->decimal('combo_extra_price', 12, 3)->default(0);
+            // LAUNCH review add-on (migration 09): pos_api's snapshot of the
+            // product's cooking time when the line was written (NULL = not set).
+            $table->smallInteger('cooking_minutes')->nullable();
             $table->timestamps();
         });
 

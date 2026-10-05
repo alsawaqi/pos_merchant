@@ -33,6 +33,9 @@ class AddOnResource extends JsonResource
             // P-G3 — the real product behind this option (null = classic
             // label-only add-on). Inlined when linkedProduct is loaded.
             'linked_product_id' => $this->linked_product_id !== null ? (int) $this->linked_product_id : null,
+            // LAUNCH review add-on — an option of a Remove list: the recipe
+            // ingredient it leaves out.
+            'removes_ingredient_id' => $this->removes_ingredient_id !== null ? (int) $this->removes_ingredient_id : null,
             'linked_product' => $this->whenLoaded('linkedProduct', fn (): ?array => $this->linkedProduct === null ? null : [
                 'uuid' => $this->linkedProduct->uuid,
                 'name' => $this->linkedProduct->name,

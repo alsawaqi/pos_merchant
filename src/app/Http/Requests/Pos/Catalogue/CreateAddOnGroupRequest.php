@@ -8,6 +8,7 @@ use App\Enums\AddOnSelectionMode;
 use App\Models\AddOnGroup;
 use App\Models\Product;
 use App\Models\ProductCategory;
+use App\Support\Catalogue\AddOnKindRules;
 use App\Support\MerchantTenantContext;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -40,7 +41,27 @@ class CreateAddOnGroupRequest extends FormRequest
             // Phase B — category-level bindings (tenant-checked below).
             'category_ids' => ['nullable', 'array', 'max:100'],
             'category_ids.*' => ['integer', 'min:1'],
+            // LAUNCH review add-on — Extras (today's groups) or Quick
+            // instructions. A Remove list is made only by the recipe step.
+            'kind' => ['nullable', 'string', Rule::in(AddOnKindRules::EDITABLE_KINDS)],
         ];
+    }
+
+    /**
+     * LAUNCH review add-on — a product's own group is an Extras group; Quick
+     * instructions are several-choice and never required.
+     *
+     * @return list<callable>
+     */
+    public function after(): array
+    {
+        return [function (Validator $v): void {
+            $kind = (string) ($this->input('kind') ?? AddOnGroup::KIND_EXTRAS);
+            if ($kind !== AddOnGroup::KIND_EXTRAS && $this->route('product') instanceof Product) {
+                $v->errors()->add('kind', 'A product\'s own add-on group is an Extras group: bind Quick instructions from the Add-ons tab.');
+            }
+            AddOnKindRules::checkGroupShape($v, $kind, $this->input('selection_mode'), $this->input('min_selections'));
+        }];
     }
 
     public function withValidator(Validator $validator): void

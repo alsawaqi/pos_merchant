@@ -43,6 +43,9 @@ use Illuminate\Support\Str;
     'ingredient_unit',
     // P-G3 — the add-on IS this product (consumes its real stock).
     'linked_product_id',
+    // LAUNCH review add-on — an option of a 'remove' group: the recipe
+    // ingredient it leaves out ("NO Ketchup").
+    'removes_ingredient_id',
     'display_order',
     'status',
 ])]

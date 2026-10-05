@@ -32,6 +32,8 @@ class AddOnGroupResource extends JsonResource
             'is_global' => (bool) $this->is_global,
             // v2 #6: non-null = a group privately owned by this product.
             'owner_product_id' => $this->owner_product_id !== null ? (int) $this->owner_product_id : null,
+            // LAUNCH review add-on — 'extras' | 'remove' | 'instructions'.
+            'kind' => $this->resource->kindValue(),
             'display_order' => $this->display_order,
             'status' => $this->status,
             // products_count surfaces when the controller did

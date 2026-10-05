@@ -92,6 +92,12 @@ class ProductResource extends JsonResource
             // pos_discounts convention, evaluated on-device).
             'available_from' => $this->available_from,
             'available_until' => $this->available_until,
+            // LAUNCH review add-on — limited-time dates ('YYYY-MM-DD', both
+            // inclusive, Asia/Muscat; null = no bound) and the cooking time
+            // in minutes (null = not set).
+            'on_sale_from' => $this->on_sale_from,
+            'on_sale_until' => $this->on_sale_until,
+            'cooking_minutes' => $this->cooking_minutes !== null ? (int) $this->cooking_minutes : null,
             'display_order' => $this->display_order,
             'status' => $this->status?->value,
             // Phase 4.9 — attached add-on groups (product-specific,
@@ -153,6 +159,8 @@ class ProductResource extends JsonResource
                     'min_choices' => (int) $slot->min_choices,
                     'max_choices' => (int) $slot->max_choices,
                     'sort_order' => (int) $slot->sort_order,
+                    // LAUNCH review add-on — offered as "Make it a meal?".
+                    'is_main' => (bool) $slot->is_main,
                     'options' => $slot->options->map(static fn ($option): array => [
                         'product_uuid' => (string) $option->product?->uuid,
                         'product_name' => $option->product?->name,

@@ -8,6 +8,8 @@ use App\Enums\AddOnSelectionMode;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Support\BranchScope;
+use App\Support\Catalogue\MenuExtras;
+use App\Support\Catalogue\RemovableIngredients;
 use App\Support\MerchantTenantContext;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -90,6 +92,10 @@ class CreateProductWizardRequest extends FormRequest
             'recipe_lines.*.quantity' => ['required', 'numeric', 'gt:0', 'decimal:0,4', 'max:999999.999'],
             'recipe_lines.*.unit' => ['nullable', 'string', 'max:32'],
             'recipe_note' => ['nullable', 'string', 'max:1000'],
+            // LAUNCH review add-on — the recipe lines ticked "Can be
+            // removed" (the product's own Remove list), each with an
+            // optional customer label.
+            ...RemovableIngredients::rules('removable'),
 
             // Physical items (P-G2) — same shape as the standalone PUT.
             'component_lines' => ['present', 'array', 'max:50'],
@@ -228,5 +234,29 @@ class CreateProductWizardRequest extends FormRequest
                 $v->errors()->add("owned_groups.$i.min_selections", 'A single-choice group can require at most one selection.');
             }
         }
+    }
+
+    /**
+     * LAUNCH review add-on — the product's dates ("Until" on or after
+     * "From") and the "Can be removed" ticks (only lines of this recipe).
+     *
+     * @return list<callable>
+     */
+    public function after(): array
+    {
+        return [function (Validator $v): void {
+            MenuExtras::checkDates($v, $this->input('product.on_sale_from'), $this->input('product.on_sale_until'), 'product.on_sale_until');
+
+            $recipe = array_map(
+                static fn ($line): string => is_array($line) ? (string) ($line['ingredient_uuid'] ?? '') : '',
+                is_array($this->input('recipe_lines')) ? $this->input('recipe_lines') : [],
+            );
+            RemovableIngredients::checkAgainstRecipe($v, 'removable', $this->input('removable'), $recipe);
+            // Fix order C-1, L2 — no two "NO …" chips with the same text.
+            $companyId = app(MerchantTenantContext::class)->id();
+            if ($companyId !== null) {
+                RemovableIngredients::checkNames($v, 'removable', $this->input('removable'), (int) $companyId);
+            }
+        }];
     }
 }

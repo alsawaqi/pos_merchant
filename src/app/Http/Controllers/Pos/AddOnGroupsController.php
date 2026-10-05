@@ -87,6 +87,9 @@ class AddOnGroupsController extends Controller
     {
         $this->ensure($request, MerchantPermission::CatalogueManage);
         $this->refuseIfNotInTenant($addonGroup);
+        if ($addonGroup->isRemoveGroup()) {
+            return self::removeGroupRefusal();
+        }
 
         try {
             $updated = $this->update->handle($addonGroup, $request->validated(), $request->user());
@@ -101,6 +104,9 @@ class AddOnGroupsController extends Controller
     {
         $this->ensure($request, MerchantPermission::CatalogueManage);
         $this->refuseIfNotInTenant($addonGroup);
+        if ($addonGroup->isRemoveGroup()) {
+            return self::removeGroupRefusal();
+        }
 
         try {
             $this->delete->handle($addonGroup, $request->user());
@@ -109,6 +115,17 @@ class AddOnGroupsController extends Controller
         }
 
         return response()->json(['data' => null], 204);
+    }
+
+    /**
+     * LAUNCH review add-on — a product's Remove list follows its recipe
+     * ("Can be removed" on each line); the generic endpoints never edit it.
+     */
+    public static function removeGroupRefusal(): JsonResponse
+    {
+        return response()->json([
+            'message' => 'This Remove list follows the product\'s recipe: change it with "Can be removed" on the recipe lines.',
+        ], 422);
     }
 
     private function ensure(Request $request, MerchantPermission $permission): void

@@ -9,6 +9,7 @@ use App\Models\ComboSlot;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Support\BranchScope;
+use App\Support\Catalogue\MenuExtras;
 use App\Support\MerchantTenantContext;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -63,6 +64,9 @@ class SaveComboRequest extends FormRequest
             'available_until' => ['nullable', 'string', 'regex:/^[0-2]\d:[0-5]\d(:[0-5]\d)?$/'],
             'display_order' => ['nullable', 'integer', 'between:0,999'],
             'status' => [$isUpdate ? 'sometimes' : 'prohibited', 'string', Rule::in(ProductStatus::values())],
+            // LAUNCH review add-on — limited-time dates and the combo's own
+            // cooking time (else the menu shows its longest item's).
+            ...MenuExtras::productRules(),
 
             'slots' => ['required', 'array', 'min:1', 'max:10'],
             'slots.*.id' => ['nullable', 'integer'],
@@ -74,6 +78,8 @@ class SaveComboRequest extends FormRequest
             'slots.*.options.*.product_uuid' => ['required', 'string', 'uuid'],
             'slots.*.options.*.extra_price' => ['nullable', 'numeric', 'min:0', 'max:999.999', 'decimal:0,3'],
             'slots.*.options.*.is_default' => ['nullable', 'boolean'],
+            // LAUNCH review add-on — the slot offered as "Make it a meal?".
+            'slots.*.is_main' => ['nullable', 'boolean'],
 
             // Channels per provider (B3) and the branch rule (H6).
             'delivery_prices' => ['present', 'array', 'max:50'],
@@ -191,4 +197,63 @@ class SaveComboRequest extends FormRequest
             }
         }
     }
+
+    /**
+     * LAUNCH review add-on — the dates ("Until" on or after "From") and the
+     * main slot (tester call 15): at most one per combo, and only a slot
+     * where exactly one item is picked (min = max = 1), so "Make it a meal?"
+     * can pre-pick the tapped item. "Burgers, pick 4" is never a main.
+     *
+     * @return list<callable>
+     */
+    public function after(): array
+    {
+        return [function (Validator $v): void {
+            /** @var Product|null $combo */
+            $combo = $this->route('product');
+
+            // Fix order C-1, L1 — against the merged values: a date the
+            // payload leaves out keeps its saved value (SaveComboAction), so
+            // a lone "Until" before the saved "From" (or the reverse) is a
+            // 422, never the database CHECK.
+            $from = $this->has('on_sale_from') ? $this->input('on_sale_from') : $combo?->on_sale_from;
+            $until = $this->has('on_sale_until') ? $this->input('on_sale_until') : $combo?->on_sale_until;
+            MenuExtras::checkDates($v, $from, $until, $this->has('on_sale_until') ? 'on_sale_until' : 'on_sale_from');
+
+            // Fix order C-1, M3 — the main after this save: the flags sent,
+            // or, when no slot sends one (an older tab or API client), the
+            // saved main slot, which SaveComboAction keeps.
+            $slots = (array) $this->input('slots', []);
+            $sendsMain = false;
+            foreach ($slots as $slot) {
+                $sendsMain = $sendsMain || (is_array($slot) && array_key_exists('is_main', $slot));
+            }
+            $savedMainId = ! $sendsMain && $combo !== null
+                ? ComboSlot::query()->where('combo_product_id', $combo->id)->where('is_main', true)->value('id')
+                : null;
+
+            $mains = 0;
+            foreach ($slots as $i => $slot) {
+                if (! is_array($slot)) {
+                    continue;
+                }
+                $isMain = $sendsMain
+                    ? filter_var($slot['is_main'] ?? false, FILTER_VALIDATE_BOOLEAN)
+                    : ($savedMainId !== null && isset($slot['id']) && (int) $slot['id'] === (int) $savedMainId);
+                if (! $isMain) {
+                    continue;
+                }
+                $mains++;
+                if ($mains > 1) {
+                    $v->errors()->add("slots.$i.is_main", 'Only one slot can be the main item.');
+                }
+                if ((int) ($slot['min_choices'] ?? 0) !== 1 || (int) ($slot['max_choices'] ?? 0) !== 1) {
+                    $v->errors()->add("slots.$i.is_main", self::MAIN_MUST_PICK_ONE);
+                }
+            }
+        }];
+    }
+
+    /** Tester call 15 — "Make it a meal?" pre-picks ONE item. */
+    public const MAIN_MUST_PICK_ONE = 'The main item slot must be pick exactly 1.';
 }

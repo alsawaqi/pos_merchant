@@ -40,6 +40,7 @@ final readonly class CreateProductWizardAction
         private UpdateProductComponentsAction $updateComponents,
         private SyncProductBranchesAction $syncBranches,
         private SetProductDeliveryPriceAction $setDeliveryPrice,
+        private SyncRemovableIngredientsAction $syncRemovable,
     ) {}
 
     /**
@@ -76,6 +77,12 @@ final readonly class CreateProductWizardAction
             $recipeLines = $payload['recipe_lines'] ?? [];
             if ($recipeLines !== []) {
                 $this->updateRecipe->handle($product, $recipeLines, $actor, $payload['recipe_note'] ?? null);
+            }
+
+            // LAUNCH review add-on — the lines ticked "Can be removed".
+            $removable = $payload['removable'] ?? [];
+            if (is_array($removable) && $removable !== []) {
+                $this->syncRemovable->handle($product, array_values($removable), $actor);
             }
 
             $componentLines = $payload['component_lines'] ?? [];

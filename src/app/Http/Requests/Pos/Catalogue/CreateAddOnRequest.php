@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Pos\Catalogue;
 
+use App\Models\AddOnGroup;
+use App\Support\Catalogue\AddOnKindRules;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Validator;
 
 /**
  * Validates POST /api/addon-groups/{group:uuid}/addons.
@@ -34,6 +37,20 @@ class CreateAddOnRequest extends FormRequest
             'linked_product_uuid' => ['nullable', 'string', 'uuid'],
             'display_order' => ['nullable', 'integer', 'between:0,999'],
         ] + self::consumptionRules();
+    }
+
+    /**
+     * LAUNCH review add-on — an option of a Quick instructions group is free,
+     * uses no stock and sells no linked product.
+     *
+     * @return list<callable>
+     */
+    public function after(): array
+    {
+        return [function (Validator $v): void {
+            $group = $this->route('addonGroup');
+            AddOnKindRules::checkOption($v, $group instanceof AddOnGroup ? $group : null, $this->all());
+        }];
     }
 
     /**
