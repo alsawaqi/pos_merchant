@@ -2083,7 +2083,7 @@
             "units": "Total quantity received ({unit})",
             "units_hint": "Required for loose produce (weigh the batch); optional when the piece ratio is fixed.",
             "total_paid": "Total paid",
-            "preview": "= {units} {unit} into stock - unit cost {cost} OMR",
+            "preview": "= {units} {unit} into stock - cost {cost} OMR / {cost_unit}",
             "submit": "Record purchase",
             "submitting": "Recording…",
             "success": "Purchase recorded - stock, cost and ratio updated."

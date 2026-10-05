@@ -31,6 +31,7 @@ import {
     type PrepUnit,
 } from '@/lib/api/prepItems';
 import {
+    costTotalText,
     costUnit,
     friendlyCost,
     holdsEntry,
@@ -46,7 +47,6 @@ import {
 import { canWriteRecipes } from '@/lib/permissions';
 import {
     lineEntry,
-    money,
     recipeLineProblem,
     recipeLinesHaveProblems,
     recipeUnitFactor,
@@ -161,7 +161,8 @@ const batchCost = computed<number>(() => {
 /** A6 — what one batch makes in the STORED unit ("2 l" → 2000 ml), null while not a positive amount. */
 const yieldNumber = computed<number | null>(() => toStoredAmount(form.prep_yield_quantity, form.yield_unit, form.unit));
 
-const unitCost = computed<string | null>(() => (yieldNumber.value === null ? null : (batchCost.value / yieldNumber.value).toFixed(6)));
+// Fix order B-3 — kept exact; friendlyCost reads it at 3 decimals (per 1000 when that is 0.000).
+const unitCost = computed<number | null>(() => (yieldNumber.value === null ? null : batchCost.value / yieldNumber.value));
 
 /** A1 — a line's item has no cost from a purchase yet (its cost counts as 0). */
 function lineHasNoCost(line: { ingredient_uuid: string }): boolean {
@@ -445,13 +446,13 @@ onMounted(async () => {
                     <div class="mt-3 grid gap-2 sm:grid-cols-2" data-test="prep-live-cost">
                         <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
                             <p class="text-[10px] font-semibold uppercase tracking-wide text-amber-700">{{ t('prep_items.batch_cost') }}</p>
-                            <p class="text-base font-semibold tabular-nums text-amber-900">{{ money(batchCost) }} <span class="text-[10px] font-normal text-amber-600">OMR</span></p>
+                            <p class="text-base font-semibold tabular-nums text-amber-900">{{ costTotalText(batchCost) }} <span class="text-[10px] font-normal text-amber-600">OMR</span></p>
                             <!-- A1 — an item with no cost yet is left out of the total. -->
                             <p v-if="costIncomplete" class="text-[10px] font-semibold text-amber-800" data-test="prep-cost-incomplete">{{ t('purchases_v2.cost_incomplete') }}</p>
                         </div>
                         <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
                             <!-- F1 — per kg / l for a g / ml prep item. -->
-                            <p class="text-[10px] font-semibold uppercase tracking-wide text-amber-700">{{ t('prep_items.unit_cost', { unit: costUnit(form.unit) }) }}</p>
+                            <p class="text-[10px] font-semibold uppercase tracking-wide text-amber-700">{{ t('prep_items.unit_cost', { unit: unitCost === null ? costUnit(form.unit) : friendlyCost(unitCost, form.unit).unit }) }}</p>
                             <p class="text-base font-semibold tabular-nums text-amber-900" data-test="prep-cost-per-unit">{{ unitCost === null ? '—' : friendlyCost(unitCost, form.unit).amount }} <span class="text-[10px] font-normal text-amber-600">OMR</span></p>
                         </div>
                     </div>

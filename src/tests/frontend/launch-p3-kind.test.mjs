@@ -349,7 +349,8 @@ test('F1 a Weighed / Liquid cost is typed and shown per kg / l, kept per stored 
     assert.equal(toStoredCost('0.05', 'piece', 'piece'), 0.05);
     assert.equal(toStoredCost('-1', 'kg', 'g'), null);
     assert.equal(formatCost(0.15), '0.150');
-    assert.equal(formatCost(0.0012345), '0.001235');
+    // Fix order B-3 — shown at 3 decimals (storage keeps 6).
+    assert.equal(formatCost(0.0012345), '0.001');
     assert.equal(formatCost(12), '12.000');
 
     // LAUNCH review add-on A1 — the ingredient cost is no longer typed (it
@@ -363,7 +364,7 @@ test('F1 a Weighed / Liquid cost is typed and shown per kg / l, kept per stored 
     assert.match(template, /friendlyCost\(m\.unit_cost_at_time, m\.ingredient\?\.unit\)\.amount/);
     assert.match(sfc('resources/js/Pages/Merchant/Inventory/PrepItemsTab.vue').template, /data-test="prep-unit-cost">\{\{ friendlyCost\(item\.unit_cost, item\.unit\)\.amount \}\}/);
     const prep = sfc('resources/js/Pages/Merchant/Inventory/PrepItemEditor.vue').template;
-    assert.match(prep, /t\('prep_items\.unit_cost', \{ unit: costUnit\(form\.unit\) \}\)/);
+    assert.match(prep, /t\('prep_items\.unit_cost', \{ unit: unitCost === null \? costUnit\(form\.unit\) : friendlyCost\(unitCost, form\.unit\)\.unit \}\)/);
     assert.match(prep, /friendlyCost\(unitCost, form\.unit\)\.amount/);
 });
 

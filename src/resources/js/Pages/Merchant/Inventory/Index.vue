@@ -144,6 +144,7 @@ import {
     friendlyAmount,
     hasConversions,
     friendlyCost,
+    costTotalText,
     holdsEntry,
     isLegacyStoredUnit,
     kindOfUnit,
@@ -1835,7 +1836,8 @@ const wasteCostPreview = computed<string | null>(() => {
     // units first so the preview stays correct for alt units.
     const cost = parseFloat(ing.default_unit_cost) * wasteStoredAmount.value;
     if (!Number.isFinite(cost)) return '0.000';
-    return cost.toFixed(3);
+    // Fix order B-3 — 3 decimals; a cost above 0 never reads 0.000.
+    return costTotalText(cost);
 });
 
 /** D3 — a waste total typed above what its container holds. */
@@ -3986,7 +3988,8 @@ async function submitSuggestions(): Promise<void> {
                     {{ t('inventory.purchase_modal.preview', {
                         units: purchasePreview.units.toFixed(3),
                         unit: unitShort(purchaseTarget.ingredient?.unit ?? null),
-                        cost: purchasePreview.unitCost !== null ? purchasePreview.unitCost.toFixed(6) : '—',
+                        cost: purchasePreview.unitCost !== null ? friendlyCost(purchasePreview.unitCost, purchaseTarget.ingredient?.unit).amount : '—',
+                        cost_unit: friendlyCost(purchasePreview.unitCost ?? 0, purchaseTarget.ingredient?.unit).unit,
                     }) }}
                 </div>
                 <label class="block">

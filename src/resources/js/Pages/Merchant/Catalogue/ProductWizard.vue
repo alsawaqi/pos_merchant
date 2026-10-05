@@ -34,6 +34,7 @@ import BaseModal from '@/Components/BaseModal.vue';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
+import { costTotalText } from '@/lib/itemKind';
 import {
     createAddOn,
     createProductAddOnGroup,
@@ -717,7 +718,8 @@ function recipeLineAmount(line: { ingredient_uuid: string; quantity: string; uni
 const historyKey = ref(0);
 const loadRecipeHistory = () => getProductRecipeHistory(editUuid!);
 
-const recipeLiveCost = computed<string>(() => {
+/** The recipe's live cost, exact (recipeLiveCost is it at 3 decimals for the margin). */
+const recipeLiveTotal = computed<number>(() => {
     let total = 0;
     for (const line of form.recipe_lines) {
         if (!line.ingredient_uuid || line.quantity === '') continue;
@@ -728,8 +730,13 @@ const recipeLiveCost = computed<string>(() => {
         if (!isFinite(qty) || !isFinite(cost)) continue;
         total += qty * cost;
     }
-    return total.toFixed(3);
+    return total;
 });
+
+const recipeLiveCost = computed<string>(() => recipeLiveTotal.value.toFixed(3));
+
+/** Fix order B-3 — the live cost as shown: 3 decimals, never 0.000 for a cost above 0. */
+const recipeLiveCostText = computed<string>(() => costTotalText(recipeLiveTotal.value));
 
 // ---- LAUNCH review add-on (step 11) — A1 "No cost yet", E2 "Is this right?" ----
 
@@ -744,7 +751,8 @@ function recipeLineCost(line: { ingredient_uuid: string; quantity: string; unit:
     const ingredient = ingredientByUuid(line.ingredient_uuid);
     if (!ingredient || recipeLineNoCost(line) || String(line.quantity).trim() === '') return null;
     const cost = toBaseUnits(parseFloat(line.quantity), ingredient, line.unit) * parseFloat(ingredient.default_unit_cost);
-    return Number.isFinite(cost) ? cost.toFixed(3) : null;
+    // Fix order B-3 — 3 decimals; a pinch that costs something reads "< 0.001", never 0.000.
+    return Number.isFinite(cost) ? costTotalText(cost) : null;
 }
 
 /** A1 — the total leaves out an item with no cost yet: "Cost incomplete". */
@@ -1884,7 +1892,7 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                         <RemovableTick v-if="line.ingredient_uuid" :model-value="removableTicks[line.ingredient_uuid]" :ingredient-name="ingredientName(line.ingredient_uuid)" :ingredient-name-ar="ingredientByUuid(line.ingredient_uuid)?.name_ar ?? null" :disabled="removableLocked" @update:model-value="setRemovable(line.ingredient_uuid, $event)" />
                                     </li>
                                 </ul>
-                                <p v-if="form.recipe_lines.length > 0" class="text-xs text-amber-800">{{ t('catalogue.recipe.live_cost') }}: <strong class="tabular-nums">{{ recipeLiveCost }}</strong> OMR<span v-if="recipeCostIncomplete" class="ms-1 font-semibold" data-test="recipe-cost-incomplete-readonly">· {{ t('purchases_v2.cost_incomplete') }}</span></p>
+                                <p v-if="form.recipe_lines.length > 0" class="text-xs text-amber-800">{{ t('catalogue.recipe.live_cost') }}: <strong class="tabular-nums">{{ recipeLiveCostText }}</strong> OMR<span v-if="recipeCostIncomplete" class="ms-1 font-semibold" data-test="recipe-cost-incomplete-readonly">· {{ t('purchases_v2.cost_incomplete') }}</span></p>
                             </div>
                             <div v-else-if="ingredients.length === 0" class="mt-3 rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
                                 {{ t('catalogue.recipe.no_ingredients_hint') }}
@@ -1945,7 +1953,7 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                 <div v-if="form.recipe_lines.length > 0" class="mt-3 grid gap-2 sm:grid-cols-2">
                                     <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
                                         <p class="text-[10px] font-semibold uppercase tracking-wide text-amber-700">{{ t('catalogue.recipe.live_cost') }}</p>
-                                        <p class="text-base font-semibold tabular-nums text-amber-900">{{ recipeLiveCost }} <span class="text-[10px] font-normal text-amber-600">OMR</span></p>
+                                        <p class="text-base font-semibold tabular-nums text-amber-900">{{ recipeLiveCostText }} <span class="text-[10px] font-normal text-amber-600">OMR</span></p>
                                         <!-- Step 11, A1 — an item with no cost yet is left out of the total. -->
                                         <p v-if="recipeCostIncomplete" class="text-[10px] font-semibold text-amber-800" data-test="recipe-cost-incomplete">{{ t('purchases_v2.cost_incomplete') }}</p>
                                     </div>
@@ -2102,7 +2110,7 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                     </li>
                                 </ul>
                                 <div v-if="reviewRecipeLines.length > 0" class="mt-3 flex gap-4 border-t border-slate-100 pt-2 text-xs">
-                                    <span class="text-amber-700">{{ t('catalogue.recipe.live_cost') }}: <strong class="tabular-nums">{{ recipeLiveCost }}</strong> OMR<span v-if="recipeCostIncomplete" class="ms-1 font-semibold" data-test="review-cost-incomplete">· {{ t('purchases_v2.cost_incomplete') }}</span></span>
+                                    <span class="text-amber-700">{{ t('catalogue.recipe.live_cost') }}: <strong class="tabular-nums">{{ recipeLiveCostText }}</strong> OMR<span v-if="recipeCostIncomplete" class="ms-1 font-semibold" data-test="review-cost-incomplete">· {{ t('purchases_v2.cost_incomplete') }}</span></span>
                                     <span v-if="recipeLiveMargin !== null" class="text-emerald-700">{{ t('catalogue.recipe.margin') }}: <strong class="tabular-nums">{{ recipeLiveMargin }}%</strong></span>
                                 </div>
                                 <p v-if="canEditRecipes && form.recipe_note.trim() !== ''" class="mt-2 text-xs text-slate-600">{{ t('recipe_history.note') }}: {{ form.recipe_note }}</p>

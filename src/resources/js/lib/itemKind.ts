@@ -178,27 +178,41 @@ export function costUnit(storedUnit: string | null | undefined): string {
     return storedUnit ?? '';
 }
 
-/** A cost (OMR) with at least 3 decimals and at most 6 ("0.150", "0.00035", "1.2345"). */
+/**
+ * A cost (OMR) as people read it: 3 decimals ("0.150", "0.209", "12.000").
+ * Fix order B-3 — never more (it showed up to 6: "0.208696"); the server
+ * still stores costs per unit at 6 decimals.
+ */
 export function formatCost(value: number): string {
     if (!Number.isFinite(value)) return '';
-    const fixed = (Math.round((value + Number.EPSILON * Math.sign(value)) * 1e6) / 1e6).toFixed(6);
-    const [whole, decimals = ''] = fixed.split('.');
-    const trimmed = decimals.replace(/0+$/, '');
-    const text = `${whole}.${trimmed.padEnd(3, '0')}`;
-    return text.startsWith('-') && parseFloat(text) === 0 ? text.slice(1) : text;
+    const text = (Math.round((value + Number.EPSILON * Math.sign(value)) * 1000) / 1000).toFixed(3);
+    return text === '-0.000' ? '0.000' : text;
 }
 
 /**
  * F1 — a cost per STORED unit as people read it: per kg or per l for a g /
  * ml item ("0.150 OMR / l", not "0.00015 OMR / ml"); a counted item keeps its
- * own unit.
+ * own unit. Fix order B-3 — 3 decimals; a cost that would read 0.000 is said
+ * per 1000 of the unit instead ("0.400 OMR / 1000 l").
  */
 export function friendlyCost(costPerStored: string | number | null | undefined, storedUnit: string | null | undefined): { amount: string; unit: string } {
     const n = typeof costPerStored === 'number' ? costPerStored : parseFloat(String(costPerStored ?? ''));
     const unit = costUnit(storedUnit);
     if (!Number.isFinite(n)) return { amount: String(costPerStored ?? ''), unit };
     const factor = kindUnits(storedUnit).find((u) => u.value === unit)?.factor ?? 1;
-    return { amount: formatCost(n * factor), unit };
+    const per = n * factor;
+    if (per > 0 && formatCost(per) === '0.000') return { amount: formatCost(per * 1000), unit: `1000 ${unit}` };
+    return { amount: formatCost(per), unit };
+}
+
+/**
+ * Fix order B-3 — a cost TOTAL (a recipe line, a batch, a waste) as people
+ * read it: 3 decimals; a cost above 0 that would read 0.000 reads "< 0.001".
+ */
+export function costTotalText(value: number): string {
+    if (!Number.isFinite(value)) return '';
+    const text = formatCost(value);
+    return value > 0 && text === '0.000' ? '< 0.001' : text;
 }
 
 /**

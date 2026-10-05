@@ -71,12 +71,10 @@ export function friendlyQuantity(quantity: number, base: string): { quantity: st
     return { quantity: trimNumber(quantity, 4), unit: base };
 }
 
-/** A cost (OMR) with at least 3 decimals and at most 6 ("0.150", "0.00035"). */
+/** A cost (OMR) at 3 decimals ("0.150"). Fix order B-3 — never more; storage keeps 6. */
 function costText(value: number): string {
-    const fixed = (Math.round(value * 1e6) / 1e6).toFixed(6);
-    const dot = fixed.indexOf('.');
-    const decimals = fixed.slice(dot + 1).replace(/0+$/, '');
-    return `${fixed.slice(0, dot)}.${decimals.padEnd(3, '0')}`;
+    const text = (Math.round((value + Number.EPSILON) * 1000) / 1000).toFixed(3);
+    return text === '-0.000' ? '0.000' : text;
 }
 
 /**
@@ -85,10 +83,12 @@ function costText(value: number): string {
  * in lib/itemKind (each lib loads on its own in the node tests).
  */
 export function friendlyCostPer(costPerBase: number, base: string): { cost: string; unit: string } {
-    if (base === 'g' || base === 'ml') {
-        return { cost: costText(costPerBase * 1000), unit: base === 'g' ? 'kg' : 'l' };
-    }
-    return { cost: costText(costPerBase), unit: base };
+    const big = base === 'g' || base === 'ml';
+    const per = big ? costPerBase * 1000 : costPerBase;
+    const unit = base === 'g' ? 'kg' : base === 'ml' ? 'l' : base;
+    // Fix order B-3 — a cost that would read 0.000 is said per 1000 of the unit.
+    if (per > 0 && costText(per) === '0.000') return { cost: costText(per * 1000), unit: `1000 ${unit}` };
+    return { cost: costText(per), unit };
 }
 
 /**
