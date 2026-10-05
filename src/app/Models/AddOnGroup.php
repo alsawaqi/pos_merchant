@@ -136,7 +136,12 @@ class AddOnGroup extends Model
             ->where('name', $name);
 
         if ($ownerProductId !== null) {
-            $query->where('owner_product_id', $ownerProductId);
+            // Fix order C-1, L3 — the product's hidden Remove list (managed
+            // from its recipe) never blocks a name the merchant picks: it
+            // moves to a free name instead
+            // (SyncRemovableIngredientsAction::yieldName).
+            $query->where('owner_product_id', $ownerProductId)
+                ->where('kind', '!=', self::KIND_REMOVE);
         } else {
             $query->whereNull('owner_product_id');
         }

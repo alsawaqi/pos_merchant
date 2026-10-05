@@ -16,6 +16,7 @@ use App\Models\Ingredient;
 use App\Models\Product;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
@@ -129,6 +130,26 @@ if (! function_exists('rvmProduct')) {
             'delivery_prices' => [],
             'branches' => null,
         ], $extra);
+    }
+
+    /**
+     * Save "Can be removed" ticks the way the wizard does (fix order C-1, M1):
+     * with the ticks the page loaded (`expected`), read here with a GET unless
+     * given.
+     *
+     * @param  list<array<string, mixed>>  $lines
+     * @param  list<array<string, mixed>>|null  $expected
+     */
+    function rvmTick(Product $product, array $lines, ?array $expected = null): TestResponse
+    {
+        if ($expected === null) {
+            $expected = array_map(
+                static fn (array $l): array => ['ingredient_uuid' => $l['ingredient_uuid'], 'label' => $l['label'] ?? null, 'label_ar' => $l['label_ar'] ?? null],
+                (array) (test()->getJson("/api/products/{$product->uuid}/removable")->json('data.lines') ?? []),
+            );
+        }
+
+        return test()->putJson("/api/products/{$product->uuid}/removable", ['lines' => $lines, 'expected' => $expected]);
     }
 
     /** The newest audit row of an event for a row, decoded. */

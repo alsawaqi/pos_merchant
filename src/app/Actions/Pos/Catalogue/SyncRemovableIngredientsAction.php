@@ -8,10 +8,12 @@ use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
 use App\Enums\AddOnSelectionMode;
 use App\Models\AddOn;
+use App\Models\AddOnConsumption;
 use App\Models\AddOnGroup;
 use App\Models\Ingredient;
 use App\Models\Product;
 use App\Models\User;
+use App\Support\Catalogue\AddOnKindRules;
 use App\Support\Catalogue\RemovableIngredients;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
@@ -45,9 +47,14 @@ final readonly class SyncRemovableIngredientsAction
 
     /**
      * @param  list<array{ingredient_uuid: string, label?: string|null, label_ar?: string|null}>  $lines
+     * @param  list<array{ingredient_uuid: string, label?: string|null, label_ar?: string|null}>|null  $expected
+     *                                                                                                            the ticks the page loaded with (fix order C-1, M1): when they no
+     *                                                                                                            longer match what is saved, nothing is written and
+     *                                                                                                            {@see StaleRemovableTicksException} is thrown (HTTP 409). Null
+     *                                                                                                            only for a brand-new product (the wizard's create).
      * @return array{applies_to_stock: bool, lines: list<array<string, mixed>>}
      */
-    public function handle(Product $product, array $lines, User $actor): array
+    public function handle(Product $product, array $lines, User $actor, ?array $expected = null): array
     {
         $companyId = $this->tenant->requiredId();
         if ((int) $product->company_id !== $companyId) {
@@ -75,9 +82,20 @@ final readonly class SyncRemovableIngredientsAction
                 throw new RuntimeException(sprintf('"%s" is not in this product\'s recipe, so it cannot be marked "Can be removed".', $ingredient->name));
             }
         }
+        // Fix order C-1, L2 — two chips with the same text would do different
+        // things: every final name is unique (EN and AR, any case).
+        $duplicate = RemovableIngredients::duplicateName($lines, $ingredients->all());
+        if ($duplicate !== null) {
+            throw new RuntimeException(RemovableIngredients::duplicateMessage($duplicate['name']));
+        }
 
-        DB::transaction(function () use ($product, $lines, $ingredients, $actor, $companyId): void {
+        DB::transaction(function () use ($product, $lines, $ingredients, $actor, $companyId, $expected): void {
             Product::query()->whereKey($product->id)->lockForUpdate()->first(['id']);
+            // Fix order C-1, M1 — refuse a save made from ticks that are no
+            // longer the saved ones (another manager, another tab).
+            if ($expected !== null && ! RemovableIngredients::matchesSaved($product, $expected)) {
+                throw new StaleRemovableTicksException;
+            }
             $before = $this->snapshot($product);
 
             $group = RemovableIngredients::group($product, withTrashed: true);
@@ -110,7 +128,13 @@ final readonly class SyncRemovableIngredientsAction
                     'name_ar' => RemovableIngredients::optionNameAr($ingredient, $line['label_ar'] ?? null, $line['label'] ?? null),
                     'price_delta' => '0.000',
                     'is_default' => false,
+                    // Fix order C-1, M4 — a "NO …" option never takes stock:
+                    // no linked product and no legacy single ingredient
+                    // (its consumption lines are cleared below).
                     'linked_product_id' => null,
+                    'ingredient_id' => null,
+                    'ingredient_qty' => null,
+                    'ingredient_unit' => null,
                     'display_order' => $order,
                     'status' => 'active',
                 ];
@@ -132,6 +156,7 @@ final readonly class SyncRemovableIngredientsAction
                 if ($option->isDirty()) {
                     $option->save();
                 }
+                AddOnConsumption::query()->where('add_on_id', $option->id)->delete();
             }
 
             $this->retire($group, $keep);
@@ -217,10 +242,7 @@ final readonly class SyncRemovableIngredientsAction
         // Owned group names are unique per product, soft-deleted ones
         // included (pos_addon_groups_owner_name_unique): the merchant may
         // already own a group called "Remove".
-        $name = RemovableIngredients::GROUP_NAME;
-        for ($n = 2; AddOnGroup::nameTaken($companyId, (int) $product->id, $name); $n++) {
-            $name = RemovableIngredients::GROUP_NAME.' '.$n;
-        }
+        $name = RemovableIngredients::freeGroupName($companyId, (int) $product->id);
 
         /** @var AddOnGroup $group */
         $group = AddOnGroup::query()->create([
@@ -241,7 +263,40 @@ final readonly class SyncRemovableIngredientsAction
     }
 
     /**
-     * @return list<array{ingredient_id: int, name: string, name_ar: string|null}>
+     * Fix order C-1, L3 — the merchant gives one of the product's own groups
+     * (new or renamed) the name its hidden Remove list holds. Owned names are
+     * unique per product in the database whatever the kind
+     * (pos_addon_groups_owner_name_unique, soft-deleted rows included), so
+     * the Remove list moves to the next free name ("Remove 2") first,
+     * audited and touched so devices pick the new name up by delta.
+     */
+    public function yieldName(int $companyId, int $ownerProductId, string $name, User $actor): void
+    {
+        $group = AddOnGroup::query()->withTrashed()
+            ->where('company_id', $companyId)
+            ->where('owner_product_id', $ownerProductId)
+            ->where('kind', AddOnGroup::KIND_REMOVE)
+            ->where('name', $name)
+            ->first();
+        if ($group === null) {
+            return;
+        }
+        $old = (string) $group->name;
+        $group->forceFill(['name' => RemovableIngredients::freeGroupName($companyId, $ownerProductId, $name)])->save();
+        Product::query()->whereKey($ownerProductId)->update(['updated_at' => now()]);
+        $this->writeAuditLog->handle(new AuditLogData(
+            event: 'catalogue.addon_group.updated',
+            actorUserId: $actor->getKey(),
+            companyId: $companyId,
+            auditableType: AddOnGroup::class,
+            auditableId: $group->id,
+            oldValues: ['name' => $old],
+            newValues: ['name' => $group->name, 'reason' => 'name given to another of the product\'s own groups'],
+        ));
+    }
+
+    /**
+     * @return list<array{ingredient_id: int, name: string, name_ar: string|null, takes_stock: bool}>
      */
     private function snapshot(Product $product): array
     {
@@ -259,6 +314,7 @@ final readonly class SyncRemovableIngredientsAction
                 'ingredient_id' => (int) $o->removes_ingredient_id,
                 'name' => (string) $o->name,
                 'name_ar' => $o->name_ar,
+                'takes_stock' => AddOnKindRules::anyTakesStock([$o]),
             ])
             ->values()
             ->all();

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Pos;
 
+use App\Actions\Pos\Catalogue\StaleRemovableTicksException;
 use App\Actions\Pos\Catalogue\SyncRemovableIngredientsAction;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
@@ -22,7 +23,8 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
  *
  *   GET /api/products/{product:uuid}/removable   (catalogue.view)
  *   PUT /api/products/{product:uuid}/removable   (catalogue.manage)
- *       { lines: [{ ingredient_uuid, label?, label_ar? }] }
+ *       { lines: [{ ingredient_uuid, label?, label_ar? }],
+ *         expected: the ticks the page loaded with } → 409 when stale
  *
  * Catalogue permission, not "Edit recipes": no amount changes, only the
  * product's own Remove list ({@see RemovableIngredients}). Tenant-scoped;
@@ -48,10 +50,20 @@ class ProductRemovableController extends Controller
         $this->ensure($request, MerchantPermission::CatalogueManage);
         $this->refuseIfForeign($product);
 
+        $validated = $request->validated();
         try {
-            $state = $this->sync->handle($product, array_values($request->validated()['lines'] ?? []), $request->user());
+            $state = $this->sync->handle(
+                $product,
+                array_values($validated['lines'] ?? []),
+                $request->user(),
+                array_values($validated['expected'] ?? []),
+            );
         } catch (QueryException|HttpException $e) {
             throw $e;
+        } catch (StaleRemovableTicksException $e) {
+            // Fix order C-1, M1 — someone saved other ticks since the page
+            // loaded: nothing is written, the page asks for a reload.
+            return response()->json(['message' => $e->getMessage(), 'state' => RemovableIngredients::state($product->fresh())], 409);
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }

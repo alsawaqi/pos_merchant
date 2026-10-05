@@ -51,12 +51,30 @@ final class AddOnKindRules
     {
         $options = AddOn::query()->where('add_on_group_id', $group->id)->get();
         $priced = $options->contains(fn (AddOn $o): bool => (float) $o->price_delta != 0.0);
-        $linked = $options->contains(fn (AddOn $o): bool => $o->linked_product_id !== null);
-        $stock = $options->isNotEmpty()
-            && AddOnConsumption::query()->whereIn('add_on_id', $options->pluck('id')->all())->exists();
-        if ($priced || $linked || $stock) {
+        if ($priced || self::anyTakesStock($options)) {
             $v->errors()->add('kind', 'Quick instructions have no price, stock or linked product: change or remove those options first.');
         }
+    }
+
+    /**
+     * Fix order C-1, M4 — does any of these options take stock, in ANY form
+     * pos_api still deducts: a linked product, PD3b consumption lines, or the
+     * legacy single-ingredient fields (pos_addons.ingredient_id / qty / unit,
+     * which RecipeCopy::addonStockUse still copies into the order snapshot)?
+     *
+     * @param  iterable<AddOn>  $options
+     */
+    public static function anyTakesStock(iterable $options): bool
+    {
+        $ids = [];
+        foreach ($options as $option) {
+            if ($option->linked_product_id !== null || $option->ingredient_id !== null) {
+                return true;
+            }
+            $ids[] = (int) $option->id;
+        }
+
+        return $ids !== [] && AddOnConsumption::query()->whereIn('add_on_id', $ids)->exists();
     }
 
     /**

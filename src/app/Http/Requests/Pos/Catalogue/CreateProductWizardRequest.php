@@ -262,6 +262,11 @@ class CreateProductWizardRequest extends FormRequest
                 is_array($this->input('recipe_lines')) ? $this->input('recipe_lines') : [],
             );
             RemovableIngredients::checkAgainstRecipe($v, 'removable', $this->input('removable'), $recipe);
+            // Fix order C-1, L2 — no two "NO …" chips with the same text.
+            $companyId = app(MerchantTenantContext::class)->id();
+            if ($companyId !== null) {
+                RemovableIngredients::checkNames($v, 'removable', $this->input('removable'), (int) $companyId);
+            }
         }];
     }
 }

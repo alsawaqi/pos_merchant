@@ -212,11 +212,38 @@ class SaveComboRequest extends FormRequest
     public function after(): array
     {
         return [function (Validator $v): void {
-            MenuExtras::checkDates($v, $this->input('on_sale_from'), $this->input('on_sale_until'), 'on_sale_until');
+            /** @var Product|null $combo */
+            $combo = $this->route('product');
+
+            // Fix order C-1, L1 — against the merged values: a date the
+            // payload leaves out keeps its saved value (SaveComboAction), so
+            // a lone "Until" before the saved "From" (or the reverse) is a
+            // 422, never the database CHECK.
+            $from = $this->has('on_sale_from') ? $this->input('on_sale_from') : $combo?->on_sale_from;
+            $until = $this->has('on_sale_until') ? $this->input('on_sale_until') : $combo?->on_sale_until;
+            MenuExtras::checkDates($v, $from, $until, $this->has('on_sale_until') ? 'on_sale_until' : 'on_sale_from');
+
+            // Fix order C-1, M3 — the main after this save: the flags sent,
+            // or, when no slot sends one (an older tab or API client), the
+            // saved main slot, which SaveComboAction keeps.
+            $slots = (array) $this->input('slots', []);
+            $sendsMain = false;
+            foreach ($slots as $slot) {
+                $sendsMain = $sendsMain || (is_array($slot) && array_key_exists('is_main', $slot));
+            }
+            $savedMainId = ! $sendsMain && $combo !== null
+                ? ComboSlot::query()->where('combo_product_id', $combo->id)->where('is_main', true)->value('id')
+                : null;
 
             $mains = 0;
-            foreach ((array) $this->input('slots', []) as $i => $slot) {
-                if (! is_array($slot) || ! filter_var($slot['is_main'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+            foreach ($slots as $i => $slot) {
+                if (! is_array($slot)) {
+                    continue;
+                }
+                $isMain = $sendsMain
+                    ? filter_var($slot['is_main'] ?? false, FILTER_VALIDATE_BOOLEAN)
+                    : ($savedMainId !== null && isset($slot['id']) && (int) $slot['id'] === (int) $savedMainId);
+                if (! $isMain) {
                     continue;
                 }
                 $mains++;
@@ -224,9 +251,12 @@ class SaveComboRequest extends FormRequest
                     $v->errors()->add("slots.$i.is_main", 'Only one slot can be the main item.');
                 }
                 if ((int) ($slot['min_choices'] ?? 0) !== 1 || (int) ($slot['max_choices'] ?? 0) !== 1) {
-                    $v->errors()->add("slots.$i.is_main", 'The main item must be a slot where exactly one item is picked (least 1, most 1).');
+                    $v->errors()->add("slots.$i.is_main", self::MAIN_MUST_PICK_ONE);
                 }
             }
         }];
     }
+
+    /** Tester call 15 — "Make it a meal?" pre-picks ONE item. */
+    public const MAIN_MUST_PICK_ONE = 'The main item slot must be pick exactly 1.';
 }

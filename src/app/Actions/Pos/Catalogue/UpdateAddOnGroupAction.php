@@ -42,6 +42,7 @@ final readonly class UpdateAddOnGroupAction
     public function __construct(
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
+        private SyncRemovableIngredientsAction $removable,
     ) {}
 
     /**
@@ -107,6 +108,12 @@ final readonly class UpdateAddOnGroupAction
 
             if ($changes === []) {
                 return $group->fresh();
+            }
+
+            // Fix order C-1, L3 — a product's own group renamed to the name its
+            // hidden Remove list holds: the Remove list moves to a free name.
+            if (isset($changes['name']) && $group->owner_product_id !== null) {
+                $this->removable->yieldName($companyId, (int) $group->owner_product_id, (string) $group->name, $actor);
             }
 
             $group->save();

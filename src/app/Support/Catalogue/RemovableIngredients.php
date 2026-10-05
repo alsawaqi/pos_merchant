@@ -174,6 +174,124 @@ final class RemovableIngredients
         ];
     }
 
+    /**
+     * Fix order C-1, L2 — the first final option name (EN or AR, any case)
+     * that two ticked lines share, or null.
+     *
+     * @param  array<int|string, mixed>  $lines
+     * @param  array<string, Ingredient>  $ingredientsByUuid
+     * @return array{index: int|string, field: 'label'|'label_ar', name: string}|null
+     */
+    public static function duplicateName(array $lines, array $ingredientsByUuid): ?array
+    {
+        $seen = ['label' => [], 'label_ar' => []];
+        foreach ($lines as $i => $line) {
+            $ingredient = is_array($line) ? ($ingredientsByUuid[(string) ($line['ingredient_uuid'] ?? '')] ?? null) : null;
+            if (! $ingredient instanceof Ingredient) {
+                continue;
+            }
+            $names = [
+                'label' => self::optionName($ingredient, $line['label'] ?? null),
+                'label_ar' => self::optionNameAr($ingredient, $line['label_ar'] ?? null, $line['label'] ?? null),
+            ];
+            foreach ($names as $field => $name) {
+                $key = mb_strtolower($name);
+                if (isset($seen[$field][$key])) {
+                    return ['index' => $i, 'field' => $field, 'name' => $name];
+                }
+                $seen[$field][$key] = true;
+            }
+        }
+
+        return null;
+    }
+
+    public static function duplicateMessage(string $name): string
+    {
+        return sprintf('Two ticked lines would both show "%s" to customers: give one of them another label.', $name);
+    }
+
+    /**
+     * Fix order C-1, L2 — refuse two ticked lines with the same final name, on
+     * the line and field ('label' / 'label_ar') that repeats it.
+     */
+    public static function checkNames(Validator $v, string $key, mixed $lines, int $companyId): void
+    {
+        if (! is_array($lines) || $lines === []) {
+            return;
+        }
+        $uuids = [];
+        foreach ($lines as $line) {
+            if (is_array($line) && is_string($line['ingredient_uuid'] ?? null)) {
+                $uuids[] = $line['ingredient_uuid'];
+            }
+        }
+        $ingredients = Ingredient::query()->where('company_id', $companyId)->whereIn('uuid', $uuids)->get()->keyBy('uuid')->all();
+        $duplicate = self::duplicateName($lines, $ingredients);
+        if ($duplicate !== null && ! $v->errors()->has("$key.{$duplicate['index']}.{$duplicate['field']}")) {
+            $v->errors()->add("$key.{$duplicate['index']}.{$duplicate['field']}", self::duplicateMessage($duplicate['name']));
+        }
+    }
+
+    /**
+     * Fix order C-1, M1 — are the ticks a page loaded ($expected: ingredient
+     * uuid + label + Arabic label) still the saved ones? Compared on the
+     * lines of the recipe as it is now: a line this same save dropped from
+     * the recipe has already lost its option, which is not a conflict.
+     *
+     * @param  array<int, mixed>  $expected
+     */
+    public static function matchesSaved(Product $product, array $expected): bool
+    {
+        $inRecipe = Ingredient::query()
+            ->withTrashed()
+            ->where('company_id', $product->company_id)
+            ->whereIn('id', $product->recipeLines()->pluck('ingredient_id')->all())
+            ->pluck('uuid')
+            ->map(fn ($uuid): string => (string) $uuid)
+            ->all();
+
+        $comparable = static function (iterable $lines) use ($inRecipe): array {
+            $out = [];
+            foreach ($lines as $line) {
+                $uuid = is_array($line) ? (string) ($line['ingredient_uuid'] ?? '') : '';
+                if ($uuid === '' || ! in_array($uuid, $inRecipe, true)) {
+                    continue;
+                }
+                $out[$uuid] = [trim((string) ($line['label'] ?? '')), trim((string) ($line['label_ar'] ?? ''))];
+            }
+            ksort($out);
+
+            return $out;
+        };
+
+        return $comparable(self::state($product)['lines']) === $comparable($expected);
+    }
+
+    /**
+     * A name for the Remove list that no other group of this product holds,
+     * soft-deleted ones included (the database index's scope, whatever the
+     * kind): "Remove", else "Remove 2", "Remove 3"…
+     */
+    public static function freeGroupName(int $companyId, int $ownerProductId, ?string $avoid = null): string
+    {
+        $used = AddOnGroup::query()->withTrashed()
+            ->where('company_id', $companyId)
+            ->where('owner_product_id', $ownerProductId)
+            ->pluck('name')
+            ->map(fn ($name): string => (string) $name)
+            ->all();
+        if ($avoid !== null) {
+            $used[] = $avoid;
+        }
+        $name = self::GROUP_NAME;
+        for ($n = 2; in_array($name, $used, true); $n++) {
+            $name = self::GROUP_NAME.' '.$n;
+        }
+
+        return $name;
+    }
+
     public static function appliesToStock(Product $product): bool
     {
         $mode = $product->stock_mode instanceof \BackedEnum ? $product->stock_mode->value : (string) $product->stock_mode;

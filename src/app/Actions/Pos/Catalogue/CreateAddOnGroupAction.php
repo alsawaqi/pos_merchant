@@ -27,6 +27,7 @@ final readonly class CreateAddOnGroupAction
     public function __construct(
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
+        private SyncRemovableIngredientsAction $removable,
     ) {}
 
     /**
@@ -55,6 +56,12 @@ final readonly class CreateAddOnGroupAction
         }
 
         return DB::transaction(function () use ($attributes, $actor, $companyId, $ownerProductId, $kind): AddOnGroup {
+            // Fix order C-1, L3 — the product's hidden Remove list gives up
+            // the name the merchant picks (owned names are unique per product).
+            if ($ownerProductId !== null) {
+                $this->removable->yieldName($companyId, (int) $ownerProductId, (string) $attributes['name'], $actor);
+            }
+
             /** @var AddOnGroup $group */
             $group = AddOnGroup::query()->create([
                 'company_id' => $companyId,

@@ -42,10 +42,10 @@ it('ticks recipe lines "Can be removed": one owned Remove group with a free "NO 
     ['burger' => $burger, 'ketchup' => $ketchup, 'onion' => $onion] = rvmBurger($ctx['company']);
     DB::table('pos_products')->where('id', $burger->id)->update(['updated_at' => now()->subDay()]);
 
-    $this->putJson("/api/products/{$burger->uuid}/removable", ['lines' => [
+    rvmTick($burger, [
         ['ingredient_uuid' => $ketchup->uuid, 'label' => 'Ketchup', 'label_ar' => null],
         ['ingredient_uuid' => $onion->uuid],
-    ]])->assertOk()
+    ])->assertOk()
         ->assertJsonPath('data.applies_to_stock', true)
         ->assertJsonPath('data.lines.0.ingredient_uuid', $ketchup->uuid)
         ->assertJsonPath('data.lines.0.name', 'NO Ketchup')
@@ -82,13 +82,13 @@ it('ticks recipe lines "Can be removed": one owned Remove group with a free "NO 
 it('renames on a new label, retires an unticked line, and brings the same option back when ticked again', function (): void {
     $ctx = makeMerchantActor();
     ['burger' => $burger, 'ketchup' => $ketchup, 'onion' => $onion] = rvmBurger($ctx['company']);
-    $this->putJson("/api/products/{$burger->uuid}/removable", ['lines' => [['ingredient_uuid' => $ketchup->uuid], ['ingredient_uuid' => $onion->uuid]]])->assertOk();
+    rvmTick($burger, [['ingredient_uuid' => $ketchup->uuid], ['ingredient_uuid' => $onion->uuid]])->assertOk();
     $group = rvmRemoveGroup($burger);
     $ketchupOption = DB::table('pos_addons')->where('removes_ingredient_id', $ketchup->id)->first();
     expect($ketchupOption->name)->toBe('NO Ketchup (Heinz 5 kg)');
 
     // Rename (label) + untick onion.
-    $this->putJson("/api/products/{$burger->uuid}/removable", ['lines' => [['ingredient_uuid' => $ketchup->uuid, 'label' => 'Ketchup', 'label_ar' => 'صلصة الطماطم']]])
+    rvmTick($burger, [['ingredient_uuid' => $ketchup->uuid, 'label' => 'Ketchup', 'label_ar' => 'صلصة الطماطم']])
         ->assertOk()->assertJsonCount(1, 'data.lines')->assertJsonPath('data.lines.0.label_ar', 'صلصة الطماطم');
     $renamed = DB::table('pos_addons')->where('id', $ketchupOption->id)->first();
     expect($renamed->name)->toBe('NO Ketchup')
@@ -97,12 +97,12 @@ it('renames on a new label, retires an unticked line, and brings the same option
         ->and(DB::table('pos_addons')->where('removes_ingredient_id', $onion->id)->value('deleted_at'))->not->toBeNull();
 
     // Untick all: the group is retired too (an empty list would show on devices).
-    $this->putJson("/api/products/{$burger->uuid}/removable", ['lines' => []])->assertOk()->assertJsonCount(0, 'data.lines');
+    rvmTick($burger, [])->assertOk()->assertJsonCount(0, 'data.lines');
     expect(rvmRemoveGroup($burger))->toBeNull()
         ->and(rvmRemoveGroup($burger, true)->deleted_at)->not->toBeNull();
 
     // Tick again: the same group and option rows come back (ids never churn).
-    $this->putJson("/api/products/{$burger->uuid}/removable", ['lines' => [['ingredient_uuid' => $onion->uuid]]])->assertOk();
+    rvmTick($burger, [['ingredient_uuid' => $onion->uuid]])->assertOk();
     expect((int) rvmRemoveGroup($burger)->id)->toBe((int) $group->id)
         ->and(DB::table('pos_addons')->where('removes_ingredient_id', $onion->id)->whereNull('deleted_at')->count())->toBe(1)
         ->and(DB::table('pos_addons')->where('add_on_group_id', $group->id)->count())->toBe(2);
@@ -111,7 +111,7 @@ it('renames on a new label, retires an unticked line, and brings the same option
 it('retires a line\'s option when the recipe line is deleted, and keeps the others', function (): void {
     $ctx = makeMerchantActor();
     ['burger' => $burger, 'ketchup' => $ketchup, 'onion' => $onion, 'bun' => $bun] = rvmBurger($ctx['company']);
-    $this->putJson("/api/products/{$burger->uuid}/removable", ['lines' => [['ingredient_uuid' => $ketchup->uuid], ['ingredient_uuid' => $onion->uuid]]])->assertOk();
+    rvmTick($burger, [['ingredient_uuid' => $ketchup->uuid], ['ingredient_uuid' => $onion->uuid]])->assertOk();
 
     $this->putJson("/api/products/{$burger->uuid}/recipe", ['lines' => [
         ['ingredient_uuid' => $onion->uuid, 'quantity' => '15'],
@@ -136,20 +136,20 @@ it('only ticks lines of this product\'s recipe, of this company', function (): v
     $mayo = rvmIngredient($ctx['company'], 'Mayonnaise');
     $foreign = rvmIngredient(Company::factory()->create(), 'Foreign ketchup');
 
-    $this->putJson("/api/products/{$burger->uuid}/removable", ['lines' => [['ingredient_uuid' => $mayo->uuid]]])
+    rvmTick($burger, [['ingredient_uuid' => $mayo->uuid]])
         ->assertStatus(422)->assertJsonValidationErrors(['lines.0.ingredient_uuid']);
-    $this->putJson("/api/products/{$burger->uuid}/removable", ['lines' => [['ingredient_uuid' => $foreign->uuid]]])
+    rvmTick($burger, [['ingredient_uuid' => $foreign->uuid]])
         ->assertStatus(422)->assertJsonValidationErrors(['lines.0.ingredient_uuid']);
-    $this->putJson("/api/products/{$burger->uuid}/removable", ['lines' => [['ingredient_uuid' => $ketchup->uuid], ['ingredient_uuid' => $ketchup->uuid]]])
+    rvmTick($burger, [['ingredient_uuid' => $ketchup->uuid], ['ingredient_uuid' => $ketchup->uuid]])
         ->assertStatus(422)->assertJsonValidationErrors(['lines.1.ingredient_uuid']);
-    $this->putJson("/api/products/{$burger->uuid}/removable", ['lines' => [['ingredient_uuid' => $ketchup->uuid, 'label' => str_repeat('x', 61)]]])
+    rvmTick($burger, [['ingredient_uuid' => $ketchup->uuid, 'label' => str_repeat('x', 61)]])
         ->assertStatus(422)->assertJsonValidationErrors(['lines.0.label']);
     expect(DB::table('pos_addon_groups')->where('kind', 'remove')->count())->toBe(0);
 
     // Another company's product is not found.
     $other = rvmBurger(Company::factory()->create());
     $this->getJson("/api/products/{$other['burger']->uuid}/removable")->assertNotFound();
-    $this->putJson("/api/products/{$other['burger']->uuid}/removable", ['lines' => []])->assertNotFound();
+    rvmTick($other['burger'], [])->assertNotFound();
 });
 
 it('needs catalogue.manage to save the ticks (not "Edit recipes"), catalogue.view to read them', function (): void {
@@ -157,11 +157,11 @@ it('needs catalogue.manage to save the ticks (not "Edit recipes"), catalogue.vie
     ['burger' => $burger, 'ketchup' => $ketchup] = rvmBurger($ctx['company']);
 
     $this->getJson("/api/products/{$burger->uuid}/removable")->assertOk()->assertJsonPath('data.lines', []);
-    $this->putJson("/api/products/{$burger->uuid}/removable", ['lines' => [['ingredient_uuid' => $ketchup->uuid]]])->assertForbidden();
+    rvmTick($burger, [['ingredient_uuid' => $ketchup->uuid]])->assertForbidden();
 
     $manager = rvmActorWith(['catalogue.view', 'catalogue.manage']);
     $mine = rvmBurger($manager['company']);
-    $this->putJson("/api/products/{$mine['burger']->uuid}/removable", ['lines' => [['ingredient_uuid' => $mine['ketchup']->uuid]]])->assertOk();
+    rvmTick($mine['burger'], [['ingredient_uuid' => $mine['ketchup']->uuid]])->assertOk();
 });
 
 it('says a removal only prints for a cooked product, and names the group around one the merchant already owns', function (): void {
@@ -169,7 +169,7 @@ it('says a removal only prints for a cooked product, and names the group around 
     ['burger' => $pie, 'onion' => $onion] = rvmBurger($ctx['company'], 'cooked');
     $this->postJson("/api/products/{$pie->uuid}/addon-groups", ['name' => 'Remove'])->assertCreated();
 
-    $this->putJson("/api/products/{$pie->uuid}/removable", ['lines' => [['ingredient_uuid' => $onion->uuid]]])
+    rvmTick($pie, [['ingredient_uuid' => $onion->uuid]])
         ->assertOk()->assertJsonPath('data.applies_to_stock', false);
     expect(rvmRemoveGroup($pie)->name)->toBe('Remove 2');
 });
@@ -206,7 +206,7 @@ it('creates the ticks with a new product in the wizard', function (): void {
 it('keeps the Remove list out of every generic add-on edit', function (): void {
     $ctx = makeMerchantActor();
     ['burger' => $burger, 'ketchup' => $ketchup] = rvmBurger($ctx['company']);
-    $this->putJson("/api/products/{$burger->uuid}/removable", ['lines' => [['ingredient_uuid' => $ketchup->uuid]]])->assertOk();
+    rvmTick($burger, [['ingredient_uuid' => $ketchup->uuid]])->assertOk();
     $group = AddOnGroup::query()->where('kind', 'remove')->sole();
     $option = AddOn::query()->where('add_on_group_id', $group->id)->sole();
 
