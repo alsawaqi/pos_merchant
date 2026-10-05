@@ -85,9 +85,12 @@ import {
     datesProblem,
     groupKind,
     removablePayload,
+    removableSaveDecision,
     saleDay,
     ticksFromState,
     type RemovableDraft,
+    type RemovableLoadState,
+    type RemovableSavedLine,
 } from '@/lib/menuExtras';
 import {
     branchScopePayload,
@@ -263,9 +266,23 @@ const removableOnlyPrints = computed(() => form.stock_mode === 'cooked');
 function setRemovable(uuid: string, value: RemovableDraft): void {
     removableTicks.value = { ...removableTicks.value, [uuid]: value };
 }
+// Fix order C-1, M1 — the saved ticks as loaded (the baseline a save is
+// compared to and sent as `expected`), and whether they loaded at all: a
+// failed load disables the ticks and never sends them.
+const removableLoad = ref<RemovableLoadState>(isEdit ? 'loading' : 'ok');
+const removableBaseline = ref<RemovableSavedLine[]>([]);
+const removableLocked = computed(() => !canManage.value || removableLoad.value !== 'ok');
 async function loadRemovable(): Promise<void> {
     if (!isEdit) return;
-    removableTicks.value = ticksFromState((await getRemovable(editUuid!)).data.lines);
+    try {
+        const lines = (await getRemovable(editUuid!)).data.lines;
+        removableBaseline.value = lines.map((l) => ({ ingredient_uuid: l.ingredient_uuid, label: l.label, label_ar: l.label_ar }));
+        removableTicks.value = ticksFromState(removableBaseline.value);
+        removableLoad.value = 'ok';
+    } catch {
+        removableTicks.value = {};
+        removableLoad.value = 'failed';
+    }
 }
 const isPieceCounted = computed(() => form.stock_mode === 'unit' || form.stock_mode === 'cooked');
 
@@ -992,9 +1009,12 @@ async function submit(): Promise<void> {
                     .catch((e) => remapSectionErrors(e, 'lines', 'recipe_lines'));
             }
             // LAUNCH review add-on — "Can be removed" (catalogue permission,
-            // saved after the recipe so every ticked line exists).
-            if (hasRecipeStep.value) {
-                await saveRemovable(uuid, removablePayload(form.recipe_lines, removableTicks.value))
+            // saved after the recipe so every ticked line exists). Fix order
+            // C-1, M1 — only when they loaded and the merchant changed them,
+            // with the loaded ticks so a stale page gets a 409.
+            const removableSave = removableSaveDecision(removableLoad.value, form.recipe_lines, removableTicks.value, removableBaseline.value);
+            if (hasRecipeStep.value && removableSave.send) {
+                await saveRemovable(uuid, removableSave.lines, removableSave.expected)
                     .catch((e) => remapSectionErrors(e, 'lines', 'recipe_lines'));
             }
             await updateProductComponents(uuid, componentsPayload())
@@ -1027,7 +1047,11 @@ async function submit(): Promise<void> {
                 || k.startsWith('owned_groups') || k.startsWith('addon_group_uuids') || k.startsWith('removable');
             step.value = keys.some((k) => !stepTwoKey(k)) ? 1 : 2;
         } else {
-            submitError.value = apiMessage(err, t('catalogue.wizard.save_failed'));
+            // Fix order C-1, M1 — someone saved other "Can be removed" ticks
+            // since this page loaded: nothing of the ticks was written.
+            submitError.value = err instanceof ApiError && err.status === 409
+                ? t('menu_extras.removable.stale')
+                : apiMessage(err, t('catalogue.wizard.save_failed'));
         }
         window.scrollTo({ top: 0 });
     } finally {
@@ -1122,7 +1146,7 @@ onMounted(async () => {
             prefillFromProduct(productRes.data);
             providerRows.value = providerRowsFrom(activeProviders.value, pricesRes.data);
             await loadOwnedAddonGroups().catch(() => { ownedAddonGroups.value = []; });
-            await loadRemovable().catch(() => { removableTicks.value = {}; });
+            await loadRemovable();
         } else {
             providerRows.value = providerRowsFrom(activeProviders.value, []);
             // New products sort to the end of the full catalogue.
@@ -1783,6 +1807,8 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                             <p class="mt-0.5 text-xs text-slate-500">{{ t('catalogue.recipe.section_hint') }}</p>
                             <!-- LAUNCH review add-on — "Can be removed" (tester call 16: for cooked products it only prints). -->
                             <p class="mt-1 text-xs text-slate-500" data-test="removable-hint">{{ t('menu_extras.removable.hint') }}</p>
+                            <!-- Fix order C-1, M1 — ticks that did not load are locked and never sent. -->
+                            <p v-if="removableLoad === 'failed'" class="mt-1 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700" data-test="removable-load-failed">{{ t('menu_extras.removable.load_failed') }}</p>
                             <p v-if="removableOnlyPrints" class="mt-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800" data-test="removable-only-prints">{{ t('menu_extras.removable.only_prints') }}</p>
                             <p v-if="fieldError('recipe_lines')" class="mt-2 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700">{{ fieldError('recipe_lines') }}</p>
 
@@ -1794,7 +1820,7 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                     <!-- Fix order 1, L4 — the amount is isolated left-to-right so it never garbles in Arabic. -->
                                     <li v-for="(line, idx) in form.recipe_lines" :key="idx" class="text-sm text-slate-700"><bdi dir="ltr" class="tabular-nums">{{ recipeLineAmount(line) }}</bdi> {{ ingredientName(line.ingredient_uuid) }}
                                         <!-- LAUNCH review add-on — a catalogue manager ticks "Can be removed" without "Edit recipes". -->
-                                        <RemovableTick v-if="line.ingredient_uuid" :model-value="removableTicks[line.ingredient_uuid]" :ingredient-name="ingredientName(line.ingredient_uuid)" :ingredient-name-ar="ingredientByUuid(line.ingredient_uuid)?.name_ar ?? null" :disabled="!canManage" @update:model-value="setRemovable(line.ingredient_uuid, $event)" />
+                                        <RemovableTick v-if="line.ingredient_uuid" :model-value="removableTicks[line.ingredient_uuid]" :ingredient-name="ingredientName(line.ingredient_uuid)" :ingredient-name-ar="ingredientByUuid(line.ingredient_uuid)?.name_ar ?? null" :disabled="removableLocked" @update:model-value="setRemovable(line.ingredient_uuid, $event)" />
                                     </li>
                                 </ul>
                                 <p v-if="form.recipe_lines.length > 0" class="text-xs text-amber-800">{{ t('catalogue.recipe.live_cost') }}: <strong class="tabular-nums">{{ recipeLiveCost }}</strong> OMR</p>
@@ -1835,7 +1861,7 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                         </button>
                                         <p v-if="recipeLineMessage(line)" class="basis-full text-xs font-semibold text-rose-700" data-test="recipe-line-problem">{{ recipeLineMessage(line) }}</p>
                                         <!-- LAUNCH review add-on — "Can be removed" (catalogue.manage). -->
-                                        <RemovableTick v-if="line.ingredient_uuid" :model-value="removableTicks[line.ingredient_uuid]" :ingredient-name="ingredientName(line.ingredient_uuid)" :ingredient-name-ar="ingredientByUuid(line.ingredient_uuid)?.name_ar ?? null" :disabled="!canManage" @update:model-value="setRemovable(line.ingredient_uuid, $event)" />
+                                        <RemovableTick v-if="line.ingredient_uuid" :model-value="removableTicks[line.ingredient_uuid]" :ingredient-name="ingredientName(line.ingredient_uuid)" :ingredient-name-ar="ingredientByUuid(line.ingredient_uuid)?.name_ar ?? null" :disabled="removableLocked" @update:model-value="setRemovable(line.ingredient_uuid, $event)" />
                                     </li>
                                 </ul>
                                 <button type="button" class="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100" @click="addRecipeLine">

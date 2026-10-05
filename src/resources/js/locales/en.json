@@ -4080,7 +4080,9 @@
             "label": "Customer label (optional)",
             "label_ar": "Arabic label (optional)",
             "preview": "Customers see:",
-            "badge": "Can be removed"
+            "badge": "Can be removed",
+            "load_failed": "The \"Can be removed\" ticks could not be loaded, so they are locked and will not be saved. Reload the page to change them.",
+            "stale": "Someone changed the \"Can be removed\" ticks after you opened this page, so your ticks were not saved. Reload the page and tick them again."
         },
         "kind": {
             "title": "Type",

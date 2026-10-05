@@ -200,6 +200,76 @@ export function removablePayload(
     return out;
 }
 
+/** How far loading a product's saved ticks got (a new product has none to load). */
+export type RemovableLoadState = 'loading' | 'ok' | 'failed';
+
+export interface RemovableSavedLine {
+    ingredient_uuid: string;
+    label: string | null;
+    label_ar: string | null;
+}
+
+/**
+ * Fix order C-1, M1 — whether an edit save sends the "Can be removed" ticks.
+ * Never when they did not load (an empty or partial list would wipe the
+ * saved Remove list); never when the merchant changed nothing (two managers
+ * would overwrite each other). Otherwise the ticks, plus the ones the page
+ * loaded with (`expected`), so the server refuses a stale page with 409.
+ * A line deleted from the recipe in the same save is not a tick change: the
+ * recipe save retires its option.
+ */
+export function removableSaveDecision(
+    loadState: RemovableLoadState,
+    recipeLines: { ingredient_uuid: string }[],
+    ticks: Record<string, RemovableDraft | undefined>,
+    baseline: RemovableSavedLine[],
+): { send: false } | { send: true; lines: RemovableLinePayload[]; expected: RemovableSavedLine[] } {
+    if (loadState !== 'ok') return { send: false };
+    const lines = removablePayload(recipeLines, ticks);
+    const before = removablePayload(recipeLines, ticksFromState(baseline));
+    if (JSON.stringify(lines) === JSON.stringify(before)) return { send: false };
+    return {
+        send: true,
+        lines,
+        expected: baseline.map((l) => ({ ingredient_uuid: l.ingredient_uuid, label: l.label ?? null, label_ar: l.label_ar ?? null })),
+    };
+}
+
+export interface ComboTimingDraft {
+    /** 'HH:MM' from a time box ('' = no bound). */
+    available_from: string;
+    available_until: string;
+    /** 'YYYY-MM-DD' from a date box ('' = no bound). */
+    on_sale_from: string;
+    on_sale_until: string;
+    cooking_minutes: string | number;
+}
+
+/**
+ * Fix order C-1, L7 — the combo editor's daily hours, dates and cooking time
+ * as saved: the hours as set ('HH:MM:SS'; they used to be sent as null,
+ * wiping them), blank = no bound / not set.
+ */
+export function comboMenuFields(form: ComboTimingDraft): {
+    available_from: string | null;
+    available_until: string | null;
+    on_sale_from: string | null;
+    on_sale_until: string | null;
+    cooking_minutes: number | null;
+} {
+    const hours = (value: string): string | null => {
+        const text = String(value ?? '').trim();
+        return /^[0-2]\d:[0-5]\d/.test(text) ? `${text.slice(0, 5)}:00` : null;
+    };
+    return {
+        available_from: hours(form.available_from),
+        available_until: hours(form.available_until),
+        on_sale_from: saleDay(form.on_sale_from),
+        on_sale_until: saleDay(form.on_sale_until),
+        cooking_minutes: cookingPayload(form.cooking_minutes),
+    };
+}
+
 export type AddOnKind = 'extras' | 'remove' | 'instructions';
 
 /** A group saved before kinds existed reads as Extras. */

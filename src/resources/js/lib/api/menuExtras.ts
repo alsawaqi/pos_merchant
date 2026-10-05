@@ -7,7 +7,7 @@
  */
 
 import { apiGet, apiPut, type JsonValue } from '@/lib/api';
-import type { RemovableLinePayload } from '@/lib/menuExtras';
+import type { RemovableLinePayload, RemovableSavedLine } from '@/lib/menuExtras';
 
 export interface RemovableLine {
     ingredient_uuid: string;
@@ -31,6 +31,10 @@ export function getRemovable(productUuid: string): Promise<{ data: RemovableStat
     return apiGet<{ data: RemovableState }>(`/api/products/${productUuid}/removable`);
 }
 
-export function saveRemovable(productUuid: string, lines: RemovableLinePayload[]): Promise<{ data: RemovableState }> {
-    return apiPut<{ data: RemovableState }>(`/api/products/${productUuid}/removable`, { lines } as unknown as JsonValue);
+/**
+ * `expected` = the ticks the page loaded with (fix order C-1, M1): the server
+ * answers 409 when they are no longer the saved ones, and writes nothing.
+ */
+export function saveRemovable(productUuid: string, lines: RemovableLinePayload[], expected: RemovableSavedLine[]): Promise<{ data: RemovableState }> {
+    return apiPut<{ data: RemovableState }>(`/api/products/${productUuid}/removable`, { lines, expected } as unknown as JsonValue);
 }

@@ -42,12 +42,11 @@ import { comboPriceRange, slotIssues } from '@/lib/combo';
 import {
     canBeMain,
     comboCookingFigure,
-    cookingPayload,
+    comboMenuFields,
     cookingProblem,
     datesProblem,
     limitedSlotIndexes,
     mainIssues,
-    saleDay,
 } from '@/lib/menuExtras';
 import { MerchantPermission } from '@/lib/permissions';
 import { authState } from '@/stores/auth';
@@ -276,12 +275,9 @@ function payload(): SaveComboPayload {
         show_on_customer_tablet: form.show_on_customer_tablet,
         sold_on_delivery: form.sold_on_delivery,
         // LAUNCH review add-on — the daily hours as set (they used to be sent
-        // as null, wiping them), the dates and the cooking time.
-        available_from: form.available_from ? `${form.available_from.slice(0, 5)}:00` : null,
-        available_until: form.available_until ? `${form.available_until.slice(0, 5)}:00` : null,
-        on_sale_from: saleDay(form.on_sale_from),
-        on_sale_until: saleDay(form.on_sale_until),
-        cooking_minutes: cookingPayload(form.cooking_minutes),
+        // as null, wiping them), the dates and the cooking time (fix order
+        // C-1, L7: one pure, node-tested helper).
+        ...comboMenuFields(form),
         ...(isEdit ? { status: form.status } : {}),
         slots: form.slots.map((slot) => ({
             id: slot.id,

@@ -90,22 +90,67 @@ test('C3 "Can be removed": the ticked lines of the recipe as it stands, each onc
     assert.equal(groupKind(null), 'extras');
 });
 
-test('C1 the combo editor keeps daily hours, sends dates, cooking time and the main slot', () => {
+test('C1 (fix order C-1, L7) the combo editor saves the daily hours as set, the dates and the cooking time', () => {
+    const { comboMenuFields } = menu();
+    // The hours used to be sent as null on every save, wiping them (menu audit §3.2).
+    assert.deepEqual({ ...comboMenuFields({ available_from: '11:00', available_until: '15:30', on_sale_from: '2026-11-01', on_sale_until: '2026-11-30', cooking_minutes: '12' }) }, {
+        available_from: '11:00:00',
+        available_until: '15:30:00',
+        on_sale_from: '2026-11-01',
+        on_sale_until: '2026-11-30',
+        cooking_minutes: 12,
+    });
+    // Blank boxes = no bound / not set; 0 minutes is "ready at once", not "not set".
+    assert.deepEqual({ ...comboMenuFields({ available_from: '', available_until: '', on_sale_from: '', on_sale_until: '', cooking_minutes: 0 }) }, {
+        available_from: null,
+        available_until: null,
+        on_sale_from: null,
+        on_sale_until: null,
+        cooking_minutes: 0,
+    });
+    // A prefilled 'HH:MM:SS' (or a browser's 'HH:MM:SS' time box) keeps its minutes.
+    assert.equal(comboMenuFields({ available_from: '09:45:00', available_until: '', on_sale_from: '', on_sale_until: '', cooking_minutes: '' }).available_from, '09:45:00');
+    assert.equal(comboMenuFields({ available_from: '', available_until: '', on_sale_from: '', on_sale_until: '', cooking_minutes: '' }).cooking_minutes, null);
+
+    // Wiring: payload() sends exactly these fields and every slot's main flag.
     const { script, template } = sfc('resources/js/Pages/Merchant/Catalogue/ComboEditor.vue');
-    // The hours used to be wiped on every save (menu audit §3.2).
-    assert.doesNotMatch(script, /available_from: null,/);
-    assert.match(script, /available_from: form\.available_from \?/);
-    assert.match(script, /form\.available_from = combo\.available_from/);
-    assert.match(script, /on_sale_from: saleDay\(form\.on_sale_from\)/);
-    assert.match(script, /cooking_minutes: cookingPayload\(form\.cooking_minutes\)/);
-    assert.match(script, /is_main: slot\.is_main,/);
-    assert.match(script, /is_main: slot\.is_main \?\? false,/);
+    const body = script.slice(script.indexOf('function payload()'), script.indexOf('const blockingProblems'));
+    assert.match(body, /\.\.\.comboMenuFields\(form\),/);
+    assert.doesNotMatch(body, /available_from: null/);
+    assert.match(body, /is_main: slot\.is_main,/);
     for (const hook of ['combo-when', 'combo-hours-from', 'combo-hours-until', 'combo-sale-from', 'combo-sale-until', 'combo-cooking', 'combo-main', 'combo-main-none', 'slot-main', 'slot-limited-warning']) {
         assert.match(template, new RegExp(`data-test="${hook}"`), hook);
     }
-    assert.match(template, /:disabled="!canBeMain\(slot\) && !slot\.is_main"/);
-    assert.match(script, /mainProblems\.value\.forEach/);
     assertKeysExist(template + script, 'ComboEditor');
+});
+
+test('C3 (fix order C-1, M1) the wizard sends the ticks only when they loaded and changed, with the loaded ticks', () => {
+    const { removableSaveDecision } = menu();
+    const recipe = [{ ingredient_uuid: 'k' }, { ingredient_uuid: 'o' }, { ingredient_uuid: 'b' }];
+    const loaded = [{ ingredient_uuid: 'k', label: 'Ketchup', label_ar: 'كاتشب' }, { ingredient_uuid: 'o', label: 'Onion', label_ar: null }];
+    const asLoaded = { k: { ticked: true, label: 'Ketchup', label_ar: 'كاتشب' }, o: { ticked: true, label: 'Onion', label_ar: '' } };
+
+    // A failed (or unfinished) load never sends: an empty list would wipe the saved Remove list.
+    assert.equal(removableSaveDecision('failed', recipe, {}, []).send, false);
+    assert.equal(removableSaveDecision('loading', recipe, asLoaded, loaded).send, false);
+    // Nothing changed: nothing sent (no overwriting another manager's ticks).
+    assert.equal(removableSaveDecision('ok', recipe, asLoaded, loaded).send, false);
+    // A ticked line deleted from the recipe is not a tick change (the recipe save retires it).
+    assert.equal(removableSaveDecision('ok', [{ ingredient_uuid: 'o' }, { ingredient_uuid: 'b' }], asLoaded, loaded).send, false);
+
+    // A change sends the new ticks AND the loaded ones (409 when stale).
+    const changed = removableSaveDecision('ok', recipe, { ...asLoaded, o: { ticked: false, label: 'Onion', label_ar: '' }, b: { ticked: true, label: '', label_ar: '' } }, loaded);
+    assert.equal(changed.send, true);
+    assert.deepEqual([...changed.lines].map((l) => ({ ...l })), [
+        { ingredient_uuid: 'k', label: 'Ketchup', label_ar: 'كاتشب' },
+        { ingredient_uuid: 'b', label: null, label_ar: null },
+    ]);
+    assert.deepEqual([...changed.expected].map((l) => ({ ...l })), loaded);
+    // Unticking everything is a real change, sent with what was loaded.
+    const cleared = removableSaveDecision('ok', recipe, {}, loaded);
+    assert.equal(cleared.send, true);
+    assert.equal(cleared.lines.length, 0);
+    assert.equal(cleared.expected.length, 2);
 });
 
 test('C2/C3 the product wizard: dates and cooking time on the basics, "Can be removed" on the recipe lines', () => {
@@ -117,11 +162,20 @@ test('C2/C3 the product wizard: dates and cooking time on the basics, "Can be re
     for (const hook of ['product-sale-dates', 'product-sale-from', 'product-sale-until', 'product-cooking-minutes', 'removable-hint', 'removable-only-prints', 'review-sale-dates', 'review-cooking']) {
         assert.match(template, new RegExp(`data-test="${hook}"`), hook);
     }
-    // The tick on editable AND read-only recipe lines; catalogue.manage edits it.
+    // The tick on editable AND read-only recipe lines; catalogue.manage edits
+    // it, and only once the saved ticks loaded (fix order C-1, M1).
     assert.equal((template.match(/<RemovableTick /g) ?? []).length, 2);
-    assert.match(template, /<RemovableTick[^>]*:disabled="!canManage"/);
-    // Create: in the atomic wizard call; edit: saved after the recipe.
+    assert.equal((template.match(/<RemovableTick[^>]*:disabled="removableLocked"/g) ?? []).length, 2);
+    assert.match(script, /removableLocked = computed\(\(\) => !canManage\.value \|\| removableLoad\.value !== 'ok'\)/);
+    assert.match(template, /v-if="removableLoad === 'failed'"[^>]*data-test="removable-load-failed"/);
+    // A failed load leaves the state 'failed' (never an empty "loaded" list).
+    const load = script.slice(script.indexOf('async function loadRemovable'), script.indexOf('const isPieceCounted'));
+    assert.match(load, /catch \{\s*removableTicks\.value = \{\};\s*removableLoad\.value = 'failed';/);
+    // Create: in the atomic wizard call; edit: saved after the recipe, only on the decision.
     assert.match(script, /removable: canEditRecipes\.value && hasRecipeStep\.value \? removablePayload\(recipePayload\(\), removableTicks\.value\) : \[\]/);
+    assert.match(script, /removableSaveDecision\(removableLoad\.value, form\.recipe_lines, removableTicks\.value, removableBaseline\.value\)/);
+    assert.match(script, /if \(hasRecipeStep\.value && removableSave\.send\) \{\s*await saveRemovable\(uuid, removableSave\.lines, removableSave\.expected\)/);
+    assert.match(script, /err\.status === 409\s*\? t\('menu_extras\.removable\.stale'\)/);
     const recipeAt = script.indexOf('await updateProductRecipe(uuid');
     const removableAt = script.indexOf('await saveRemovable(uuid');
     assert.ok(recipeAt > 0 && removableAt > recipeAt, 'the ticks are saved after the recipe');
