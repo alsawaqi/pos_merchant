@@ -32,6 +32,8 @@ export type ProductType = 'standard' | 'combo';
 export type BranchScope = 'all' | 'selected';
 export type AddOnSelectionMode = 'single' | 'multi';
 export type AddOnStatus = 'active' | 'inactive';
+/** LAUNCH review add-on — Extras (priced), a product's Remove list, Quick instructions. */
+export type AddOnKind = 'extras' | 'remove' | 'instructions';
 
 export interface Category {
     id: number;
@@ -117,6 +119,11 @@ export interface Product {
      */
     available_from: string | null;
     available_until: string | null;
+    /** LAUNCH review add-on — limited-time dates ('YYYY-MM-DD', inclusive, Muscat; null = no bound). */
+    on_sale_from?: string | null;
+    on_sale_until?: string | null;
+    /** LAUNCH review add-on — cooking time in minutes (null = not set). */
+    cooking_minutes?: number | null;
     display_order: number;
     status: ProductStatus | null;
     /** Phase 4.9 — product-specific add-on groups when eager-loaded. */
@@ -296,6 +303,8 @@ export interface AddOn {
     /** P-G3 — the real product behind this option (null = label-only). */
     linked_product_id: number | null;
     linked_product?: { uuid: string; name: string; stock_mode: string | null } | null;
+    /** LAUNCH review add-on — an option of a Remove list: the ingredient it leaves out. */
+    removes_ingredient_id?: number | null;
     /** PD3b — stock-usage lines (present when eager-loaded). */
     consumption?: AddOnConsumptionLine[];
     display_order: number;
@@ -321,6 +330,8 @@ export interface AddOnGroup {
     is_global: boolean;
     /** v2 #6: non-null = a group privately owned by this product. */
     owner_product_id: number | null;
+    /** LAUNCH review add-on — 'extras' | 'remove' | 'instructions'. */
+    kind?: AddOnKind;
     display_order: number;
     status: AddOnStatus;
     products_count?: number;
@@ -389,6 +400,10 @@ export interface CreateProductPayload {
     /** G1 — menu time-window ('HH:MM:SS', null = no bound). */
     available_from?: string | null;
     available_until?: string | null;
+    /** LAUNCH review add-on — limited-time dates and cooking time. */
+    on_sale_from?: string | null;
+    on_sale_until?: string | null;
+    cooking_minutes?: number | null;
     display_order?: number;
 }
 
@@ -424,6 +439,10 @@ export interface UpdateProductPayload {
     /** G1 — menu time-window ('HH:MM:SS', null = no bound). */
     available_from?: string | null;
     available_until?: string | null;
+    /** LAUNCH review add-on — limited-time dates and cooking time. */
+    on_sale_from?: string | null;
+    on_sale_until?: string | null;
+    cooking_minutes?: number | null;
     display_order?: number;
     status?: ProductStatus;
 }
@@ -439,6 +458,8 @@ export interface CreateAddOnGroupPayload {
     category_ids?: number[];
     is_global?: boolean;
     display_order?: number;
+    /** LAUNCH review add-on — Extras or Quick instructions. */
+    kind?: 'extras' | 'instructions';
 }
 
 export interface UpdateAddOnGroupPayload {
@@ -452,6 +473,8 @@ export interface UpdateAddOnGroupPayload {
     is_global?: boolean;
     display_order?: number;
     status?: AddOnStatus;
+    /** LAUNCH review add-on — Extras or Quick instructions. */
+    kind?: 'extras' | 'instructions';
 }
 
 export interface CreateAddOnPayload {
@@ -616,6 +639,8 @@ export interface CreateProductWizardPayload {
     branches: BranchScopePayload | null;
     /** LAUNCH-P4 B3 — per provider: listed + price (null = delivery price). */
     delivery_prices: ProviderChannelPayload[];
+    /** LAUNCH review add-on — recipe lines ticked "Can be removed". */
+    removable?: { ingredient_uuid: string; label: string | null; label_ar: string | null }[];
 }
 
 /** LAUNCH-P4 H6 — where the product is sold; never any shelf count (H7). */
@@ -772,6 +797,10 @@ export interface AddonLinkOption {
     /** LAUNCH-P4 B2 — the combo editor shows the item's own price. */
     base_price?: string;
     status?: ProductStatus | null;
+    /** LAUNCH review add-on — the combo editor warns about limited-time items. */
+    on_sale_from?: string | null;
+    on_sale_until?: string | null;
+    cooking_minutes?: number | null;
 }
 
 // ---- LAUNCH-P4 B2 — combos ---------------------------------------
@@ -796,6 +825,8 @@ export interface ComboSlot {
     min_choices: number;
     max_choices: number;
     sort_order: number;
+    /** LAUNCH review add-on — offered as "Make it a meal?". */
+    is_main?: boolean;
     options: ComboSlotOption[];
 }
 
@@ -821,6 +852,10 @@ export interface SaveComboPayload {
     sold_on_delivery: boolean;
     available_from: string | null;
     available_until: string | null;
+    /** LAUNCH review add-on — limited-time dates and the combo's own cooking time. */
+    on_sale_from?: string | null;
+    on_sale_until?: string | null;
+    cooking_minutes?: number | null;
     display_order?: number;
     status?: ProductStatus;
     slots: {
@@ -829,6 +864,7 @@ export interface SaveComboPayload {
         name_ar: string | null;
         min_choices: number;
         max_choices: number;
+        is_main?: boolean;
         options: { product_uuid: string; extra_price: string; is_default: boolean }[];
     }[];
     delivery_prices: ProviderChannelPayload[];

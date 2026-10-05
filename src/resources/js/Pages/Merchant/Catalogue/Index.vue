@@ -12,7 +12,7 @@
  *   - Create / edit / delete buttons only when CatalogueManage
  */
 
-import { Beaker, Building2, Boxes, Clock3, FileSpreadsheet, Globe2, Image, Layers, Package, Pencil, Plus, QrCode, Sparkles, Store, Trash2, Truck } from 'lucide-vue-next';
+import { Beaker, Building2, Boxes, CalendarRange, Clock3, FileSpreadsheet, Globe2, Image, Layers, ListChecks, Package, Pencil, Plus, QrCode, Sparkles, Store, Trash2, Truck } from 'lucide-vue-next';
 import { channelBadges, type ChannelKey } from '@/lib/channels';
 import { belowZeroBranchIds } from '@/lib/stockFlags';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
@@ -67,6 +67,8 @@ import { canMarkSoldOut, canWriteRecipes, MerchantPermission } from '@/lib/permi
 import SoldOutDialog from './SoldOutDialog.vue';
 import ImageUploadField from './ImageUploadField.vue';
 import ProductThumb from './ProductThumb.vue';
+// LAUNCH review add-on — limited-time badges and Quick instructions.
+import { groupKind, muscatToday, saleBadge, shortDay } from '@/lib/menuExtras';
 
 const { t, locale } = useI18n();
 const { can } = usePermissions();
@@ -179,6 +181,8 @@ const agForm = reactive<{
     is_global: boolean;
     display_order: number;
     status: AddOnStatus;
+    /** LAUNCH review add-on — Extras (with prices) or Quick instructions (free). */
+    kind: 'extras' | 'instructions';
 }>({
     name: '',
     name_ar: '',
@@ -189,6 +193,7 @@ const agForm = reactive<{
     is_global: false,
     display_order: 0,
     status: 'active',
+    kind: 'extras',
 });
 
 // ---- Add-on option modal (Phase 4.9) ----------------------------
@@ -480,6 +485,14 @@ function availabilityWindowLabel(prod: Product): string | null {
     return `${from}–${until}`;
 }
 
+// LAUNCH review add-on — "Starts 1 Nov" / "Ends 30 Nov" / "Ended" (Muscat days).
+const todayMuscat = muscatToday();
+function saleBadgeOf(prod: Product): { kind: 'starts' | 'ends' | 'ended'; text: string } | null {
+    const badge = saleBadge(prod.on_sale_from, prod.on_sale_until, todayMuscat);
+    if (badge === null) return null;
+    return { kind: badge.kind, text: t(`menu_extras.badge.${badge.kind}`, { date: shortDay(badge.date, locale.value, todayMuscat) }) };
+}
+
 
 
 
@@ -511,6 +524,7 @@ function openCreateAddOnGroup(): void {
     agForm.is_global = false;
     agForm.display_order = addOnGroups.value.length;
     agForm.status = 'active';
+    agForm.kind = 'extras';
     agModalErrors.value = {};
     agModalError.value = null;
     agModalOpen.value = true;
@@ -528,6 +542,7 @@ function openEditAddOnGroup(group: AddOnGroup): void {
     agForm.is_global = group.is_global;
     agForm.display_order = group.display_order;
     agForm.status = (group.status ?? 'active') as AddOnStatus;
+    agForm.kind = groupKind(group) === 'instructions' ? 'instructions' : 'extras';
     agModalErrors.value = {};
     agModalError.value = null;
     agModalOpen.value = true;
@@ -538,16 +553,20 @@ async function submitAddOnGroup(): Promise<void> {
     agModalErrors.value = {};
     agModalError.value = null;
     try {
+        // LAUNCH review add-on — Quick instructions are several-choice and
+        // never required (the server enforces the same).
+        const instructions = agForm.kind === 'instructions';
         const payload = {
             name: agForm.name.trim(),
             name_ar: agForm.name_ar.trim() || null,
-            selection_mode: agForm.selection_mode,
+            selection_mode: instructions ? 'multi' as const : agForm.selection_mode,
             // Phase B — '' = unbounded → null on the wire.
-            min_selections: String(agForm.min_selections).trim() === '' ? null : Number(agForm.min_selections),
+            min_selections: instructions || String(agForm.min_selections).trim() === '' ? null : Number(agForm.min_selections),
             max_selections: String(agForm.max_selections).trim() === '' ? null : Number(agForm.max_selections),
             category_ids: agForm.category_ids,
             is_global: agForm.is_global,
             display_order: agForm.display_order,
+            kind: agForm.kind,
         };
         if (agModalMode.value === 'create') {
             await createAddOnGroup(payload);
@@ -593,6 +612,8 @@ async function confirmDeleteAddOnGroup(): Promise<void> {
 
 // PD3b — the modal's stock-usage lines (editor write-shape).
 const aoConsumption = ref<ConsumptionLinePayload[]>([]);
+// LAUNCH review add-on — an option of a Quick instructions group.
+const aoIsInstruction = computed(() => groupKind(aoModalParentGroup.value) === 'instructions');
 
 /** Read-shape → editor write-shape. LAUNCH-P3 P3-1 — an ingredient line
  * reopens in the unit it was typed in (entered_unit / entered_quantity),
@@ -699,25 +720,29 @@ async function submitAddOn(): Promise<void> {
         // Fix order 1, L8 — a recipe-only role (Edit recipes + catalogue view)
         // saves the option's stock usage and nothing else of it.
         if (!canManage.value) {
-            if (aoModalTarget.value && canEditRecipes.value) {
+            if (aoModalTarget.value && canEditRecipes.value && !aoIsInstruction.value) {
                 await updateAddOn(aoModalTarget.value.uuid, { consumption: completeConsumptionLines(aoConsumption.value) });
             }
             aoModalOpen.value = false;
             await fetchAddOnGroups();
             return;
         }
+        // LAUNCH review add-on — a quick instruction is free, sells no
+        // product and uses no stock.
+        const instruction = aoIsInstruction.value;
         const payload = {
             name: aoForm.name.trim(),
             name_ar: aoForm.name_ar.trim() || null,
-            price_delta: aoForm.price_delta,
+            price_delta: instruction ? '0' : aoForm.price_delta,
             is_default: aoForm.is_default,
             // P-G3 — the real product behind this option ('' = none).
-            linked_product_uuid: aoForm.linked_product_uuid || null,
+            linked_product_uuid: instruction ? null : aoForm.linked_product_uuid || null,
             display_order: aoForm.display_order,
             // PD3b — key always present: the modal owns the full line
             // set, so an emptied editor clears the stored lines too.
             // LAUNCH-P3 P3-3 — but only for a user who may edit recipes;
             // otherwise the key is left out and the lines stay as they are.
+            // (A quick instruction's editor is hidden: its lines stay empty.)
             ...(canEditRecipes.value ? { consumption: completeConsumptionLines(aoConsumption.value) } : {}),
         };
         if (aoModalMode.value === 'create' && aoModalParentGroup.value) {
@@ -1120,6 +1145,17 @@ async function performProviderDelete(): Promise<void> {
                                         <Clock3 class="size-3" />
                                         {{ availabilityWindowLabel(prod) }}
                                     </span>
+                                    <!-- LAUNCH review add-on — limited-time dates. -->
+                                    <span
+                                        v-if="saleBadgeOf(prod)"
+                                        class="mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                                        :class="saleBadgeOf(prod)!.kind === 'ended' ? 'bg-slate-200 text-slate-600' : saleBadgeOf(prod)!.kind === 'starts' ? 'bg-violet-100 text-violet-700' : 'bg-amber-100 text-amber-800'"
+                                        :title="t('menu_extras.dates_title')"
+                                        data-test="sale-badge"
+                                    >
+                                        <CalendarRange class="size-3" />
+                                        {{ saleBadgeOf(prod)!.text }}
+                                    </span>
                                     <!-- LAUNCH-P4 M6 — a shelf count below zero is flagged. -->
                                     <span
                                         v-if="belowZeroBranchIds(prod).length > 0"
@@ -1277,6 +1313,15 @@ async function performProviderDelete(): Promise<void> {
                                         <Globe2 class="size-3" />
                                         {{ t('catalogue.addon_group_card.global_badge') }}
                                     </span>
+                                    <!-- LAUNCH review add-on — Quick instructions (free tap list). -->
+                                    <span
+                                        v-if="groupKind(group) === 'instructions'"
+                                        class="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-sky-700"
+                                        data-test="kind-badge"
+                                    >
+                                        <ListChecks class="size-3" />
+                                        {{ t('menu_extras.kind.badge_instructions') }}
+                                    </span>
                                 </div>
                                 <p v-if="group.name_ar" class="text-xs text-slate-500" dir="rtl">{{ group.name_ar }}</p>
                                 <p class="mt-1 text-xs text-slate-500">
@@ -1303,7 +1348,7 @@ async function performProviderDelete(): Promise<void> {
                                     <span v-if="addon.name_ar" class="block truncate text-xs text-slate-500" dir="rtl">{{ addon.name_ar }}</span>
                                 </div>
                                 <div class="flex items-center gap-2">
-                                    <span class="text-xs font-semibold tabular-nums text-slate-700">
+                                    <span v-if="groupKind(group) !== 'instructions'" class="text-xs font-semibold tabular-nums text-slate-700">
                                         +{{ addon.price_delta }}
                                         <span class="text-[10px] font-normal text-slate-400">OMR</span>
                                     </span>
@@ -1638,7 +1683,23 @@ async function performProviderDelete(): Promise<void> {
                         <input v-model="agForm.name_ar" type="text" dir="rtl" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                     </label>
                 </div>
-                <label class="block">
+                <!-- LAUNCH review add-on — the group type: Extras (with prices) or Quick instructions (free taps). -->
+                <fieldset class="rounded-lg border border-slate-200 p-3" data-test="group-kind">
+                    <legend class="px-2 text-sm font-semibold text-slate-700">{{ t('menu_extras.kind.title') }}</legend>
+                    <div class="flex flex-wrap gap-4">
+                        <label class="inline-flex items-center gap-1.5 text-sm text-slate-700">
+                            <input v-model="agForm.kind" type="radio" value="extras" class="border-slate-300 text-teal-600 focus:ring-teal-200" data-test="group-kind-extras">
+                            {{ t('menu_extras.kind.extras') }}
+                        </label>
+                        <label class="inline-flex items-center gap-1.5 text-sm text-slate-700">
+                            <input v-model="agForm.kind" type="radio" value="instructions" class="border-slate-300 text-teal-600 focus:ring-teal-200" data-test="group-kind-instructions">
+                            {{ t('menu_extras.kind.instructions') }}
+                        </label>
+                    </div>
+                    <p v-if="agForm.kind === 'instructions'" class="mt-2 text-xs text-slate-500">{{ t('menu_extras.kind.instructions_hint') }}</p>
+                    <p v-if="agModalErrors.kind" class="mt-1 text-xs text-rose-600">{{ agModalErrors.kind[0] }}</p>
+                </fieldset>
+                <label v-if="agForm.kind !== 'instructions'" class="block">
                     <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.selection_mode') }}</span>
                     <select v-model="agForm.selection_mode" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                         <option value="single">{{ t('catalogue.selection_modes.single') }}</option>
@@ -1647,7 +1708,7 @@ async function performProviderDelete(): Promise<void> {
                 </label>
                 <!-- Phase B — selection constraints. min >= 1 makes the group
                      REQUIRED at the POS; blank = unbounded. -->
-                <div class="grid gap-3 sm:grid-cols-2">
+                <div v-if="agForm.kind !== 'instructions'" class="grid gap-3 sm:grid-cols-2">
                     <label class="block">
                         <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.min_selections') }}</span>
                         <input v-model="agForm.min_selections" type="number" min="0" max="99" :placeholder="t('catalogue.fields.selections_unbounded')" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
@@ -1737,7 +1798,9 @@ async function performProviderDelete(): Promise<void> {
                      product's real stock at sale; the price below stays the
                      add-on price for THIS group (same or different from the
                      standalone price). -->
-                <label class="block">
+                <!-- LAUNCH review add-on — a quick instruction has no price, linked product or stock. -->
+                <p v-if="aoIsInstruction" class="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-800" data-test="instruction-free">{{ t('menu_extras.kind.option_free') }}</p>
+                <label v-if="!aoIsInstruction" class="block">
                     <span class="text-sm font-medium text-slate-700">Linked product (optional)</span>
                     <!-- Fix order 1, L3 — changing an existing option's linked product moves its stock deduction: "Edit recipes". -->
                     <select
@@ -1753,7 +1816,7 @@ async function performProviderDelete(): Promise<void> {
                     </select>
                     <p class="mt-1 text-xs text-slate-500">When set, selling this add-on consumes the product's real stock (cooked/ready: shelf −1 each, made-to-order: its recipe). The add-on greys out on the POS when the product is sold out.</p>
                 </label>
-                <label class="block">
+                <label v-if="!aoIsInstruction" class="block">
                     <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.price_delta') }} (OMR)</span>
                     <input v-model="aoForm.price_delta" type="number" step="0.001" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                     <p v-if="aoModalErrors.price_delta" class="mt-1 text-xs text-rose-600">{{ aoModalErrors.price_delta[0] }}</p>
@@ -1770,7 +1833,7 @@ async function performProviderDelete(): Promise<void> {
                 </fieldset>
                 <!-- PD3b — what picking this option uses or removes from
                      stock, on top of the parent product's recipe/items. -->
-                <div class="rounded-lg border border-slate-200 p-3">
+                <div v-if="!aoIsInstruction" class="rounded-lg border border-slate-200 p-3">
                     <span class="block text-sm font-medium text-slate-700">{{ t('catalogue.consumption.section_title') }}</span>
                     <span class="mb-2 block text-xs text-slate-500">{{ t('catalogue.consumption.section_hint') }}</span>
                     <AddonConsumptionEditor

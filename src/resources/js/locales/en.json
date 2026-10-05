@@ -4040,5 +4040,55 @@
         "sales_excl_vat": "Gross and net sales are shown excluding VAT.",
         "inclusive_orders": "{count} orders had VAT inside their prices; it was taken out.",
         "included_in_prices": "included in prices"
+    },
+    "meals": {
+        "main_title": "Make it a meal?",
+        "main_hint": "Mark the slot that holds the main item. Customers who tap that item alone are offered this combo with it already picked. Only a slot where exactly one item is picked (least 1, most 1) can be the main.",
+        "no_main": "No main item",
+        "main_label": "Main item (offered as \"Make it a meal?\")",
+        "main_needs_single": "only a slot with least 1 and most 1",
+        "limited_warning": "Every item in this slot has sale dates. When they end, this combo can no longer be completed.",
+        "issues": {
+            "main_not_single": "Slot {n}: the main item must be a slot where exactly one item is picked (least 1, most 1).",
+            "two_mains": "Only one slot can be the main item."
+        }
+    },
+    "menu_extras": {
+        "when_title": "When it is sold",
+        "dates_title": "Limited time",
+        "on_sale_from": "From date",
+        "on_sale_until": "Until date",
+        "dates_hint": "The item shows only from the first day to the last day (both included) and disappears by itself after. Leave both empty to sell it always. This is separate from the daily hours.",
+        "until_before_from": "The \"Until\" date must be on or after the \"From\" date.",
+        "no_dates": "Always",
+        "cooking_minutes": "Cooking time (min)",
+        "cooking_hint": "Customers see \"about N min\" for this item, and \"ready in about N min\" after ordering. Leave empty to show nothing.",
+        "cooking_range": "Cooking time must be a whole number from 0 to 240 minutes.",
+        "combo_cooking_hint": "Leave empty to use its longest item: customers now see about {minutes} min.",
+        "combo_cooking_hint_none": "Leave empty to use its longest item's cooking time.",
+        "minutes": "{n} min",
+        "not_set": "Not shown",
+        "badge": {
+            "starts": "Starts {date}",
+            "ends": "Ends {date}",
+            "ended": "Ended"
+        },
+        "removable": {
+            "tick": "Can be removed",
+            "hint": "Tick \"Can be removed\" on the ingredients a customer may leave out (ketchup, onion). The customer taps \"NO …\", it prints on the kitchen ticket, and the ingredient is not taken from stock.",
+            "only_prints": "For a cooked product this only prints on the ticket: its stock was used when it was cooked.",
+            "label": "Customer label (optional)",
+            "label_ar": "Arabic label (optional)",
+            "preview": "Customers see:",
+            "badge": "Can be removed"
+        },
+        "kind": {
+            "title": "Type",
+            "extras": "Extras (with prices)",
+            "instructions": "Quick instructions (no price)",
+            "instructions_hint": "Free taps such as \"Well done\", \"Less spicy\" or \"Sauce on the side\". No price, no stock, several can be picked, never required. Attach them to products or categories as usual.",
+            "badge_instructions": "Quick instructions",
+            "option_free": "A quick instruction is free: it has no price, linked product or stock."
+        }
     }
 }

@@ -13,7 +13,7 @@
  * Create: POST /api/combos. Edit: PUT /api/combos/{uuid} (slots keep their
  * ids). The preview shows the price range before the items' add-ons.
  */
-import { ArrowLeft, Layers, Plus, Trash2 } from 'lucide-vue-next';
+import { ArrowLeft, CalendarRange, Layers, Plus, Star, Timer, Trash2 } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { RouterLink, useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
@@ -38,6 +38,17 @@ import { listDeliveryProviders, type DeliveryProvider } from '@/lib/api/delivery
 import { listBranches, type Branch as BranchLite } from '@/lib/api/branches';
 import { branchScopePayload, providerPayload, providerRowsFrom, selectedBranchIds, type ProviderChannelRow } from '@/lib/channels';
 import { comboPriceRange, slotIssues } from '@/lib/combo';
+// LAUNCH review add-on — main slot, dates, cooking time.
+import {
+    canBeMain,
+    comboCookingFigure,
+    cookingPayload,
+    cookingProblem,
+    datesProblem,
+    limitedSlotIndexes,
+    mainIssues,
+    saleDay,
+} from '@/lib/menuExtras';
 import { MerchantPermission } from '@/lib/permissions';
 import { authState } from '@/stores/auth';
 
@@ -60,7 +71,7 @@ const activeProviders = computed(() => providers.value.filter((p) => p.is_active
 
 // ---- Form ----------------------------------------------------------
 interface SlotOptionForm { key: string; product_uuid: string; extra_price: string; is_default: boolean; label: string | null }
-interface SlotForm { key: string; id: number | null; name: string; name_ar: string; min_choices: number; max_choices: number; options: SlotOptionForm[] }
+interface SlotForm { key: string; id: number | null; name: string; name_ar: string; min_choices: number; max_choices: number; is_main: boolean; options: SlotOptionForm[] }
 
 let seq = 0;
 const nextKey = (p: string): string => `${p}-${++seq}`;
@@ -83,6 +94,12 @@ const form = reactive<{
     branch_scope: 'all' | 'selected';
     branch_ids: number[];
     slots: SlotForm[];
+    /** LAUNCH review add-on — daily hours ('HH:MM'), dates, cooking time. */
+    available_from: string;
+    available_until: string;
+    on_sale_from: string;
+    on_sale_until: string;
+    cooking_minutes: string;
 }>({
     name: '',
     name_ar: '',
@@ -101,6 +118,11 @@ const form = reactive<{
     branch_scope: 'all',
     branch_ids: [],
     slots: [],
+    available_from: '',
+    available_until: '',
+    on_sale_from: '',
+    on_sale_until: '',
+    cooking_minutes: '',
 });
 const providerRows = ref<Record<string, ProviderChannelRow>>({});
 
@@ -109,7 +131,7 @@ function blankOption(): SlotOptionForm {
 }
 
 function addSlot(): void {
-    form.slots.push({ key: nextKey('slot'), id: null, name: '', name_ar: '', min_choices: 1, max_choices: 1, options: [blankOption()] });
+    form.slots.push({ key: nextKey('slot'), id: null, name: '', name_ar: '', min_choices: 1, max_choices: 1, is_main: false, options: [blankOption()] });
 }
 
 function removeSlot(index: number): void {
@@ -137,6 +159,24 @@ const rangeDelivery = computed(() => comboPriceRange(form.delivery_price || form
 function issueText(slot: SlotForm): string[] {
     return slotIssues(slot).map((issue) => t(`combos.issues.${issue}`));
 }
+
+// ---- LAUNCH review add-on: main slot, dates, cooking time ------------
+/** "Make it a meal?" — at most one main, on a slot with least = most = 1. */
+function setMain(index: number | null): void {
+    form.slots.forEach((slot, i) => { slot.is_main = i === index; });
+}
+const mainProblems = computed(() => mainIssues(form.slots));
+function mainProblem(index: number): string | null {
+    const found = mainProblems.value.find((p) => p.index === index);
+    return found ? t(`meals.issues.${found.issue}`, { n: index + 1 }) : null;
+}
+/** Required slots whose every item has sale dates (a warning, never a block). */
+const limitedSlots = computed(() => limitedSlotIndexes(form.slots, (uuid) => items.value.find((i) => i.uuid === uuid)));
+const datesError = computed(() => (datesProblem(form.on_sale_from, form.on_sale_until) ? t('menu_extras.until_before_from') : null));
+const cookingError = computed(() => (cookingProblem(form.cooking_minutes) ? t('menu_extras.cooking_range') : null));
+/** What customers see when the combo has no time of its own: its longest item. */
+const itemsCookingFigure = computed(() => comboCookingFigure('', form.slots.flatMap((slot) => slot.options
+    .map((o) => items.value.find((i) => i.uuid === o.product_uuid)?.cooking_minutes ?? null))));
 
 // ---- Load ----------------------------------------------------------
 const loading = ref(true);
@@ -171,6 +211,13 @@ function prefill(combo: Combo): void {
     form.status = (combo.status ?? 'active') as ProductStatus;
     form.branch_scope = combo.branch_scope ?? 'all';
     form.branch_ids = selectedBranchIds(combo.branches);
+    // LAUNCH review add-on — daily hours are kept (no longer wiped on save),
+    // plus the dates and the combo's own cooking time.
+    form.available_from = combo.available_from?.slice(0, 5) ?? '';
+    form.available_until = combo.available_until?.slice(0, 5) ?? '';
+    form.on_sale_from = combo.on_sale_from ?? '';
+    form.on_sale_until = combo.on_sale_until ?? '';
+    form.cooking_minutes = combo.cooking_minutes != null ? String(combo.cooking_minutes) : '';
     form.slots = (combo.combo?.slots ?? []).map((slot) => ({
         key: nextKey('slot'),
         id: slot.id,
@@ -178,6 +225,7 @@ function prefill(combo: Combo): void {
         name_ar: slot.name_ar ?? '',
         min_choices: slot.min_choices,
         max_choices: slot.max_choices,
+        is_main: slot.is_main ?? false,
         options: slot.options.map((o) => ({
             key: nextKey('opt'),
             product_uuid: o.product_uuid,
@@ -227,8 +275,13 @@ function payload(): SaveComboPayload {
         sold_in_store: form.sold_in_store,
         show_on_customer_tablet: form.show_on_customer_tablet,
         sold_on_delivery: form.sold_on_delivery,
-        available_from: null,
-        available_until: null,
+        // LAUNCH review add-on — the daily hours as set (they used to be sent
+        // as null, wiping them), the dates and the cooking time.
+        available_from: form.available_from ? `${form.available_from.slice(0, 5)}:00` : null,
+        available_until: form.available_until ? `${form.available_until.slice(0, 5)}:00` : null,
+        on_sale_from: saleDay(form.on_sale_from),
+        on_sale_until: saleDay(form.on_sale_until),
+        cooking_minutes: cookingPayload(form.cooking_minutes),
         ...(isEdit ? { status: form.status } : {}),
         slots: form.slots.map((slot) => ({
             id: slot.id,
@@ -236,6 +289,7 @@ function payload(): SaveComboPayload {
             name_ar: slot.name_ar.trim() || null,
             min_choices: Number(slot.min_choices),
             max_choices: Number(slot.max_choices),
+            is_main: slot.is_main,
             options: slot.options.map((o) => ({
                 product_uuid: o.product_uuid,
                 extra_price: String(o.extra_price ?? '').trim() === '' ? '0' : String(o.extra_price).trim(),
@@ -265,6 +319,9 @@ const blockingProblems = computed<string[]>(() => {
         if (slotIssues(slot).length > 0) problems.push(t('combos.issues.slot', { n: i + 1 }));
     });
     if (isUnrestricted.value && form.branch_scope === 'selected' && form.branch_ids.length === 0) problems.push(t('channels.pick_a_branch'));
+    mainProblems.value.forEach((p) => problems.push(t(`meals.issues.${p.issue}`, { n: p.index + 1 })));
+    if (datesError.value) problems.push(datesError.value);
+    if (cookingError.value) problems.push(cookingError.value);
     return problems;
 });
 
@@ -386,6 +443,51 @@ async function save(): Promise<void> {
                     <p class="text-xs text-slate-500">{{ t('combos.price_hint') }}</p>
                 </section>
 
+                <!-- LAUNCH review add-on — when it is sold (daily hours + limited-time dates) and the cooking time. -->
+                <section class="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-test="combo-when">
+                    <h2 class="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
+                        <CalendarRange class="size-4 text-indigo-600" />
+                        {{ t('menu_extras.when_title') }}
+                    </h2>
+                    <div>
+                        <p class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.available_hours') }}</p>
+                        <div class="mt-1 grid max-w-md grid-cols-2 gap-3">
+                            <label class="block">
+                                <span class="block text-xs font-medium text-slate-600">{{ t('catalogue.fields.available_from') }}</span>
+                                <input v-model="form.available_from" type="time" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" data-test="combo-hours-from">
+                            </label>
+                            <label class="block">
+                                <span class="block text-xs font-medium text-slate-600">{{ t('catalogue.fields.available_until') }}</span>
+                                <input v-model="form.available_until" type="time" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" data-test="combo-hours-until">
+                            </label>
+                        </div>
+                        <p class="mt-1 text-xs text-slate-500">{{ t('catalogue.fields.available_hours_hint') }}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm font-medium text-slate-700">{{ t('menu_extras.dates_title') }}</p>
+                        <div class="mt-1 grid max-w-md grid-cols-2 gap-3">
+                            <label class="block">
+                                <span class="block text-xs font-medium text-slate-600">{{ t('menu_extras.on_sale_from') }}</span>
+                                <input v-model="form.on_sale_from" type="date" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" data-test="combo-sale-from">
+                            </label>
+                            <label class="block">
+                                <span class="block text-xs font-medium text-slate-600">{{ t('menu_extras.on_sale_until') }}</span>
+                                <input v-model="form.on_sale_until" type="date" :min="form.on_sale_from || undefined" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" data-test="combo-sale-until">
+                            </label>
+                        </div>
+                        <p class="mt-1 text-xs text-slate-500">{{ t('menu_extras.dates_hint') }}</p>
+                        <p v-if="datesError || fieldError('on_sale_until')" class="mt-1 text-xs font-semibold text-rose-600">{{ datesError ?? fieldError('on_sale_until') }}</p>
+                    </div>
+                    <label class="block max-w-xs">
+                        <span class="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700"><Timer class="size-3.5 text-slate-500" /> {{ t('menu_extras.cooking_minutes') }}</span>
+                        <input v-model="form.cooking_minutes" type="number" min="0" max="240" step="1" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100" data-test="combo-cooking">
+                        <span class="mt-1 block text-xs text-slate-500">
+                            {{ itemsCookingFigure !== null ? t('menu_extras.combo_cooking_hint', { minutes: itemsCookingFigure }) : t('menu_extras.combo_cooking_hint_none') }}
+                        </span>
+                        <span v-if="cookingError || fieldError('cooking_minutes')" class="mt-1 block text-xs font-semibold text-rose-600">{{ cookingError ?? fieldError('cooking_minutes') }}</span>
+                    </label>
+                </section>
+
                 <!-- Channels (B3) -->
                 <ChannelsEditor
                     v-model:sold-in-store="form.sold_in_store"
@@ -409,6 +511,15 @@ async function save(): Promise<void> {
                     <div>
                         <h2 class="text-sm font-semibold text-slate-900">{{ t('combos.slots_title') }}</h2>
                         <p class="mt-0.5 text-xs text-slate-500">{{ t('combos.slots_hint') }}</p>
+                    </div>
+                    <!-- LAUNCH review add-on — "Make it a meal?": one slot may be the main item. -->
+                    <div class="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2" data-test="combo-main">
+                        <p class="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-900"><Star class="size-3.5" /> {{ t('meals.main_title') }}</p>
+                        <p class="mt-0.5 text-xs text-amber-800">{{ t('meals.main_hint') }}</p>
+                        <label class="mt-1.5 inline-flex items-center gap-1.5 text-xs font-medium text-slate-700">
+                            <input type="radio" name="combo-main" :checked="!form.slots.some((s) => s.is_main)" class="border-slate-300 text-amber-600 focus:ring-amber-200" data-test="combo-main-none" @change="setMain(null)">
+                            {{ t('meals.no_main') }}
+                        </label>
                     </div>
 
                     <article v-for="(slot, si) in form.slots" :key="slot.key" class="rounded-xl border border-slate-200 p-3" data-test="combo-slot">
@@ -436,6 +547,13 @@ async function save(): Promise<void> {
                             </div>
                         </div>
                         <p class="mt-1 text-xs text-slate-500">{{ t('combos.choose_between', { min: slot.min_choices, max: slot.max_choices }) }}</p>
+                        <label class="mt-1.5 inline-flex items-center gap-1.5 text-xs font-medium" :class="canBeMain(slot) || slot.is_main ? 'text-slate-700' : 'text-slate-400'">
+                            <input type="radio" name="combo-main" :checked="slot.is_main" :disabled="!canBeMain(slot) && !slot.is_main" class="border-slate-300 text-amber-600 focus:ring-amber-200" data-test="slot-main" @change="setMain(si)">
+                            {{ t('meals.main_label') }}
+                            <span v-if="!canBeMain(slot)" class="text-[11px] font-normal">— {{ t('meals.main_needs_single') }}</span>
+                        </label>
+                        <p v-if="mainProblem(si)" class="mt-1 text-xs font-semibold text-rose-700" data-test="slot-main-problem">{{ mainProblem(si) }}</p>
+                        <p v-if="fieldError(`slots.${si}.is_main`)" class="mt-1 text-xs text-rose-600">{{ fieldError(`slots.${si}.is_main`) }}</p>
 
                         <table class="mt-2 w-full text-sm">
                             <thead class="text-[11px] uppercase tracking-wide text-slate-500">
@@ -477,6 +595,7 @@ async function save(): Promise<void> {
                                 <Plus class="size-3" /> {{ t('combos.add_item') }}
                             </button>
                         </div>
+                        <p v-if="limitedSlots.includes(si)" class="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800" data-test="slot-limited-warning">{{ t('meals.limited_warning') }}</p>
                         <ul v-if="issueText(slot).length > 0" class="mt-2 space-y-0.5 text-xs font-semibold text-rose-700" data-test="slot-issues">
                             <li v-for="msg in issueText(slot)" :key="msg">{{ msg }}</li>
                         </ul>

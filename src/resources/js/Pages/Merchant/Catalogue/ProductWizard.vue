@@ -76,6 +76,19 @@ import AddonConsumptionEditor from '@/Pages/Merchant/Catalogue/AddonConsumptionE
 import ChannelsEditor from '@/Pages/Merchant/Catalogue/ChannelsEditor.vue';
 import ImageUploadField from '@/Pages/Merchant/Catalogue/ImageUploadField.vue';
 import RecipeHistoryPanel from '@/Pages/Merchant/Catalogue/RecipeHistoryPanel.vue';
+// LAUNCH review add-on — dates, cooking time, "Can be removed".
+import RemovableTick from '@/Pages/Merchant/Catalogue/RemovableTick.vue';
+import { getRemovable, saveRemovable } from '@/lib/api/menuExtras';
+import {
+    cookingPayload,
+    cookingProblem,
+    datesProblem,
+    groupKind,
+    removablePayload,
+    saleDay,
+    ticksFromState,
+    type RemovableDraft,
+} from '@/lib/menuExtras';
 import {
     branchScopePayload,
     providerPayload,
@@ -185,6 +198,10 @@ const form = reactive<{
     show_on_customer_tablet: boolean;
     available_from: string;
     available_until: string;
+    /** LAUNCH review add-on — limited-time dates ('YYYY-MM-DD') and cooking time (min). */
+    on_sale_from: string;
+    on_sale_until: string;
+    cooking_minutes: string;
     display_order: number;
     status: ProductStatus;
     stock_mode: string;
@@ -217,6 +234,9 @@ const form = reactive<{
     show_on_customer_tablet: true,
     available_from: '',
     available_until: '',
+    on_sale_from: '',
+    on_sale_until: '',
+    cooking_minutes: '',
     display_order: 0,
     status: 'active',
     stock_mode: 'untracked',
@@ -232,6 +252,21 @@ const form = reactive<{
 
 // The recipe belongs only to types whose ingredients get consumed.
 const hasRecipeStep = computed(() => form.stock_mode === 'ingredient' || form.stock_mode === 'cooked');
+
+// ---- LAUNCH review add-on — dates, cooking time, "Can be removed" ------
+const datesError = computed(() => (datesProblem(form.on_sale_from, form.on_sale_until) ? t('menu_extras.until_before_from') : null));
+const cookingError = computed(() => (cookingProblem(form.cooking_minutes) ? t('menu_extras.cooking_range') : null));
+/** Per ingredient uuid: ticked "Can be removed", with optional customer labels. */
+const removableTicks = ref<Record<string, RemovableDraft>>({});
+/** Tester call 16 — only a made-to-order product keeps a removed ingredient in stock. */
+const removableOnlyPrints = computed(() => form.stock_mode === 'cooked');
+function setRemovable(uuid: string, value: RemovableDraft): void {
+    removableTicks.value = { ...removableTicks.value, [uuid]: value };
+}
+async function loadRemovable(): Promise<void> {
+    if (!isEdit) return;
+    removableTicks.value = ticksFromState((await getRemovable(editUuid!)).data.lines);
+}
 const isPieceCounted = computed(() => form.stock_mode === 'unit' || form.stock_mode === 'cooked');
 
 // ---- Delivery providers (step 1, LAUNCH-P4 B3) ----------------------
@@ -762,6 +797,9 @@ function validateStepOne(): boolean {
     if (isUnrestricted.value && form.branch_scope === 'selected' && form.branch_ids.length === 0) {
         missing.push(t('channels.pick_a_branch'));
     }
+    // LAUNCH review add-on — "Until" on or after "From"; 0..240 minutes.
+    if (datesError.value) missing.push(datesError.value);
+    if (cookingError.value) missing.push(cookingError.value);
     stepOneErrors.value = missing;
     return missing.length === 0;
 }
@@ -814,6 +852,10 @@ function productPayload(): CreateProductPayload {
         show_on_customer_tablet: form.show_on_customer_tablet,
         available_from: form.available_from ? `${form.available_from}:00` : null,
         available_until: form.available_until ? `${form.available_until}:00` : null,
+        // LAUNCH review add-on — limited-time dates and cooking time.
+        on_sale_from: saleDay(form.on_sale_from),
+        on_sale_until: saleDay(form.on_sale_until),
+        cooking_minutes: cookingPayload(form.cooking_minutes),
         stock_mode: form.stock_mode as 'unit' | 'ingredient' | 'untracked' | 'cooked',
         low_stock_threshold: isPieceCounted.value && form.low_stock_threshold !== '' ? form.low_stock_threshold : null,
         shelf_life_days: form.stock_mode === 'cooked' && form.shelf_life_days !== '' ? Number(form.shelf_life_days) : null,
@@ -929,6 +971,9 @@ async function submit(): Promise<void> {
                 component_lines: componentsPayload(),
                 branches: branchesPayload(),
                 delivery_prices: deliveryPricesPayload(),
+                // LAUNCH review add-on — the lines ticked "Can be removed"
+                // (only lines of the recipe sent with it).
+                removable: canEditRecipes.value && hasRecipeStep.value ? removablePayload(recipePayload(), removableTicks.value) : [],
             });
         } else if (readOnly.value) {
             // Fix order 1, L8 — a recipe-only role (Edit recipes + catalogue
@@ -944,6 +989,12 @@ async function submit(): Promise<void> {
             // it; P3-2 — with the optional note.
             if (canEditRecipes.value) {
                 await updateProductRecipe(uuid, { lines: recipePayload(), note: recipeNote })
+                    .catch((e) => remapSectionErrors(e, 'lines', 'recipe_lines'));
+            }
+            // LAUNCH review add-on — "Can be removed" (catalogue permission,
+            // saved after the recipe so every ticked line exists).
+            if (hasRecipeStep.value) {
+                await saveRemovable(uuid, removablePayload(form.recipe_lines, removableTicks.value))
                     .catch((e) => remapSectionErrors(e, 'lines', 'recipe_lines'));
             }
             await updateProductComponents(uuid, componentsPayload())
@@ -973,7 +1024,7 @@ async function submit(): Promise<void> {
             // LAUNCH-P4 — branches and delivery providers live on step 1 now.
             const stepTwoKey = (k: string): boolean =>
                 k.startsWith('recipe_lines') || k.startsWith('component_lines')
-                || k.startsWith('owned_groups') || k.startsWith('addon_group_uuids');
+                || k.startsWith('owned_groups') || k.startsWith('addon_group_uuids') || k.startsWith('removable');
             step.value = keys.some((k) => !stepTwoKey(k)) ? 1 : 2;
         } else {
             submitError.value = apiMessage(err, t('catalogue.wizard.save_failed'));
@@ -1019,6 +1070,9 @@ function prefillFromProduct(product: Product): void {
     form.show_on_customer_tablet = product.show_on_customer_tablet ?? true;
     form.available_from = product.available_from?.slice(0, 5) ?? '';
     form.available_until = product.available_until?.slice(0, 5) ?? '';
+    form.on_sale_from = product.on_sale_from ?? '';
+    form.on_sale_until = product.on_sale_until ?? '';
+    form.cooking_minutes = product.cooking_minutes != null ? String(product.cooking_minutes) : '';
     form.display_order = product.display_order;
     form.status = (product.status ?? 'active') as ProductStatus;
     form.stock_mode = product.stock_mode ?? 'untracked';
@@ -1068,6 +1122,7 @@ onMounted(async () => {
             prefillFromProduct(productRes.data);
             providerRows.value = providerRowsFrom(activeProviders.value, pricesRes.data);
             await loadOwnedAddonGroups().catch(() => { ownedAddonGroups.value = []; });
+            await loadRemovable().catch(() => { removableTicks.value = {}; });
         } else {
             providerRows.value = providerRowsFrom(activeProviders.value, []);
             // New products sort to the end of the full catalogue.
@@ -1098,7 +1153,7 @@ const leavingAfterSave = ref(false);
 const dirtyBaseline = ref('');
 
 function dirtySnapshot(): string {
-    return JSON.stringify({ form, drafts: ownedDrafts.value, providers: providerRows.value });
+    return JSON.stringify({ form, drafts: ownedDrafts.value, providers: providerRows.value, removable: removableTicks.value });
 }
 
 function isDirty(): boolean {
@@ -1413,6 +1468,29 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                 </div>
                                 <p class="mt-1 text-xs text-slate-500">{{ t('catalogue.fields.available_hours_hint') }}</p>
                             </div>
+                            <!-- LAUNCH review add-on — limited-time dates (separate from the daily hours). -->
+                            <div data-test="product-sale-dates">
+                                <p class="text-sm font-medium text-slate-700">{{ t('menu_extras.dates_title') }}</p>
+                                <div class="mt-1 grid max-w-md grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-xs font-medium text-slate-600">{{ t('menu_extras.on_sale_from') }}</label>
+                                        <input v-model="form.on_sale_from" type="date" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" data-test="product-sale-from">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-slate-600">{{ t('menu_extras.on_sale_until') }}</label>
+                                        <input v-model="form.on_sale_until" type="date" :min="form.on_sale_from || undefined" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" data-test="product-sale-until">
+                                    </div>
+                                </div>
+                                <p class="mt-1 text-xs text-slate-500">{{ t('menu_extras.dates_hint') }}</p>
+                                <p v-if="datesError || fieldError('on_sale_until')" class="mt-1 text-xs font-semibold text-rose-600">{{ datesError ?? fieldError('on_sale_until') }}</p>
+                            </div>
+                            <!-- LAUNCH review add-on — cooking time ("about N min" for customers). -->
+                            <label class="block max-w-xs" data-test="product-cooking">
+                                <span class="text-sm font-medium text-slate-700">{{ t('menu_extras.cooking_minutes') }}</span>
+                                <input v-model="form.cooking_minutes" type="number" min="0" max="240" step="1" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm tabular-nums shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" data-test="product-cooking-minutes">
+                                <span class="mt-1 block text-xs text-slate-500">{{ t('menu_extras.cooking_hint') }}</span>
+                                <span v-if="cookingError || fieldError('cooking_minutes')" class="mt-1 block text-xs font-semibold text-rose-600">{{ cookingError ?? fieldError('cooking_minutes') }}</span>
+                            </label>
                         </section>
                     </fieldset>
 
@@ -1432,6 +1510,8 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                 <label v-for="group in selectableAddOnGroups" :key="group.id" class="flex items-center gap-2 rounded border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50">
                                     <input v-model="form.addon_group_uuids" type="checkbox" :value="group.uuid" :disabled="readOnly" class="rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200">
                                     <span class="flex-1 truncate">{{ group.name }}</span>
+                                    <!-- LAUNCH review add-on — Quick instructions are bound here like any shared group. -->
+                                    <span v-if="groupKind(group) === 'instructions'" class="rounded bg-sky-50 px-1.5 text-[10px] font-semibold text-sky-700">{{ t('menu_extras.kind.badge_instructions') }}</span>
                                     <span class="text-[10px] text-slate-400">{{ selectionModeLabel(group.selection_mode) }}</span>
                                 </label>
                             </div>
@@ -1701,6 +1781,9 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                 {{ t('catalogue.recipe.section_title') }}
                             </h2>
                             <p class="mt-0.5 text-xs text-slate-500">{{ t('catalogue.recipe.section_hint') }}</p>
+                            <!-- LAUNCH review add-on — "Can be removed" (tester call 16: for cooked products it only prints). -->
+                            <p class="mt-1 text-xs text-slate-500" data-test="removable-hint">{{ t('menu_extras.removable.hint') }}</p>
+                            <p v-if="removableOnlyPrints" class="mt-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800" data-test="removable-only-prints">{{ t('menu_extras.removable.only_prints') }}</p>
                             <p v-if="fieldError('recipe_lines')" class="mt-2 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700">{{ fieldError('recipe_lines') }}</p>
 
                             <!-- LAUNCH-P3 P3-3 — without "Edit recipes" the recipe is read-only. -->
@@ -1709,7 +1792,10 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                 <p v-if="form.recipe_lines.length === 0" class="text-xs italic text-slate-500">{{ t('catalogue.recipe.no_lines') }}</p>
                                 <ul v-else class="space-y-1">
                                     <!-- Fix order 1, L4 — the amount is isolated left-to-right so it never garbles in Arabic. -->
-                                    <li v-for="(line, idx) in form.recipe_lines" :key="idx" class="text-sm text-slate-700"><bdi dir="ltr" class="tabular-nums">{{ recipeLineAmount(line) }}</bdi> {{ ingredientName(line.ingredient_uuid) }}</li>
+                                    <li v-for="(line, idx) in form.recipe_lines" :key="idx" class="text-sm text-slate-700"><bdi dir="ltr" class="tabular-nums">{{ recipeLineAmount(line) }}</bdi> {{ ingredientName(line.ingredient_uuid) }}
+                                        <!-- LAUNCH review add-on — a catalogue manager ticks "Can be removed" without "Edit recipes". -->
+                                        <RemovableTick v-if="line.ingredient_uuid" :model-value="removableTicks[line.ingredient_uuid]" :ingredient-name="ingredientName(line.ingredient_uuid)" :ingredient-name-ar="ingredientByUuid(line.ingredient_uuid)?.name_ar ?? null" :disabled="!canManage" @update:model-value="setRemovable(line.ingredient_uuid, $event)" />
+                                    </li>
                                 </ul>
                                 <p v-if="form.recipe_lines.length > 0" class="text-xs text-amber-800">{{ t('catalogue.recipe.live_cost') }}: <strong class="tabular-nums">{{ recipeLiveCost }}</strong> OMR</p>
                             </div>
@@ -1748,6 +1834,8 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                             <Minus class="size-4" />
                                         </button>
                                         <p v-if="recipeLineMessage(line)" class="basis-full text-xs font-semibold text-rose-700" data-test="recipe-line-problem">{{ recipeLineMessage(line) }}</p>
+                                        <!-- LAUNCH review add-on — "Can be removed" (catalogue.manage). -->
+                                        <RemovableTick v-if="line.ingredient_uuid" :model-value="removableTicks[line.ingredient_uuid]" :ingredient-name="ingredientName(line.ingredient_uuid)" :ingredient-name-ar="ingredientByUuid(line.ingredient_uuid)?.name_ar ?? null" :disabled="!canManage" @update:model-value="setRemovable(line.ingredient_uuid, $event)" />
                                     </li>
                                 </ul>
                                 <button type="button" class="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100" @click="addRecipeLine">
@@ -1843,6 +1931,9 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                 <div><dt class="text-xs text-slate-500">{{ t('catalogue.fields.cost_price') }}</dt><dd class="tabular-nums text-slate-900">{{ form.cost_price || '—' }}</dd></div>
                                 <div><dt class="text-xs text-slate-500">{{ t('catalogue.fields.delivery_price') }}</dt><dd class="tabular-nums text-slate-900">{{ form.delivery_price || t('catalogue.wizard.inherits_base') }}</dd></div>
                                 <div><dt class="text-xs text-slate-500">{{ t('catalogue.fields.available_hours') }}</dt><dd class="tabular-nums text-slate-900">{{ form.available_from || form.available_until ? `${form.available_from || '00:00'} – ${form.available_until || '23:59'}` : t('catalogue.wizard.always_available') }}</dd></div>
+                                <!-- LAUNCH review add-on — dates and cooking time. -->
+                                <div data-test="review-sale-dates"><dt class="text-xs text-slate-500">{{ t('menu_extras.dates_title') }}</dt><dd class="tabular-nums text-slate-900" dir="ltr">{{ form.on_sale_from || form.on_sale_until ? `${form.on_sale_from || '…'} – ${form.on_sale_until || '…'}` : t('menu_extras.no_dates') }}</dd></div>
+                                <div data-test="review-cooking"><dt class="text-xs text-slate-500">{{ t('menu_extras.cooking_minutes') }}</dt><dd class="tabular-nums text-slate-900">{{ String(form.cooking_minutes ?? '').trim() !== '' ? t('menu_extras.minutes', { n: form.cooking_minutes }) : t('menu_extras.not_set') }}</dd></div>
                                 <div v-if="isPieceCounted"><dt class="text-xs text-slate-500">{{ t('catalogue.fields.low_stock_threshold') }}</dt><dd class="tabular-nums text-slate-900">{{ form.low_stock_threshold || '—' }}</dd></div>
                                 <div v-if="form.stock_mode === 'cooked'"><dt class="text-xs text-slate-500">{{ t('catalogue.wizard.shelf_life') }}</dt><dd class="tabular-nums text-slate-900">{{ form.shelf_life_days || t('catalogue.wizard.keeps') }}</dd></div>
                                 <div v-if="isEdit"><dt class="text-xs text-slate-500">{{ t('catalogue.fields.status') }}</dt><dd class="font-semibold text-slate-900">{{ t(`catalogue.statuses.${form.status}`) }}</dd></div>
@@ -1907,7 +1998,7 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                 <p v-if="reviewRecipeLines.length === 0" class="mt-2 text-xs italic text-slate-500">{{ t('catalogue.wizard.review_none') }}</p>
                                 <ul v-else class="mt-3 space-y-1 text-sm">
                                     <li v-for="(line, i) in reviewRecipeLines" :key="i" class="flex justify-between text-slate-700">
-                                        <span>{{ ingredientName(line.ingredient_uuid) }}</span>
+                                        <span>{{ ingredientName(line.ingredient_uuid) }}<span v-if="removableTicks[line.ingredient_uuid]?.ticked" class="ms-1.5 rounded bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700" data-test="review-removable">{{ t('menu_extras.removable.badge') }}</span></span>
                                         <bdi dir="ltr" class="tabular-nums">{{ recipeLineAmount(line) }}</bdi>
                                     </li>
                                 </ul>
