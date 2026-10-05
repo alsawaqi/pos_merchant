@@ -1,11 +1,11 @@
 <script setup lang="ts">
 /**
- * PD6 — the Goods Received Note form (a full page, not a popup).
+ * PD6 — Purchases (the Goods Received Note form; a full page, not a popup).
  *
  * One delivery, recorded in one submit. Add many lines mixing ingredients +
- * bought-in products + physical items; each line gets a quantity + cost and an
- * OPTIONAL inline branch split (whatever is not split stays in the central
- * warehouse, to allocate later). Add any number of named extra charges
+ * bought-in products + physical items; each line gets an amount + the price
+ * paid and an OPTIONAL inline branch split (whatever is not split stays in the
+ * central warehouse, to allocate later). Add any number of named extra charges
  * (delivery, customs…), each booking its own categorized expense. The backend
  * fans every line out to the existing receive/allocate/expense machinery in one
  * atomic transaction.
@@ -13,10 +13,13 @@
  * Server gate: inventory.manage + access to all branches (it credits the
  * central warehouse).
  *
- * LAUNCH-P2 P2-3 — each line picks a unit (the base unit, its kg↔g / l↔ml
- * pair, an extra unit or the piece unit) and a PRICE PER THAT UNIT; the line
- * shows the quantity converted to the base unit and its total before saving.
- * The split is entered in the same unit. The server converts again.
+ * LAUNCH review add-on (C1, C2, D3, F) — a line is item → container (or a
+ * physical item's pack) → pieces → amount (fills in as pieces × size; may be
+ * LOWERED, never raised) → the price paid for the line (required; 0 = free,
+ * the cost is not changed). The live line reads "= 24 × bottle 1 l = 24 l ·
+ * 0.150 per l". "No container" keeps the free amount (a loose crate that
+ * weighs more). The split is in pieces on a container line. A scan adds
+ * "Milk · 1 × bottle 1.5 l"; the same scan again makes it 2.
  */
 
 import { ClipboardList, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-vue-next';
@@ -28,25 +31,25 @@ import { ApiError } from '@/lib/api';
 import { listBranches, type Branch } from '@/lib/api/branches';
 import { listIngredients, listSuppliers, type Ingredient, type Supplier } from '@/lib/api/inventory';
 import { listProducts, type Product } from '@/lib/api/catalogue';
-import { listPhysicalItems, type PhysicalItem } from '@/lib/api/physicalItems';
+import { listPhysicalItems, type PhysicalItem, type PhysicalItemPack } from '@/lib/api/physicalItems';
 import { listTaxes, type Tax } from '@/lib/api/taxes';
-import { createPurchaseReceipt, type CreatePurchaseReceiptPayload } from '@/lib/api/purchaseReceipts';
-import {
-    defaultPurchaseUnit,
-    friendlyCostPer,
-    friendlyQuantity,
-    purchaseLinePreview,
-    purchaseUnitFactor,
-    purchaseUnitName,
-    purchaseUnitOptions,
-    type PurchaseLinePreview,
-    type PurchaseUnitOption,
-} from '@/lib/purchaseUnits';
+import { createPurchaseReceipt, type CreatePurchaseReceiptPayload, type PurchaseReceiptLinePayload } from '@/lib/api/purchaseReceipts';
+import type { ScanResult } from '@/lib/api/inventoryCodes';
+import { purchaseCostWarning } from '@/lib/amountSafety';
+import { amountInStored, amountProblem, containerLabel, containerLineText, containersOf, findContainer, friendly, plusOne, type ContainerSource } from '@/lib/containers';
+import { kindUnits, unitOptionLabel } from '@/lib/itemKind';
+import { useAmountConfirm } from '@/composables/useAmountConfirm';
+import AmountConfirmDialog from '@/Pages/Merchant/Inventory/components/AmountConfirmDialog.vue';
+import AmountInput from '@/Pages/Merchant/Inventory/components/AmountInput.vue';
+import ScanBox from '@/Pages/Merchant/Inventory/components/ScanBox.vue';
 import PurchaseTaxField, { type PurchaseTaxModel } from '@/Pages/Merchant/Inventory/PurchaseTaxField.vue';
 
 const { t, locale } = useI18n();
 const router = useRouter();
 const isAr = computed(() => locale.value === 'ar');
+
+// E2 — "Is this right?" before saving a price far from the current cost (warns, never blocks).
+const { warnings: amountWarnings, confirm: confirmAmounts, answer: answerAmounts } = useAmountConfirm();
 
 // ---- reference data ------------------------------------------------
 const suppliers = ref<Supplier[]>([]);
@@ -62,15 +65,25 @@ const refDataError = ref<string | null>(null);
 const chargeCategories = ['delivery', 'supplies', 'utilities', 'maintenance', 'other'] as const;
 
 // ---- form state ----------------------------------------------------
+/** The split: in pieces on a container / pack line, else in the line's amount unit. */
 interface AllocationRow { branch_uuid: string; quantity: string | number; }
 interface LineRow {
     id: number; // stable v-for key — see nextRowId()
     itemKey: string; // "ingredient:uuid" | "product:uuid" | "physical:uuid"
-    // P2-3 — the purchase unit ('' = the base unit) the quantity and the
-    // split are in, and the price per that unit.
-    unit: string;
-    quantity: string | number;
-    unit_price: string | number;
+    /** C1 / D3 — the container (ingredient) or pack (physical item); '' = none (type the amount). */
+    container_uuid: string;
+    /** How many of the container / pack. */
+    pieces: string | number;
+    /**
+     * The amount: on a container line it fills in as pieces × size and may
+     * only be lowered ('' = exactly that); with no container it is the
+     * amount bought (a product / physical item: its pieces).
+     */
+    amount: string | number;
+    /** '' = the stored unit, or a unit of the kind (kg / g, l / ml). */
+    amount_unit: string;
+    /** C2 — the price paid for this line (required; 0 = free, the cost is not changed). */
+    line_cost: string | number;
     tax: PurchaseTaxModel; // PT — optional tax paid on this line
     showAllocations: boolean;
     allocations: AllocationRow[];
@@ -109,13 +122,44 @@ function blankAllocations(): AllocationRow[] {
     return branches.value.map((b) => ({ branch_uuid: b.uuid, quantity: '' }));
 }
 
-function addLine(): void {
-    lines.value.push({ id: nextRowId(), itemKey: '', unit: '', quantity: '', unit_price: '', tax: { tax_amount: 0, tax_rate: null }, showAllocations: false, allocations: blankAllocations() });
+function blankLine(): LineRow {
+    return { id: nextRowId(), itemKey: '', container_uuid: '', pieces: '', amount: '', amount_unit: '', line_cost: '', tax: { tax_amount: 0, tax_rate: null }, showAllocations: false, allocations: blankAllocations() };
 }
 
-/** F2 — a new item starts in its first pack size, else the larger unit (kg / l). */
+function addLine(): void {
+    lines.value.push(blankLine());
+}
+
+/** The bigger unit of the kind a loose amount starts in (kg for a g item, l for an ml one). */
+function bigUnit(storedUnit: string): string {
+    return storedUnit === 'g' ? 'kg' : storedUnit === 'ml' ? 'l' : '';
+}
+
+/**
+ * C1 — a new item starts in its FIRST container (pieces typed next); an
+ * ingredient with no container, a product and a physical item start with the
+ * amount (a physical item may pick a pack).
+ */
 function onItemChange(line: LineRow): void {
-    line.unit = defaultPurchaseUnit(lineIngredient(line));
+    const ing = lineIngredient(line);
+    line.container_uuid = ing ? (containersOf(ing)[0]?.uuid ?? '') : '';
+    line.pieces = '';
+    line.amount = '';
+    line.amount_unit = ing ? bigUnit(ing.unit) : '';
+    resetSplit(line);
+}
+
+/** Picking another container (or none) clears what was typed for the old one. */
+function onContainerChange(line: LineRow): void {
+    line.amount = '';
+    const ing = lineIngredient(line);
+    line.amount_unit = ing ? bigUnit(ing.unit) : '';
+    if (line.container_uuid !== '' && String(line.pieces).trim() === '') line.pieces = '1';
+    resetSplit(line);
+}
+
+function resetSplit(line: LineRow): void {
+    for (const a of line.allocations) a.quantity = '';
 }
 
 function removeLine(idx: number): void {
@@ -135,62 +179,134 @@ function itemName(i: { name: string; name_ar?: string | null }): string {
     return (isAr.value ? i.name_ar : null) ?? i.name;
 }
 
+function lineKind(line: LineRow): 'ingredient' | 'product' | 'physical' | null {
+    if (!line.itemKey) return null;
+    const kind = line.itemKey.split(':')[0];
+    return kind === 'ingredient' || kind === 'product' || kind === 'physical' ? kind : null;
+}
+
 /** The ingredient a line picked, or null (a product line or nothing yet). */
 function lineIngredient(line: LineRow): Ingredient | null {
-    if (!line.itemKey) {
-        return null;
-    }
-    const [kind, uuid] = line.itemKey.split(':');
-    return kind === 'ingredient' ? (ingredients.value.find((i) => i.uuid === uuid) ?? null) : null;
+    if (lineKind(line) !== 'ingredient') return null;
+    const uuid = line.itemKey.split(':')[1];
+    return ingredients.value.find((i) => i.uuid === uuid) ?? null;
 }
 
-/** P2-3 — the units this line can be entered in (ingredients only). */
-function lineUnitOptions(line: LineRow): PurchaseUnitOption[] {
-    return purchaseUnitOptions(lineIngredient(line), locale.value);
+/** The physical item a line picked, or null. */
+function linePhysical(line: LineRow): PhysicalItem | null {
+    if (lineKind(line) !== 'physical') return null;
+    const uuid = line.itemKey.split(':')[1];
+    return physicalItems.value.find((i) => i.uuid === uuid) ?? null;
 }
 
-/** The chosen unit's short name, or "each" for a product line. */
-function lineUnit(line: LineRow): string {
-    if (!line.itemKey) {
-        return '';
-    }
+/** The ingredient's chosen container, or null. */
+function lineContainer(line: LineRow): ContainerSource | null {
     const ing = lineIngredient(line);
-    return ing ? purchaseUnitName(ing, line.unit, locale.value) : t('purchase_receipts.form.unit_each');
+    return ing && line.container_uuid !== '' ? findContainer(ing, line.container_uuid) : null;
 }
 
-/** The live preview: base quantity, line total, cost per base unit. */
-function linePreview(line: LineRow): PurchaseLinePreview {
+/** D3 — the physical item's chosen pack, or null. */
+function linePack(line: LineRow): PhysicalItemPack | null {
+    const item = linePhysical(line);
+    return item && line.container_uuid !== '' ? ((item.packs ?? []).find((p) => p.uuid === line.container_uuid) ?? null) : null;
+}
+
+/** Whether the line is bought by container / pack (pieces typed). */
+function byPieces(line: LineRow): boolean {
+    return lineContainer(line) !== null || linePack(line) !== null;
+}
+
+/** The containers (or packs) the line may pick. */
+function containerOptions(line: LineRow): { value: string; label: string }[] {
     const ing = lineIngredient(line);
-    const factor = ing ? purchaseUnitFactor(lineUnitOptions(line), line.unit) : 1;
-    return purchaseLinePreview(factor, line.quantity, line.unit_price === '' ? 0 : line.unit_price);
+    if (ing) return containersOf(ing).map((c) => ({ value: c.uuid, label: containerLabel(c, locale.value, ing.unit) }));
+    const item = linePhysical(line);
+    if (item) return (item.packs ?? []).map((p) => ({ value: p.uuid, label: isAr.value ? p.display_name_ar : p.display_name }));
+    return [];
 }
 
-/** The line total (OMR) as computed from quantity × unit price. */
+/** The units an ingredient's amount may be typed in ('' = the stored unit, then kg / g, l / ml…). */
+function amountUnitOptions(line: LineRow): { value: string; label: string }[] {
+    const ing = lineIngredient(line);
+    if (!ing) return [];
+    const units = kindUnits(ing.unit).filter((u) => u.value !== ing.unit);
+    return [{ value: '', label: ing.unit }, ...units.map((u) => ({ value: u.value, label: unitOptionLabel(u.value, locale.value) }))];
+}
+
+function round4(n: number): number {
+    return Math.round(n * 10000) / 10000;
+}
+
+/** What the pieces hold (the cap): in the stored unit for a container, in pieces for a pack. */
+function lineCap(line: LineRow): number {
+    const pieces = Number(line.pieces);
+    if (!Number.isFinite(pieces) || pieces <= 0) return 0;
+    const container = lineContainer(line);
+    if (container) return round4(pieces * Number(container.factor));
+    const pack = linePack(line);
+    return pack ? round4(pieces * Number(pack.pieces)) : 0;
+}
+
+/** The amount TYPED, in the stored unit (an item's pieces for a product line); null when blank. */
+function typedAmount(line: LineRow): number | null {
+    const ing = lineIngredient(line);
+    if (ing) return amountInStored(line.amount, line.amount_unit, ing.unit);
+    const text = String(line.amount ?? '').trim();
+    const n = Number(text);
+    return text === '' || !Number.isFinite(n) ? null : round4(n);
+}
+
+/** The amount that goes into stock: typed, or (by container, nothing typed) what the pieces hold. */
+function lineAmount(line: LineRow): number | null {
+    const typed = typedAmount(line);
+    return byPieces(line) ? (typed ?? (lineCap(line) > 0 ? lineCap(line) : null)) : typed;
+}
+
+/** C1 — the amount typed above what the pieces hold (never raised). */
+function lineRaised(line: LineRow): boolean {
+    return byPieces(line) && amountProblem(typedAmount(line), lineCap(line)) === 'raised';
+}
+
 function lineCost(line: LineRow): number {
-    return linePreview(line).lineCost ?? 0;
+    const n = Number(line.line_cost);
+    return Number.isFinite(n) ? n : 0;
 }
 
-/**
- * "= 36 l into stock" — shown when the chosen unit is not the stored unit.
- * F2 — 1000 g / ml and above reads in kg / l ("36 l", not "36000 ml").
- */
-function lineBaseEquivalent(line: LineRow): string | null {
-    const ing = lineIngredient(line);
-    if (!ing || line.unit === '' || line.unit === ing.unit) {
-        return null;
-    }
-    const base = linePreview(line).baseQuantity;
-    return base === null ? null : t('purchase_receipts.form.base_equivalent', friendlyQuantity(base, ing.unit));
+/** The unit an amount is read in on this line (the stored unit, or "pieces"). */
+function lineStoredUnit(line: LineRow): string {
+    return lineIngredient(line)?.unit ?? 'piece';
 }
 
-/** "0.150 per l" — the cost the stock will carry (F2: per kg / l for a g / ml item). */
-function lineCostPerBase(line: LineRow): string | null {
+/** "= 24 × bottle 1 l = 24 l · 0.150 per l" (a free line: "Free: cost not changed"). */
+function liveLine(line: LineRow): string | null {
+    if (!line.itemKey) return null;
+    const amount = lineAmount(line);
     const ing = lineIngredient(line);
-    const cost = linePreview(line).costPerBase;
-    if (!ing || cost === null || line.unit === '' || line.unit === ing.unit) {
-        return null;
+    const parts: string[] = [];
+    let costPer: { cost: string; unit: string } | null = null;
+    let free = false;
+    if (ing) {
+        const container = lineContainer(line);
+        const text = containerLineText({ container, all: containersOf(ing), pieces: line.pieces, amountStored: amount, storedUnit: ing.unit, lineCost: line.line_cost, locale: locale.value });
+        const pieces = Number(line.pieces);
+        if (text.leaf) parts.push(text.leaf);
+        else if (container && Number.isFinite(pieces) && pieces > 0) parts.push(`${friendly(pieces, '').trim()} × ${containerLabel(container, locale.value, ing.unit)}`);
+        if (text.amount) parts.push(text.amount);
+        costPer = text.costPer;
+        free = text.free;
+    } else {
+        if (amount !== null && amount > 0) parts.push(t('purchases_v2.pieces_total', { count: friendly(amount, '').trim() }));
+        const cost = String(line.line_cost).trim() === '' ? NaN : Number(line.line_cost);
+        free = Number.isFinite(cost) && cost === 0;
+        if (Number.isFinite(cost) && cost > 0 && amount !== null && amount > 0) {
+            costPer = { cost: (cost / amount).toFixed(3), unit: t('purchases_v2.piece') };
+        }
     }
-    return t('purchase_receipts.form.cost_per_base', friendlyCostPer(cost, ing.unit));
+    if (parts.length === 0) return null;
+    let text = `= ${parts.join(' = ')}`;
+    if (costPer) text += ` · ${t('purchases_v2.cost_per', costPer)}`;
+    else if (free) text += ` · ${t('purchases_v2.free')}`;
+    return text;
 }
 
 function branchName(uuid: string): string {
@@ -199,21 +315,32 @@ function branchName(uuid: string): string {
 }
 
 // ---- live totals + per-line distribution --------------------------
+/** The total the split is taken from: pieces on a container / pack line, else the typed amount. */
+function lineSplitTotal(line: LineRow): number {
+    return (byPieces(line) ? Number(line.pieces) : Number(line.amount)) || 0;
+}
+
 function lineDistributed(line: LineRow): number {
     return line.allocations.reduce((sum, a) => sum + (Number(a.quantity) || 0), 0);
 }
 
 function lineRemainder(line: LineRow): number {
-    return (Number(line.quantity) || 0) - lineDistributed(line);
+    return lineSplitTotal(line) - lineDistributed(line);
 }
 
 function lineOverDistributed(line: LineRow): boolean {
     return lineRemainder(line) < -1e-9;
 }
 
-/** A line the user STARTED (picked an item) but left without a quantity. */
+/** A line the user STARTED (picked an item) but left without pieces / an amount. */
 function lineIncomplete(line: LineRow): boolean {
-    return line.itemKey !== '' && !(Number(line.quantity) > 0);
+    if (line.itemKey === '') return false;
+    return byPieces(line) ? !(Number(line.pieces) > 0) : !(Number(line.amount) > 0);
+}
+
+/** C2 — the price paid is required on every line (0 = free). */
+function lineNeedsPrice(line: LineRow): boolean {
+    return line.itemKey !== '' && (String(line.line_cost).trim() === '' || Number(line.line_cost) < 0);
 }
 
 const itemsTotal = computed(() => lines.value.reduce((sum, l) => sum + lineCost(l), 0));
@@ -232,9 +359,9 @@ function money(n: number): string {
 }
 
 // ---- validation ----------------------------------------------------
-const validLines = computed(() => lines.value.filter((l) => l.itemKey && Number(l.quantity) > 0));
+const validLines = computed(() => lines.value.filter((l) => l.itemKey && !lineIncomplete(l)));
 
-// Lines the user picked an item for but left without a positive quantity — they
+// Lines the user picked an item for but left without pieces / an amount — they
 // must be completed or removed, never silently dropped from the submit.
 const incompleteLines = computed(() => lines.value.filter(lineIncomplete));
 
@@ -249,12 +376,9 @@ const canSubmit = computed(() => {
     if (incompleteLines.value.length > 0) {
         return false;
     }
-    // No line may over-distribute or carry a negative price.
+    // No line may over-distribute, raise its amount or miss its price.
     for (const l of validLines.value) {
-        if (lineOverDistributed(l)) {
-            return false;
-        }
-        if (Number(l.unit_price) < 0) {
+        if (lineOverDistributed(l) || lineRaised(l) || lineNeedsPrice(l)) {
             return false;
         }
     }
@@ -267,9 +391,89 @@ const canSubmit = computed(() => {
     return true;
 });
 
+// ---- scan box -------------------------------------------------------
+/**
+ * F — a scan adds "Milk · 1 × bottle 1.5 l"; the same scan again makes it 2.
+ * A code naming only the item adds it in its first container.
+ */
+function onScan(result: ScanResult): void {
+    const uuid = result.item?.uuid;
+    if (!uuid || !result.item_type) return;
+    const key = `${result.item_type}:${uuid}`;
+    const containerUuid = result.container?.uuid ?? result.pack?.uuid ?? '';
+    const existing = lines.value.find((l) => l.itemKey === key && (containerUuid === '' || l.container_uuid === containerUuid));
+    if (existing) {
+        if (containerUuid !== '') existing.pieces = plusOne(existing.pieces);
+        else if (!byPieces(existing) && result.item_type !== 'ingredient') existing.amount = plusOne(existing.amount);
+        return;
+    }
+    let line = lines.value.find((l) => l.itemKey === '');
+    if (!line) {
+        line = blankLine();
+        lines.value.push(line);
+    }
+    line.itemKey = key;
+    onItemChange(line);
+    if (containerUuid !== '') {
+        line.container_uuid = containerUuid;
+        line.pieces = '1';
+    } else if (result.item_type !== 'ingredient') {
+        line.amount = '1';
+    } else if (line.container_uuid !== '') {
+        line.pieces = '1';
+    }
+}
+
 // ---- submit --------------------------------------------------------
+/** The wire line: a container / pack line sends pieces (+ a lowered amount); a loose line its amount. */
+function linePayload(l: LineRow): PurchaseReceiptLinePayload {
+    const [kind, uuid] = l.itemKey.split(':');
+    const pieces = byPieces(l);
+    // Phase B — a direct-to-branch receipt claims every line in full;
+    // per-line splits are dropped (the server rejects mixing them).
+    const allocations = header.destination_branch_uuid
+        ? []
+        : l.allocations
+            .filter((a) => a.branch_uuid && Number(a.quantity) > 0)
+            .map((a) => (pieces ? { branch_uuid: a.branch_uuid, pieces: a.quantity } : { branch_uuid: a.branch_uuid, quantity: a.quantity }));
+    const base = {
+        item_type: (kind === 'ingredient' ? 'ingredient' : 'product') as 'ingredient' | 'product',
+        item_uuid: uuid ?? '',
+        // C2 — the price paid for the whole line (0 = free).
+        line_cost: l.line_cost,
+        tax_amount: l.tax.tax_amount,
+        tax_rate: l.tax.tax_rate,
+        allocations: allocations.length > 0 ? allocations : undefined,
+    };
+    const typed = String(l.amount).trim();
+    if (pieces) {
+        return {
+            ...base,
+            ...(kind === 'ingredient' ? { container_uuid: l.container_uuid } : { pack_uuid: l.container_uuid }),
+            pieces: l.pieces,
+            ...(typed !== '' ? { amount: typed, amount_unit: kind === 'ingredient' && l.amount_unit !== '' ? l.amount_unit : null } : {}),
+        };
+    }
+    return {
+        ...base,
+        quantity: l.amount,
+        unit: kind === 'ingredient' && l.amount_unit !== '' ? l.amount_unit : null,
+    };
+}
+
 async function submit(): Promise<void> {
     if (!canSubmit.value) {
+        return;
+    }
+    // E2 — a price per kg / l / piece far from the current cost (skipped with no cost yet).
+    const warnings = validLines.value.map((l) => {
+        const ing = lineIngredient(l);
+        const amount = lineAmount(l);
+        if (!ing || ing.has_cost === false || amount === null || !(amount > 0)) return null;
+        const warning = purchaseCostWarning(lineCost(l) / amount, ing.default_unit_cost);
+        return warning ? { ...warning, params: { ...warning.params, item: itemName(ing) } } : null;
+    });
+    if (!(await confirmAmounts(warnings))) {
         return;
     }
     submitting.value = true;
@@ -283,28 +487,7 @@ async function submit(): Promise<void> {
         note: header.note || null,
         is_credit: header.is_credit,
         due_date: header.is_credit ? (header.due_date || null) : null,
-        lines: validLines.value.map((l) => {
-            const [kind, uuid] = l.itemKey.split(':');
-            // Phase B — a direct-to-branch receipt claims every line in full;
-            // per-line splits are dropped (the server rejects mixing them).
-            const allocations = header.destination_branch_uuid
-                ? []
-                : l.allocations
-                    .filter((a) => a.branch_uuid && Number(a.quantity) > 0)
-                    .map((a) => ({ branch_uuid: a.branch_uuid, quantity: a.quantity }));
-            // P2-3 — quantity and split in the chosen unit, the price per
-            // that unit; the server converts both and computes the total.
-            return {
-                item_type: kind === 'ingredient' ? 'ingredient' : 'product',
-                item_uuid: uuid,
-                unit: kind === 'ingredient' && l.unit !== '' ? l.unit : null,
-                quantity: l.quantity,
-                unit_price: l.unit_price === '' ? 0 : l.unit_price,
-                tax_amount: l.tax.tax_amount,
-                tax_rate: l.tax.tax_rate,
-                allocations: allocations.length > 0 ? allocations : undefined,
-            };
-        }),
+        lines: validLines.value.map(linePayload),
         charges: charges.value
             .filter((c) => c.name.trim() !== '' && Number(c.amount) > 0)
             .map((c) => ({ name: c.name.trim(), category: c.category, amount: c.amount, tax_amount: c.tax.tax_amount, tax_rate: c.tax.tax_rate })),
@@ -450,9 +633,20 @@ onMounted(async () => {
                     </button>
                 </div>
 
+                <!-- F — scan a container, pack or item barcode (or type a SKU) and press Enter. -->
+                <ScanBox
+                    class="mt-3"
+                    can-link
+                    :ingredients="ingredients"
+                    :physical-items="physicalItems"
+                    :item-types="['ingredient', 'physical', 'product']"
+                    data-test="purchase-scan"
+                    @found="onScan"
+                />
+
                 <div class="mt-3 space-y-3">
-                    <div v-for="(line, idx) in lines" :key="line.id" class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <div class="flex flex-wrap items-end gap-3">
+                    <div v-for="(line, idx) in lines" :key="line.id" class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" data-test="purchase-line">
+                        <div class="flex flex-wrap items-start gap-3">
                             <label class="block min-w-[14rem] flex-1">
                                 <span class="text-xs font-medium text-slate-600">{{ t('purchase_receipts.form.item') }}</span>
                                 <select v-model="line.itemKey" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" @change="onItemChange(line)">
@@ -468,37 +662,49 @@ onMounted(async () => {
                                     </optgroup>
                                 </select>
                             </label>
-                            <label class="block w-28">
-                                <span class="text-xs font-medium text-slate-600">{{ t('purchase_receipts.form.quantity') }}</span>
-                                <div class="relative mt-1">
-                                    <input v-model="line.quantity" type="number" step="any" min="0" placeholder="0" class="block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
-                                </div>
-                                <span v-if="lineUnitOptions(line).length === 0 && lineUnit(line)" class="mt-0.5 block text-[10px] text-slate-400">{{ lineUnit(line) }}</span>
-                            </label>
-                            <!-- P2-3 — the unit the quantity (and split) is entered in. -->
-                            <label v-if="lineUnitOptions(line).length > 0" class="block w-40">
-                                <span class="text-xs font-medium text-slate-600">{{ t('purchase_receipts.form.unit') }}</span>
-                                <select v-model="line.unit" data-test="line-unit" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
-                                    <option v-for="o in lineUnitOptions(line)" :key="o.value" :value="o.value">{{ o.label }}</option>
+                            <!-- C1 / D3 — the container (or pack), or none: type the amount (a loose crate that weighs more). -->
+                            <label v-if="containerOptions(line).length > 0" class="block w-48">
+                                <span class="text-xs font-medium text-slate-600">{{ lineIngredient(line) ? t('purchases_v2.container') : t('purchases_v2.pack') }}</span>
+                                <select v-model="line.container_uuid" data-test="line-container" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" @change="onContainerChange(line)">
+                                    <option v-for="o in containerOptions(line)" :key="o.value" :value="o.value">{{ o.label }}</option>
+                                    <option value="">{{ lineIngredient(line) ? t('purchases_v2.no_container') : t('purchases_v2.no_pack') }}</option>
                                 </select>
                             </label>
-                            <label class="block w-36">
-                                <span class="text-xs font-medium text-slate-600">{{ lineUnit(line) ? t('purchase_receipts.form.price_per_unit', { unit: lineUnit(line) }) : t('purchase_receipts.form.unit_price') }}</span>
-                                <input v-model="line.unit_price" type="number" step="any" min="0" placeholder="0.000" data-test="line-unit-price" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                            <label v-if="byPieces(line)" class="block w-24">
+                                <span class="text-xs font-medium text-slate-600">{{ t('purchases_v2.pieces') }}</span>
+                                <input v-model="line.pieces" type="number" step="any" min="0" placeholder="0" data-test="line-pieces" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm tabular-nums shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
                             </label>
-                            <div class="block w-28">
-                                <span class="text-xs font-medium text-slate-600">{{ t('purchase_receipts.form.line_total') }}</span>
-                                <div class="mt-1 rounded-lg bg-slate-50 px-3 py-2 text-sm font-semibold tabular-nums text-slate-800">{{ money(lineCost(line)) }}</div>
+                            <!-- C1 — the amount fills in as pieces × size; it may be lowered, never raised. -->
+                            <div v-if="line.itemKey" class="block w-56">
+                                <span class="text-xs font-medium text-slate-600">{{ byPieces(line) ? t('purchases_v2.amount_lower_only') : t('purchases_v2.amount') }}</span>
+                                <AmountInput
+                                    v-model="line.amount"
+                                    v-model:unit="line.amount_unit"
+                                    class="mt-1"
+                                    :options="lineIngredient(line) ? amountUnitOptions(line) : null"
+                                    :stored-unit="lineStoredUnit(line)"
+                                    :placeholder="byPieces(line) && lineCap(line) > 0 ? friendly(lineCap(line), lineStoredUnit(line) === 'piece' ? '' : lineStoredUnit(line)).trim() : '0'"
+                                    :input-class="`block w-full rounded-lg border bg-white px-3 py-2 text-sm tabular-nums shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100 ${lineRaised(line) ? 'border-rose-400 bg-rose-50 text-rose-700' : 'border-slate-200'}`"
+                                    select-class="shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-2 text-sm"
+                                    data-test="line-amount"
+                                />
                             </div>
-                            <button type="button" class="mb-1.5 grid size-9 place-items-center rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-600" :aria-label="t('common.delete')" @click="removeLine(idx)">
+                            <!-- C2 — what was paid for the whole line (required; 0 = free). -->
+                            <label class="block w-36">
+                                <span class="text-xs font-medium text-slate-600">{{ t('purchases_v2.price_paid') }} *</span>
+                                <input v-model="line.line_cost" type="number" step="0.001" min="0" placeholder="0.000" required data-test="line-cost" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm tabular-nums shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                            </label>
+                            <button type="button" class="mt-5 grid size-9 place-items-center rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-600" :aria-label="t('common.delete')" @click="removeLine(idx)">
                                 <Trash2 class="size-4" />
                             </button>
                         </div>
 
-                        <p v-if="lineIncomplete(line)" class="mt-2 text-xs text-rose-600">{{ t('purchase_receipts.form.needs_quantity') }}</p>
-                        <!-- P2-3 — what lands in stock, in the base unit, before saving. -->
-                        <p v-if="lineBaseEquivalent(line)" class="mt-2 text-xs font-medium text-teal-700" data-test="line-base-equivalent">
-                            {{ lineBaseEquivalent(line) }}<span v-if="lineCostPerBase(line)" class="text-slate-500"> · {{ lineCostPerBase(line) }}</span>
+                        <p v-if="lineIncomplete(line)" class="mt-2 text-xs text-rose-600">{{ byPieces(line) ? t('purchases_v2.needs_pieces') : t('purchase_receipts.form.needs_quantity') }}</p>
+                        <p v-if="lineRaised(line)" class="mt-2 text-xs font-semibold text-rose-600" data-test="line-raised">{{ t('containers.total_raised', { cap: friendly(lineCap(line), lineStoredUnit(line) === 'piece' ? '' : lineStoredUnit(line)).trim() }) }}</p>
+                        <p v-if="lineNeedsPrice(line)" class="mt-2 text-xs text-rose-600" data-test="line-needs-price">{{ t('purchases_v2.needs_price') }}</p>
+                        <!-- C1 — the live line: "= 24 × bottle 1 l = 24 l · 0.150 per l". -->
+                        <p v-if="liveLine(line)" class="mt-2 text-xs font-medium text-teal-700" data-test="line-live">
+                            <bdi dir="ltr">{{ liveLine(line) }}</bdi>
                         </p>
 
                         <!-- PT — optional tax on this line (disabled on a free line:
@@ -516,7 +722,9 @@ onMounted(async () => {
 
                             <div v-if="line.showAllocations && !header.destination_branch_uuid" class="mt-3">
                                 <p class="text-[11px] text-slate-400">{{ t('purchase_receipts.form.distribute_hint') }}</p>
-                                <p v-if="lineUnit(line)" class="text-[11px] text-slate-500">{{ t('purchase_receipts.form.split_in_unit', { unit: lineUnit(line) }) }}</p>
+                                <!-- C3 — a container line splits in pieces ("2 crates to Branch A"). -->
+                                <p v-if="byPieces(line)" class="text-[11px] text-slate-500" data-test="split-in-pieces">{{ t('purchases_v2.split_in_pieces', { container: containerOptions(line).find((o) => o.value === line.container_uuid)?.label ?? '' }) }}</p>
+                                <p v-else-if="lineIngredient(line)" class="text-[11px] text-slate-500">{{ t('purchase_receipts.form.split_in_unit', { unit: line.amount_unit || lineStoredUnit(line) }) }}</p>
                                 <div class="mt-2 grid gap-2 sm:grid-cols-2">
                                     <div v-for="alloc in line.allocations" :key="alloc.branch_uuid" class="flex items-center gap-2">
                                         <span class="flex-1 truncate text-sm text-slate-700">{{ branchName(alloc.branch_uuid) }}</span>
@@ -524,7 +732,7 @@ onMounted(async () => {
                                     </div>
                                 </div>
                                 <p class="mt-2 text-xs" :class="lineOverDistributed(line) ? 'text-rose-600' : 'text-slate-500'">
-                                    {{ t('purchase_receipts.form.remainder', { distributed: lineDistributed(line), total: Number(line.quantity) || 0, remainder: lineRemainder(line) }) }}
+                                    {{ t('purchase_receipts.form.remainder', { distributed: lineDistributed(line), total: lineSplitTotal(line), remainder: lineRemainder(line) }) }}
                                 </p>
                             </div>
                         </div>
@@ -597,5 +805,8 @@ onMounted(async () => {
                 </div>
             </div>
         </div>
+
+        <!-- E2 — "Is this right?" (warns, never blocks). -->
+        <AmountConfirmDialog :warnings="amountWarnings" @answer="answerAmounts" />
     </MerchantLayout>
 </template>

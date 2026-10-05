@@ -70,14 +70,19 @@ test('P2-3 the line preview converts to base units and prices per base unit', ()
 });
 
 test('P2-3 the goods-received form enters a unit and a price per unit and shows the base quantity', () => {
+    // LAUNCH review add-on C1 / C2 — the unit is now the container (or a unit
+    // of the kind for a loose amount) and ONE required "Price paid for this
+    // line" replaces the price per unit; the live line shows what goes into
+    // stock and the cost per kg / l / piece.
     const { script, template } = sfc('resources/js/Pages/Merchant/Inventory/PurchaseReceipts/Create.vue');
-    assert.match(template, /data-test="line-unit"/);
-    assert.match(template, /data-test="line-unit-price"/);
-    assert.match(template, /data-test="line-base-equivalent"/);
-    assert.match(template, /purchase_receipts\.form\.price_per_unit/);
-    assert.match(script, /unit_price: l\.unit_price === '' \? 0 : l\.unit_price/);
-    assert.match(script, /unit: kind === 'ingredient' && l\.unit !== '' \? l\.unit : null/);
-    assert.doesNotMatch(template, /v-model="line\.line_cost"/);
+    assert.match(template, /data-test="line-container"/);
+    assert.match(template, /data-test="line-amount"/);
+    assert.match(template, /data-test="line-live"/);
+    assert.match(template, /purchases_v2\.price_paid/);
+    assert.match(script, /line_cost: l\.line_cost,/);
+    assert.match(script, /unit: kind === 'ingredient' && l\.amount_unit !== '' \? l\.amount_unit : null/);
+    assert.match(template, /v-model="line\.line_cost"/);
+    assert.doesNotMatch(template, /data-test="line-unit-price"|purchase_receipts\.form\.price_per_unit/);
 });
 
 test('P2-4 the branch Restock / Purchase and the warehouse Receive are hidden while single stock-in is on', () => {
@@ -155,13 +160,17 @@ test('P2-1 inventory inputs accept 6-decimal unit costs and 4-decimal quantities
     // browser-invalid value, so the ingredient could not be saved without
     // rounding the average away.
     const { template } = sfc('resources/js/Pages/Merchant/Inventory/Index.vue');
+    // LAUNCH review add-on — an amount box may be an <AmountInput> (E1); the
+    // ingredient form has no cost box any more (A1: the cost comes from purchases).
     const inputFor = (model) => {
-        const escaped = model.replace(/[.[\]()]/g, '\$&');
-        const match = template.match(new RegExp(`<input[^>]*v-model="${escaped}"[^>]*>`));
-        assert.ok(match, `input for ${model}`);
-        return match[0];
+        const at = template.indexOf(`v-model="${model}"`);
+        assert.ok(at >= 0, `input for ${model}`);
+        const start = template.lastIndexOf('<', at);
+        const end = template.indexOf(template.startsWith('<AmountInput', start) ? '/>' : '>', at);
+        return template.slice(start, end + 1);
     };
-    for (const model of ['ingForm.default_unit_cost', 'restockForm.unit_cost']) {
+    assert.equal(template.indexOf('v-model="ingForm.default_unit_cost"'), -1);
+    for (const model of ['restockForm.unit_cost']) {
         assert.match(inputFor(model), /step="0\.000001"/, `${model} keeps 6 decimals`);
     }
     for (const model of ['ingForm.min_stock_threshold', 'adjustForm.signed_quantity', 'restockForm.quantity', 'purchaseForm.units', 'wasteForm.quantity']) {

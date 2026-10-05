@@ -92,8 +92,10 @@ test('A1 a new ingredient is asked what kind of item it is and is stored in g, m
     // Nothing is preselected, and nothing is saved before a kind is chosen.
     assert.match(script, /ingForm\.name_ar = '';\s*\/\/[^\n]*\n\s*ingForm\.unit = '';/);
     assert.match(script, /if \(ingForm\.unit === ''\) \{\s*ingModalErrors\.value = \{ unit: \[t\('item_kind\.choose'\)\] \};/);
-    // The cost says which unit it is per (F1: per kg / l by default).
-    assert.match(form, /t\('item_kind\.cost_per', \{ unit: ingForm\.cost_unit \}\)/);
+    // LAUNCH review add-on A1 — no cost box: the cost comes from purchases
+    // (it was typed per kg / l here before, F1).
+    assert.doesNotMatch(form, /item_kind\.cost_per|ingForm\.cost_unit/);
+    assert.match(form, /t\('purchases_v2\.cost_from_purchases'\)/);
 
     assert.equal(en.item_kind.examples.weighed, 'Rice, cheese, coffee beans');
     assert.equal(en.item_kind.examples.liquid, 'Milk, oil, syrup');
@@ -135,22 +137,22 @@ test('A3 a new ingredient takes optional pack sizes ("crate holds 12 l") in the 
     assert.equal(plain(kindUnits('box')), 'box=1');
     assert.equal(kindUnits('').length, 0);
 
+    // LAUNCH review add-on A2 — the rows are typed in the ContainersEditor
+    // ("Containers — how do you buy it?"), still sent with the new item.
     const { script, form } = ingredientForm();
-    const create = form.slice(form.indexOf('data-test="pack-sizes-create"'));
-    assert.ok(form.includes('data-test="pack-sizes-create"'));
-    assert.match(create, /item_kind\.pack_sizes\.hint/);
-    assert.match(create, /v-for="\(pack, i\) in packSizeDrafts"/);
-    assert.match(create, /v-model="pack\.name"/);
-    assert.match(create, /v-model="pack\.name_ar"/);
-    assert.match(create, /t\('item_kind\.holds'\)/);
-    assert.match(create, /v-model="pack\.amount"/);
+    assert.match(form, /<ContainersEditor\s[\s\S]*?v-model:drafts="containerDrafts"[\s\S]*?:stored-unit="ingForm\.unit"/);
+    const editor = sfc('resources/js/Pages/Merchant/Inventory/components/ContainersEditor.vue');
+    const create = editor.template.slice(editor.template.indexOf('data-test="container-draft"'), editor.template.indexOf('data-test="add-container"'));
+    assert.match(editor.template, /containers\.hint/);
+    assert.match(create, /t\('containers\.holds'\)/);
     // The unit picker is limited to the kind; no factor is typed.
-    assert.match(create, /<select v-model="pack\.unit"[^>]*>\s*<option v-for="u in holdUnits"/);
-    assert.doesNotMatch(create.slice(0, create.indexOf('data-test="add-pack-size"')), /factor/);
+    assert.match(create, /<option v-for="u in holdUnits"/);
+    assert.doesNotMatch(create, /factor/);
+    assert.match(editor.script, /const holdUnits = computed\(\(\) => kindUnits\(props\.storedUnit\)\);/);
     assert.match(script, /const holdUnits = computed<KindUnit\[\]>\(\(\) => kindUnits\(ingForm\.unit\)\);/);
-    assert.match(script, /await createIngredient\(packSizes\.length > 0 \? \{ \.\.\.payload, pack_sizes: packSizes \} : payload\);/);
-    assert.match(script, /\.map\(\(d\) => \(\{ name: d\.name\.trim\(\), name_ar: d\.name_ar\.trim\(\) \|\| null, amount: String\(d\.amount \?\? ''\)\.trim\(\), unit: d\.unit \}\)\);/);
-    assert.match(read('resources/js/lib/api/inventory.ts'), /pack_sizes\?: \{ name: string; name_ar\?: string \| null; amount: string \| number; unit: string \}\[\];/);
+    assert.match(script, /\.\.\.\(containers\.length > 0 \? \{ pack_sizes: containers \} : \{\}\),/);
+    assert.match(script, /: \{ name: d\.name\.trim\(\), name_ar: d\.name_ar\.trim\(\) \|\| null, amount: String\(d\.amount \?\? ''\)\.trim\(\), unit: d\.unit, count_container: d\.count_container, barcodes: d\.barcodes \}/);
+    assert.match(read('resources/js/lib/api/inventory.ts'), /pack_sizes\?: ContainerDraftPayload\[\];/);
 });
 
 test('A4 the edit form lists Pack sizes as "holds 12 l", edited as holds [amount] [unit] with no factor field', () => {
@@ -166,21 +168,22 @@ test('A4 the edit form lists Pack sizes as "holds 12 l", edited as holds [amount
     assert.equal(plain(holdsEntry('1234.5000', 'ml')), '1.2345 l');
     assert.equal(trimAmount(-0.00001), '0');
 
-    const { script, form } = ingredientForm();
-    const edit = form.slice(form.indexOf('<template v-else>', form.indexOf('data-test="pack-sizes-create"')));
-    assert.match(form, /t\('item_kind\.pack_sizes\.title_edit'\)/);
-    assert.match(edit, /data-test="pack-sizes-edit"/);
-    assert.match(edit, /\{\{ packHoldsText\(unit\) \}\}/);
-    assert.match(edit, /v-model="altUnitDrafts\[unit\.uuid\]\.amount"/);
-    assert.match(edit, /v-model="altUnitDrafts\[unit\.uuid\]\.unit"/);
-    assert.match(edit, /v-model="altUnitNew\.amount"/);
-    assert.match(edit, /<select v-model="altUnitNew\.unit"[^>]*>\s*<option v-for="u in savedHoldUnits"/);
+    // LAUNCH review add-on A2 — the saved containers are edited in the
+    // ContainersEditor: each row reads its server display name ("bottle 1.5 l")
+    // and is edited as holds [amount] [unit]; still no factor field.
+    const { form } = ingredientForm();
+    assert.match(form, /<ContainersEditor\s[\s\S]*?:mode="ingModalMode"[\s\S]*?:ingredient-uuid="ingModalTarget\?\.uuid \?\? null"/);
+    const editor = sfc('resources/js/Pages/Merchant/Inventory/components/ContainersEditor.vue');
+    const edit = editor.template.slice(editor.template.indexOf('data-test="containers-edit"'));
+    assert.match(edit, /data-test="container-display-name">\{\{ rowLabel\(row\) \}\}/);
+    assert.match(edit, /v-model="edits\[row\.uuid\]\.amount"/);
+    assert.match(edit, /<select v-model="edits\[row\.uuid\]\.unit"[^>]*>\s*<option v-for="u in holdUnits"/);
+    assert.match(edit, /v-model="fresh\.amount"/);
+    assert.match(edit, /<select v-model="fresh\.unit"[^>]*>\s*<option v-for="u in holdUnits"/);
     // No factor is typed, and no "base unit" text is shown.
     assert.doesNotMatch(edit, /\.factor"|alt_units\.factor|base_unit_label|alt_units\.hint/);
-    assert.match(script, /amount: String\(altUnitNew\.amount\)\.trim\(\),\s*unit: altUnitNew\.unit,/);
-    assert.match(script, /amount: String\(draft\.amount\)\.trim\(\),\s*unit: draft\.unit,/);
-    assert.match(script, /const holds = holdsEntry\(u\.factor, ingModalTarget\.value\?\.unit\);/);
-    assert.match(script, /const savedHoldUnits = computed<KindUnit\[\]>\(\(\) => kindUnits\(ingModalTarget\.value\?\.unit\)\);/);
+    assert.match(editor.script, /: \{ amount: String\(source\.amount\)\.trim\(\), unit: source\.unit \};/);
+    assert.match(editor.script, /const holds = holdsEntry\(r\.factor, props\.storedUnit\);/);
     assert.equal(en.item_kind.holds_amount, 'holds {amount}');
 });
 
@@ -194,18 +197,16 @@ test('A5 the count container is typed as what it holds ("bottle holds 1.5 l"), n
     assert.equal(toStoredAmount('5', 'kg', 'ml'), null, 'not a unit of the kind');
     assert.equal(toStoredAmount('0.00001', 'g', 'kg'), null, 'rounds away at 4 decimals');
 
+    // LAUNCH review add-on A3 — the count container is a container row marked
+    // "Tills count in this" (typed as what it holds, like every container);
+    // the separate count-container fieldset and units_per_piece are gone.
     const { script, form } = ingredientForm();
-    const container = form.slice(form.indexOf('data-test="count-container"'), form.indexOf('</fieldset>', form.indexOf('data-test="count-container"')));
-    assert.ok(container.length > 0);
-    assert.match(container, /item_kind\.container\.title/);
-    assert.match(container, /v-model="ingForm\.piece_unit_label"/);
-    assert.match(container, /t\('item_kind\.holds'\)/);
-    assert.match(container, /v-model="ingForm\.container_amount"/);
-    assert.match(container, /<select v-model="ingForm\.container_unit"[^>]*>\s*<option v-for="u in holdUnits"/);
-    assert.doesNotMatch(container, /units_per_piece'|ingForm\.units_per_piece|piece\.units_per_piece/);
-    assert.match(script, /units_per_piece: containerUnitsPerPiece\(unit\),/);
-    assert.match(script, /const stored = toStoredAmount\(text, ingForm\.container_unit, storedUnit\);/);
-    assert.match(script, /const holds = holdsEntry\(ingredient\.units_per_piece, ingredient\.unit\);/);
+    assert.doesNotMatch(form, /data-test="count-container"|ingForm\.piece_unit_label|ingForm\.container_amount/);
+    assert.doesNotMatch(script, /units_per_piece: /);
+    const editor = sfc('resources/js/Pages/Merchant/Inventory/components/ContainersEditor.vue');
+    assert.match(editor.template, /data-test="count-marker"/);
+    assert.match(editor.template, /t\('containers\.count_marker'\)/);
+    assert.match(editor.script, /toStoredAmount\(/);
 });
 
 test('A6 the prep item form asks the kind and takes the yield in the kind\'s units ("one batch makes 2 l")', () => {
@@ -259,7 +260,8 @@ test('A7 waste, adjust, transfers, restock requests and the count offer the kind
     const inventoryApi = read('resources/js/lib/api/inventory.ts');
     assert.match(inventoryApi, /return entryUnitOptions\(ingredient, locale\)\.map\(\(\{ value, label \}\) => \(\{ value, label \}\)\);/);
     assert.match(inventoryApi, /return entryUnitFactor\(ingredient, selected\);/);
-    assert.match(inventoryApi, /unit\?: string \| null;\s*\}\s*\n\s*export interface SubmitStockCountPayload/);
+    // (LAUNCH review add-on D2 adds the counted containers after the unit.)
+    assert.match(inventoryApi, /unit\?: string \| null;[\s\S]{0,400}containers\?: \{ container_uuid: string; pieces: string \| number \}\[\];\s*\}\s*\n\s*export interface SubmitStockCountPayload/);
 
     const { script, template } = sfc('resources/js/Pages/Merchant/Inventory/Index.vue');
     for (const source of ['adjustTarget\\.ingredient', 'restockTarget\\.ingredient', 'wasteIngredient', 'ingredientByUuid\\(line\\.ingredient_uuid\\)']) {
@@ -268,13 +270,14 @@ test('A7 waste, adjust, transfers, restock requests and the count offer the kind
     assert.doesNotMatch(template, /ingredientUnitOptions\([^,)]*\)"/, 'every picker passes the locale');
     // The count: a unit per row (the container first when there is one).
     const count = template.slice(template.indexOf('id="count-modal-form"'), template.indexOf('</form>', template.indexOf('id="count-modal-form"')));
-    assert.match(count, /<select v-model="countRows\[i\]\.unit"[^>]*data-test="count-unit"[^>]*>\s*<option v-for="u in ingredientUnitOptions\(r\.ingredient, locale\)"/);
-    assert.match(script, /\.map\(\(ingredient\) => \(\{ ingredient, counted: '', unit: defaultCountUnit\(ingredient\) \}\)\);/);
+    // (LAUNCH review add-on E1 — the amount box is an <AmountInput> with its unit picker; D2 — a row may count by container.)
+    assert.match(count, /<AmountInput[\s\S]*?v-model="r\.counted"\s*v-model:unit="r\.unit"[\s\S]*?:options="ingredientUnitOptions\(r\.ingredient, locale\)"[\s\S]*?data-test="count-amount"/);
+    assert.match(script, /\.map\(\(ingredient\) => \(\{ ingredient, counted: '', unit: defaultCountUnit\(ingredient\), containers: \[\] \}\)\);/);
     assert.match(script, /if \(countsPieces\(r\)\) return \{ ingredient_uuid: r\.ingredient\.uuid, counted_pieces: r\.counted \};/);
     assert.match(script, /: \{ ingredient_uuid: r\.ingredient\.uuid, counted_units: r\.counted, unit: r\.unit \};/);
     // The minimum stock is typed in a unit of the kind too.
     const { form } = ingredientForm();
-    assert.match(form, /<select v-model="ingForm\.min_stock_unit"[^>]*data-test="min-stock-unit"[^>]*>\s*<option v-for="u in holdUnits"/);
+    assert.match(form, /<AmountInput\s*v-model="ingForm\.min_stock_threshold"\s*v-model:unit="ingForm\.min_stock_unit"[\s\S]*?:options="holdUnits\.map\(/);
     assert.match(script, /min_stock_threshold: minimumInStoredUnit\(unit\),/);
 });
 
@@ -349,15 +352,14 @@ test('F1 a Weighed / Liquid cost is typed and shown per kg / l, kept per stored 
     assert.equal(formatCost(0.0012345), '0.001235');
     assert.equal(formatCost(12), '12.000');
 
+    // LAUNCH review add-on A1 — the ingredient cost is no longer typed (it
+    // comes from purchases); it is still SHOWN per kg / l, read-only.
     const { script, form } = ingredientForm();
-    assert.match(form, /<select v-model="ingForm\.cost_unit"[^>]*data-test="cost-unit"[^>]*>\s*<option v-for="u in holdUnits"/);
-    assert.match(script, /default_unit_cost: costInStoredUnit\(unit\),/);
-    assert.match(script, /const stored = toStoredCost\(text, ingForm\.cost_unit, storedUnit\);/);
-    assert.match(script, /ingForm\.default_unit_cost = friendlyCost\(ingredient\.default_unit_cost, ingredient\.unit\)\.amount;\s*ingForm\.cost_unit = costUnit\(ingredient\.unit\);/);
-    // Defaults to kg / l when the kind is chosen.
-    assert.match(script, /if \(!allowed\.includes\(ingForm\.cost_unit\)\) ingForm\.cost_unit = ingForm\.unit === '' \? '' : costUnit\(ingForm\.unit\);/);
+    assert.doesNotMatch(form, /ingForm\.cost_unit|data-test="cost-unit"/);
+    assert.doesNotMatch(script, /default_unit_cost: costInStoredUnit\(unit\),/);
+    assert.match(form, /friendlyCost\(ingModalTarget\.default_unit_cost, ingModalTarget\.unit\)\.amount/);
     const { template } = sfc('resources/js/Pages/Merchant/Inventory/Index.vue');
-    assert.match(template, /data-test="ingredient-cost">\{\{ friendlyCost\(ing\.default_unit_cost, ing\.unit\)\.amount \}\}/);
+    assert.match(template, /data-test="ingredient-cost">[\s\S]*?<template v-else>\{\{ friendlyCost\(ing\.default_unit_cost, ing\.unit\)\.amount \}\}/);
     assert.match(template, /friendlyCost\(m\.unit_cost_at_time, m\.ingredient\?\.unit\)\.amount/);
     assert.match(sfc('resources/js/Pages/Merchant/Inventory/PrepItemsTab.vue').template, /data-test="prep-unit-cost">\{\{ friendlyCost\(item\.unit_cost, item\.unit\)\.amount \}\}/);
     const prep = sfc('resources/js/Pages/Merchant/Inventory/PrepItemEditor.vue').template;
@@ -390,10 +392,14 @@ test('F2 goods received offers pack sizes first, then kg / l, g / ml, the contai
     assert.deepEqual({ ...friendlyCostPer(preview.costPerBase, 'ml') }, { cost: '0.150', unit: 'l' });
     assert.deepEqual({ ...friendlyCostPer(0.05, 'piece') }, { cost: '0.050', unit: 'piece' });
 
+    // LAUNCH review add-on C1 — Purchases: a line starts in the item's FIRST
+    // container (pieces typed next) and the live line reads
+    // "= 36 × bottle 1 l = 36 l · 0.150 per l" (lib/containers containerLineText).
     const { script } = sfc('resources/js/Pages/Merchant/Inventory/PurchaseReceipts/Create.vue');
-    assert.match(script, /line\.unit = defaultPurchaseUnit\(lineIngredient\(line\)\);/);
-    assert.match(script, /t\('purchase_receipts\.form\.base_equivalent', friendlyQuantity\(base, ing\.unit\)\)/);
-    assert.match(script, /t\('purchase_receipts\.form\.cost_per_base', friendlyCostPer\(cost, ing\.unit\)\)/);
+    assert.match(script, /line\.container_uuid = ing \? \(containersOf\(ing\)\[0\]\?\.uuid \?\? ''\) : '';/);
+    assert.match(script, /line\.amount_unit = ing \? bigUnit\(ing\.unit\) : '';/);
+    assert.match(script, /const text = containerLineText\(\{ container, all: containersOf\(ing\), pieces: line\.pieces, amountStored: amount, storedUnit: ing\.unit, lineCost: line\.line_cost, locale: locale\.value \}\);/);
+    assert.match(script, /if \(costPer\) text \+= ` · \$\{t\('purchases_v2\.cost_per', costPer\)\}`;/);
 });
 
 test('F3 the receipt detail reads "36 l", "Kaldi athaiba: 36 l", "Cost per l: 0.150" and keeps "Entered as 3 crate"', () => {
@@ -436,12 +442,13 @@ test('F4 the warehouse dialog types amounts in the kind\'s units, pack sizes or 
 test('F5 restock allocation and suggestions are typed in the kind\'s units, pack sizes or container and shown friendly', () => {
     const { script, template } = sfc('resources/js/Pages/Merchant/Inventory/Index.vue');
     // Allocation: an amount + a unit per line, opened in the friendly unit, capped in the stored unit.
-    assert.match(template, /<select v-model="allocateUnits\[String\(l\.id\)\]"[^>]*data-test="allocate-unit"[^>]*>\s*<option v-for="u in ingredientUnitOptions\(restockLineIngredient\(l\), locale\)"/);
+    // (LAUNCH review add-on E1 — the amount and its unit are one <AmountInput> with the live translation.)
+    assert.match(template, /<AmountInput\s*v-model="allocateOverrides\[String\(l\.id\)\]"\s*v-model:unit="allocateUnits\[String\(l\.id\)\]"[\s\S]*?:options="ingredientUnitOptions\(restockLineIngredient\(l\), locale\)"[\s\S]*?data-test="allocate-quantity"/);
     assert.match(script, /const entry = entryFor\(line\.quantity_requested, line\.unit_at_set\);\s*allocateOverrides\[String\(line\.id\)\] = entry\.amount;\s*allocateUnits\[String\(line\.id\)\] = entry\.unit;/);
     assert.match(script, /if \(allocatedStored\(line\) > requested \+ 1e-9\) return true;/);
     assert.match(script, /await allocateRestockRequest\(allocateTarget\.value\.uuid, Object\.keys\(units\)\.length > 0 \? \{ allocations, units \} : \{ allocations \}\);/);
     // Suggestions: offered friendly, typed in any unit, sent with the unit.
-    assert.match(template, /<select v-model="row\.unit"[^>]*data-test="suggestion-unit"[^>]*>\s*<option v-for="u in ingredientUnitOptions\(suggestionIngredient\(row\.suggestion\), locale\)"/);
+    assert.match(template, /<AmountInput\s*v-model="row\.qty"\s*v-model:unit="row\.unit"[\s\S]*?:options="ingredientUnitOptions\(suggestionIngredient\(row\.suggestion\), locale\)"[\s\S]*?data-test="suggestion-quantity"/);
     assert.match(script, /const entry = entryFor\(s\.suggested_quantity, s\.unit\);/);
     assert.match(script, /quantity_requested: r\.qty,\s*unit: wireUnit\(r\.unit\),/);
     for (const field of ['current_quantity', 'avg_daily_consumption', 'target_level']) {
@@ -452,7 +459,8 @@ test('F5 restock allocation and suggestions are typed in the kind\'s units, pack
 
 test('F6 the edit form says to remove pack sizes and the container before another kind is saved', () => {
     const { script, form } = ingredientForm();
-    assert.match(script, /const kindChangeBlocked = computed<boolean>\(\(\) => ingModalMode\.value === 'edit'[\s\S]*?kindOfUnit\(ingForm\.unit\) !== kindOfUnit\(ingModalTarget\.value\.unit\)\s*&& \(altUnits\.value\.length > 0 \|\| ingForm\.piece_unit_label\.trim\(\) !== ''\)\);/);
+    // (LAUNCH review add-on A2 / A3 — the containers come with the item, the count container is one of them.)
+    assert.match(script, /const kindChangeBlocked = computed<boolean>\(\(\) => ingModalMode\.value === 'edit'[\s\S]*?kindOfUnit\(ingForm\.unit\) !== kindOfUnit\(ingModalTarget\.value\.unit\)\s*&& \(\(ingModalTarget\.value\.alt_units\?\.length \?\? 0\) > 0 \|\| \(ingModalTarget\.value\.piece_unit_label \?\? ''\)\.trim\(\) !== ''\)\);/);
     assert.match(script, /if \(kindChangeBlocked\.value\) \{\s*ingModalErrors\.value = \{ unit: \[t\('item_kind\.kind_change_blocked'\)\] \};/);
     assert.match(form, /v-else-if="kindChangeBlocked"[^>]*data-test="item-kind-change-blocked">\{\{ t\('item_kind\.kind_change_blocked'\) \}\}/);
     assert.equal(en.item_kind.kind_change_blocked, 'Remove its pack sizes and count container before changing the kind.');
@@ -534,7 +542,8 @@ test('G1 every weighed / liquid picker also offers gallon, fl oz, lb and oz, lab
     // Goods received: pack sizes, l, ml, then the US units, then the container.
     const { purchaseUnitOptions } = lib('purchaseUnits');
     assert.deepEqual([...purchaseUnitOptions({ ...milk, piece_unit_label: 'bottle', units_per_piece: '1500' }, 'en').map((o) => o.label)], ['crate (12 l)', 'l', 'ml', 'gallon (3.785 l)', 'fl oz (29.57 ml)', 'bottle (1.5 l)']);
-    assert.match(sfc('resources/js/Pages/Merchant/Inventory/PurchaseReceipts/Create.vue').script, /purchaseUnitOptions\(lineIngredient\(line\), locale\.value\)/);
+    // (LAUNCH review add-on C1 — Purchases types a loose amount in a unit of the kind, US units included.)
+    assert.match(sfc('resources/js/Pages/Merchant/Inventory/PurchaseReceipts/Create.vue').script, /const units = kindUnits\(ing\.unit\)\.filter\(\(u\) => u\.value !== ing\.unit\);/);
     // The form's "holds", cost, minimum and yield pickers label them the same way.
     assert.match(ingredientForm().script, /: unitOptionLabel\(unit, locale\.value\);/);
     assert.match(sfc('resources/js/Pages/Merchant/Inventory/PrepItemEditor.vue').script, /: unitOptionLabel\(unit, locale\.value\);/);

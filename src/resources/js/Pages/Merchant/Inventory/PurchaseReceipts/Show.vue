@@ -101,11 +101,21 @@ function allocationText(quantity: string | number | null | undefined, unit: stri
 }
 
 /** P2-3 — the unit a line was entered in ('@piece' = the piece unit). */
-function enteredUnit(line: { purchase_unit?: string | null; unit: string | null }): string {
+function enteredUnit(line: { purchase_unit?: string | null; unit: string | null; container_label?: string | null }): string {
     if (!line.purchase_unit) {
         return line.unit ?? t('purchase_receipts.form.unit_each');
     }
+    // Review add-on (A2) — a container token reads as the container's label.
+    if (line.purchase_unit.startsWith('#')) {
+        return line.container_label ?? t('purchases_v2.container');
+    }
     return line.purchase_unit === '@piece' ? t('purchase_receipts.show.piece_unit') : line.purchase_unit;
+}
+
+/** C1 / D3 — "2 × crate (12 × bottle 1 l)" for a line bought by container or pack. */
+function containerText(pieces: string | null | undefined, label: string | null | undefined): string | null {
+    if (!pieces || !label) return null;
+    return `${trimQty(pieces)} × ${label}`;
 }
 
 function formatDate(iso: string | null): string {
@@ -183,6 +193,8 @@ onMounted(async () => {
                                 <td class="px-4 py-2.5 text-end tabular-nums text-slate-600">
                                     <!-- F3 — "36 l", not "36000 ml". -->
                                     <span data-test="receipt-line-quantity">{{ friendlyAmount(line.quantity, line.unit).amount }}</span> <span class="text-xs text-slate-400">{{ friendlyAmount(line.quantity, line.unit).unit }}</span>
+                                    <!-- C1 / D3 — bought by container or pack. -->
+                                    <bdi v-if="containerText(line.pieces, line.container_label)" dir="ltr" class="block text-[11px] font-medium text-slate-500" data-test="receipt-line-container">{{ containerText(line.pieces, line.container_label) }}</bdi>
                                     <!-- P2-3 — as entered: 25 kg at 0.350 per kg; the cost the stock carries. -->
                                     <span v-if="line.purchase_quantity && line.unit_price !== null && line.unit_price !== undefined" class="block text-[11px] text-slate-400">
                                         {{ t('purchase_receipts.show.entered_as', { quantity: trimQty(line.purchase_quantity), unit: enteredUnit(line), price: trimQty(line.unit_price) }) }}
@@ -197,6 +209,7 @@ onMounted(async () => {
                                     <template v-if="line.allocations.length > 0">
                                         <span v-for="(a, i) in line.allocations" :key="i" class="me-1 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
                                             {{ a.branch_name }}: <span data-test="receipt-allocation">{{ allocationText(a.quantity, line.unit) }}</span>
+                                            <bdi v-if="a.pieces && line.container_label" dir="ltr" class="text-slate-400">({{ containerText(a.pieces, line.container_label) }})</bdi>
                                         </span>
                                     </template>
                                     <span v-else class="text-xs italic text-slate-400">{{ t('purchase_receipts.kept_central') }}</span>
