@@ -120,6 +120,11 @@ import {
 } from '@/lib/api/deliveryProviders';
 import { authState } from '@/stores/auth';
 import { canWriteRecipes, MerchantPermission } from '@/lib/permissions';
+// LAUNCH review add-on (step 11) — E1 the live translation, E2 "Is this right?", A1 "No cost yet".
+import { recipeLineWarning, type AmountWarning } from '@/lib/amountSafety';
+import { useAmountConfirm } from '@/composables/useAmountConfirm';
+import AmountConfirmDialog from '@/Pages/Merchant/Inventory/components/AmountConfirmDialog.vue';
+import AmountInput from '@/Pages/Merchant/Inventory/components/AmountInput.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -643,6 +648,8 @@ async function saveOptionStock(uuid: string): Promise<void> {
         ownedError.value = t('recipe_units.fix_lines');
         return;
     }
+    // Step 11, E2 — one option using more than 2 kg / 2 l / 50 pieces asks first.
+    if (!(await confirmAmounts(consumptionWarnings(optionStockDrafts.value[uuid] ?? [])))) return;
     ownedBusy.value = true;
     ownedError.value = null;
     try {
@@ -723,6 +730,55 @@ const recipeLiveCost = computed<string>(() => {
     }
     return total.toFixed(3);
 });
+
+// ---- LAUNCH review add-on (step 11) — A1 "No cost yet", E2 "Is this right?" ----
+
+/** A1 — a line's item has no cost from a purchase yet (a prep item: one of its recipe's items). */
+function recipeLineNoCost(line: { ingredient_uuid: string }): boolean {
+    const ingredient = ingredientByUuid(line.ingredient_uuid);
+    return ingredient !== null && (ingredient.has_cost === false || ingredient.cost_complete === false);
+}
+
+/** A1 — the cost of one line ("0.045"), or null while it has no cost or no amount. */
+function recipeLineCost(line: { ingredient_uuid: string; quantity: string; unit: string }): string | null {
+    const ingredient = ingredientByUuid(line.ingredient_uuid);
+    if (!ingredient || recipeLineNoCost(line) || String(line.quantity).trim() === '') return null;
+    const cost = toBaseUnits(parseFloat(line.quantity), ingredient, line.unit) * parseFloat(ingredient.default_unit_cost);
+    return Number.isFinite(cost) ? cost.toFixed(3) : null;
+}
+
+/** A1 — the total leaves out an item with no cost yet: "Cost incomplete". */
+const recipeCostIncomplete = computed<boolean>(() => form.recipe_lines.some((l) => l.ingredient_uuid !== '' && recipeLineNoCost(l)));
+
+// E2 — "Is this right?" before saving an unrealistic amount (warns, never blocks).
+const { warnings: amountWarnings, confirm: confirmAmounts, answer: answerAmounts } = useAmountConfirm();
+
+/** E2 — one portion of this product (or one option) uses more than 2 kg / 2 l / 50 pieces. */
+function portionWarning(ingredientUuid: string | null | undefined, quantity: string | number, unit: string | null | undefined): AmountWarning | null {
+    const ingredient = ingredientByUuid(ingredientUuid ?? '');
+    if (!ingredient) return null;
+    const entered = unit ?? '';
+    return recipeLineWarning({
+        amount: quantity,
+        unit: entered,
+        storedUnit: ingredient.unit,
+        factor: recipeUnitFactor(ingredient, entered),
+        product: form.name.trim(),
+    });
+}
+
+/** E2 — the warnings of an option's stock usage (ingredient lines). */
+function consumptionWarnings(lines: ConsumptionLinePayload[]): (AmountWarning | null)[] {
+    return lines.filter((l) => l.type === 'ingredient').map((l) => portionWarning(l.ingredient_uuid, l.quantity, l.unit));
+}
+
+/** E2 — every warning a save would send: the recipe lines and (create) the new options' stock usage. */
+function saveWarnings(): (AmountWarning | null)[] {
+    if (!canEditRecipes.value) return [];
+    const recipe = hasRecipeStep.value ? form.recipe_lines.map((l) => portionWarning(l.ingredient_uuid, l.quantity, l.unit)) : [];
+    const options = isEdit ? [] : ownedDrafts.value.flatMap((g) => g.options.flatMap((o) => consumptionWarnings(o.consumption)));
+    return [...recipe, ...options];
+}
 
 const recipeLiveMargin = computed<string | null>(() => {
     const basePrice = parseFloat(form.base_price);
@@ -966,6 +1022,11 @@ async function submit(): Promise<void> {
     }
     if (canEditRecipes.value && hasRecipeStep.value && recipePayload().length === 0 && !noRecipeConfirmed) {
         noRecipeConfirmOpen.value = true;
+        return;
+    }
+    // Step 11, E2 — "One latte would use 200 l. Did you mean 200 ml?" (warns, never blocks).
+    if (!(await confirmAmounts(saveWarnings()))) {
+        step.value = 2;
         return;
     }
     noRecipeConfirmed = false; // one-shot: a later edit asks again
@@ -1823,7 +1884,7 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                         <RemovableTick v-if="line.ingredient_uuid" :model-value="removableTicks[line.ingredient_uuid]" :ingredient-name="ingredientName(line.ingredient_uuid)" :ingredient-name-ar="ingredientByUuid(line.ingredient_uuid)?.name_ar ?? null" :disabled="removableLocked" @update:model-value="setRemovable(line.ingredient_uuid, $event)" />
                                     </li>
                                 </ul>
-                                <p v-if="form.recipe_lines.length > 0" class="text-xs text-amber-800">{{ t('catalogue.recipe.live_cost') }}: <strong class="tabular-nums">{{ recipeLiveCost }}</strong> OMR</p>
+                                <p v-if="form.recipe_lines.length > 0" class="text-xs text-amber-800">{{ t('catalogue.recipe.live_cost') }}: <strong class="tabular-nums">{{ recipeLiveCost }}</strong> OMR<span v-if="recipeCostIncomplete" class="ms-1 font-semibold" data-test="recipe-cost-incomplete-readonly">· {{ t('purchases_v2.cost_incomplete') }}</span></p>
                             </div>
                             <div v-else-if="ingredients.length === 0" class="mt-3 rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
                                 {{ t('catalogue.recipe.no_ingredients_hint') }}
@@ -1845,21 +1906,31 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                                 </optgroup>
                                             </select>
                                         </label>
-                                        <label class="block w-28">
-                                            <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.recipe.quantity') }}</span>
-                                            <input v-model="line.quantity" type="number" step="0.0001" min="0" placeholder="0" data-test="recipe-line-quantity" class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
-                                        </label>
-                                        <label class="block w-36">
-                                            <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.recipe.unit') }}</span>
-                                            <select v-model="line.unit" data-test="recipe-line-unit" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
-                                                <!-- LAUNCH-P3 P3-1 — base + extra units + metric pair + the piece unit. -->
-                                                <option v-for="u in recipeUnitOptions(ingredientByUuid(line.ingredient_uuid), locale)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
-                                            </select>
-                                        </label>
+                                        <!-- LAUNCH-P3 P3-1 — base + extra units + metric pair + the piece unit;
+                                             review add-on step 11, E1 — "= 2 l 500 ml" under the amount. -->
+                                        <div class="block w-72">
+                                            <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.recipe.quantity') }} · {{ t('catalogue.recipe.unit') }}</span>
+                                            <AmountInput
+                                                v-model="line.quantity"
+                                                v-model:unit="line.unit"
+                                                class="mt-1"
+                                                :options="recipeUnitOptions(ingredientByUuid(line.ingredient_uuid), locale)"
+                                                :stored-unit="ingredientByUuid(line.ingredient_uuid)?.unit ?? 'g'"
+                                                :containers="ingredientByUuid(line.ingredient_uuid)?.alt_units ?? []"
+                                                step="0.0001"
+                                                placeholder="0"
+                                                input-class="w-28 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                                                select-class="w-40 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                                                data-test="recipe-line-quantity"
+                                            />
+                                        </div>
                                         <button type="button" class="grid size-9 place-items-center rounded-lg border border-rose-200 text-rose-700 transition hover:bg-rose-50" :title="t('catalogue.recipe.remove_line')" @click="removeRecipeLine(idx)">
                                             <Minus class="size-4" />
                                         </button>
                                         <p v-if="recipeLineMessage(line)" class="basis-full text-xs font-semibold text-rose-700" data-test="recipe-line-problem">{{ recipeLineMessage(line) }}</p>
+                                        <!-- Step 11, A1 — the line's cost, or "No cost yet" (no priced purchase). -->
+                                        <p v-if="line.ingredient_uuid && recipeLineNoCost(line)" class="basis-full text-xs italic text-amber-700" data-test="recipe-line-no-cost">{{ t('purchases_v2.no_cost_yet') }}</p>
+                                        <p v-else-if="recipeLineCost(line) !== null" class="basis-full text-[11px] tabular-nums text-slate-500" data-test="recipe-line-cost">≈ {{ recipeLineCost(line) }} OMR</p>
                                         <!-- LAUNCH review add-on — "Can be removed" (catalogue.manage). -->
                                         <RemovableTick v-if="line.ingredient_uuid" :model-value="removableTicks[line.ingredient_uuid]" :ingredient-name="ingredientName(line.ingredient_uuid)" :ingredient-name-ar="ingredientByUuid(line.ingredient_uuid)?.name_ar ?? null" :disabled="removableLocked" @update:model-value="setRemovable(line.ingredient_uuid, $event)" />
                                     </li>
@@ -1875,6 +1946,8 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                     <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
                                         <p class="text-[10px] font-semibold uppercase tracking-wide text-amber-700">{{ t('catalogue.recipe.live_cost') }}</p>
                                         <p class="text-base font-semibold tabular-nums text-amber-900">{{ recipeLiveCost }} <span class="text-[10px] font-normal text-amber-600">OMR</span></p>
+                                        <!-- Step 11, A1 — an item with no cost yet is left out of the total. -->
+                                        <p v-if="recipeCostIncomplete" class="text-[10px] font-semibold text-amber-800" data-test="recipe-cost-incomplete">{{ t('purchases_v2.cost_incomplete') }}</p>
                                     </div>
                                     <div v-if="recipeLiveMargin !== null" class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
                                         <p class="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">{{ t('catalogue.recipe.margin') }}</p>
@@ -2029,7 +2102,7 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                     </li>
                                 </ul>
                                 <div v-if="reviewRecipeLines.length > 0" class="mt-3 flex gap-4 border-t border-slate-100 pt-2 text-xs">
-                                    <span class="text-amber-700">{{ t('catalogue.recipe.live_cost') }}: <strong class="tabular-nums">{{ recipeLiveCost }}</strong> OMR</span>
+                                    <span class="text-amber-700">{{ t('catalogue.recipe.live_cost') }}: <strong class="tabular-nums">{{ recipeLiveCost }}</strong> OMR<span v-if="recipeCostIncomplete" class="ms-1 font-semibold" data-test="review-cost-incomplete">· {{ t('purchases_v2.cost_incomplete') }}</span></span>
                                     <span v-if="recipeLiveMargin !== null" class="text-emerald-700">{{ t('catalogue.recipe.margin') }}: <strong class="tabular-nums">{{ recipeLiveMargin }}%</strong></span>
                                 </div>
                                 <p v-if="canEditRecipes && form.recipe_note.trim() !== ''" class="mt-2 text-xs text-slate-600">{{ t('recipe_history.note') }}: {{ form.recipe_note }}</p>
@@ -2129,5 +2202,8 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                 </div>
             </template>
         </BaseModal>
+
+        <!-- Step 11, E2 — "Is this right?" (warns, never blocks). -->
+        <AmountConfirmDialog :warnings="amountWarnings" @answer="answerAmounts" />
     </MerchantLayout>
 </template>

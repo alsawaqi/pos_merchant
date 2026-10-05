@@ -12,7 +12,9 @@ import { useI18n } from 'vue-i18n';
 import { Plus, Trash2 } from 'lucide-vue-next';
 import type { ComponentOption, ConsumptionLinePayload } from '@/lib/api/catalogue';
 import type { Ingredient } from '@/lib/api/inventory';
-import { consumptionLineProblem, lineAmountText, recipeUnitOptions } from '@/lib/recipeUnits';
+import { consumptionLineProblem, lineAmountText, recipeUnitFactor, recipeUnitOptions } from '@/lib/recipeUnits';
+// LAUNCH review add-on (step 11) — E1 the live translation, E2 "Is this right?".
+import { recipeLineWarning, translateAmount } from '@/lib/amountSafety';
 
 const props = defineProps<{
     modelValue: ConsumptionLinePayload[];
@@ -104,6 +106,31 @@ const prepIngredients = computed(() => props.ingredients.filter((i) => i.is_prep
 function lineProblem(line: ConsumptionLinePayload): string | null {
     const problem = consumptionLineProblem(line, (uuid) => props.ingredients.find((i) => i.uuid === uuid), locale.value);
     return problem === null ? null : t(problem.key, problem.params);
+}
+
+/** The ingredient an ingredient line picked, or undefined. */
+function lineIngredient(line: ConsumptionLinePayload): Ingredient | undefined {
+    return line.type === 'ingredient' ? props.ingredients.find((i) => i.uuid === line.ingredient_uuid) : undefined;
+}
+
+/** Step 11, E1 — "= 2 l 500 ml" (a container: "= 36 × bottle 1 l = 36 l") under an ingredient line. */
+function lineTranslation(line: ConsumptionLinePayload): string {
+    const ingredient = lineIngredient(line);
+    if (!ingredient) return '';
+    const parts = translateAmount({ amount: line.quantity, unit: line.unit ?? '', storedUnit: ingredient.unit, containers: ingredient.alt_units ?? [], locale: locale.value });
+    return parts.length > 0 ? t('amount_safety.translation', { text: parts.join(' = ') }) : '';
+}
+
+/**
+ * Step 11, E2 — one option using more than 2 kg / 2 l / 50 pieces is said
+ * under its line, as a warning that never blocks (the product wizard also
+ * asks "Is this right?" when it saves).
+ */
+function lineWarning(line: ConsumptionLinePayload): string | null {
+    const ingredient = lineIngredient(line);
+    if (!ingredient) return null;
+    const warning = recipeLineWarning({ amount: line.quantity, unit: line.unit ?? '', storedUnit: ingredient.unit, factor: recipeUnitFactor(ingredient, line.unit ?? '') });
+    return warning === null ? null : t(warning.key, warning.params);
 }
 
 /** Read-only rendering of one line: "Uses", the amount ("9 g", fix order 1 L4: shown left-to-right) and the name. */
@@ -231,6 +258,9 @@ function productLabel(option: ComponentOption): string {
                 <Trash2 class="size-3.5" />
             </button>
             <p v-if="lineProblem(line)" class="col-span-full text-[11px] font-semibold text-rose-700" data-test="consumption-line-problem">{{ lineProblem(line) }}</p>
+            <!-- Step 11 — E1 the translation, E2 the warning (never blocks). -->
+            <p v-if="lineTranslation(line)" class="col-span-full text-[11px] font-medium text-teal-700" data-test="consumption-translation"><bdi dir="ltr">{{ lineTranslation(line) }}</bdi></p>
+            <p v-if="lineWarning(line)" class="col-span-full text-[11px] font-semibold text-amber-700" data-test="consumption-warning">{{ lineWarning(line) }}</p>
         </div>
 
         <button

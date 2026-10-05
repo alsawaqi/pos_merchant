@@ -179,7 +179,9 @@
             "container_small": "A container holding {amount} is very small. Is that right?",
             "cost_high": "{item}: this price is {times} times the current cost per unit. Are the price and the amount right?",
             "cost_low": "{item}: this price is {times} times cheaper than the current cost per unit. Are the price and the amount right?",
-            "threshold_small": "The minimum ({amount}) is less than one container ({container}). Is that right?"
+            "threshold_small": "The minimum ({amount}) is less than one container ({container}). Is that right?",
+            "prep_batch": "One batch would use {amount} of {item}. Is that right?",
+            "prep_yield": "One batch would use {amount} of {item} to make {made}. Is that right?"
         }
     },
     "purchases_v2": {

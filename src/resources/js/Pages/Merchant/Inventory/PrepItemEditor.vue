@@ -57,7 +57,9 @@ import {
 } from '@/lib/recipeUnits';
 import RecipeHistoryPanel from '@/Pages/Merchant/Catalogue/RecipeHistoryPanel.vue';
 // LAUNCH review add-on — A1 "No cost yet", E1 the live translation under each amount.
-import { translateAmount } from '@/lib/amountSafety';
+import { prepLineWarning, translateAmount } from '@/lib/amountSafety';
+import { useAmountConfirm } from '@/composables/useAmountConfirm';
+import AmountConfirmDialog from './components/AmountConfirmDialog.vue';
 import AmountInput from './components/AmountInput.vue';
 
 const route = useRoute();
@@ -211,8 +213,28 @@ function apiMessage(err: unknown, fallback: string): string {
     return err instanceof Error && err.message !== '' ? err.message : fallback;
 }
 
+// Step 11, E2 (tester call) — "Is this right?" per batch (warns, never blocks).
+const { warnings: amountWarnings, confirm: confirmAmounts, answer: answerAmounts } = useAmountConfirm();
+
+/** E2 — one line of the batch: above 50 kg / 50 l / 500 pieces, or above 10 × the yield (same kind). */
+function batchWarnings(): ReturnType<typeof prepLineWarning>[] {
+    return form.lines.map((line) => {
+        const ingredient = ingredientByUuid(line.ingredient_uuid);
+        if (!ingredient) return null;
+        return prepLineWarning({
+            amount: line.quantity,
+            factor: recipeUnitFactor(ingredient, line.unit),
+            storedUnit: ingredient.unit,
+            yieldStored: yieldNumber.value,
+            yieldUnit: form.unit,
+            item: ingredient.name,
+        });
+    });
+}
+
 async function save(): Promise<void> {
     if (!canSave.value) return;
+    if (!(await confirmAmounts(batchWarnings()))) return;
     saving.value = true;
     saveError.value = null;
     fieldErrors.value = {};
@@ -476,5 +498,8 @@ onMounted(async () => {
                 </div>
             </div>
         </BaseModal>
+
+        <!-- Step 11, E2 — "Is this right?" per batch (warns, never blocks). -->
+        <AmountConfirmDialog :warnings="amountWarnings" @answer="answerAmounts" />
     </MerchantLayout>
 </template>

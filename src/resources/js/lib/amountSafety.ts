@@ -19,6 +19,8 @@
  *   purchase         the cost per unit it gives is more than 5 times above or
  *                    below the item's current cost (skipped while "No cost yet");
  *   low-stock        below one of the item's smallest container.
+ *   prep batch       one line above 50 kg / 50 l / 500 pieces, or above 10 ×
+ *                    the batch's own yield when of the same kind.
  */
 
 export type AmountKind = 'weighed' | 'liquid' | 'counted';
@@ -216,4 +218,43 @@ export function thresholdWarning(thresholdStored: string | number | null | undef
     return threshold < smallest - 1e-9
         ? { key: 'amount_safety.warnings.threshold_small', params: { amount: friendlyStored(threshold, storedUnit), container: friendlyStored(smallest, storedUnit) } }
         : null;
+}
+
+/** The limits for ONE line of a prep batch, in g / ml / pieces (tester call, step 11). */
+export const PREP_LIMITS: Record<AmountKind, number> = { weighed: 50000, liquid: 50000, counted: 500 };
+
+/** A prep line of the yield's kind may use up to this many times the batch's own yield. */
+export const PREP_YIELD_TIMES = 10;
+
+/**
+ * E2 — one line of a prep batch: more than 50 kg / 50 l / 500 pieces, or more
+ * than 10 × the batch's own yield when the line is the same kind as the yield
+ * (2 l of syrup from 40 l of water?). `amount × factor` is the line in its
+ * ingredient's stored unit; the yield is in the prep item's stored unit.
+ */
+export function prepLineWarning(opts: {
+    amount: string | number;
+    factor: number;
+    storedUnit: string;
+    yieldStored: number | null;
+    yieldUnit: string;
+    item?: string;
+}): AmountWarning | null {
+    const n = num(opts.amount);
+    if (!Number.isFinite(n) || n <= 0 || !Number.isFinite(opts.factor) || opts.factor <= 0) return null;
+    const kind = kindOf(opts.storedUnit);
+    const stored = n * opts.factor;
+    const canonical = kind === 'counted' ? stored : stored * (SIZE[opts.storedUnit] ?? 1);
+    const say = (value: number): string => (kind === 'counted' ? `${trim(value)} ${opts.storedUnit}` : friendlyStored(value, kind === 'weighed' ? 'g' : 'ml'));
+    if (canonical > PREP_LIMITS[kind]) {
+        return { key: 'amount_safety.warnings.prep_batch', params: { item: opts.item ?? '', amount: say(canonical) } };
+    }
+    const y = opts.yieldStored;
+    if (y !== null && Number.isFinite(y) && y > 0 && kindOf(opts.yieldUnit) === kind) {
+        const yieldCanonical = kind === 'counted' ? y : y * (SIZE[opts.yieldUnit] ?? 1);
+        if (canonical > PREP_YIELD_TIMES * yieldCanonical + 1e-9) {
+            return { key: 'amount_safety.warnings.prep_yield', params: { item: opts.item ?? '', amount: say(canonical), made: say(yieldCanonical) } };
+        }
+    }
+    return null;
 }
