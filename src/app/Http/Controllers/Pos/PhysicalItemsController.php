@@ -11,7 +11,10 @@ use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Pos\Inventory\CreatePhysicalItemRequest;
 use App\Http\Requests\Pos\Inventory\UpdatePhysicalItemRequest;
+use App\Models\ItemBarcode;
 use App\Models\Product;
+use App\Support\Inventory\ItemCodes;
+use App\Support\Inventory\Packs;
 use App\Support\MerchantTenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -76,26 +79,67 @@ class PhysicalItemsController extends Controller
     {
         $this->ensure($request, MerchantPermission::InventoryManage);
         $validated = $request->validated();
+        $companyId = $this->tenant->requiredId();
 
         try {
-            $item = $this->create->handle([
-                'name' => $validated['name'],
-                'name_ar' => $validated['name_ar'] ?? null,
-                'cost_price' => $validated['cost_price'] ?? null,
-                'low_stock_threshold' => $validated['low_stock_threshold'] ?? null,
-                'internal_purpose' => $validated['purpose'],
-                // The product-ness is an implementation detail — forced
-                // here, never chosen by the merchant.
-                'stock_mode' => 'unit',
-                'is_internal' => true,
-                'base_price' => 0,
-                'show_on_customer_tablet' => false,
-            ], $request->user());
+            $item = DB::transaction(function () use ($validated, $request, $companyId): Product {
+                // LAUNCH review add-on (A4) — the supplier's code, or PHY-0001.
+                ItemCodes::lockSku($companyId);
+                $sku = ItemCodes::normalize($validated['sku'] ?? null);
+                if ($sku === '') {
+                    $sku = ItemCodes::nextSku($companyId, ItemCodes::PREFIX_PHYSICAL);
+                } elseif (($owner = ItemCodes::skuOwner($companyId, $sku)) !== null) {
+                    throw new RuntimeException(ItemCodes::skuMessage($owner));
+                }
+
+                return $this->create->handle([
+                    'name' => $validated['name'],
+                    'name_ar' => $validated['name_ar'] ?? null,
+                    'cost_price' => $validated['cost_price'] ?? null,
+                    'low_stock_threshold' => $validated['low_stock_threshold'] ?? null,
+                    'internal_purpose' => $validated['purpose'],
+                    'sku' => $sku,
+                    // The product-ness is an implementation detail — forced
+                    // here, never chosen by the merchant.
+                    'stock_mode' => 'unit',
+                    'is_internal' => true,
+                    'base_price' => 0,
+                    'show_on_customer_tablet' => false,
+                ], $request->user());
+            });
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
         return response()->json(['data' => $this->present($item)], 201);
+    }
+
+    /**
+     * POST /api/physical-items/generate-skus — LAUNCH review add-on (A4): give
+     * every physical item without a SKU a generated PHY-0001 (one per item,
+     * the next free number each), under the per-company code lock.
+     */
+    public function generateSkus(Request $request): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::InventoryManage);
+        $companyId = $this->tenant->requiredId();
+
+        $count = DB::transaction(function () use ($request, $companyId): int {
+            ItemCodes::lockSku($companyId);
+            $items = Product::query()
+                ->where('company_id', $companyId)
+                ->where('is_internal', true)
+                ->where(static fn ($q) => $q->whereNull('sku')->orWhere('sku', ''))
+                ->orderBy('id')
+                ->get();
+            foreach ($items as $item) {
+                $this->update->handle($item, ['sku' => ItemCodes::nextSku($companyId, ItemCodes::PREFIX_PHYSICAL)], $request->user());
+            }
+
+            return $items->count();
+        });
+
+        return response()->json(['data' => ['generated' => $count]]);
     }
 
     public function update(UpdatePhysicalItemRequest $request, Product $product): JsonResponse
@@ -128,8 +172,24 @@ class PhysicalItemsController extends Controller
             $attributes['internal_purpose'] = $validated['purpose'];
         }
 
+        $companyId = $this->tenant->requiredId();
         try {
-            $item = $this->update->handle($product, $attributes, $request->user());
+            $item = DB::transaction(function () use ($product, $attributes, $validated, $request, $companyId): Product {
+                // LAUNCH review add-on (A4) — a typed SKU, or blank = keep the
+                // current one; an item without a SKU gets one on this save.
+                ItemCodes::lockSku($companyId);
+                $sku = array_key_exists('sku', $validated) ? ItemCodes::normalize($validated['sku']) : '';
+                if ($sku === '') {
+                    $sku = $product->sku !== null && trim((string) $product->sku) !== ''
+                        ? (string) $product->sku
+                        : ItemCodes::nextSku($companyId, ItemCodes::PREFIX_PHYSICAL);
+                } elseif (($owner = ItemCodes::skuOwner($companyId, $sku, null, (int) $product->id)) !== null) {
+                    throw new RuntimeException(ItemCodes::skuMessage($owner));
+                }
+                $attributes['sku'] = $sku;
+
+                return $this->update->handle($product, $attributes, $request->user());
+            });
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
@@ -166,11 +226,20 @@ class PhysicalItemsController extends Controller
      */
     private function present(Product $item): array
     {
+        // LAUNCH review add-on (D3, A5) — its packs and barcodes.
+        $packs = Packs::of($item);
+        $barcodes = ItemBarcode::query()->where('product_id', $item->id)->get();
+
         return [
             'id' => $item->id,
             'uuid' => $item->uuid,
             'name' => $item->name,
             'name_ar' => $item->name_ar,
+            // A4 — the supplier's code, or a generated PHY-0001.
+            'sku' => $item->sku,
+            'packs' => $packs->map(static fn ($p): array => Packs::present($p, $packs, $barcodes))->values()->all(),
+            // Barcodes on one piece of the item (pack barcodes ride each pack).
+            'barcodes' => $barcodes->filter(static fn ($b): bool => $b->pack_id === null)->map(static fn ($b): array => $b->summary())->values()->all(),
             // Legacy internal items (pre-PD3a) carry NULL = packaging.
             'purpose' => $item->internal_purpose ?? 'packaging',
             'cost_price' => $item->cost_price !== null ? (string) $item->cost_price : null,

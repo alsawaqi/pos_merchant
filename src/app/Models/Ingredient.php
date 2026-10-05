@@ -58,6 +58,10 @@ use Illuminate\Support\Str;
     'status',
     'is_prep',
     'prep_yield_quantity',
+    // LAUNCH review add-on (A3, A4) — the count container (mirrored into the
+    // piece_* / units_per_piece columns devices read) and the item's SKU.
+    'count_container_id',
+    'sku',
 ])]
 class Ingredient extends Model
 {
@@ -203,6 +207,38 @@ class Ingredient extends Model
         return $this->hasMany(IngredientAltUnit::class)
             ->orderBy('sort_order')
             ->orderBy('name');
+    }
+
+    /**
+     * LAUNCH review add-on (A3) — the container tills and handhelds count in.
+     * The piece_unit_label / piece_unit_label_ar / units_per_piece columns are
+     * its mirror ({@see \App\Support\Inventory\CountContainerMirror}).
+     *
+     * @return BelongsTo<IngredientAltUnit, $this>
+     */
+    public function countContainer(): BelongsTo
+    {
+        return $this->belongsTo(IngredientAltUnit::class, 'count_container_id');
+    }
+
+    /**
+     * LAUNCH review add-on (A5) — every barcode of the item (on a container
+     * or on the item itself).
+     *
+     * @return HasMany<ItemBarcode, $this>
+     */
+    public function barcodes(): HasMany
+    {
+        return $this->hasMany(ItemBarcode::class);
+    }
+
+    /**
+     * LAUNCH review add-on (A1, tester call 2) — "No cost yet": the cost comes
+     * only from purchases, and 0 means none has been priced yet.
+     */
+    public function hasCost(): bool
+    {
+        return (float) $this->default_unit_cost > 0;
     }
 
     /**

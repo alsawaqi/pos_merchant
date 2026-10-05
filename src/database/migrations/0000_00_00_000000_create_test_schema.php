@@ -586,8 +586,15 @@ return new class extends Migration
             // pos_admin 2026_10_02_100001 (LAUNCH-P3): prep items + their yield.
             $table->boolean('is_prep')->default(false);
             $table->decimal('prep_yield_quantity', 14, 4)->nullable();
+            // LAUNCH review add-on §3.1 02: the count container (a row of
+            // pos_ingredient_units; the four piece_* / units_per_piece columns
+            // stay as its mirror for devices) and the item's SKU. The FK to a
+            // table created below is fine in sqlite (checked at write time).
+            $table->foreignId('count_container_id')->nullable()->constrained('pos_ingredient_units')->nullOnDelete();
+            $table->string('sku', 64)->nullable();
             $table->unique(['company_id', 'name'], 'pos_ingredients_company_name_unique');
         });
+        DB::statement('CREATE UNIQUE INDEX pos_ingredients_company_sku_unique ON pos_ingredients (company_id, lower(sku)) WHERE sku IS NOT NULL AND deleted_at IS NULL');
 
         // pos_admin 2026_10_02_100002 (LAUNCH-P3): a prep item's recipe per batch.
         Schema::create('pos_ingredient_recipes', function (Blueprint $table): void {
@@ -615,8 +622,86 @@ return new class extends Migration
             $table->unsignedSmallInteger('sort_order')->default(0);
             $table->timestamps();
             $table->softDeletes();
-            $table->unique(['ingredient_id', 'name'], 'pos_ingredient_units_ingredient_name_unique');
+            // LAUNCH review add-on §3.1 01: a container may hold N of another
+            // container of the same item ("crate holds 12 × bottle 1 l"); factor
+            // keeps its meaning (base units in ONE, nesting included). The
+            // (ingredient_id, name) unique is gone: the same word may have
+            // different sizes; one LIVE row per name + size + content.
+            $table->foreignId('contains_unit_id')->nullable()->constrained('pos_ingredient_units')->restrictOnDelete();
+            $table->decimal('contains_quantity', 14, 4)->nullable();
         });
+        DB::statement('CREATE UNIQUE INDEX pos_ingredient_units_live_size_unique ON pos_ingredient_units (ingredient_id, lower(name), factor, COALESCE(contains_unit_id, 0)) WHERE deleted_at IS NULL');
+        // The Postgres CHECK (both NULL or both set, quantity > 0); sqlite
+        // cannot ADD CONSTRAINT to a Blueprint table, so triggers stand in.
+        foreach (['INSERT', 'UPDATE'] as $event) {
+            $name = strtolower($event);
+            DB::statement(
+                "CREATE TRIGGER pos_ingredient_units_contains_check_{$name} BEFORE {$event} ON pos_ingredient_units ".
+                'WHEN (NEW.contains_unit_id IS NULL) <> (NEW.contains_quantity IS NULL) OR (NEW.contains_quantity IS NOT NULL AND NEW.contains_quantity <= 0) '.
+                "BEGIN SELECT RAISE(ABORT, 'CHECK constraint failed: pos_ingredient_units contains'); END"
+            );
+        }
+
+        // LAUNCH review add-on §3.1 05: physical-item containers ("box holds
+        // 50 cups", nested cartons). pieces = item pieces in ONE pack.
+        Schema::create('pos_product_packs', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('product_id')->constrained('pos_products')->restrictOnDelete();
+            $table->string('name', 32);
+            $table->string('name_ar', 32)->nullable();
+            $table->decimal('pieces', 14, 4);
+            $table->foreignId('contains_pack_id')->nullable()->constrained('pos_product_packs')->restrictOnDelete();
+            $table->decimal('contains_quantity', 14, 4)->nullable();
+            $table->unsignedSmallInteger('sort_order')->default(0);
+            $table->timestamps();
+            $table->softDeletes();
+            $table->index(['company_id', 'product_id'], 'pos_product_packs_company_product_idx');
+        });
+        DB::statement('CREATE UNIQUE INDEX pos_product_packs_live_size_unique ON pos_product_packs (product_id, lower(name), pieces, COALESCE(contains_pack_id, 0)) WHERE deleted_at IS NULL');
+        // The Postgres CHECKs pos_product_packs_pieces_check (a whole number
+        // ≥ 2) and pos_product_packs_contains_check, as triggers.
+        foreach (['INSERT', 'UPDATE'] as $event) {
+            $name = strtolower($event);
+            DB::statement(
+                "CREATE TRIGGER pos_product_packs_check_{$name} BEFORE {$event} ON pos_product_packs ".
+                'WHEN NEW.pieces < 2 OR NEW.pieces <> CAST(NEW.pieces AS INTEGER) '.
+                'OR (NEW.contains_pack_id IS NULL) <> (NEW.contains_quantity IS NULL) OR (NEW.contains_quantity IS NOT NULL AND NEW.contains_quantity <= 0) '.
+                "BEGIN SELECT RAISE(ABORT, 'CHECK constraint failed: pos_product_packs'); END"
+            );
+        }
+
+        // LAUNCH review add-on §3.1 06: barcodes — per ingredient container
+        // (several), per physical item piece and per pack. Unique per company
+        // among live rows; also checked against pos_products.barcode in the app.
+        Schema::create('pos_item_barcodes', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->string('barcode', 64);
+            $table->foreignId('ingredient_id')->nullable()->constrained('pos_ingredients')->cascadeOnDelete();
+            $table->foreignId('container_id')->nullable()->constrained('pos_ingredient_units')->cascadeOnDelete();
+            $table->foreignId('product_id')->nullable()->constrained('pos_products')->cascadeOnDelete();
+            $table->foreignId('pack_id')->nullable()->constrained('pos_product_packs')->cascadeOnDelete();
+            $table->string('label', 80)->nullable();
+            $table->foreignId('created_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->timestamps();
+            $table->softDeletes();
+            $table->index(['ingredient_id'], 'pos_item_barcodes_ingredient_idx');
+            $table->index(['product_id'], 'pos_item_barcodes_product_idx');
+        });
+        DB::statement('CREATE UNIQUE INDEX pos_item_barcodes_company_barcode_unique ON pos_item_barcodes (company_id, barcode) WHERE deleted_at IS NULL');
+        foreach (['INSERT', 'UPDATE'] as $event) {
+            $name = strtolower($event);
+            DB::statement(
+                "CREATE TRIGGER pos_item_barcodes_owner_check_{$name} BEFORE {$event} ON pos_item_barcodes ".
+                'WHEN (NEW.ingredient_id IS NULL) = (NEW.product_id IS NULL) '.
+                'OR (NEW.container_id IS NOT NULL AND NEW.ingredient_id IS NULL) '.
+                'OR (NEW.pack_id IS NOT NULL AND NEW.product_id IS NULL) '.
+                "BEGIN SELECT RAISE(ABORT, 'CHECK constraint failed: pos_item_barcodes owner'); END"
+            );
+        }
 
         Schema::create('pos_branch_stock', function (Blueprint $table): void {
             $table->id();
@@ -625,6 +710,10 @@ return new class extends Migration
             $table->decimal('quantity', 14, 4)->default(0);
             $table->timestamp('last_movement_at')->nullable();
             $table->timestamps();
+            // LAUNCH review add-on §3.1 07: when the breakdown by container was
+            // last counted (set), and when a total-only count was last made.
+            $table->timestamp('containers_counted_at')->nullable();
+            $table->timestamp('containers_total_count_at')->nullable();
             $table->unique(['branch_id', 'ingredient_id'], 'pos_branch_stock_branch_ingredient_unique');
         });
 
@@ -638,8 +727,66 @@ return new class extends Migration
             $table->decimal('quantity', 14, 4)->default(0);
             $table->timestamp('last_movement_at')->nullable();
             $table->timestamps();
+            // LAUNCH review add-on §3.1 07: the warehouse breakdown's last correction.
+            $table->timestamp('containers_counted_at')->nullable();
             $table->unique(['company_id', 'ingredient_id'], 'pos_ingredient_stock_company_ingredient_unique');
         });
+
+        // LAUNCH review add-on §3.1 07: stock by container (the breakdown),
+        // kept in LEAF containers; branch_id NULL = the warehouse. Never used
+        // to compute stock — the totals above stay the truth.
+        Schema::create('pos_stock_container_balances', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('branch_id')->nullable()->constrained('pos_branches')->cascadeOnDelete();
+            $table->foreignId('ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
+            $table->foreignId('container_id')->constrained('pos_ingredient_units')->cascadeOnDelete();
+            $table->decimal('pieces', 14, 4)->default(0);
+            $table->timestamps();
+            $table->index(['company_id', 'ingredient_id'], 'pos_stock_container_balances_company_ingredient_idx');
+        });
+        DB::statement('CREATE UNIQUE INDEX pos_stock_container_balances_branch_unique ON pos_stock_container_balances (branch_id, ingredient_id, container_id) WHERE branch_id IS NOT NULL');
+        DB::statement('CREATE UNIQUE INDEX pos_stock_container_balances_warehouse_unique ON pos_stock_container_balances (company_id, ingredient_id, container_id) WHERE branch_id IS NULL');
+        foreach (['INSERT', 'UPDATE'] as $event) {
+            $name = strtolower($event);
+            DB::statement(
+                "CREATE TRIGGER pos_stock_container_balances_pieces_check_{$name} BEFORE {$event} ON pos_stock_container_balances ".
+                'WHEN NEW.pieces < 0 '.
+                "BEGIN SELECT RAISE(ABORT, 'CHECK constraint failed: pos_stock_container_balances pieces'); END"
+            );
+        }
+
+        // The breakdown's append-only ledger (balance = Σ delta_pieces).
+        Schema::create('pos_stock_container_movements', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('branch_id')->nullable()->constrained('pos_branches')->cascadeOnDelete();
+            $table->foreignId('ingredient_id')->constrained('pos_ingredients')->cascadeOnDelete();
+            $table->foreignId('container_id')->constrained('pos_ingredient_units')->cascadeOnDelete();
+            $table->decimal('delta_pieces', 14, 4);
+            $table->decimal('pieces_after', 14, 4);
+            $table->string('reason', 32);
+            $table->foreignId('stock_movement_id')->nullable()->constrained('pos_stock_movements')->nullOnDelete();
+            $table->string('reference_type')->nullable();
+            $table->unsignedBigInteger('reference_id')->nullable();
+            $table->foreignId('recorded_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->foreignId('recorded_by_pos_staff_id')->nullable()->constrained('pos_staff')->nullOnDelete();
+            $table->timestamp('occurred_at')->useCurrent();
+            $table->timestamp('created_at')->useCurrent();
+            $table->index(['company_id', 'ingredient_id', 'occurred_at'], 'pos_stock_container_movements_item_idx');
+            $table->index(['branch_id', 'occurred_at'], 'pos_stock_container_movements_branch_idx');
+            $table->index(['reference_type', 'reference_id'], 'pos_stock_container_movements_reference_idx');
+        });
+        // The Postgres CHECKs pos_stock_container_movements_reason_check and
+        // pos_stock_container_movements_pieces_after_check, as triggers.
+        foreach (['INSERT', 'UPDATE'] as $event) {
+            $name = strtolower($event);
+            DB::statement(
+                "CREATE TRIGGER pos_stock_container_movements_check_{$name} BEFORE {$event} ON pos_stock_container_movements ".
+                "WHEN NEW.reason NOT IN ('purchase', 'allocation_in', 'allocation_out', 'transfer_in', 'transfer_out', 'count', 'correct', 'waste', 'clamp', 'device_count') OR NEW.pieces_after < 0 ".
+                "BEGIN SELECT RAISE(ABORT, 'CHECK constraint failed: pos_stock_container_movements'); END"
+            );
+        }
 
         Schema::create('pos_stock_movements', function (Blueprint $table): void {
             $table->id();
@@ -711,6 +858,19 @@ return new class extends Migration
             $table->decimal('late_movement_units', 14, 4)->default(0);
             $table->unsignedBigInteger('waste_record_id')->nullable();
             $table->unique(['stock_count_id', 'ingredient_id'], 'pos_stock_count_lines_count_ingredient_unique');
+        });
+
+        // LAUNCH review add-on §3.1 08: the containers counted on a count line.
+        Schema::create('pos_stock_count_line_containers', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('stock_count_line_id')->constrained('pos_stock_count_lines')->cascadeOnDelete();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('container_id')->nullable()->constrained('pos_ingredient_units')->nullOnDelete();
+            $table->string('container_label', 80);
+            $table->decimal('container_factor', 14, 4);
+            $table->decimal('pieces', 14, 4);
+            $table->timestamps();
+            $table->index(['stock_count_line_id'], 'pos_stock_count_line_containers_line_idx');
         });
 
         // ---- pos_product_recipes + pos_product_recipe_versions (Phase 5b) ---
@@ -882,6 +1042,10 @@ return new class extends Migration
             // prep item wasted and the group of records of one waste event.
             $table->foreignId('prep_ingredient_id')->nullable()->constrained('pos_ingredients')->nullOnDelete();
             $table->uuid('waste_group_uuid')->nullable()->index();
+            // LAUNCH review add-on §3.1 08: waste entered by container.
+            $table->foreignId('container_id')->nullable()->constrained('pos_ingredient_units')->nullOnDelete();
+            $table->decimal('pieces', 14, 4)->nullable();
+            $table->string('container_label', 80)->nullable();
         });
 
         Schema::create('pos_restock_requests', function (Blueprint $table): void {
@@ -917,6 +1081,10 @@ return new class extends Migration
             $table->text('note')->nullable();
             $table->unsignedSmallInteger('sort_order')->default(0);
             $table->timestamps();
+            // LAUNCH review add-on §3.1 08: an optional container on the line.
+            $table->foreignId('container_id')->nullable()->constrained('pos_ingredient_units')->nullOnDelete();
+            $table->decimal('pieces', 14, 4)->nullable();
+            $table->string('container_label', 80)->nullable();
             $table->unique(['restock_request_id', 'ingredient_id'], 'pos_restock_request_lines_request_ingredient_unique');
         });
 
@@ -944,6 +1112,19 @@ return new class extends Migration
             $table->decimal('unit_cost_at_time', 15, 6)->default(0);
             $table->timestamps();
             $table->unique(['branch_transfer_id', 'ingredient_id'], 'pos_branch_transfer_lines_transfer_ingredient_unique');
+        });
+
+        // LAUNCH review add-on §3.1 08: the containers moved on a transfer line.
+        Schema::create('pos_branch_transfer_line_containers', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('branch_transfer_line_id')->constrained('pos_branch_transfer_lines')->cascadeOnDelete();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('container_id')->nullable()->constrained('pos_ingredient_units')->nullOnDelete();
+            $table->string('container_label', 80);
+            $table->decimal('container_factor', 14, 4);
+            $table->decimal('pieces', 14, 4);
+            $table->timestamps();
+            $table->index(['branch_transfer_line_id'], 'pos_branch_transfer_line_containers_line_idx');
         });
 
         // ---- pos_customers + pos_customer_vehicle_plates (Phase 6a) ---
@@ -1910,6 +2091,14 @@ return new class extends Migration
             $table->decimal('purchase_quantity', 14, 4)->nullable();
             $table->decimal('unit_price', 15, 6)->nullable();
             $table->decimal('unit_cost', 15, 6)->nullable();
+            // LAUNCH review add-on §3.1 08: the container (or physical-item
+            // pack) the line was bought in, its label + size snapshot, and how
+            // many of it.
+            $table->foreignId('container_id')->nullable()->constrained('pos_ingredient_units')->nullOnDelete();
+            $table->foreignId('pack_id')->nullable()->constrained('pos_product_packs')->nullOnDelete();
+            $table->string('container_label', 80)->nullable();
+            $table->decimal('container_factor', 14, 4)->nullable();
+            $table->decimal('pieces', 14, 4)->nullable();
             $table->string('expense_category', 32)->nullable();
             $table->json('allocations_json')->nullable();
             $table->foreignId('expense_id')->nullable()->constrained('pos_expenses')->nullOnDelete();

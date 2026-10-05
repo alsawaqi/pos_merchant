@@ -49,6 +49,8 @@ class ProductRecipeResource extends JsonResource
                 'default_unit_cost' => $this->ingredient->is_prep
                     ? PrepGraph::forCompany((int) $this->ingredient->company_id)->unitCost((int) $this->ingredient->id)
                     : (string) $this->ingredient->default_unit_cost,
+                // LAUNCH review add-on (A1) — false = "No cost yet" (no priced purchase).
+                'has_cost' => PrepGraph::forCompany((int) $this->ingredient->company_id)->costComplete((int) $this->ingredient->id),
                 'piece_unit_label' => $this->ingredient->piece_unit_label,
                 'piece_unit_label_ar' => $this->ingredient->piece_unit_label_ar,
             ]),

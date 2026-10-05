@@ -51,7 +51,7 @@ class BranchTransfersController extends Controller
             ->when($allowed !== null, fn ($q) => $q->where(function ($w) use ($allowed): void {
                 $w->whereIn('from_branch_id', $allowed)->orWhereIn('to_branch_id', $allowed);
             }))
-            ->with(['fromBranch', 'toBranch', 'lines.ingredient']);
+            ->with(['fromBranch', 'toBranch', 'lines.ingredient', 'lines.containers']);
 
         if ($request->filled('branch')) {
             $branchId = Branch::query()
@@ -82,7 +82,7 @@ class BranchTransfersController extends Controller
         $this->ensure($request, MerchantPermission::InventoryView);
         $this->refuseIfNotInTenant($transfer);
 
-        $transfer->load(['fromBranch', 'toBranch', 'lines.ingredient']);
+        $transfer->load(['fromBranch', 'toBranch', 'lines.ingredient', 'lines.containers']);
 
         return BranchTransferResource::make($transfer);
     }

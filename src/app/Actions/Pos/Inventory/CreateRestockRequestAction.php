@@ -12,6 +12,7 @@ use App\Models\Ingredient;
 use App\Models\RestockRequest;
 use App\Models\RestockRequestLine;
 use App\Models\User;
+use App\Support\Inventory\RestockLineContainer;
 use App\Support\MerchantTenantContext;
 use App\Support\StockDecimal;
 use Illuminate\Support\Facades\DB;
@@ -103,7 +104,9 @@ final readonly class CreateRestockRequestAction
                 /** @var Ingredient $ing */
                 $ing = $ingredients[$line['ingredient_uuid']];
                 // #13 — store the requested amount in the ingredient's base unit.
-                $qty = $this->units->toBase($ing, $line['quantity_requested'], $line['unit'] ?? null);
+                // LAUNCH review add-on (D4) — or by container (pieces × size).
+                $resolved = RestockLineContainer::resolve($ing, $line, $this->units);
+                $qty = $resolved['quantity'];
                 if ($qty <= 0) {
                     throw new RuntimeException('Each line quantity_requested must be positive.');
                 }
@@ -115,6 +118,9 @@ final readonly class CreateRestockRequestAction
                     'unit_at_set' => $ing->unit?->value,
                     'note' => $line['note'] ?? null,
                     'sort_order' => $idx,
+                    'container_id' => $resolved['container']?->id,
+                    'pieces' => $resolved['pieces'],
+                    'container_label' => $resolved['label'],
                 ]);
             }
 

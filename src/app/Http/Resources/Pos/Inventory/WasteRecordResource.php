@@ -32,6 +32,9 @@ class WasteRecordResource extends JsonResource
             // Computed per-event cost. Frontend never multiplies
             // money on the client (decimal-string is the contract).
             'total_cost' => $this->totalCost(),
+            // LAUNCH review add-on (D3) — entered by container ("2 × bottle 1.5 l").
+            'pieces' => $this->pieces,
+            'container_label' => $this->container_label,
             'notes' => $this->notes,
             // LAUNCH-P3 fix order 1, K4 — the records of one prep waste share
             // a group and name the prep item.

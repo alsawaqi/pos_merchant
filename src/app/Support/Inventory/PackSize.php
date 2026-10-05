@@ -41,6 +41,11 @@ final class PackSize
      */
     public static function nameProblem(IngredientUnit $stored, string $name): ?string
     {
+        // LAUNCH review add-on (A2) — '#' starts a container token and '@'
+        // the '@piece' token: a name may not look like either.
+        if (str_starts_with(trim($name), '#') || str_starts_with(trim($name), '@')) {
+            return 'A container name cannot start with # or @.';
+        }
         if ($stored->factorOf(trim($name)) === null) {
             return null;
         }

@@ -65,8 +65,13 @@ final class RecipeLineChanges
             return [$enteredUnit, $enteredQuantity];
         }
 
-        return $quantities->display($ingredient, $baseQuantity, $enteredUnit, $enteredQuantity)['entered']
-            ? [$enteredUnit, $enteredQuantity]
+        // LAUNCH review add-on (A2) — compared as the editor reopens it: a
+        // container named by its old name (or '@piece') reads back as the
+        // container's token, so re-saving it untouched stays a no-op.
+        $shown = $quantities->display($ingredient, $baseQuantity, $enteredUnit, $enteredQuantity);
+
+        return $shown['entered']
+            ? [$shown['unit'], $enteredQuantity]
             : [null, null];
     }
 

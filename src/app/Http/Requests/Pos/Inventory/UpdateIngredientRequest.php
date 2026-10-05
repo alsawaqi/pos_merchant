@@ -7,13 +7,34 @@ namespace App\Http\Requests\Pos\Inventory;
 use App\Enums\IngredientUnit;
 use App\Models\Ingredient;
 use App\Models\Supplier;
+use App\Support\Inventory\Containers;
+use App\Support\Inventory\ItemCodes;
 use App\Support\MerchantTenantContext;
+use Brick\Math\BigDecimal;
+use Brick\Math\RoundingMode;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
+/**
+ * PATCH /api/ingredients/{uuid}.
+ *
+ * LAUNCH review add-on:
+ *   A1 the cost is read-only (it comes from purchases): a CHANGED
+ *      default_unit_cost is refused; the unchanged value an old portal tab
+ *      sends back still passes.
+ *   A3 the count container is a container row (count_container_uuid; '' or
+ *      null = none). Once the item has one, the piece_* / units_per_piece
+ *      mirror changes only through it: a changed value sent here is refused.
+ *   A4 sku — unique across ingredients and products (case-insensitive); a
+ *      blank keeps the current code, or generates one when there is none.
+ */
 class UpdateIngredientRequest extends FormRequest
 {
+    public const COST_MESSAGE = 'The cost cannot be typed any more: it comes from purchases (the weighted average). Record a purchase to change it.';
+
+    public const PIECE_MESSAGE = 'The count container is now one of the item\'s containers: mark it "Tills count in this" in the containers list.';
+
     /**
      * @return array<string, mixed>
      */
@@ -34,6 +55,8 @@ class UpdateIngredientRequest extends FormRequest
             'min_stock_threshold' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:999999.999'],
             'primary_supplier_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'status' => ['sometimes', 'string', Rule::in(['active', 'inactive'])],
+            'sku' => ['sometimes', 'nullable', 'string', 'max:64'],
+            'count_container_uuid' => ['sometimes', 'nullable', 'string', 'max:64'],
         ];
     }
 
@@ -72,6 +95,44 @@ class UpdateIngredientRequest extends FormRequest
                 }
             }
 
+            // Review add-on A1 — the cost is read-only: refuse a CHANGE only.
+            if ($current instanceof Ingredient && $this->has('default_unit_cost') && is_numeric($this->input('default_unit_cost'))) {
+                $sent = BigDecimal::of(trim((string) $this->input('default_unit_cost')))->toScale(6, RoundingMode::HALF_UP);
+                $stored = BigDecimal::of(self::text($current->getRawOriginal('default_unit_cost')))->toScale(6, RoundingMode::HALF_UP);
+                if (! $sent->isEqualTo($stored)) {
+                    $v->errors()->add('default_unit_cost', self::COST_MESSAGE);
+                }
+            }
+
+            // A4 — the SKU is unique across ingredients and products.
+            $sku = ItemCodes::normalize($this->input('sku'));
+            if ($this->has('sku') && $sku !== '' && ($owner = ItemCodes::skuOwner($companyId, $sku, (int) $currentId)) !== null) {
+                $v->errors()->add('sku', ItemCodes::skuMessage($owner));
+            }
+
+            // A3 — the count container is one of THIS item's live containers.
+            if ($current instanceof Ingredient && $this->filled('count_container_uuid')
+                && Containers::findByUuid($current, (string) $this->input('count_container_uuid')) === null) {
+                $v->errors()->add('count_container_uuid', 'The count container must be one of this item\'s containers.');
+            }
+
+            // A3 — once a count container exists, the mirror follows it only.
+            if ($current instanceof Ingredient && $current->count_container_id !== null && ! $this->has('count_container_uuid')) {
+                foreach (['piece_unit_label', 'piece_unit_label_ar', 'units_per_piece'] as $field) {
+                    if (! $this->has($field)) {
+                        continue;
+                    }
+                    $sent = $this->input($field);
+                    $now = $current->{$field};
+                    $same = $field === 'units_per_piece'
+                        ? (($sent === null || $sent === '') === ($now === null)) && ($now === null || abs((float) $sent - (float) $now) < 1e-9)
+                        : trim((string) ($sent ?? '')) === trim((string) ($now ?? ''));
+                    if (! $same) {
+                        $v->errors()->add($field, self::PIECE_MESSAGE);
+                    }
+                }
+            }
+
             // Phase A — both-or-neither on the EFFECTIVE piece config (the
             // ingredient's current value merged with whatever this PATCH sends).
             if ($this->has('piece_unit_label') || $this->has('units_per_piece')) {
@@ -91,5 +152,14 @@ class UpdateIngredientRequest extends FormRequest
                 }
             }
         });
+    }
+
+    private static function text(mixed $value): string
+    {
+        if (is_float($value)) {
+            return number_format($value, 8, '.', '');
+        }
+
+        return trim((string) $value) === '' ? '0' : trim((string) $value);
     }
 }

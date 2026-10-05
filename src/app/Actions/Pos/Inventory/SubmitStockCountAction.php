@@ -10,8 +10,12 @@ use App\Enums\WasteReason;
 use App\Models\Branch;
 use App\Models\BranchStock;
 use App\Models\Ingredient;
+use App\Models\IngredientAltUnit;
 use App\Models\StockCount;
 use App\Models\StockCountLine;
+use App\Models\StockCountLineContainer;
+use App\Support\Inventory\ContainerAmount;
+use App\Support\Inventory\Containers;
 use App\Models\StockMovement;
 use App\Models\User;
 use App\Models\WasteRecord;
@@ -58,6 +62,7 @@ final readonly class SubmitStockCountAction
         private AdjustStockAction $adjustStock,
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
+        private ContainerBreakdownAction $breakdown,
     ) {}
 
     /**
@@ -130,6 +135,8 @@ final readonly class SubmitStockCountAction
                 'ingredient' => $ingredient,
                 'counted_pieces' => $countedPieces,
                 'counted_units' => round((float) $countedUnits, StockDecimal::QUANTITY_SCALE),
+                // LAUNCH review add-on (D2) — the containers counted, if any.
+                'containers' => $line['containers'] ?? [],
             ];
         }
 
@@ -194,7 +201,8 @@ final readonly class SubmitStockCountAction
                     $linesWithVariance++;
                 }
 
-                StockCountLine::query()->create([
+                /** @var StockCountLine $countLine */
+                $countLine = StockCountLine::query()->create([
                     'stock_count_id' => $count->id,
                     'ingredient_id' => $ingredient->id,
                     'counted_pieces' => $line['counted_pieces'] !== null
@@ -207,6 +215,8 @@ final readonly class SubmitStockCountAction
                     'stock_movement_id' => $movementId,
                     'waste_record_id' => $wasteId,
                 ]);
+
+                $this->countBreakdown($branch, $ingredient, $line, $countLine, $actor, $countedAt, $companyId);
             }
 
             $this->writeAuditLog->handle(new AuditLogData(
@@ -226,6 +236,59 @@ final readonly class SubmitStockCountAction
 
             return $count->fresh(['lines.ingredient', 'branch']);
         });
+    }
+
+    /**
+     * LAUNCH review add-on (B3, D2; tester call 9) — what a count does to the
+     * breakdown by container:
+     *   - counted BY CONTAINER: the branch breakdown is SET to exactly the
+     *     containers counted (stamped containers_counted_at), and each
+     *     container row is kept on the line;
+     *   - otherwise the legacy rule (old apps and a total-only count): pieces
+     *     counted in the count container when it is the item's ONLY leaf
+     *     container → set the breakdown to that; a total of 0 → clear it;
+     *     anything else → leave it and stamp containers_total_count_at.
+     * The count shortfall waste never takes from the breakdown (the count set
+     * it already).
+     *
+     * @param  array{ingredient: Ingredient, counted_pieces: float|null, counted_units: float, containers: list<array{container: IngredientAltUnit, pieces: \Brick\Math\BigDecimal}>}  $line
+     */
+    private function countBreakdown(Branch $branch, Ingredient $ingredient, array $line, StockCountLine $countLine, User $actor, Carbon $countedAt, int $companyId): void
+    {
+        $ref = [
+            'reference_type' => StockCountLine::class,
+            'reference_id' => (int) $countLine->id,
+            'stock_movement_id' => $countLine->stock_movement_id !== null ? (int) $countLine->stock_movement_id : null,
+            'occurred_at' => $countedAt,
+        ];
+
+        if ($line['containers'] !== []) {
+            foreach ($line['containers'] as $row) {
+                StockCountLineContainer::query()->create([
+                    'stock_count_line_id' => $countLine->id,
+                    'company_id' => $companyId,
+                    'container_id' => $row['container']->id,
+                    'container_label' => ContainerAmount::label($ingredient, $row['container']),
+                    'container_factor' => (string) $row['container']->factor,
+                    'pieces' => (string) $row['pieces'],
+                ]);
+            }
+            $this->breakdown->set($ingredient, (int) $branch->id, ContainerBreakdownAction::leaves($ingredient, $line['containers']), 'count', $actor, $ref);
+
+            return;
+        }
+
+        $leaves = Containers::of($ingredient)->filter(static fn (IngredientAltUnit $c): bool => $c->contains_unit_id === null);
+        $countContainer = $ingredient->count_container_id !== null
+            ? $leaves->first(static fn (IngredientAltUnit $c): bool => (int) $c->id === (int) $ingredient->count_container_id)
+            : null;
+        if ($line['counted_pieces'] !== null && $countContainer !== null && $leaves->count() === 1) {
+            $this->breakdown->set($ingredient, (int) $branch->id, [(int) $countContainer->id => Containers::decimal((string) $line['counted_pieces'])], 'count', $actor, $ref);
+        } elseif ((float) $line['counted_units'] === 0.0) {
+            $this->breakdown->set($ingredient, (int) $branch->id, [], 'count', $actor, $ref);
+        } else {
+            $this->breakdown->stampTotalOnly($ingredient, (int) $branch->id, $countedAt);
+        }
     }
 
     /**

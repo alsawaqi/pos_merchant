@@ -10,8 +10,10 @@ use App\Enums\StockMovementType;
 use App\Enums\WasteReason;
 use App\Models\Branch;
 use App\Models\Ingredient;
+use App\Models\IngredientAltUnit;
 use App\Models\User;
 use App\Models\WasteRecord;
+use App\Support\Inventory\ContainerAmount;
 use App\Support\MerchantTenantContext;
 use App\Support\StockDecimal;
 use Brick\Math\BigDecimal;
@@ -104,6 +106,10 @@ final readonly class RecordWasteAction
         ?string $unit = null,
         ?int $prepIngredientId = null,
         ?string $wasteGroupUuid = null,
+        // LAUNCH review add-on (D3) — waste entered by container: which one
+        // and how many (the caller takes them from the breakdown).
+        ?IngredientAltUnit $container = null,
+        ?string $pieces = null,
     ): array {
         $companyId = $this->tenant->requiredId();
 
@@ -147,6 +153,8 @@ final readonly class RecordWasteAction
             $companyId,
             $prepIngredientId,
             $wasteGroupUuid,
+            $container,
+            $pieces,
         ): array {
             // The balance this waste starts from, read under the row lock the
             // ledger write takes next (no row yet = 0).
@@ -175,6 +183,9 @@ final readonly class RecordWasteAction
                 // LAUNCH-P3 K4 — the records of one prep waste are one event.
                 'prep_ingredient_id' => $prepIngredientId,
                 'waste_group_uuid' => $wasteGroupUuid,
+                'container_id' => $container?->id,
+                'pieces' => $container !== null ? $pieces : null,
+                'container_label' => $container !== null ? ContainerAmount::label($ingredient, $container) : null,
             ]);
 
             // Step 2: matching stock movement (signed-negative).

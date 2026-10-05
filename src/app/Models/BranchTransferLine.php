@@ -57,4 +57,14 @@ class BranchTransferLine extends Model
     {
         return $this->belongsTo(Ingredient::class);
     }
+
+    /**
+     * LAUNCH review add-on (D1) — the containers moved on this line.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany<BranchTransferLineContainer, $this>
+     */
+    public function containers(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(BranchTransferLineContainer::class)->orderBy('id');
+    }
 }

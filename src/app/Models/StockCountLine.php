@@ -84,4 +84,14 @@ class StockCountLine extends Model
     {
         return $this->belongsTo(StockMovement::class);
     }
+
+    /**
+     * LAUNCH review add-on (D2) — the containers counted on this line.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany<StockCountLineContainer, $this>
+     */
+    public function containers(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(StockCountLineContainer::class)->orderBy('id');
+    }
 }

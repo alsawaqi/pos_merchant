@@ -229,6 +229,30 @@ final class PrepGraph
         return (string) StockDecimal::unitCost((string) $this->unitCostExact($ingredientId)->toScale(StockDecimal::UNIT_COST_SCALE, RoundingMode::HALF_UP));
     }
 
+    /**
+     * LAUNCH review add-on (A1) — whether the cost is known: a raw ingredient
+     * once a priced purchase set its weighted average (> 0, "No cost yet"
+     * before); a prep item once every raw ingredient it explodes into has one.
+     */
+    public function costComplete(int $ingredientId): bool
+    {
+        try {
+            $raw = $this->explodeExact([$ingredientId => '1']);
+        } catch (\Throwable) {
+            return false;
+        }
+        if ($raw === []) {
+            return false;
+        }
+        foreach (array_keys($raw) as $id) {
+            if (! self::rational($this->costs[(int) $id] ?? '0')->isPositive()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     /** Exact cost of ONE batch of a prep item (Σ component quantity × component cost). */
     public function batchCostExact(int $prepId): BigRational
     {

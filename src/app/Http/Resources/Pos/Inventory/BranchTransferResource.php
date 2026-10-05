@@ -35,6 +35,13 @@ class BranchTransferResource extends JsonResource
                 'quantity' => (string) $line->quantity,
                 'unit' => $line->unit_at_set?->value,
                 'unit_cost_at_time' => (string) $line->unit_cost_at_time,
+                // LAUNCH review add-on (D1) — the containers moved ("3 × bottle 1.5 l").
+                'containers' => ($line->relationLoaded('containers') ? $line->containers : $line->containers()->get())
+                    ->map(static fn ($c): array => [
+                        'container_label' => $c->container_label,
+                        'container_factor' => \App\Support\Inventory\Containers::trim((string) $c->container_factor),
+                        'pieces' => \App\Support\Inventory\Containers::trim((string) $c->pieces),
+                    ])->all(),
             ])->all()),
             'created_at' => $this->created_at?->toIso8601String(),
         ];

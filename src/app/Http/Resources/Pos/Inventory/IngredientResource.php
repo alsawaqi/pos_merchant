@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Resources\Pos\Inventory;
 
 use App\Models\Ingredient;
+use App\Support\Inventory\ContainerPresenter;
+use App\Support\Inventory\Containers;
 use App\Support\Recipes\PrepGraph;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -43,6 +45,25 @@ class IngredientResource extends JsonResource
             'default_unit_cost' => $this->is_prep
                 ? PrepGraph::forCompany((int) $this->company_id)->unitCost((int) $this->id)
                 : (string) $this->default_unit_cost,
+            // LAUNCH review add-on (A1) — "No cost yet": the cost comes only
+            // from purchases; 0 means no priced purchase yet. A prep item has
+            // a cost once every raw ingredient it uses has one.
+            'has_cost' => $this->is_prep
+                ? PrepGraph::forCompany((int) $this->company_id)->costComplete((int) $this->id)
+                : $this->resource->hasCost(),
+            // A4 — the supplier's code, or a generated ING-0001.
+            'sku' => $this->sku,
+            // A3 — the container tills count in (its mirror is piece_* below).
+            'count_container_uuid' => $this->count_container_id !== null
+                ? Containers::of($this->resource)->first(fn ($c): bool => (int) $c->id === (int) $this->count_container_id)?->uuid
+                : null,
+            // A5 — barcodes on the item itself (container barcodes ride each
+            // container in alt_units).
+            'barcodes' => $this->whenLoaded('barcodes', fn (): array => $this->barcodes
+                ->filter(static fn ($b): bool => $b->container_id === null)
+                ->map(static fn ($b): array => $b->summary())
+                ->values()
+                ->all()),
             'is_prep' => (bool) $this->is_prep,
             'prep_yield_quantity' => $this->is_prep ? (string) $this->prep_yield_quantity : null,
             'min_stock_threshold' => $this->min_stock_threshold !== null
@@ -59,7 +80,10 @@ class IngredientResource extends JsonResource
             'status' => $this->status,
             // v2 #13 — alternate units (when loaded), so the ingredient form can
             // render its unit list without a second round-trip.
-            'alt_units' => IngredientAltUnitResource::collection($this->whenLoaded('altUnits')),
+            // LAUNCH review add-on (A2) — these are the item's CONTAINERS: each
+            // with its token, display name (EN/AR), what it holds, the
+            // count-container marker and its barcodes ({@see ContainerPresenter}).
+            'alt_units' => $this->whenLoaded('altUnits', fn (): array => ContainerPresenter::all($this->resource)),
             // PD4 — same-family metric units the system provides automatically
             // (base kg -> g, base l -> ml...). Derived from the base unit, so it
             // ships unconditionally; the dropdowns merge these with alt_units and

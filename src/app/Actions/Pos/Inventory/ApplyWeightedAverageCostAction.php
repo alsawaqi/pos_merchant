@@ -24,6 +24,7 @@ use RuntimeException;
  *
  *   new = (on_hand × old + received × paid) / (on_hand + received)
  *   on_hand ≤ 0  →  new = paid
+ *   old = 0      →  new = paid   (LAUNCH review add-on: "No cost yet")
  *
  * on_hand is the company-wide balance BEFORE this receipt: the central
  * warehouse plus every branch (negative branch balances included — an
@@ -83,7 +84,11 @@ final readonly class ApplyWeightedAverageCostAction
                     ->sum('quantity'),
             ));
 
-            $new = $onHand->isNegativeOrZero()
+            // LAUNCH review add-on (A1, tester call 2) — an old cost of 0 is
+            // "No cost yet" (free lines, count overages): the first priced
+            // purchase sets the cost to what was paid instead of blending it
+            // with 0. Existing costs are never touched here otherwise.
+            $new = ($onHand->isNegativeOrZero() || $old->isZero())
                 ? $paid->toScale(StockDecimal::UNIT_COST_SCALE, RoundingMode::HALF_UP)
                 : $onHand->multipliedBy($old)
                     ->plus($received->multipliedBy($paid))

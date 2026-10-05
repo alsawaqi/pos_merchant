@@ -32,7 +32,12 @@ class RecordWasteRequest extends FormRequest
     {
         return [
             'ingredient_uuid' => ['required', 'string', 'uuid'],
-            'quantity' => ['required', 'numeric', 'gt:0', 'max:999999.999'],
+            // LAUNCH review add-on (D3) — by container: container_uuid + pieces;
+            // the quantity then fills in as pieces × size and may only be
+            // LOWERED (half a bottle spilled), never raised.
+            'container_uuid' => ['nullable', 'string', 'max:64'],
+            'pieces' => ['nullable', 'required_with:container_uuid', 'numeric', 'gt:0', 'max:999999.9999'],
+            'quantity' => ['required_without:container_uuid', 'nullable', 'numeric', 'gt:0', 'max:999999.999'],
             // #13 — entered unit (alt-unit name, or null = base); converted to
             // base before write. Validity enforced by IngredientUnitConverter → 422.
             'unit' => ['nullable', 'string', 'max:32'],

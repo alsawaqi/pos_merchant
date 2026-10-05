@@ -31,6 +31,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'ingredient_id',
     'quantity',
     'last_movement_at',
+    // LAUNCH review add-on (B) — the breakdown's last count / total-only count.
+    'containers_counted_at',
+    'containers_total_count_at',
 ])]
 class BranchStock extends Model
 {
@@ -46,6 +49,14 @@ class BranchStock extends Model
     public const STATUS_OK = 'ok';
 
     /**
+     * LAUNCH review add-on (B2) — the breakdown by container, set by the stock
+     * list for the response only (never stored on this row).
+     *
+     * @var list<array<string, mixed>>|null
+     */
+    public ?array $breakdown = null;
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array
@@ -53,6 +64,8 @@ class BranchStock extends Model
         return [
             'quantity' => ScaledDecimal::class.':3,4',
             'last_movement_at' => 'datetime',
+            'containers_counted_at' => 'datetime',
+            'containers_total_count_at' => 'datetime',
         ];
     }
 

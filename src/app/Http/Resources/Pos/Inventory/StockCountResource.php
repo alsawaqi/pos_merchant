@@ -52,6 +52,12 @@ class StockCountResource extends JsonResource
                         ] : null,
                         'counted_pieces' => $line->counted_pieces !== null ? (string) $line->counted_pieces : null,
                         'counted_units' => (string) $line->counted_units,
+                        // LAUNCH review add-on (D2) — what was counted by container.
+                        'containers' => ($line->relationLoaded('containers') ? $line->containers : $line->containers()->get())
+                            ->map(static fn ($c): array => [
+                                'container_label' => $c->container_label,
+                                'pieces' => \App\Support\Inventory\Containers::trim((string) $c->pieces),
+                            ])->all(),
                     ];
                     if (! $canSeeStock) {
                         return $row;

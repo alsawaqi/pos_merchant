@@ -111,6 +111,16 @@ class StockController extends Controller
                 ->values();
         }
 
+        // LAUNCH review add-on (B2) — the breakdown by container (two queries).
+        $breakdowns = \App\Support\Inventory\BreakdownPresenter::forLocation(
+            $this->tenant->requiredId(),
+            (int) $branch->id,
+            $rows->map(static fn (BranchStock $r): int => (int) $r->ingredient_id)->all(),
+        );
+        foreach ($rows as $row) {
+            $row->breakdown = $breakdowns[(int) $row->ingredient_id] ?? [];
+        }
+
         return BranchStockResource::collection($rows)->additional(['meta' => [
             'total_value' => (string) $totalValue->toScale(3, RoundingMode::HALF_UP),
             'negative_count' => $negative,

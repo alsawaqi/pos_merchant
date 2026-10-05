@@ -11,6 +11,7 @@ use App\Models\Ingredient;
 use App\Models\RestockRequest;
 use App\Models\RestockRequestLine;
 use App\Models\User;
+use App\Support\Inventory\RestockLineContainer;
 use App\Support\MerchantTenantContext;
 use App\Support\StockDecimal;
 use Illuminate\Support\Collection;
@@ -83,17 +84,21 @@ final readonly class UpdateRestockRequestAction
         // Diff comparison — same ingredients + same quantities (compared in BASE
         // units, so an alt-unit re-entry that resolves to the same base is a
         // no-op) + same parent note → no-op skip.
-        $newShape = collect($lines)->mapWithKeys(function (array $l) use ($ingredients): array {
+        // LAUNCH review add-on (D4) — a line's container + pieces are part of
+        // its shape too.
+        $resolvedLines = [];
+        $newShape = collect($lines)->mapWithKeys(function (array $l) use ($ingredients, &$resolvedLines): array {
             /** @var Ingredient $ing */
             $ing = $ingredients[$l['ingredient_uuid']];
-            $qty = $this->units->toBase($ing, $l['quantity_requested'], $l['unit'] ?? null);
+            $resolved = RestockLineContainer::resolve($ing, $l, $this->units);
+            $resolvedLines[(string) $l['ingredient_uuid']] = $resolved;
 
-            return [$ing->id => (string) StockDecimal::quantity($qty)];
+            return [$ing->id => (string) StockDecimal::quantity($resolved['quantity']).'|'.($resolved['container']?->id ?? '').'|'.($resolved['pieces'] !== null ? (string) (float) $resolved['pieces'] : '')];
         });
         $currentShape = $request->lines()
-            ->get(['ingredient_id', 'quantity_requested'])
+            ->get(['ingredient_id', 'quantity_requested', 'container_id', 'pieces'])
             ->mapWithKeys(static fn (RestockRequestLine $r): array => [
-                (int) $r->ingredient_id => (string) $r->quantity_requested,
+                (int) $r->ingredient_id => (string) $r->quantity_requested.'|'.($r->container_id ?? '').'|'.($r->pieces !== null ? (string) (float) $r->pieces : ''),
             ]);
 
         $noteUnchanged = $note === null || $note === $request->note;
@@ -111,6 +116,7 @@ final readonly class UpdateRestockRequestAction
             $currentShape,
             $newShape,
             $companyId,
+            $resolvedLines,
         ): RestockRequest {
             // Update parent note if provided.
             if ($note !== null) {
@@ -122,7 +128,9 @@ final readonly class UpdateRestockRequestAction
                 /** @var Ingredient $ing */
                 $ing = $ingredients[$line['ingredient_uuid']];
                 // #13 — store the requested amount in the ingredient's base unit.
-                $qty = $this->units->toBase($ing, $line['quantity_requested'], $line['unit'] ?? null);
+                // LAUNCH review add-on (D4) — or by container (pieces × size).
+                $resolved = $resolvedLines[(string) $line['ingredient_uuid']];
+                $qty = $resolved['quantity'];
                 if ($qty <= 0) {
                     throw new RuntimeException('Each line quantity_requested must be positive.');
                 }
@@ -134,6 +142,9 @@ final readonly class UpdateRestockRequestAction
                     'unit_at_set' => $ing->unit?->value,
                     'note' => $line['note'] ?? null,
                     'sort_order' => $idx,
+                    'container_id' => $resolved['container']?->id,
+                    'pieces' => $resolved['pieces'],
+                    'container_label' => $resolved['label'],
                 ]);
             }
 

@@ -67,7 +67,7 @@ class IngredientsController extends Controller
         $ingredients = Ingredient::query()
             ->where('company_id', $this->tenant->requiredId())
             ->when(! $request->boolean('include_prep'), static fn ($q) => $q->stocked())
-            ->with('primarySupplier', 'altUnits')
+            ->with('primarySupplier', 'altUnits', 'barcodes')
             ->orderBy('name')
             ->get();
 
@@ -91,7 +91,7 @@ class IngredientsController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
         // LAUNCH item kind, A3 — the pack sizes saved with it.
-        $ingredient->load('primarySupplier', 'altUnits');
+        $ingredient->load('primarySupplier', 'altUnits', 'barcodes');
         $ingredient->unitLocked = false;
 
         return response()->json([
@@ -112,7 +112,7 @@ class IngredientsController extends Controller
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
-        $updated->load('primarySupplier');
+        $updated->load('primarySupplier', 'altUnits', 'barcodes');
         $updated->unitLocked = IngredientUnitLock::isLocked($updated);
 
         return IngredientResource::make($updated);

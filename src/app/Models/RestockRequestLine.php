@@ -36,6 +36,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'unit_at_set',
     'note',
     'sort_order',
+    // LAUNCH review add-on (D4) — an optional container on the line.
+    'container_id',
+    'pieces',
+    'container_label',
 ])]
 class RestockRequestLine extends Model
 {
@@ -54,6 +58,7 @@ class RestockRequestLine extends Model
             'quantity_allocated' => ScaledDecimal::class.':3,4',
             'unit_at_set' => IngredientUnit::class,
             'sort_order' => 'integer',
+            'pieces' => ScaledDecimal::class.':0,4',
         ];
     }
 

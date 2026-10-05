@@ -74,7 +74,10 @@ it('refuses a duplicate active unit name', function (): void {
     $ing = makeIngredient($ctx['company']);
     $this->postJson("/api/ingredients/{$ing->uuid}/units", ['name' => 'crate', 'factor' => '1000'])->assertCreated();
 
-    $this->postJson("/api/ingredients/{$ing->uuid}/units", ['name' => 'crate', 'factor' => '999'])->assertStatus(422);
+    // LAUNCH review add-on (A2) — the same word may have another size; only
+    // the same name AND size twice is refused.
+    $this->postJson("/api/ingredients/{$ing->uuid}/units", ['name' => 'crate', 'factor' => '999'])->assertCreated();
+    $this->postJson("/api/ingredients/{$ing->uuid}/units", ['name' => 'crate', 'factor' => '1000'])->assertStatus(422);
 });
 
 it('restores a soft-deleted unit when its name is re-created', function (): void {
@@ -83,7 +86,8 @@ it('restores a soft-deleted unit when its name is re-created', function (): void
     $created = $this->postJson("/api/ingredients/{$ing->uuid}/units", ['name' => 'crate', 'factor' => '1000'])->json('data');
     $this->deleteJson("/api/ingredients/{$ing->uuid}/units/{$created['uuid']}")->assertNoContent();
 
-    // Re-creating the same name succeeds (restores) rather than colliding.
+    // Re-creating the same name succeeds rather than colliding (LAUNCH review
+    // add-on A2: as a NEW row — names are not unique, so nothing is restored).
     $again = $this->postJson("/api/ingredients/{$ing->uuid}/units", ['name' => 'crate', 'factor' => '1200'])->assertCreated();
     expect($again->json('data.factor'))->toBe('1200.0000');
     expect(IngredientAltUnit::where('ingredient_id', $ing->id)->where('name', 'crate')->count())->toBe(1);

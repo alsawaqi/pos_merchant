@@ -35,6 +35,13 @@ class SubmitStockCountRequest extends FormRequest
             // container); null = the stored unit. Converted like every other
             // entry (IngredientUnitConverter).
             'lines.*.unit' => ['nullable', 'string', 'max:32'],
+            // LAUNCH review add-on (D2) — one row per item may hold several
+            // containers (3 × bottle 1.5 l + 5 × bottle 500 ml; 0 is a count);
+            // the total fills in as Σ pieces × size and may only be LOWERED
+            // (a part-used container). The breakdown is set to exactly these.
+            'lines.*.containers' => ['sometimes', 'array', 'max:20'],
+            'lines.*.containers.*.container_uuid' => ['required', 'string', 'max:64'],
+            'lines.*.containers.*.pieces' => ['required', 'numeric', 'min:0', 'max:999999.9999'],
         ];
     }
 
@@ -51,7 +58,8 @@ class SubmitStockCountRequest extends FormRequest
                 }
                 $hasPieces = isset($line['counted_pieces']) && $line['counted_pieces'] !== null && $line['counted_pieces'] !== '';
                 $hasUnits = isset($line['counted_units']) && $line['counted_units'] !== null && $line['counted_units'] !== '';
-                if (! $hasPieces && ! $hasUnits) {
+                $hasContainers = isset($line['containers']) && is_array($line['containers']) && $line['containers'] !== [];
+                if (! $hasPieces && ! $hasUnits && ! $hasContainers) {
                     $v->errors()->add("lines.{$i}.counted_units", 'Each line needs a counted amount (pieces or units).');
                 }
             }

@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Pos;
 
+use App\Actions\Pos\Inventory\ContainerBreakdownAction;
+use App\Actions\Pos\Inventory\IngredientUnitConverter;
 use App\Actions\Pos\Inventory\RecordPrepWasteAction;
 use App\Actions\Pos\Inventory\RecordWasteAction;
+use App\Support\Inventory\ContainerAmount;
+use Illuminate\Support\Facades\DB;
 use App\Enums\MerchantPermission;
 use App\Enums\WasteReason;
 use App\Http\Controllers\Controller;
@@ -45,6 +49,8 @@ class WasteController extends Controller
         private readonly MerchantTenantContext $tenant,
         private readonly RecordWasteAction $record,
         private readonly RecordPrepWasteAction $recordPrep,
+        private readonly ContainerBreakdownAction $breakdown,
+        private readonly IngredientUnitConverter $units,
     ) {}
 
     public function index(Request $request, Branch $branch): AnonymousResourceCollection
@@ -124,6 +130,9 @@ class WasteController extends Controller
         // LAUNCH-P3 P3-4 — a prep item has no stock: its waste is the waste
         // of its exploded raw ingredients, one event naming the prep item.
         if ($ingredient->isPrep()) {
+            if ($request->filled('container_uuid')) {
+                return response()->json(['message' => 'A prep item has no containers: enter the amount wasted.'], 422);
+            }
             try {
                 $result = $this->recordPrep->handle(
                     branch: $branch,
@@ -153,16 +162,42 @@ class WasteController extends Controller
         }
 
         try {
-            $result = $this->record->record(
-                branch: $branch,
-                ingredient: $ingredient,
-                quantity: $request->input('quantity'),
-                reason: WasteReason::from((string) $request->input('reason')),
-                actor: $request->user(),
-                notes: $request->input('notes'),
-                occurredAt: $occurredAt,
-                unit: $request->input('unit'),
-            );
+            // LAUNCH review add-on (D3) — waste BY CONTAINER: pieces of one of
+            // the item's containers; the amount defaults to pieces × size and
+            // may only be lowered. The branch breakdown loses those containers
+            // (never below 0) — on this path only, never on a count shortfall.
+            $rows = [];
+            $quantity = $request->input('quantity');
+            $unit = $request->input('unit');
+            if ($request->filled('container_uuid')) {
+                $rows = ContainerAmount::rows($ingredient, [['container_uuid' => (string) $request->input('container_uuid'), 'pieces' => $request->input('pieces')]]);
+                $quantity = (string) ContainerAmount::amount($ingredient, $rows, $quantity, is_string($unit) && $unit !== '' ? $unit : null, $this->units);
+                $unit = null;
+            }
+
+            $result = DB::transaction(function () use ($branch, $ingredient, $quantity, $unit, $request, $occurredAt, $rows): array {
+                $result = $this->record->record(
+                    branch: $branch,
+                    ingredient: $ingredient,
+                    quantity: $quantity,
+                    reason: WasteReason::from((string) $request->input('reason')),
+                    actor: $request->user(),
+                    notes: $request->input('notes'),
+                    occurredAt: $occurredAt,
+                    unit: $unit,
+                    container: $rows[0]['container'] ?? null,
+                    pieces: isset($rows[0]) ? (string) $rows[0]['pieces'] : null,
+                );
+                if ($rows !== []) {
+                    $this->breakdown->take($ingredient, (int) $branch->id, ContainerBreakdownAction::leaves($ingredient, $rows), 'waste', $request->user(), [
+                        'reference_type' => WasteRecord::class,
+                        'reference_id' => (int) $result['record']->id,
+                        'occurred_at' => $occurredAt,
+                    ]);
+                }
+
+                return $result;
+            });
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }

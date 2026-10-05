@@ -72,6 +72,11 @@ class PurchaseReceiptResource extends JsonResource
                     'purchase_quantity' => $line->purchase_quantity !== null ? (string) $line->purchase_quantity : null,
                     'unit_price' => $line->unit_price !== null ? (string) $line->unit_price : null,
                     'unit_cost' => $line->unit_cost !== null ? (string) $line->unit_cost : null,
+                    // LAUNCH review add-on (C1, D3) — bought in a container /
+                    // pack: how many, its label and size as they stood.
+                    'pieces' => $line->pieces,
+                    'container_label' => $line->container_label,
+                    'container_factor' => $line->container_factor,
                 ])->all()),
             'charges' => $this->whenLoaded('charges', fn (): array => $this->charges
                 ->map(fn (PurchaseReceiptCharge $charge): array => [

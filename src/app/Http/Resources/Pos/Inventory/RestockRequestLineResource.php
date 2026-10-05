@@ -27,6 +27,12 @@ class RestockRequestLineResource extends JsonResource
             'unit_at_set' => $this->unit_at_set?->value,
             'note' => $this->note,
             'sort_order' => $this->sort_order,
+            // LAUNCH review add-on (D4) — the optional container on the line.
+            'container_uuid' => $this->container_id !== null
+                ? \App\Models\IngredientAltUnit::withTrashed()->whereKey($this->container_id)->value('uuid')
+                : null,
+            'pieces' => $this->pieces,
+            'container_label' => $this->container_label,
             // Ingredient summary inlined for the UI's per-line
             // rendering. Tolerates a NULL relation in the corner
             // case where the ingredient was soft-deleted AFTER

@@ -596,6 +596,10 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('ingredient-stock.adjust');
         Route::get('ingredients/{ingredient:uuid}/stock/movements', [IngredientStockController::class, 'movements'])
             ->name('ingredient-stock.movements');
+        // LAUNCH review add-on (B, tester call 8) — "Correct containers": set
+        // the warehouse breakdown by container (the warehouse's way to count).
+        Route::post('ingredients/{ingredient:uuid}/stock/containers', [IngredientStockController::class, 'correctContainers'])
+            ->name('ingredient-stock.containers');
 
         // v2 #13 — per-ingredient alternate units (base unit + factor). Read on
         // inventory.view, writes on inventory.manage (gated in the controller).
@@ -626,6 +630,30 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
             ->name('physical-items.update');
         Route::delete('physical-items/{product:uuid}', [PhysicalItemsController::class, 'destroy'])
             ->name('physical-items.destroy');
+
+        // -------- LAUNCH review add-on (part B) — SKUs, packs, barcodes, scan --
+        // A4: "Generate missing SKUs" on the Physical items tab. D3: a physical
+        // item's packs ("box holds 50 cups"). A5/F: barcodes on containers,
+        // items and packs, and the scan box's lookup + link. inventory.view /
+        // inventory.manage (gated in the controllers).
+        Route::post('physical-items/generate-skus', [PhysicalItemsController::class, 'generateSkus'])
+            ->name('physical-items.generate-skus');
+        Route::get('physical-items/{product:uuid}/packs', [\App\Http\Controllers\Pos\PhysicalItemPacksController::class, 'index'])
+            ->name('physical-items.packs.index');
+        Route::post('physical-items/{product:uuid}/packs', [\App\Http\Controllers\Pos\PhysicalItemPacksController::class, 'store'])
+            ->name('physical-items.packs.store');
+        Route::patch('physical-items/{product:uuid}/packs/{pack}', [\App\Http\Controllers\Pos\PhysicalItemPacksController::class, 'update'])
+            ->name('physical-items.packs.update');
+        Route::delete('physical-items/{product:uuid}/packs/{pack}', [\App\Http\Controllers\Pos\PhysicalItemPacksController::class, 'destroy'])
+            ->name('physical-items.packs.destroy');
+        Route::post('inventory/barcodes', [\App\Http\Controllers\Pos\InventoryCodesController::class, 'store'])
+            ->name('inventory.barcodes.store');
+        Route::delete('inventory/barcodes/{barcode}', [\App\Http\Controllers\Pos\InventoryCodesController::class, 'destroy'])
+            ->name('inventory.barcodes.destroy');
+        Route::get('inventory/scan', [\App\Http\Controllers\Pos\InventoryCodesController::class, 'scan'])
+            ->name('inventory.scan');
+        Route::post('inventory/scan/link', [\App\Http\Controllers\Pos\InventoryCodesController::class, 'link'])
+            ->name('inventory.scan.link');
 
         Route::get('suppliers', [SuppliersController::class, 'index'])
             ->name('suppliers.index');

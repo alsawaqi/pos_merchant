@@ -115,18 +115,15 @@ class SaveComboRequest extends FormRequest
                 $v->errors()->add('category_id', 'The selected category does not belong to your company.');
             }
         }
-        foreach (['sku' => 'SKU', 'barcode' => 'barcode'] as $field => $label) {
-            $value = $this->input($field);
-            if (is_string($value) && $value !== '') {
-                $taken = Product::query()
-                    ->where('company_id', $companyId)
-                    ->where($field, $value)
-                    ->when($combo !== null, fn ($q) => $q->where('id', '!=', $combo->id))
-                    ->exists();
-                if ($taken) {
-                    $v->errors()->add($field, "A product with this {$label} already exists at your company.");
-                }
-            }
+        // LAUNCH review add-on (A4, A5) — unique across ingredients and
+        // products (SKU, case-insensitive) and the item barcodes (barcode).
+        $sku = $this->input('sku');
+        if (is_string($sku) && trim($sku) !== '' && ($owner = \App\Support\Inventory\ItemCodes::skuOwner($companyId, $sku, null, $combo?->id !== null ? (int) $combo->id : null)) !== null) {
+            $v->errors()->add('sku', \App\Support\Inventory\ItemCodes::skuMessage($owner));
+        }
+        $barcode = $this->input('barcode');
+        if (is_string($barcode) && trim($barcode) !== '' && ($owner = \App\Support\Inventory\ItemCodes::barcodeOwner($companyId, $barcode, null, $combo?->id !== null ? (int) $combo->id : null)) !== null) {
+            $v->errors()->add('barcode', \App\Support\Inventory\ItemCodes::barcodeMessage($owner));
         }
     }
 

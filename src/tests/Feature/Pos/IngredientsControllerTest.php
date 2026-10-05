@@ -63,13 +63,14 @@ it('creates an ingredient and writes an audit row', function (): void {
         'name' => 'Espresso Beans',
         'name_ar' => 'حبوب الإسبريسو',
         'unit' => 'kg',
-        'default_unit_cost' => '15.500',
+        // LAUNCH review add-on (A1) — no cost on create: it comes from purchases.
         'min_stock_threshold' => '2.000',
     ])->assertCreated();
 
     expect($response->json('data.name'))->toBe('Espresso Beans');
     expect($response->json('data.unit'))->toBe('kg');
-    expect($response->json('data.default_unit_cost'))->toBe('15.500');
+    expect($response->json('data.default_unit_cost'))->toBe('0.000');
+    expect($response->json('data.has_cost'))->toBeFalse();
 
     $ingredient = Ingredient::query()
         ->where('company_id', $ctx['company']->id)
@@ -112,13 +113,14 @@ it('edits an ingredient and writes a diff-aware audit', function (): void {
     $ingredient = Ingredient::factory()->for($ctx['company'], 'company')
         ->create(['name' => 'Old Name', 'default_unit_cost' => '2.000']);
 
+    // LAUNCH review add-on (A1) — the cost is read-only now; the rest edits.
     $this->patchJson("/api/ingredients/{$ingredient->uuid}", [
         'name' => 'New Name',
-        'default_unit_cost' => '2.500',
+        'min_stock_threshold' => '2.500',
     ])
         ->assertOk()
         ->assertJsonPath('data.name', 'New Name')
-        ->assertJsonPath('data.default_unit_cost', '2.500');
+        ->assertJsonPath('data.default_unit_cost', '2.000');
 
     $this->assertDatabaseHas('pos_audit_logs', [
         'event' => 'inventory.ingredient.updated',
@@ -372,6 +374,6 @@ it('lets an InventoryManager create + edit + delete ingredients', function (): v
 
     $this->postJson('/api/ingredients', ['name' => 'Sugar', 'unit' => 'kg'])->assertCreated();
     $ingredient = Ingredient::query()->where('name', 'Sugar')->firstOrFail();
-    $this->patchJson("/api/ingredients/{$ingredient->uuid}", ['default_unit_cost' => '1.500'])->assertOk();
+    $this->patchJson("/api/ingredients/{$ingredient->uuid}", ['min_stock_threshold' => '1.500'])->assertOk();
     $this->deleteJson("/api/ingredients/{$ingredient->uuid}")->assertNoContent();
 });

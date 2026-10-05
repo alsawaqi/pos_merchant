@@ -42,7 +42,18 @@ class StorePurchaseReceiptRequest extends FormRequest
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.item_type' => ['required', 'string', 'in:ingredient,product'],
             'lines.*.item_uuid' => ['required', 'string', 'uuid'],
-            'lines.*.quantity' => ['required', 'numeric', 'gt:0', 'max:999999.999'],
+            // LAUNCH review add-on (C1, D3) — a line bought BY CONTAINER: the
+            // item's container (ingredient) or pack (physical item), how many
+            // (pieces), and an optional amount that may only be LOWERED from
+            // pieces × size (amount_unit = a unit of the kind; null = the
+            // stored unit; for a pack the amount is the item's pieces). With
+            // no container the line keeps the free quantity (loose weight).
+            'lines.*.container_uuid' => ['nullable', 'string', 'max:64'],
+            'lines.*.pack_uuid' => ['nullable', 'string', 'max:64'],
+            'lines.*.pieces' => ['nullable', 'numeric', 'gt:0', 'max:999999.9999'],
+            'lines.*.amount' => ['nullable', 'numeric', 'gt:0', 'max:999999999.9999'],
+            'lines.*.amount_unit' => ['nullable', 'string', 'max:40'],
+            'lines.*.quantity' => ['required_without:lines.*.pieces', 'nullable', 'numeric', 'gt:0', 'max:999999.999'],
             // LAUNCH-P2 P2-3 — the unit the quantity and split are entered in
             // (NULL = the base unit; kg/g, l/ml, an extra unit's name or
             // '@piece') and the price PER THAT UNIT. With a unit price the
@@ -56,7 +67,9 @@ class StorePurchaseReceiptRequest extends FormRequest
             'lines.*.tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'lines.*.allocations' => ['nullable', 'array'],
             'lines.*.allocations.*.branch_uuid' => ['required', 'string', 'uuid'],
-            'lines.*.allocations.*.quantity' => ['required', 'numeric', 'gt:0', 'max:999999.999'],
+            // Review add-on — a container line splits in PIECES.
+            'lines.*.allocations.*.pieces' => ['nullable', 'numeric', 'gt:0', 'max:999999.9999'],
+            'lines.*.allocations.*.quantity' => ['required_without:lines.*.allocations.*.pieces', 'nullable', 'numeric', 'gt:0', 'max:999999.999'],
 
             'charges' => ['nullable', 'array'],
             'charges.*.name' => ['required', 'string', 'max:120'],
@@ -87,17 +100,27 @@ class StorePurchaseReceiptRequest extends FormRequest
             // A line may not distribute more than it received (the action
             // enforces this too, but a field-level error reads better). Both
             // are in the line's entered unit, so they compare like for like.
+            // Review add-on — a container line splits in pieces.
             foreach ((array) $this->input('lines', []) as $i => $line) {
-                $qty = (float) ($line['quantity'] ?? 0);
+                $byPieces = isset($line['pieces']) && $line['pieces'] !== null && $line['pieces'] !== '';
+                $qty = (float) ($byPieces ? $line['pieces'] : ($line['quantity'] ?? 0));
                 $distributed = 0.0;
                 foreach ((array) ($line['allocations'] ?? []) as $alloc) {
-                    $distributed += (float) ($alloc['quantity'] ?? 0);
+                    $distributed += (float) ($byPieces ? ($alloc['pieces'] ?? 0) : ($alloc['quantity'] ?? 0));
                 }
                 if ($distributed > $qty + 1e-9) {
                     $v->errors()->add(
                         "lines.{$i}.allocations",
                         'The branch split exceeds the received quantity for this line.',
                     );
+                }
+                // C1 — pieces name a container (ingredient) or a pack (item).
+                if ($byPieces && empty($line['container_uuid']) && empty($line['pack_uuid'])) {
+                    $v->errors()->add("lines.{$i}.container_uuid", 'Pick the container (or pack) the pieces are in, or type the amount without a container.');
+                }
+                // C2 — the price paid for a container line is required (0 = free).
+                if ($byPieces && (! isset($line['line_cost']) || $line['line_cost'] === null || $line['line_cost'] === '')) {
+                    $v->errors()->add("lines.{$i}.line_cost", 'Enter the price paid for this line (0 for a free line).');
                 }
             }
         });

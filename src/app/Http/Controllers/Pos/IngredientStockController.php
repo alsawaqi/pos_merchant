@@ -6,7 +6,14 @@ namespace App\Http\Controllers\Pos;
 
 use App\Actions\Pos\Inventory\AdjustIngredientStockAction;
 use App\Actions\Pos\Inventory\AllocateIngredientStockAction;
+use App\Actions\Pos\Inventory\ContainerBreakdownAction;
 use App\Actions\Pos\Inventory\IngredientUnitConverter;
+use App\Actions\Security\WriteAuditLogAction;
+use App\Data\Security\AuditLogData;
+use App\Support\Inventory\BreakdownPresenter;
+use App\Support\Inventory\ContainerAmount;
+use App\Support\Inventory\Containers;
+use Illuminate\Support\Facades\DB;
 use App\Actions\Pos\Inventory\ReceiveAndDistributeIngredientStockAction;
 use App\Actions\Pos\Inventory\ReceiveIngredientStockAction;
 use App\Actions\Pos\Inventory\TransferStockAction;
@@ -59,6 +66,8 @@ class IngredientStockController extends Controller
         private readonly TransferStockAction $transfer,
         private readonly AdjustIngredientStockAction $adjust,
         private readonly IngredientUnitConverter $units,
+        private readonly ContainerBreakdownAction $breakdown,
+        private readonly WriteAuditLogAction $writeAuditLog,
     ) {}
 
     public function show(Request $request, Ingredient $ingredient): JsonResponse
@@ -85,12 +94,15 @@ class IngredientStockController extends Controller
             ->get()
             ->keyBy('branch_id');
 
+        // LAUNCH review add-on (B2) — the breakdown by container per location.
+        $breakdowns = BreakdownPresenter::forIngredient($ingredient);
+
         $branches = Branch::query()
             ->where('company_id', $companyId)
             ->when($allowed !== null, fn ($q) => $q->whereIn('id', $allowed))
             ->orderBy('name')
             ->get()
-            ->map(function (Branch $b) use ($stockByBranch): array {
+            ->map(function (Branch $b) use ($stockByBranch, $breakdowns): array {
                 $row = $stockByBranch->get($b->id);
 
                 return [
@@ -98,6 +110,8 @@ class IngredientStockController extends Controller
                     'branch_name' => $b->name,
                     // null = this branch has never stocked the ingredient.
                     'quantity' => $row !== null ? (string) $row->quantity : null,
+                    'breakdown' => $breakdowns[(int) $b->id] ?? [],
+                    'containers_counted_at' => $row?->containers_counted_at?->toIso8601String(),
                 ];
             })
             ->values()
@@ -119,6 +133,11 @@ class IngredientStockController extends Controller
                 'ingredient_uuid' => $ingredient->uuid,
                 'unit' => $ingredient->unit->value,
                 'central_quantity' => $central !== null ? (string) $central->quantity : '0.000',
+                // B2 — the warehouse breakdown (HQ context; a scoped user still
+                // sees the central total, so its breakdown too) and its last
+                // correction ("Correct containers").
+                'central_breakdown' => $breakdowns['warehouse'] ?? [],
+                'central_containers_counted_at' => $central?->containers_counted_at?->toIso8601String(),
                 'branches' => $branches,
                 'recent_movements' => IngredientStockMovementResource::collection($movements)->resolve($request),
             ],
@@ -217,7 +236,69 @@ class IngredientStockController extends Controller
         }
 
         try {
-            $this->allocate->handle($ingredient, $this->storedLines($ingredient, $lines, $request->input('unit')), $request->input('note'), $request->user());
+            DB::transaction(function () use ($ingredient, $lines, $request): void {
+                $legs = $this->allocate->handle($ingredient, $this->storedLines($ingredient, $lines, $request->input('unit')), $request->input('note'), $request->user());
+
+                // LAUNCH review add-on (B3) — amounts typed in a container
+                // ("2 crates") move that breakdown warehouse → branch.
+                $container = Containers::resolve($ingredient, is_string($request->input('unit')) ? $request->input('unit') : null);
+                if ($container === null) {
+                    return;
+                }
+                foreach ($lines as $i => $line) {
+                    $leaves = ContainerBreakdownAction::leaves($ingredient, [['container' => $container, 'pieces' => $line['quantity']]]);
+                    $this->breakdown->move($ingredient, null, (int) $line['branch']->id, $leaves, 'allocation_out', 'allocation_in', $request->user(), [
+                        'stock_movement_id' => isset($legs[$i]) ? (int) $legs[$i]->id : null,
+                    ]);
+                }
+            });
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return $this->show($request, $ingredient);
+    }
+
+    /**
+     * POST /api/ingredients/{ingredient:uuid}/stock/containers — LAUNCH review
+     * add-on (B, tester call 8): "Correct containers". The warehouse cannot be
+     * counted, so this is its way to set the breakdown to what is really on
+     * the shelf: exactly these containers (pieces ≥ 0), every other container
+     * of the item to 0. The total does not move. inventory.manage + access to
+     * all branches (the warehouse is an HQ resource); audited, and written to
+     * the container ledger with reason 'correct'.
+     */
+    public function correctContainers(Request $request, Ingredient $ingredient): JsonResponse
+    {
+        $this->ensure($request, MerchantPermission::InventoryManage);
+        $this->refuseIfNotInTenant($ingredient);
+        BranchScope::ensureUnrestricted($request->user(), 'The central warehouse is managed by accounts with access to all branches.');
+
+        $data = $request->validate([
+            'containers' => ['present', 'array', 'max:50'],
+            'containers.*.container_uuid' => ['required', 'string', 'max:64'],
+            'containers.*.pieces' => ['required', 'numeric', 'min:0', 'max:999999.9999'],
+            'note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        try {
+            DB::transaction(function () use ($ingredient, $data, $request): void {
+                $rows = ContainerAmount::rows($ingredient, $data['containers'], allowZero: true);
+                $before = BreakdownPresenter::forIngredient($ingredient)['warehouse'] ?? [];
+                $this->breakdown->set($ingredient, null, ContainerBreakdownAction::leaves($ingredient, $rows), 'correct', $request->user());
+                $this->writeAuditLog->handle(new AuditLogData(
+                    event: 'inventory.containers.corrected',
+                    actorUserId: $request->user()?->getKey(),
+                    companyId: $this->tenant->requiredId(),
+                    auditableType: Ingredient::class,
+                    auditableId: (int) $ingredient->id,
+                    oldValues: ['breakdown' => array_map(static fn (array $r): string => $r['pieces'].' × '.$r['display_name'], $before)],
+                    newValues: [
+                        'breakdown' => array_map(static fn (array $r): string => Containers::trim((string) $r['pieces']).' × '.Containers::displayName($r['container'], $ingredient), $rows),
+                        'note' => $data['note'] ?? null,
+                    ],
+                ));
+            });
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }

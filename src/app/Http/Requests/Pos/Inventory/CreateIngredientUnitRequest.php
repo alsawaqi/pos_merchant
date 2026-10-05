@@ -40,9 +40,12 @@ class CreateIngredientUnitRequest extends FormRequest
             'name_ar' => ['sometimes', 'nullable', 'string', 'max:32'],
             // base units per ONE of this unit — a positive amount, capped so a
             // huge factor can't overflow the decimal(12,3) base-stock columns.
-            'factor' => ['required_without:amount', 'numeric', 'gt:0', 'max:'.PackSize::MAX_FACTOR],
-            'amount' => ['required_without:factor', 'numeric', 'gt:0', 'max:'.PackSize::MAX_FACTOR],
+            'factor' => ['required_without_all:amount,contains_unit_uuid', 'numeric', 'gt:0', 'max:'.PackSize::MAX_FACTOR],
+            'amount' => ['required_without_all:factor,contains_unit_uuid', 'numeric', 'gt:0', 'max:'.PackSize::MAX_FACTOR],
             'unit' => ['required_with:amount', 'string', 'max:32'],
+            // LAUNCH review add-on (A2) — or N × another container of the item.
+            'contains_unit_uuid' => ['nullable', 'string', 'max:64'],
+            'contains_quantity' => ['required_with:contains_unit_uuid', 'nullable', 'integer', 'min:2', 'max:'.PackSize::MAX_FACTOR],
             'sort_order' => ['sometimes', 'integer', 'min:0'],
         ];
     }

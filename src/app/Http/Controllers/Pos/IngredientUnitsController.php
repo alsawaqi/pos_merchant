@@ -14,10 +14,11 @@ use App\Http\Requests\Pos\Inventory\UpdateIngredientUnitRequest;
 use App\Http\Resources\Pos\Inventory\IngredientAltUnitResource;
 use App\Models\Ingredient;
 use App\Models\IngredientAltUnit;
+use App\Support\Inventory\ContainerPresenter;
+use App\Support\Inventory\ContainerUsage;
 use App\Support\MerchantTenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use RuntimeException;
 
 /**
@@ -40,12 +41,16 @@ class IngredientUnitsController extends Controller
         private readonly DeleteIngredientUnitAction $delete,
     ) {}
 
-    public function index(Request $request, Ingredient $ingredient): AnonymousResourceCollection
+    public function index(Request $request, Ingredient $ingredient): JsonResponse
     {
         $this->ensure($request, MerchantPermission::InventoryView);
         $this->refuseIfIngredientNotInTenant($ingredient);
 
-        return IngredientAltUnitResource::collection($ingredient->altUnits()->get());
+        // LAUNCH review add-on (A2) — every container with its token, display
+        // names, size lock (worked out once for the item) and barcodes.
+        return response()->json([
+            'data' => ContainerPresenter::all($ingredient, ContainerUsage::usedIds((int) $ingredient->id)),
+        ]);
     }
 
     public function store(CreateIngredientUnitRequest $request, Ingredient $ingredient): JsonResponse
@@ -86,7 +91,11 @@ class IngredientUnitsController extends Controller
         $this->refuseIfIngredientNotInTenant($ingredient);
         $this->refuseIfUnitNotOnIngredient($unit, $ingredient);
 
-        $this->delete->handle($unit, $request->user());
+        try {
+            $this->delete->handle($unit, $request->user());
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
         return response()->json(['data' => null], 204);
     }

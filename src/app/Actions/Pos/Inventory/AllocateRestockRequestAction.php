@@ -8,7 +8,9 @@ use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
 use App\Enums\RestockRequestStatus;
 use App\Enums\StockMovementType;
+use App\Models\IngredientAltUnit;
 use App\Models\IngredientStock;
+use App\Support\Inventory\Containers;
 use App\Models\RestockRequest;
 use App\Models\RestockRequestLine;
 use App\Models\User;
@@ -65,6 +67,7 @@ final readonly class AllocateRestockRequestAction
         private WriteStockMovementAction $writeStockMovement,
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
+        private ContainerBreakdownAction $breakdown,
     ) {}
 
     /**
@@ -213,7 +216,7 @@ final readonly class AllocateRestockRequestAction
                         $request->uuid,
                     ),
                 );
-                $this->writeStockMovement->handle(
+                $inLeg = $this->writeStockMovement->handle(
                     branch: $branch,
                     ingredient: $ingredient,
                     type: StockMovementType::Restock,
@@ -227,6 +230,23 @@ final readonly class AllocateRestockRequestAction
                         $request->uuid,
                     ),
                 );
+
+                // LAUNCH review add-on (D4, tester call 10) — a line that names
+                // its container moves that part of the breakdown warehouse →
+                // branch (the share allocated: pieces × allocated ÷ requested).
+                if ($line->container_id !== null && $line->pieces !== null && (float) $line->quantity_requested > 0) {
+                    $container = IngredientAltUnit::withTrashed()->where('ingredient_id', $ingredient->id)->find($line->container_id);
+                    if ($container !== null) {
+                        $pieces = Containers::decimal((string) $line->pieces)
+                            ->multipliedBy(Containers::decimal(StockDecimal::quantity($allocated)))
+                            ->dividedBy(Containers::decimal((string) $line->quantity_requested), StockDecimal::QUANTITY_SCALE, \Brick\Math\RoundingMode::HALF_UP);
+                        $this->breakdown->move($ingredient, null, (int) $branch->id, ContainerBreakdownAction::leaves($ingredient, [['container' => $container, 'pieces' => $pieces]]), 'allocation_out', 'allocation_in', $actor, [
+                            'reference_type' => RestockRequestLine::class,
+                            'reference_id' => (int) $line->id,
+                            'to_stock_movement_id' => (int) $inLeg->id,
+                        ]);
+                    }
+                }
             }
 
             // Transition status — even partial / zero-allocation

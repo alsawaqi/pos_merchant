@@ -10,8 +10,11 @@ use App\Enums\StockMovementType;
 use App\Models\Branch;
 use App\Models\BranchTransfer;
 use App\Models\BranchTransferLine;
+use App\Models\BranchTransferLineContainer;
 use App\Models\Ingredient;
 use App\Models\User;
+use App\Support\Inventory\ContainerAmount;
+use App\Support\Inventory\Containers;
 use App\Support\MerchantTenantContext;
 use App\Support\StockDecimal;
 use Illuminate\Support\Facades\DB;
@@ -43,10 +46,11 @@ final readonly class TransferStockAction
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
         private IngredientUnitConverter $units,
+        private ContainerBreakdownAction $breakdown,
     ) {}
 
     /**
-     * @param  list<array{ingredient_uuid: string, quantity: string|float|int, unit?: string|null}>  $lines
+     * @param  list<array{ingredient_uuid: string, quantity?: string|float|int|null, unit?: string|null, containers?: list<array{container_uuid: string, pieces: string|float|int}>}>  $lines
      */
     public function handle(Branch $from, Branch $to, array $lines, User $actor, ?string $note = null): BranchTransfer
     {
@@ -82,9 +86,26 @@ final readonly class TransferStockAction
             }
             $seen[$ingredient->id] = true;
 
-            // #13 — convert the entered quantity to base units before the
-            // positivity + available-stock checks (so both compare base-to-base).
-            $quantity = round($this->units->toBase($ingredient, $line['quantity'], $line['unit'] ?? null), StockDecimal::QUANTITY_SCALE);
+            // LAUNCH review add-on (D1) — by container: [{container_uuid, pieces}]
+            // and an amount that fills in as pieces × size and may only be
+            // LOWERED (3 bottles = 2.5 l when one is half used). An amount
+            // typed in a container ("2 crates") is by container too.
+            $rows = ContainerAmount::rows($ingredient, (array) ($line['containers'] ?? []));
+            $unit = isset($line['unit']) && is_string($line['unit']) && $line['unit'] !== '' ? $line['unit'] : null;
+            if ($rows !== []) {
+                $quantity = (float) (string) ContainerAmount::amount($ingredient, $rows, $line['quantity'] ?? null, $unit, $this->units);
+            } else {
+                if (! isset($line['quantity']) || $line['quantity'] === null || $line['quantity'] === '') {
+                    throw new RuntimeException('Enter how much "'.$ingredient->name.'" to transfer, or its containers.');
+                }
+                // #13 — convert the entered quantity to base units before the
+                // positivity + available-stock checks (so both compare base-to-base).
+                $quantity = round($this->units->toBase($ingredient, $line['quantity'], $unit), StockDecimal::QUANTITY_SCALE);
+                $asContainer = Containers::resolve($ingredient, $unit);
+                if ($asContainer !== null) {
+                    $rows = [['container' => $asContainer, 'pieces' => Containers::decimal($line['quantity'])]];
+                }
+            }
             if ($quantity <= 0) {
                 throw new RuntimeException('Transfer quantity for "'.$ingredient->name.'" must be positive.');
             }
@@ -99,7 +120,7 @@ final readonly class TransferStockAction
                 ));
             }
 
-            $resolved[] = ['ingredient' => $ingredient, 'quantity' => $quantity];
+            $resolved[] = ['ingredient' => $ingredient, 'quantity' => $quantity, 'containers' => $rows];
         }
 
         return DB::transaction(function () use ($from, $to, $resolved, $actor, $note, $companyId): BranchTransfer {
@@ -119,7 +140,8 @@ final readonly class TransferStockAction
                 $quantity = $row['quantity'];
                 $unitCost = $ingredient->default_unit_cost ?? 0;
 
-                BranchTransferLine::query()->create([
+                /** @var BranchTransferLine $transferLine */
+                $transferLine = BranchTransferLine::query()->create([
                     'branch_transfer_id' => $transfer->id,
                     'ingredient_id' => $ingredient->id,
                     'quantity' => (string) $quantity,
@@ -127,9 +149,22 @@ final readonly class TransferStockAction
                     'unit_cost_at_time' => (string) $unitCost,
                 ]);
 
+                // LAUNCH review add-on (D1) — the containers moved, with their
+                // label and size as they stood.
+                foreach ($row['containers'] as $containerRow) {
+                    BranchTransferLineContainer::query()->create([
+                        'branch_transfer_line_id' => $transferLine->id,
+                        'company_id' => $companyId,
+                        'container_id' => $containerRow['container']->id,
+                        'container_label' => ContainerAmount::label($ingredient, $containerRow['container']),
+                        'container_factor' => (string) $containerRow['container']->factor,
+                        'pieces' => (string) $containerRow['pieces'],
+                    ]);
+                }
+
                 // Out of source (negative), into destination (positive). Both
                 // reference this transfer so the ledger links back to it.
-                $this->writeMovement->handle(
+                $outLeg = $this->writeMovement->handle(
                     branch: $from,
                     ingredient: $ingredient,
                     type: StockMovementType::TransferOut,
@@ -140,7 +175,7 @@ final readonly class TransferStockAction
                     actor: $actor,
                     note: $note,
                 );
-                $this->writeMovement->handle(
+                $inLeg = $this->writeMovement->handle(
                     branch: $to,
                     ingredient: $ingredient,
                     type: StockMovementType::TransferIn,
@@ -151,6 +186,16 @@ final readonly class TransferStockAction
                     actor: $actor,
                     note: $note,
                 );
+
+                // B3 — the breakdown moves with the stock (leaf containers).
+                if ($row['containers'] !== []) {
+                    $this->breakdown->move($ingredient, (int) $from->id, (int) $to->id, ContainerBreakdownAction::leaves($ingredient, $row['containers']), 'transfer_out', 'transfer_in', $actor, [
+                        'reference_type' => BranchTransfer::class,
+                        'reference_id' => (int) $transfer->id,
+                        'stock_movement_id' => (int) $outLeg->id,
+                        'to_stock_movement_id' => (int) $inLeg->id,
+                    ]);
+                }
             }
 
             $this->writeAuditLog->handle(new AuditLogData(

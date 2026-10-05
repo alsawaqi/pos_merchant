@@ -133,7 +133,9 @@ it('reopens in the base unit once the entered unit no longer converts to what is
     $this->putJson("/api/products/{$product->uuid}/recipe", [
         'lines' => [['ingredient_uuid' => $cups->uuid, 'quantity' => '2', 'unit' => 'box']],
     ])->assertOk();
-    expect($this->getJson("/api/products/{$product->uuid}")->json('data.recipe_lines.0.entered_unit'))->toBe('box');
+    // LAUNCH review add-on (A2) — the line names the box by its token
+    // (names are no longer unique); "box" still resolved while it was.
+    expect($this->getJson("/api/products/{$product->uuid}")->json('data.recipe_lines.0.entered_unit'))->toBe($box->token());
 
     // The merchant re-sizes the box: "2 box" would now mean 20, but 24 is stored.
     $box->forceFill(['factor' => '10'])->save();

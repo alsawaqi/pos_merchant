@@ -13,6 +13,7 @@ use App\Http\Resources\Pos\Inventory\StockCountResource;
 use App\Models\Branch;
 use App\Models\Ingredient;
 use App\Models\StockCount;
+use App\Support\Inventory\ContainerAmount;
 use App\Support\MerchantTenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -45,7 +46,7 @@ class StockCountsController extends Controller
         return StockCountResource::collection(
             StockCount::query()
                 ->where('branch_id', $branch->id)
-                ->with(['lines.ingredient', 'recordedByUser', 'recordedByPosStaff'])
+                ->with(['lines.ingredient', 'lines.containers', 'recordedByUser', 'recordedByPosStaff'])
                 ->orderByDesc('counted_at')
                 ->orderByDesc('id')
                 ->paginate($perPage),
@@ -83,10 +84,26 @@ class StockCountsController extends Controller
             }
             $countedPieces = $line['counted_pieces'] ?? null;
             $countedUnits = $line['counted_units'] ?? null;
+            $unit = $line['unit'] ?? null;
+
+            // LAUNCH review add-on (D2) — counted BY CONTAINER: the total is
+            // Σ pieces × size, or the typed total when lower (part-used).
+            $containers = [];
+            if (! empty($line['containers'])) {
+                try {
+                    $containers = ContainerAmount::rows($ingredient, (array) $line['containers'], allowZero: true);
+                    $countedUnits = (string) ContainerAmount::amount($ingredient, $containers, $countedUnits, is_string($unit) && $unit !== '' ? $unit : null, $this->units, allowZero: true);
+                } catch (RuntimeException $e) {
+                    return response()->json(['message' => $e->getMessage()], 422);
+                }
+                $lines[] = ['ingredient' => $ingredient, 'counted_pieces' => null, 'counted_units' => $countedUnits, 'containers' => $containers];
+
+                continue;
+            }
+
             // LAUNCH item kind, A7 — counted in another unit of the item: 2.5 l
             // of a ml item, 3 crates, or containers ('@piece', which counts
             // as pieces so the line keeps them). Pieces sent win, as before.
-            $unit = $line['unit'] ?? null;
             if (is_string($unit) && $unit !== '' && $countedUnits !== null && $countedPieces === null) {
                 if ($unit === IngredientUnitConverter::PIECE_UNIT) {
                     $countedPieces = $countedUnits;
@@ -117,7 +134,7 @@ class StockCountsController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $count->load(['lines.ingredient', 'recordedByUser', 'recordedByPosStaff']);
+        $count->load(['lines.ingredient', 'lines.containers', 'recordedByUser', 'recordedByPosStaff']);
 
         return response()->json([
             'data' => (new StockCountResource($count))->resolve($request),

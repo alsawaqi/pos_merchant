@@ -9,7 +9,10 @@ use App\Data\Security\AuditLogData;
 use App\Models\Ingredient;
 use App\Models\Supplier;
 use App\Models\User;
+use App\Support\Inventory\Containers;
+use App\Support\Inventory\CountContainerMirror;
 use App\Support\Inventory\IngredientUnitLock;
+use App\Support\Inventory\ItemCodes;
 use App\Support\MerchantTenantContext;
 use App\Support\Recipes\PrepGraph;
 use Illuminate\Support\Facades\DB;
@@ -45,7 +48,8 @@ final readonly class UpdateIngredientAction
         'piece_unit_label_ar',
         'units_per_piece',
         'allow_fractional_pieces',
-        'default_unit_cost',
+        // LAUNCH review add-on (A1) — default_unit_cost is no longer typed:
+        // it comes from purchases (UpdateIngredientRequest refuses a change).
         'min_stock_threshold',
         'primary_supplier_id',
         'status',
@@ -100,6 +104,39 @@ final readonly class UpdateIngredientAction
 
         return DB::transaction(function () use ($ingredient, $attributes, $actor, $companyId): Ingredient {
             $changes = [];
+
+            // LAUNCH review add-on (A4) — the SKU: a typed code (unique across
+            // ingredients and products), or blank = keep / generate one.
+            if (array_key_exists('sku', $attributes)) {
+                ItemCodes::lockSku($companyId);
+                $sku = ItemCodes::normalize($attributes['sku']);
+                if ($sku === '') {
+                    $sku = $ingredient->sku !== null && trim((string) $ingredient->sku) !== ''
+                        ? (string) $ingredient->sku
+                        : ItemCodes::nextSku($companyId, ItemCodes::PREFIX_INGREDIENT);
+                } elseif (($owner = ItemCodes::skuOwner($companyId, $sku, (int) $ingredient->id)) !== null) {
+                    throw new RuntimeException(ItemCodes::skuMessage($owner));
+                }
+                if ($sku !== (string) $ingredient->sku) {
+                    $changes['sku'] = ['old' => $ingredient->sku, 'new' => $sku];
+                    $ingredient->sku = $sku;
+                }
+            }
+
+            // A3 — the count container: one of the item's containers (or none),
+            // mirrored into the piece_* columns devices read.
+            if (array_key_exists('count_container_uuid', $attributes)) {
+                $uuid = $attributes['count_container_uuid'];
+                $container = ($uuid === null || $uuid === '') ? null : Containers::findByUuid($ingredient, (string) $uuid);
+                if ($container === null && $uuid !== null && $uuid !== '') {
+                    throw new RuntimeException('The count container must be one of this item\'s containers.');
+                }
+                foreach (['piece_unit_label', 'piece_unit_label_ar', 'units_per_piece'] as $mirrored) {
+                    unset($attributes[$mirrored]);
+                }
+                $changes += CountContainerMirror::apply($ingredient, $container);
+            }
+
             foreach (self::MUTABLE_FIELDS as $field) {
                 if (! array_key_exists($field, $attributes)) {
                     continue;

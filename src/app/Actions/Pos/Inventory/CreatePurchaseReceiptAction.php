@@ -60,6 +60,7 @@ final readonly class CreatePurchaseReceiptAction
         private ReceiveAndDistributeIngredientStockAction $receiveIngredient,
         private ReceiveAndDistributeProductStockAction $receiveProduct,
         private RecordPurchaseExpenseAction $recordExpense,
+        private ContainerBreakdownAction $breakdown,
     ) {}
 
     /**
@@ -110,6 +111,9 @@ final readonly class CreatePurchaseReceiptAction
                 $line['allocations'] = [[
                     'branch' => $destinationBranch,
                     'quantity' => $line['quantity'],
+                    // LAUNCH review add-on (B3) — the whole breakdown moves too.
+                    'leaves' => $line['leaves'] ?? [],
+                    'pieces' => $line['pieces'] ?? null,
                 ]];
 
                 return $line;
@@ -247,6 +251,13 @@ final readonly class CreatePurchaseReceiptAction
             'purchase_unit' => $line['purchase_unit'] ?? null,
             'purchase_quantity' => isset($line['purchase_quantity']) ? StockDecimal::quantity($line['purchase_quantity']) : null,
             'unit_price' => isset($line['unit_price']) ? StockDecimal::unitCost($line['unit_price']) : null,
+            // LAUNCH review add-on (C1, D3) — the container / pack it was bought
+            // in, its label + size as they stood, and how many.
+            'container_id' => isset($line['container']) ? (int) $line['container']->id : null,
+            'pack_id' => isset($line['pack']) ? (int) $line['pack']->id : null,
+            'container_label' => $line['container_label'] ?? null,
+            'container_factor' => $line['container_factor'] ?? null,
+            'pieces' => $line['pieces'] ?? null,
         ]);
 
         $paidUnitCost = null;
@@ -278,6 +289,27 @@ final readonly class CreatePurchaseReceiptAction
             $expenseId = $result['expense']?->id;
             $paidUnitCost = $result['unit_cost'];
             $category = ExpenseCategory::Ingredients->value;
+
+            // LAUNCH review add-on (B3) — the breakdown: the containers land at
+            // the warehouse, then each branch share moves with its stock.
+            $leaves = $line['leaves'] ?? [];
+            if ($leaves !== []) {
+                $ref = [
+                    'reference_type' => PurchaseReceiptLine::class,
+                    'reference_id' => (int) $receiptLine->id,
+                    'occurred_at' => $movementAt,
+                ];
+                $this->breakdown->add($ingredient, null, $leaves, 'purchase', $actor, $ref + ['stock_movement_id' => (int) $result['received']->id]);
+                foreach (array_values($line['allocations']) as $i => $allocation) {
+                    $shareLeaves = $allocation['leaves'] ?? [];
+                    if ($shareLeaves === []) {
+                        continue;
+                    }
+                    $this->breakdown->move($ingredient, null, (int) $allocation['branch']->id, $shareLeaves, 'allocation_out', 'allocation_in', $actor, $ref + [
+                        'to_stock_movement_id' => isset($result['allocations'][$i]) ? (int) $result['allocations'][$i]->id : null,
+                    ]);
+                }
+            }
         } else {
             /** @var Product $product */
             $product = $line['product'];
@@ -379,6 +411,6 @@ final readonly class CreatePurchaseReceiptAction
             'branch_uuid' => (string) $a['branch']->uuid,
             'branch_name' => (string) $a['branch']->name,
             'quantity' => (string) $a['quantity'],
-        ], $allocations);
+        ] + (isset($a['pieces']) ? ['pieces' => (string) $a['pieces']] : []), $allocations);
     }
 }

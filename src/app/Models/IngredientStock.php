@@ -22,6 +22,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'ingredient_id',
     'quantity',
     'last_movement_at',
+    // LAUNCH review add-on (B) — the warehouse breakdown's last correction.
+    'containers_counted_at',
 ])]
 class IngredientStock extends Model
 {
@@ -37,6 +39,7 @@ class IngredientStock extends Model
         return [
             'quantity' => ScaledDecimal::class.':3,4',
             'last_movement_at' => 'datetime',
+            'containers_counted_at' => 'datetime',
         ];
     }
 

@@ -44,6 +44,8 @@ class PrepItemResource extends JsonResource
             'prep_yield_quantity' => (string) $this->prep_yield_quantity,
             'status' => $this->status,
             'unit_cost' => $graph->unitCost((int) $this->id),
+            // LAUNCH review add-on (A1) — every raw ingredient has a cost.
+            'cost_complete' => $graph->costComplete((int) $this->id),
             'batch_cost' => (string) StockDecimal::unitCost((string) $graph->batchCostExact((int) $this->id)->toScale(StockDecimal::UNIT_COST_SCALE, RoundingMode::HALF_UP)),
             'depth' => $graph->depth((int) $this->id),
             'lines' => $this->whenLoaded('prepRecipeLines', fn (): array => $this->prepRecipeLines->map(function (IngredientRecipe $line) use ($graph, $quantities): array {
@@ -61,6 +63,8 @@ class PrepItemResource extends JsonResource
                         'unit' => $ingredient->unit?->value,
                         'is_prep' => (bool) $ingredient->is_prep,
                         'default_unit_cost' => $graph->unitCost((int) $ingredient->id),
+                        // LAUNCH review add-on (A1) — false = "No cost yet".
+                        'has_cost' => $graph->costComplete((int) $ingredient->id),
                         'piece_unit_label' => $ingredient->piece_unit_label,
                         'deleted' => $ingredient->deleted_at !== null,
                     ],

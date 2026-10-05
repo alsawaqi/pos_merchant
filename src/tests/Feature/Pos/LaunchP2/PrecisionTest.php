@@ -21,8 +21,12 @@ it('keeps a per-gram cost to 6 decimals end to end', function (): void {
     $ctx = makeMerchantActor();
     $flour = Ingredient::factory()->for($ctx['company'], 'company')->create(['unit' => 'g', 'default_unit_cost' => '0']);
 
-    $this->patchJson("/api/ingredients/{$flour->uuid}", ['default_unit_cost' => '0.00035'])
-        ->assertOk()->assertJsonPath('data.default_unit_cost', '0.00035');
+    // LAUNCH review add-on (A1) — the cost comes from a purchase now (it can
+    // no longer be typed): 1 kg for 0.350 OMR is 0.00035 per g.
+    $this->postJson('/api/purchase-receipts', ['lines' => [[
+        'item_type' => 'ingredient', 'item_uuid' => $flour->uuid, 'quantity' => '1', 'unit' => 'kg', 'line_cost' => '0.350',
+    ]]])->assertCreated();
+    $this->getJson('/api/ingredients')->assertOk()->assertJsonPath('data.0.default_unit_cost', '0.00035');
     expect((string) $flour->fresh()->default_unit_cost)->toBe('0.00035');
 });
 

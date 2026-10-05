@@ -140,7 +140,9 @@ it('A3 refuses a pack size outside the kind or named like a unit, and creates no
 
     $this->postJson('/api/ingredients', [
         'name' => 'Oil', 'unit' => 'ml',
-        'pack_sizes' => [['name' => 'tin', 'amount' => '5', 'unit' => 'l'], ['name' => 'tin', 'amount' => '1', 'unit' => 'l']],
+        // LAUNCH review add-on (A2) — the same word may have another size;
+        // the same name AND size twice is refused.
+        'pack_sizes' => [['name' => 'tin', 'amount' => '5', 'unit' => 'l'], ['name' => 'tin', 'amount' => '5000', 'unit' => 'ml']],
     ])->assertStatus(422)->assertJsonValidationErrors(['pack_sizes.1.name']);
 
     expect(Ingredient::query()->where('name', 'Oil')->exists())->toBeFalse();

@@ -81,31 +81,20 @@ class UpdateProductRequest extends FormRequest
                 }
             }
 
+            // LAUNCH review add-on (A4, A5) — unique per merchant across
+            // ingredients and products (SKU, case-insensitive) and across the
+            // item barcodes table (barcode).
             if ($this->has('sku')) {
                 $sku = $this->input('sku');
-                if (is_string($sku) && $sku !== '') {
-                    $taken = Product::query()
-                        ->where('company_id', $companyId)
-                        ->where('sku', $sku)
-                        ->where('id', '!=', $currentId)
-                        ->exists();
-                    if ($taken) {
-                        $v->errors()->add('sku', 'A product with this SKU already exists at your company.');
-                    }
+                if (is_string($sku) && trim($sku) !== '' && ($owner = \App\Support\Inventory\ItemCodes::skuOwner($companyId, $sku, null, (int) $currentId)) !== null) {
+                    $v->errors()->add('sku', \App\Support\Inventory\ItemCodes::skuMessage($owner));
                 }
             }
 
             if ($this->has('barcode')) {
                 $barcode = $this->input('barcode');
-                if (is_string($barcode) && $barcode !== '') {
-                    $taken = Product::query()
-                        ->where('company_id', $companyId)
-                        ->where('barcode', $barcode)
-                        ->where('id', '!=', $currentId)
-                        ->exists();
-                    if ($taken) {
-                        $v->errors()->add('barcode', 'A product with this barcode already exists at your company.');
-                    }
+                if (is_string($barcode) && trim($barcode) !== '' && ($owner = \App\Support\Inventory\ItemCodes::barcodeOwner($companyId, $barcode, null, (int) $currentId)) !== null) {
+                    $v->errors()->add('barcode', \App\Support\Inventory\ItemCodes::barcodeMessage($owner));
                 }
             }
         });

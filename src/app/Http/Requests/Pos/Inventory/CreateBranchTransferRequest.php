@@ -23,7 +23,12 @@ class CreateBranchTransferRequest extends FormRequest
             'note' => ['nullable', 'string', 'max:500'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.ingredient_uuid' => ['required', 'uuid'],
-            'lines.*.quantity' => ['required', 'numeric', 'gt:0'],
+            'lines.*.quantity' => ['required_without:lines.*.containers', 'nullable', 'numeric', 'gt:0'],
+            // LAUNCH review add-on (D1) — by container: the amount fills in as
+            // pieces × size and may only be lowered (checked in the action).
+            'lines.*.containers' => ['sometimes', 'array', 'max:20'],
+            'lines.*.containers.*.container_uuid' => ['required', 'string', 'max:64'],
+            'lines.*.containers.*.pieces' => ['required', 'numeric', 'gt:0', 'max:999999.9999'],
             // #13 — per-line entered unit (alt-unit name, or null = base);
             // converted to base before the over-draw check + the movements.
             'lines.*.unit' => ['nullable', 'string', 'max:32'],

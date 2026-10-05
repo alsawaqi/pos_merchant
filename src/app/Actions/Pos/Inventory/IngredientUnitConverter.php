@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Pos\Inventory;
 
 use App\Models\Ingredient;
-use App\Models\IngredientAltUnit;
+use App\Support\Inventory\Containers;
 use RuntimeException;
 
 /**
@@ -20,7 +20,9 @@ use RuntimeException;
  *
  *   $unit === null OR the ingredient's base unit  → factor 1 (already base)
  *   '@piece' (LAUNCH-P2)                          → × the ingredient's piece ratio
- *   an alt unit's name                            → × that unit's factor
+ *                                                   (the count container's size)
+ *   a container token "#…" (review add-on A2)     → × that container's factor
+ *   an alt unit's name (while unique)             → × that unit's factor
  *   kg↔g / l↔ml                                   → × the metric factor
  *   lb / oz, gal / fl oz (item kind G1)           → × the exact US size
  *   anything else                                 → RuntimeException (422)
@@ -86,10 +88,10 @@ final readonly class IngredientUnitConverter
             return $ratio;
         }
 
-        $alt = IngredientAltUnit::query()
-            ->where('ingredient_id', $ingredient->id)
-            ->where('name', $unit)
-            ->first();
+        // LAUNCH review add-on (A2) — a container token ("#…", never
+        // ambiguous) or a container NAME while exactly one live container has
+        // it; an unknown token or an ambiguous name throws a clear 422.
+        $alt = Containers::resolve($ingredient, $unit);
 
         if ($alt !== null) {
             // Defence-in-depth: the request layer enforces factor > 0, but if a

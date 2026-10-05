@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Pos;
 
 use App\Actions\Pos\Inventory\CreatePurchaseReceiptAction;
+use App\Actions\Pos\Inventory\ResolvePurchaseContainerLineAction;
 use App\Actions\Pos\Inventory\ResolvePurchaseLineUnitAction;
 use App\Actions\Pos\Inventory\WriteReceiptPaymentAction;
 use App\Enums\ExpenseCategory;
@@ -45,6 +46,7 @@ class PurchaseReceiptController extends Controller
         private readonly CreatePurchaseReceiptAction $create,
         private readonly WriteReceiptPaymentAction $writePayment,
         private readonly ResolvePurchaseLineUnitAction $lineUnits,
+        private readonly ResolvePurchaseContainerLineAction $containerLines,
     ) {}
 
     public function index(Request $request): AnonymousResourceCollection
@@ -267,6 +269,8 @@ class PurchaseReceiptController extends Controller
             $resolved['product'] = $product;
         }
 
+        $byContainer = isset($row['pieces']) && $row['pieces'] !== null && $row['pieces'] !== '';
+
         $allocations = [];
         foreach ((array) ($row['allocations'] ?? []) as $alloc) {
             $branch = Branch::query()
@@ -276,7 +280,38 @@ class PurchaseReceiptController extends Controller
             if ($branch === null) {
                 return response()->json(['message' => 'A selected branch was not found.'], 422);
             }
-            $allocations[] = ['branch' => $branch, 'quantity' => $alloc['quantity']];
+            $allocations[] = $byContainer
+                ? ['branch' => $branch, 'pieces' => $alloc['pieces'] ?? $alloc['quantity'] ?? 0]
+                : ['branch' => $branch, 'quantity' => $alloc['quantity']];
+        }
+
+        // LAUNCH review add-on (C1, D3) — bought BY CONTAINER (an ingredient's
+        // container, a physical item's pack): pieces, an amount that may only
+        // be lowered, the price paid for the line, and the split in pieces.
+        if ($byContainer) {
+            try {
+                $resolvedLine = $this->containerLines->handle($resolved['ingredient'], $resolved['product'], $row, $allocations);
+            } catch (RuntimeException $e) {
+                return response()->json(['message' => $e->getMessage()], 422);
+            }
+
+            return $resolved + [
+                'quantity' => $resolvedLine['quantity'],
+                'line_cost' => $resolvedLine['line_cost'],
+                'tax_amount' => $row['tax_amount'] ?? null,
+                'tax_rate' => $row['tax_rate'] ?? null,
+                'allocations' => $resolvedLine['allocations'],
+                'purchase_unit' => null,
+                'purchase_quantity' => null,
+                'unit_price' => null,
+                'paid_unit_cost' => null,
+                'container' => $resolvedLine['container'],
+                'pack' => $resolvedLine['pack'],
+                'container_label' => $resolvedLine['container_label'],
+                'container_factor' => $resolvedLine['container_factor'],
+                'pieces' => $resolvedLine['pieces'],
+                'leaves' => $resolvedLine['leaves'],
+            ];
         }
 
         // LAUNCH-P2 P2-3 — the line may be entered in a purchase unit with a

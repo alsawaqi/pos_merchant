@@ -6,6 +6,9 @@ namespace App\Support\Recipes;
 
 use App\Actions\Pos\Inventory\IngredientUnitConverter;
 use App\Models\Ingredient;
+use App\Models\IngredientAltUnit;
+use App\Support\Inventory\Containers;
+use App\Support\Inventory\ContainerToken;
 use App\Support\StockDecimal;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
@@ -155,22 +158,60 @@ final readonly class RecipeQuantity
         return self::trim(BigDecimal::of(self::text($enteredQuantity))).' '.$enteredUnit;
     }
 
-    /** A user-facing label for a unit token ('@piece' → the piece label). */
+    /** A user-facing label for a unit token ('@piece' → the piece label, a container → its name and size). */
     public function label(Ingredient $ingredient, ?string $token): string
     {
         if ($token === IngredientUnitConverter::PIECE_UNIT) {
             return $ingredient->piece_unit_label ?? 'piece';
         }
+        if ($token !== null && ContainerToken::isToken($token)) {
+            try {
+                $container = Containers::resolve($ingredient, $token);
+            } catch (Throwable) {
+                $container = null;
+            }
+            if ($container !== null) {
+                return Containers::displayName($container, $ingredient, Containers::of($ingredient));
+            }
+        }
 
         return ($token === null || $token === '') ? $this->baseUnit($ingredient) : $token;
     }
 
-    /** '' / NULL / the base unit → the base unit's name; anything else as given. */
+    /**
+     * '' / NULL / the base unit → the base unit's name; a container (named by
+     * its token, by a name only it has, or '@piece' once the item has a count
+     * container) → that container's token (LAUNCH review add-on A2: names are
+     * no longer unique, so the stored line names the container itself);
+     * anything else as given.
+     */
     public function token(Ingredient $ingredient, ?string $unit): string
     {
         $unit = $unit === null ? '' : trim($unit);
+        if ($unit === '') {
+            return $this->baseUnit($ingredient);
+        }
 
-        return $unit === '' ? $this->baseUnit($ingredient) : $unit;
+        $container = $unit === IngredientUnitConverter::PIECE_UNIT
+            ? $this->countContainer($ingredient)
+            : Containers::resolve($ingredient, $unit);
+
+        return $container !== null ? $container->token() : $unit;
+    }
+
+    /** The item's live count container whose size still equals its piece ratio, or null. */
+    private function countContainer(Ingredient $ingredient): ?IngredientAltUnit
+    {
+        if ($ingredient->count_container_id === null) {
+            return null;
+        }
+        $container = Containers::of($ingredient)->first(static fn (IngredientAltUnit $c): bool => (int) $c->id === (int) $ingredient->count_container_id);
+        $ratio = $ingredient->unitsPerPiece();
+        if ($container === null || $ratio === null || abs((float) $container->factor - $ratio) > 1e-9) {
+            return null;
+        }
+
+        return $container;
     }
 
     private function baseUnit(Ingredient $ingredient): string
@@ -189,7 +230,9 @@ final readonly class RecipeQuantity
             return BigDecimal::one();
         }
         if ($token !== IngredientUnitConverter::PIECE_UNIT && $ingredient->relationLoaded('altUnits')) {
-            $alt = $ingredient->altUnits->firstWhere('name', $token);
+            // LAUNCH review add-on (A2) — a container token, or a name only
+            // one live container has.
+            $alt = Containers::resolve($ingredient, $token);
             if ($alt !== null) {
                 if ((float) $alt->factor <= 0) {
                     throw new RuntimeException("Unit '{$token}' has an invalid (non-positive) conversion factor.");

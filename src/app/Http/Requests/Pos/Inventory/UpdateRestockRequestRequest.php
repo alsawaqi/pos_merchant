@@ -29,7 +29,12 @@ class UpdateRestockRequestRequest extends FormRequest
         return [
             'lines' => ['required', 'array', 'min:1', 'max:50'],
             'lines.*.ingredient_uuid' => ['required', 'string', 'uuid'],
-            'lines.*.quantity_requested' => ['required', 'numeric', 'gt:0', 'max:999999.999'],
+            'lines.*.quantity_requested' => ['required_without:lines.*.container_uuid', 'nullable', 'numeric', 'gt:0', 'max:999999.999'],
+            // LAUNCH review add-on (D4) — an optional container on the line
+            // (what a scan adds): the amount fills in as pieces × size and may
+            // only be lowered.
+            'lines.*.container_uuid' => ['nullable', 'string', 'max:64'],
+            'lines.*.pieces' => ['nullable', 'required_with:lines.*.container_uuid', 'numeric', 'gt:0', 'max:999999.9999'],
             // #13 — per-line entered unit (alt-unit name, or null = base).
             'lines.*.unit' => ['nullable', 'string', 'max:32'],
             'lines.*.note' => ['nullable', 'string', 'max:500'],

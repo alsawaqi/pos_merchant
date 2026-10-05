@@ -46,6 +46,10 @@ use Illuminate\Support\Str;
     // records that make one waste event (pos_admin 2026_10_02_100005).
     'prep_ingredient_id',
     'waste_group_uuid',
+    // LAUNCH review add-on (D3) — waste entered by container.
+    'container_id',
+    'pieces',
+    'container_label',
 ])]
 class WasteRecord extends Model
 {
@@ -65,6 +69,7 @@ class WasteRecord extends Model
             'unit_at_set' => IngredientUnit::class,
             'unit_cost_at_time' => ScaledDecimal::class.':3,6',
             'occurred_at' => 'datetime',
+            'pieces' => ScaledDecimal::class.':0,4',
         ];
     }
 

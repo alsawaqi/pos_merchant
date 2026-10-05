@@ -41,6 +41,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'purchase_quantity',
     'unit_price',
     'unit_cost',
+    // LAUNCH review add-on (C1, D3) — bought in a container / pack.
+    'container_id',
+    'pack_id',
+    'container_label',
+    'container_factor',
+    'pieces',
 ])]
 class PurchaseReceiptLine extends Model
 {
@@ -60,6 +66,8 @@ class PurchaseReceiptLine extends Model
             'purchase_quantity' => ScaledDecimal::class.':3,4',
             'unit_price' => ScaledDecimal::class.':3,6',
             'unit_cost' => ScaledDecimal::class.':3,6',
+            'pieces' => ScaledDecimal::class.':0,4',
+            'container_factor' => ScaledDecimal::class.':0,4',
         ];
     }
 

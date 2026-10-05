@@ -62,6 +62,17 @@ final readonly class PlanMenuImportAction
         }
 
         $catalogue = $this->catalogue($companyId);
+        // LAUNCH review add-on (A4, A5) — SKUs are unique across ingredients and
+        // products (case-insensitive), barcodes across the item barcodes too.
+        $ingredientSkus = \Illuminate\Support\Facades\DB::table('pos_ingredients')
+            ->where('company_id', $companyId)->whereNull('deleted_at')->whereNotNull('sku')->pluck('sku')
+            ->mapWithKeys(static fn ($sku): array => [mb_strtolower((string) $sku) => true])->all();
+        $itemBarcodes = \Illuminate\Support\Facades\DB::table('pos_item_barcodes as b')
+            ->leftJoin('pos_ingredients as i', 'i.id', '=', 'b.ingredient_id')
+            ->leftJoin('pos_products as p', 'p.id', '=', 'b.product_id')
+            ->where('b.company_id', $companyId)->whereNull('b.deleted_at')
+            ->get(['b.barcode', 'i.name as ingredient_name', 'p.name as product_name'])
+            ->mapWithKeys(static fn ($row): array => [(string) $row->barcode => (string) ($row->ingredient_name ?? $row->product_name)])->all();
         $seenSku = [];
         $seenBarcode = [];
         $seenName = [];
@@ -182,12 +193,18 @@ final readonly class PlanMenuImportAction
                     }
                 }
             }
-            if ($sku !== '' && ($match === null || $match['sku'] === null || $match['sku'] === '')) {
+            if ($sku !== '' && isset($ingredientSkus[mb_strtolower($sku)])) {
+                // An ingredient's SKU (review add-on A4): not a menu product.
+                $error('sku_physical_item', 'sku');
+            } elseif ($sku !== '' && ($match === null || $match['sku'] === null || $match['sku'] === '')) {
                 $values['sku'] = $sku;
             }
             if ($barcode !== '') {
                 $owner = $catalogue['byBarcode'][$barcode] ?? null;
-                if ($owner !== null && ($match === null || $owner['id'] !== $match['id'])) {
+                if (isset($itemBarcodes[$barcode])) {
+                    // A container / item barcode (review add-on A5).
+                    $error('barcode_taken', 'barcode', ['product' => $itemBarcodes[$barcode]]);
+                } elseif ($owner !== null && ($match === null || $owner['id'] !== $match['id'])) {
                     $error('barcode_taken', 'barcode', ['product' => $owner['name']]);
                 } else {
                     $values['barcode'] = $barcode;

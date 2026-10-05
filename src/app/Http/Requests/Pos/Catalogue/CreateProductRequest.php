@@ -95,28 +95,17 @@ class CreateProductRequest extends FormRequest
                 }
             }
 
-            // SKU uniqueness (when set).
+            // SKU uniqueness (when set). LAUNCH review add-on (A4) — across
+            // ingredients and products, case-insensitive.
             $sku = $this->input('sku');
-            if (is_string($sku) && $sku !== '') {
-                $taken = Product::query()
-                    ->where('company_id', $companyId)
-                    ->where('sku', $sku)
-                    ->exists();
-                if ($taken) {
-                    $v->errors()->add('sku', 'A product with this SKU already exists at your company.');
-                }
+            if (is_string($sku) && trim($sku) !== '' && ($owner = \App\Support\Inventory\ItemCodes::skuOwner($companyId, $sku)) !== null) {
+                $v->errors()->add('sku', \App\Support\Inventory\ItemCodes::skuMessage($owner));
             }
 
-            // Barcode uniqueness (when set).
+            // Barcode uniqueness (when set). A5 — across the item barcodes too.
             $barcode = $this->input('barcode');
-            if (is_string($barcode) && $barcode !== '') {
-                $taken = Product::query()
-                    ->where('company_id', $companyId)
-                    ->where('barcode', $barcode)
-                    ->exists();
-                if ($taken) {
-                    $v->errors()->add('barcode', 'A product with this barcode already exists at your company.');
-                }
+            if (is_string($barcode) && trim($barcode) !== '' && ($owner = \App\Support\Inventory\ItemCodes::barcodeOwner($companyId, $barcode)) !== null) {
+                $v->errors()->add('barcode', \App\Support\Inventory\ItemCodes::barcodeMessage($owner));
             }
         });
     }

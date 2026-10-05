@@ -39,6 +39,11 @@ class BranchStockResource extends JsonResource
             'stock_status' => $this->stockStatus(),
             'stock_value' => $this->stockValue(),
             'has_stock_row' => $this->exists,
+            // LAUNCH review add-on (B2) — the breakdown by container under the
+            // live total, and when it was last counted (or a total-only count).
+            'breakdown' => $this->resource->breakdown ?? [],
+            'containers_counted_at' => $this->containers_counted_at?->toIso8601String(),
+            'containers_total_count_at' => $this->containers_total_count_at?->toIso8601String(),
             // Ingredient summary inlined so the list view
             // doesn't need a second round-trip per row.
             'ingredient' => $this->whenLoaded('ingredient', fn (): array => [
@@ -48,6 +53,8 @@ class BranchStockResource extends JsonResource
                 'name_ar' => $this->ingredient->name_ar,
                 'unit' => $this->ingredient->unit?->value,
                 'default_unit_cost' => (string) $this->ingredient->default_unit_cost,
+                // LAUNCH review add-on (A1) — false = "No cost yet".
+                'has_cost' => $this->ingredient->hasCost(),
                 'min_stock_threshold' => $this->ingredient->min_stock_threshold !== null
                     ? (string) $this->ingredient->min_stock_threshold
                     : null,

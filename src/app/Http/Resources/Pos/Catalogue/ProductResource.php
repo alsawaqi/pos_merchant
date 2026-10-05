@@ -114,6 +114,8 @@ class ProductResource extends JsonResource
             //               modal pre-populates from this.
             'has_recipe' => $this->hasRecipe(),
             'theoretical_cost' => $this->theoreticalCost(),
+            // LAUNCH review add-on (A1) — false while a recipe ingredient has "No cost yet".
+            'theoretical_cost_complete' => \App\Support\Recipes\RecipeCostComplete::forProduct($this->resource),
             'recipe_lines' => ProductRecipeResource::collection($this->whenLoaded('recipeLines')),
             // P-G2 — internal item (cups/lids): never on the POS menu or
             // tablet; full stock participation.

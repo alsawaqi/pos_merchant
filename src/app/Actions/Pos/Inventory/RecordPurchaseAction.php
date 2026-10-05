@@ -240,8 +240,11 @@ final readonly class RecordPurchaseAction
 
             // Step 4: ingredient updates — the loose-batch piece ratio (last
             // batch wins). The cost was averaged before step 2.
+            // LAUNCH review add-on (A3) — not once the count container is a
+            // container row: its size is fixed (the mirror follows the row),
+            // and resizing it here would silently re-size a used container.
             $dirty = [];
-            if ($isLoose && $batchRatio !== null && $ingredient->piece_unit_label !== null) {
+            if ($isLoose && $batchRatio !== null && $ingredient->piece_unit_label !== null && $ingredient->count_container_id === null) {
                 $dirty['units_per_piece'] = number_format($batchRatio, 4, '.', '');
             }
             if ($dirty !== []) {
