@@ -71,6 +71,7 @@ final readonly class ContainerBreakdownAction
     public function add(Ingredient $ingredient, ?int $branchId, array $leaves, string $reason, ?User $actor, array $ref = []): void
     {
         DB::transaction(function () use ($ingredient, $branchId, $leaves, $reason, $actor, $ref): void {
+            $this->lockContainers($ingredient);
             foreach ($leaves as $containerId => $pieces) {
                 $this->change($ingredient, $branchId, (int) $containerId, $pieces, $reason, $actor, $ref);
             }
@@ -87,6 +88,7 @@ final readonly class ContainerBreakdownAction
     public function take(Ingredient $ingredient, ?int $branchId, array $leaves, string $reason, ?User $actor, array $ref = []): void
     {
         DB::transaction(function () use ($ingredient, $branchId, $leaves, $reason, $actor, $ref): void {
+            $this->lockContainers($ingredient);
             foreach ($leaves as $containerId => $pieces) {
                 $this->change($ingredient, $branchId, (int) $containerId, $pieces->negated(), $reason, $actor, $ref);
             }
@@ -105,6 +107,7 @@ final readonly class ContainerBreakdownAction
     public function move(Ingredient $ingredient, ?int $fromBranchId, ?int $toBranchId, array $leaves, string $outReason, string $inReason, ?User $actor, array $ref = []): void
     {
         DB::transaction(function () use ($ingredient, $fromBranchId, $toBranchId, $leaves, $outReason, $inReason, $actor, $ref): void {
+            $this->lockContainers($ingredient);
             foreach ($leaves as $containerId => $pieces) {
                 $this->change($ingredient, $fromBranchId, (int) $containerId, $pieces->negated(), $outReason, $actor, $ref);
                 $this->change($ingredient, $toBranchId, (int) $containerId, $pieces, $inReason, $actor, array_merge($ref, [
@@ -125,17 +128,15 @@ final readonly class ContainerBreakdownAction
     public function set(Ingredient $ingredient, ?int $branchId, array $leaves, string $reason, ?User $actor, array $ref = [], ?int $posStaffId = null): void
     {
         DB::transaction(function () use ($ingredient, $branchId, $leaves, $reason, $actor, $ref, $posStaffId): void {
+            $this->lockContainers($ingredient);
             $current = $this->balances($ingredient, $branchId)->keyBy('container_id');
             $ids = array_unique(array_merge(array_map('intval', array_keys($leaves)), $current->keys()->map(static fn ($id): int => (int) $id)->all()));
             sort($ids);
             foreach ($ids as $containerId) {
-                $target = $leaves[$containerId] ?? BigDecimal::zero();
-                $have = Containers::decimal($current->get($containerId)?->getRawOriginal('pieces') ?? '0');
-                $delta = $target->minus($have);
-                if ($delta->isZero()) {
-                    continue;
-                }
-                $this->change($ingredient, $branchId, $containerId, $delta, $reason, $actor, $ref, $posStaffId);
+                // Fix order B-1 (L6) — the TARGET is passed: the delta is taken
+                // from the locked balance row, so a purchase landing between
+                // the read and the write cannot make "set" inexact.
+                $this->change($ingredient, $branchId, $containerId, $leaves[$containerId] ?? BigDecimal::zero(), $reason, $actor, $ref, $posStaffId, true);
             }
             $this->stamp($ingredient, $branchId, 'containers_counted_at', $ref['occurred_at'] ?? null);
         });
@@ -171,32 +172,41 @@ final readonly class ContainerBreakdownAction
      *
      * @param  array{reference_type?: ?string, reference_id?: ?int, stock_movement_id?: ?int, occurred_at?: ?DateTimeInterface}  $ref
      */
-    private function change(Ingredient $ingredient, ?int $branchId, int $containerId, BigDecimal $delta, string $reason, ?User $actor, array $ref, ?int $posStaffId = null): void
+    private function change(Ingredient $ingredient, ?int $branchId, int $containerId, BigDecimal $amount, string $reason, ?User $actor, array $ref, ?int $posStaffId = null, bool $isTarget = false): void
     {
-        $delta = $delta->toScale(StockDecimal::QUANTITY_SCALE, RoundingMode::HALF_UP);
-        if ($delta->isZero()) {
+        $amount = $amount->toScale(StockDecimal::QUANTITY_SCALE, RoundingMode::HALF_UP);
+        if (! $isTarget && $amount->isZero()) {
             return;
         }
         $companyId = (int) $ingredient->company_id;
 
-        $balance = StockContainerBalance::query()
+        // Fix order B-1 (L6) — the first write of a (location, container)
+        // inserts its zero row ON CONFLICT DO NOTHING, then every writer locks
+        // the row: two first writers no longer both insert (a unique-index 500).
+        $find = static fn () => StockContainerBalance::query()
             ->where('company_id', $companyId)
             ->where('ingredient_id', $ingredient->id)
             ->where('container_id', $containerId)
-            ->when($branchId === null, static fn ($q) => $q->whereNull('branch_id'), static fn ($q) => $q->where('branch_id', $branchId))
-            ->lockForUpdate()
-            ->first();
-        if ($balance === null) {
-            $balance = new StockContainerBalance([
+            ->when($branchId === null, static fn ($q) => $q->whereNull('branch_id'), static fn ($q) => $q->where('branch_id', $branchId));
+        if (! $find()->exists()) {
+            DB::table('pos_stock_container_balances')->insertOrIgnore([
                 'company_id' => $companyId,
                 'branch_id' => $branchId,
                 'ingredient_id' => $ingredient->id,
                 'container_id' => $containerId,
                 'pieces' => '0',
+                'created_at' => now(),
+                'updated_at' => now(),
             ]);
         }
+        /** @var StockContainerBalance $balance */
+        $balance = $find()->lockForUpdate()->firstOrFail();
 
         $have = Containers::decimal($balance->getAttributes()['pieces'] ?? '0');
+        $delta = $isTarget ? $amount->minus($have) : $amount;
+        if ($delta->isZero()) {
+            return;
+        }
         $after = $have->plus($delta);
         $clamped = BigDecimal::zero();
         if ($after->isNegative()) {
@@ -241,18 +251,32 @@ final readonly class ContainerBreakdownAction
         }
     }
 
+    /**
+     * Fix order B-1 (L6) — a breakdown write holds a SHARE lock on the item's
+     * container rows for its transaction, so a resize (which locks the row
+     * FOR UPDATE and checks usage inside its own transaction) waits for it and
+     * then sees the new rows — a used container is never re-sized under a
+     * write in flight. (No-op on SQLite.)
+     */
+    private function lockContainers(Ingredient $ingredient): void
+    {
+        IngredientAltUnit::query()->where('ingredient_id', $ingredient->id)->sharedLock()->pluck('id');
+    }
+
     private function stamp(Ingredient $ingredient, ?int $branchId, string $column, ?DateTimeInterface $at): void
     {
         $when = $at !== null ? Carbon::instance($at) : now();
         // A location that never held the item gets its (zero) balance row, so
         // the date has somewhere to live; a zero row keeps balance = Σ movements.
+        // Fix order B-1 (L6) — insert-or-ignore, then update: two first
+        // writers never collide on the unique row.
         if ($branchId === null) {
             $updated = DB::table('pos_ingredient_stock')
                 ->where('company_id', (int) $ingredient->company_id)
                 ->where('ingredient_id', $ingredient->id)
                 ->update([$column => $when]);
             if ($updated === 0) {
-                DB::table('pos_ingredient_stock')->insert([
+                DB::table('pos_ingredient_stock')->insertOrIgnore([
                     'company_id' => (int) $ingredient->company_id,
                     'ingredient_id' => $ingredient->id,
                     'quantity' => '0',
@@ -260,6 +284,10 @@ final readonly class ContainerBreakdownAction
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
+                DB::table('pos_ingredient_stock')
+                    ->where('company_id', (int) $ingredient->company_id)
+                    ->where('ingredient_id', $ingredient->id)
+                    ->update([$column => $when]);
             }
 
             return;
@@ -269,7 +297,7 @@ final readonly class ContainerBreakdownAction
             ->where('ingredient_id', $ingredient->id)
             ->update([$column => $when]);
         if ($updated === 0) {
-            DB::table('pos_branch_stock')->insert([
+            DB::table('pos_branch_stock')->insertOrIgnore([
                 'branch_id' => $branchId,
                 'ingredient_id' => $ingredient->id,
                 'quantity' => '0',
@@ -277,6 +305,10 @@ final readonly class ContainerBreakdownAction
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
+            DB::table('pos_branch_stock')
+                ->where('branch_id', $branchId)
+                ->where('ingredient_id', $ingredient->id)
+                ->update([$column => $when]);
         }
     }
 }

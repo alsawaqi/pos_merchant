@@ -61,6 +61,10 @@ final readonly class DeleteProductAction
             ];
             $productId = $product->id;
 
+            // Fix order B-1 (M2) — its scan barcodes go with it, so the code
+            // can be linked to another item.
+            \App\Support\Inventory\ItemCodes::forgetBarcodes($companyId, ['product_id' => (int) $productId]);
+
             $product->delete();
 
             $this->writeAuditLog->handle(new AuditLogData(

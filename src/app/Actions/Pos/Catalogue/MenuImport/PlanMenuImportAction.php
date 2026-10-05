@@ -71,8 +71,13 @@ final readonly class PlanMenuImportAction
             ->leftJoin('pos_ingredients as i', 'i.id', '=', 'b.ingredient_id')
             ->leftJoin('pos_products as p', 'p.id', '=', 'b.product_id')
             ->where('b.company_id', $companyId)->whereNull('b.deleted_at')
+            // Fix order B-1 (L3, M2) — case-insensitive, and never a deleted item's code.
+            ->where(static function ($q): void {
+                $q->where(static fn ($w) => $w->whereNotNull('b.ingredient_id')->whereNull('i.deleted_at'))
+                    ->orWhere(static fn ($w) => $w->whereNotNull('b.product_id')->whereNull('p.deleted_at'));
+            })
             ->get(['b.barcode', 'i.name as ingredient_name', 'p.name as product_name'])
-            ->mapWithKeys(static fn ($row): array => [(string) $row->barcode => (string) ($row->ingredient_name ?? $row->product_name)])->all();
+            ->mapWithKeys(static fn ($row): array => [mb_strtolower((string) $row->barcode) => (string) ($row->ingredient_name ?? $row->product_name)])->all();
         $seenSku = [];
         $seenBarcode = [];
         $seenName = [];
@@ -157,10 +162,10 @@ final readonly class PlanMenuImportAction
                 $seenSku[mb_strtolower($sku)] ??= $number;
             }
             if ($barcode !== '') {
-                if (isset($seenBarcode[$barcode])) {
-                    $error('duplicate_barcode_in_file', 'barcode', ['row' => $seenBarcode[$barcode]]);
+                if (isset($seenBarcode[mb_strtolower($barcode)])) {
+                    $error('duplicate_barcode_in_file', 'barcode', ['row' => $seenBarcode[mb_strtolower($barcode)]]);
                 }
-                $seenBarcode[$barcode] ??= $number;
+                $seenBarcode[mb_strtolower($barcode)] ??= $number;
             }
             if ($name !== '') {
                 if (isset($seenName[$name])) {
@@ -200,10 +205,10 @@ final readonly class PlanMenuImportAction
                 $values['sku'] = $sku;
             }
             if ($barcode !== '') {
-                $owner = $catalogue['byBarcode'][$barcode] ?? null;
-                if (isset($itemBarcodes[$barcode])) {
+                $owner = $catalogue['byBarcode'][mb_strtolower($barcode)] ?? null;
+                if (isset($itemBarcodes[mb_strtolower($barcode)])) {
                     // A container / item barcode (review add-on A5).
-                    $error('barcode_taken', 'barcode', ['product' => $itemBarcodes[$barcode]]);
+                    $error('barcode_taken', 'barcode', ['product' => $itemBarcodes[mb_strtolower($barcode)]]);
                 } elseif ($owner !== null && ($match === null || $owner['id'] !== $match['id'])) {
                     $error('barcode_taken', 'barcode', ['product' => $owner['name']]);
                 } else {
@@ -346,7 +351,7 @@ final readonly class PlanMenuImportAction
                 $bySku[mb_strtolower((string) $p->sku)] = $entry;
             }
             if ($p->barcode !== null && $p->barcode !== '') {
-                $byBarcode[(string) $p->barcode] = $entry;
+                $byBarcode[mb_strtolower((string) $p->barcode)] = $entry;
             }
             if (! $entry['deleted'] && ! $entry['internal']) {
                 $byName[(string) $p->name][] = $entry;

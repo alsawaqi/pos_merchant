@@ -18,7 +18,7 @@
  */
 import { ScanLine } from 'lucide-vue-next';
 import { ref, watch } from 'vue';
-import { isBarcodeLike, mayOfferLink, nextTimes, wasScanned } from '@/lib/scanDetect';
+import { nextTimes, scanDecision, wasScanned } from '@/lib/scanDetect';
 import { useI18n } from 'vue-i18n';
 import { ApiError } from '@/lib/api';
 import type { Ingredient } from '@/lib/api/inventory';
@@ -84,15 +84,26 @@ async function lookUp(): Promise<void> {
     message.value = null;
     try {
         const res = await scanCode(code);
-        if (res.data.found) {
+        // Fix order B-1 (T1, L9) — the decision is the pure lib/scanDetect
+        // scanDecision the node tests run: plain text + Enter never links.
+        const decision = scanDecision({
+            found: res.data.found,
+            itemType: res.data.item_type ?? null,
+            allowedTypes: props.itemTypes,
+            canLink: props.canLink,
+            serverCanLink: res.data.can_link,
+            code,
+            scanned,
+            mode: props.mode,
+        });
+        if (decision === 'deliver') {
             deliver(res.data);
-        } else if (props.canLink && res.data.can_link && mayOfferLink(code, scanned)) {
+        } else if (decision === 'wrong_item') {
+            message.value = t('scan.wrong_item', { item: res.data.item?.name ?? '' });
+        } else if (decision === 'link') {
             linkCode.value = code;
-        } else if (scanned || isBarcodeLike(code)) {
+        } else if (decision === 'say_unknown') {
             message.value = props.mode === 'search' ? t('scan.no_match', { code }) : t('scan.unknown', { code });
-        } else if (props.mode === 'add') {
-            // Plain text in a document's scan box: say so; a list search only filters.
-            message.value = t('scan.unknown', { code });
         }
     } catch (e) {
         message.value = e instanceof ApiError ? e.message : t('scan.error');

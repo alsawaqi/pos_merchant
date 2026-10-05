@@ -103,6 +103,10 @@ class PhysicalItemPacksController extends Controller
                 if (array_key_exists('pieces', $data) || array_key_exists('contains_pack_uuid', $data)) {
                     [$pieces, $containsId, $containsQuantity] = $this->size($product, $data, $row);
                     $changed = abs((float) $pieces - (float) $row->pieces) > 1e-9 || (int) ($containsId ?? 0) !== (int) ($row->contains_pack_id ?? 0);
+                    // Fix order B-1 (L6) — the pack row is locked before its use is checked.
+                    if ($changed) {
+                        ProductPack::query()->whereKey($row->id)->lockForUpdate()->first();
+                    }
                     if ($changed && Packs::isUsed($row)) {
                         throw new RuntimeException('This pack is already used (purchases, or another pack holds it), so its size cannot change. Add a new pack instead.');
                     }
@@ -134,7 +138,7 @@ class PhysicalItemPacksController extends Controller
 
         DB::transaction(function () use ($row, $request): void {
             $this->audit($request, 'inventory.product_pack.deleted', $row, ['name' => $row->name, 'pieces' => (string) $row->pieces], null);
-            ItemBarcode::query()->where('pack_id', $row->id)->delete();
+            \App\Support\Inventory\ItemCodes::forgetBarcodes((int) $row->company_id, ['pack_id' => (int) $row->id]);
             $row->delete();
         });
 

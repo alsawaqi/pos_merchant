@@ -64,9 +64,14 @@ export function containerToken(uuid: string): string {
     return `#${out}`;
 }
 
-/** Whether a unit value names a container (a token). */
+/**
+ * Whether a unit value names a container (a token). Fix order B-1 (L9) —
+ * only the exact formats: "#" + 22 base64url characters, or "#" + a uuid; an
+ * older container named "#10 can" is a name, not a token.
+ */
 export function isContainerToken(unit: string | null | undefined): boolean {
-    return typeof unit === 'string' && unit.startsWith('#') && unit.length > 1;
+    return typeof unit === 'string'
+        && (/^#[A-Za-z0-9_-]{22}$/.test(unit) || /^#[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(unit));
 }
 
 /** The token of a container (the server's, or worked out from its uuid). */

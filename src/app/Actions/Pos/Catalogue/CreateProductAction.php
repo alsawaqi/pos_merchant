@@ -55,6 +55,11 @@ final readonly class CreateProductAction
         }
 
         return DB::transaction(function () use ($attributes, $actor, $companyId): Product {
+            // LAUNCH review fix order B-1 (L5) — the SKU / barcode are claimed
+            // under the same per-company locks ingredients take, and checked
+            // again across tables inside this transaction.
+            \App\Support\Inventory\ItemCodes::claimProductCodes($companyId, $attributes['sku'] ?? null, $attributes['barcode'] ?? null);
+
             /** @var Product $product */
             $product = Product::query()->create([
                 'company_id' => $companyId,

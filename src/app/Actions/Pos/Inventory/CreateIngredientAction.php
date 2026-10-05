@@ -171,6 +171,8 @@ final readonly class CreateIngredientAction
             if ($barcode === '') {
                 continue;
             }
+            // Fix order B-1 (M2) — a code left on a deleted item is released first.
+            ItemCodes::releaseOrphans((int) $ingredient->company_id, $barcode);
             if (($owner = ItemCodes::barcodeOwner((int) $ingredient->company_id, $barcode)) !== null) {
                 throw new RuntimeException(ItemCodes::barcodeMessage($owner));
             }

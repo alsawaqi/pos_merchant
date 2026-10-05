@@ -14,6 +14,7 @@ use App\Models\Branch;
 use App\Models\Ingredient;
 use App\Models\StockCount;
 use App\Support\Inventory\ContainerAmount;
+use App\Support\Inventory\Containers;
 use App\Support\MerchantTenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -85,6 +86,22 @@ class StockCountsController extends Controller
             $countedPieces = $line['counted_pieces'] ?? null;
             $countedUnits = $line['counted_units'] ?? null;
             $unit = $line['unit'] ?? null;
+
+            // Fix order B-1 (L4) — "3" counted in a container picked in the
+            // unit list is 3 of that container, as on a transfer: the count
+            // sets the breakdown to them.
+            if (empty($line['containers']) && is_string($unit) && $unit !== '' && $countedUnits !== null && $countedUnits !== '' && $countedPieces === null) {
+                try {
+                    $asContainer = Containers::resolve($ingredient, $unit);
+                } catch (RuntimeException $e) {
+                    return response()->json(['message' => $e->getMessage()], 422);
+                }
+                if ($asContainer !== null) {
+                    $line['containers'] = [['container_uuid' => (string) $asContainer->uuid, 'pieces' => $countedUnits]];
+                    $countedUnits = null;
+                    $unit = null;
+                }
+            }
 
             // LAUNCH review add-on (D2) — counted BY CONTAINER: the total is
             // Σ pieces × size, or the typed total when lower (part-used).

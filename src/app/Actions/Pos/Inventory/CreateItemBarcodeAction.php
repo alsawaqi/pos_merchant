@@ -66,8 +66,10 @@ final readonly class CreateItemBarcodeAction
 
         return DB::transaction(function () use ($companyId, $barcode, $ingredient, $container, $product, $pack, $label, $actor): ItemBarcode {
             ItemCodes::lockBarcode($companyId);
-            if (($owner = ItemCodes::barcodeOwner($companyId, $barcode)) !== null) {
-                throw new RuntimeException(ItemCodes::barcodeMessage($owner));
+            // Fix order B-1 (M2) — a code left on a deleted item (older data) is released first.
+            ItemCodes::releaseOrphans($companyId, $barcode);
+            if (($holder = ItemCodes::barcodeHolder($companyId, $barcode)) !== null) {
+                throw new BarcodeTakenException(ItemCodes::barcodeMessage($holder['owner']), $holder['barcode_uuid']);
             }
 
             /** @var ItemBarcode $row */

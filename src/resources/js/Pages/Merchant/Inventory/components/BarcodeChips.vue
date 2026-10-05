@@ -14,11 +14,17 @@ defineProps<{
     editable?: boolean;
     busy?: boolean;
     error?: string | null;
+    /**
+     * Fix order B-1 (M2) — the code just typed is on another live item: its
+     * message, and a button to take it off there and put it here.
+     */
+    conflict?: { code: string; message: string } | null;
 }>();
 
 const emit = defineEmits<{
     (e: 'add', code: string): void;
     (e: 'remove', index: number): void;
+    (e: 'move'): void;
 }>();
 
 const { t } = useI18n();
@@ -57,5 +63,11 @@ function add(): void {
             </button>
         </span>
         <p v-if="error" class="basis-full text-[11px] text-rose-600">{{ error }}</p>
+        <p v-if="conflict && editable" class="basis-full text-[11px] text-rose-600" data-test="barcode-conflict">
+            {{ conflict.message }}
+            <button type="button" :disabled="busy" class="ms-1 rounded border border-rose-200 bg-white px-1.5 py-0.5 font-semibold text-rose-700 transition hover:bg-rose-50 disabled:opacity-50" data-test="barcode-move" @click="emit('move')">
+                {{ t('containers.move_barcode', { code: conflict.code }) }}
+            </button>
+        </p>
     </div>
 </template>

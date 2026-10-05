@@ -64,8 +64,9 @@ import ScanBox from './components/ScanBox.vue';
 import StockBreakdown from './components/StockBreakdown.vue';
 import { useAmountConfirm } from '@/composables/useAmountConfirm';
 import { containerSizeWarning, thresholdWarning } from '@/lib/amountSafety';
-import { amountInStored, amountProblem, containerLabel, findContainer, plusOne, rowsCap } from '@/lib/containers';
-import { createBarcode, deleteBarcode, type ScanResult } from '@/lib/api/inventoryCodes';
+import { amountInStored, amountProblem, containerLabel, findContainer, rowsCap } from '@/lib/containers';
+import { applyCountScan, applyLineScan, applyWasteScan, findScanned, type ScanRefusal } from '@/lib/scanApply';
+import { barcodeConflictOf, createBarcode, deleteBarcode, moveBarcodeHere, type ScanResult } from '@/lib/api/inventoryCodes';
 import { useAmountDisplay } from '@/composables/useAmountDisplay';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
@@ -321,6 +322,7 @@ const containerDrafts = ref<ContainerDraft[]>([]);
 const ingBarcodeDrafts = ref<string[]>([]);
 const ingBarcodeBusy = ref(false);
 const ingBarcodeError = ref<string | null>(null);
+const ingBarcodeConflict = ref<{ code: string; holderUuid: string; message: string } | null>(null);
 
 // E2 — "Is this right?" before saving an unrealistic amount (warns, never blocks).
 const { warnings: amountWarnings, confirm: confirmAmounts, answer: answerAmounts } = useAmountConfirm();
@@ -458,8 +460,28 @@ async function addItemBarcode(code: string): Promise<void> {
     }
     ingBarcodeBusy.value = true;
     ingBarcodeError.value = null;
+    ingBarcodeConflict.value = null;
     try {
         await createBarcode(code, { item_type: 'ingredient', item_uuid: ingModalTarget.value.uuid });
+        await refreshIngredientTarget();
+    } catch (err) {
+        // Fix order B-1 (M2) — on another live item: offer to move it here.
+        const conflict = barcodeConflictOf(err);
+        if (conflict) ingBarcodeConflict.value = { code, ...conflict };
+        else ingBarcodeError.value = err instanceof ApiError ? (err.firstValidationMessage() ?? err.message) : t('containers.errors.save_failed');
+    } finally {
+        ingBarcodeBusy.value = false;
+    }
+}
+
+/** Fix order B-1 (M2) — take the code off the item that holds it and put it on this one. */
+async function moveItemBarcode(): Promise<void> {
+    const conflict = ingBarcodeConflict.value;
+    if (!conflict || !ingModalTarget.value) return;
+    ingBarcodeBusy.value = true;
+    try {
+        await moveBarcodeHere(conflict.holderUuid, conflict.code, { item_type: 'ingredient', item_uuid: ingModalTarget.value.uuid });
+        ingBarcodeConflict.value = null;
         await refreshIngredientTarget();
     } catch (err) {
         ingBarcodeError.value = err instanceof ApiError ? (err.firstValidationMessage() ?? err.message) : t('containers.errors.save_failed');
@@ -852,7 +874,7 @@ async function onPacksChanged(): Promise<void> {
 
 /** F1 — a scan on the Ingredients list opens that ingredient. */
 function onIngredientScan(result: ScanResult): void {
-    const ingredient = ingredients.value.find((i) => i.uuid === result.item?.uuid);
+    const ingredient = findScanned(ingredients.value, result);
     if (!ingredient) return;
     ingredientSearch.value = '';
     if (canManage.value) openEditIngredient(ingredient);
@@ -861,7 +883,7 @@ function onIngredientScan(result: ScanResult): void {
 
 /** F1 — a scan on the Physical items list opens that item. */
 function onPhysicalScan(result: ScanResult): void {
-    const item = physicalItems.value.find((i) => i.uuid === result.item?.uuid);
+    const item = findScanned(physicalItems.value, result);
     if (!item) return;
     physicalSearch.value = '';
     if (canManage.value) openEditPhysicalItem(item);
@@ -870,7 +892,7 @@ function onPhysicalScan(result: ScanResult): void {
 
 /** F1 — a scan on the Branch stock list highlights the row and shows its amount in every unit. */
 function onStockScan(result: ScanResult): void {
-    const ingredient = ingredients.value.find((i) => i.uuid === result.item?.uuid);
+    const ingredient = findScanned(ingredients.value, result);
     if (!ingredient) return;
     stockSearch.value = '';
     highlightedIngredientId.value = ingredient.id;
@@ -1091,6 +1113,7 @@ function openCreateIngredient(): void {
     containerDrafts.value = [];
     ingBarcodeDrafts.value = [];
     ingBarcodeError.value = null;
+    ingBarcodeConflict.value = null;
     ingModalOpen.value = true;
 }
 
@@ -1113,6 +1136,7 @@ function openEditIngredient(ingredient: Ingredient): void {
     containerDrafts.value = [];
     ingBarcodeDrafts.value = [];
     ingBarcodeError.value = null;
+    ingBarcodeConflict.value = null;
     ingModalOpen.value = true;
 }
 
@@ -1140,7 +1164,9 @@ async function submitIngredient(): Promise<void> {
             name: ingForm.name.trim(),
             name_ar: ingForm.name_ar.trim() || null,
             unit,
-            allow_fractional_pieces: ingForm.allow_fractional_pieces,
+            // Fix order B-1 (M4) — set on create only; a saved item changes it
+            // with its count container (the containers list).
+            ...(ingModalMode.value === 'create' ? { allow_fractional_pieces: ingForm.allow_fractional_pieces } : {}),
             // A7 — typed in a unit of the kind, sent in the stored unit.
             min_stock_threshold: minimumInStoredUnit(unit),
             primary_supplier_id: ingForm.primary_supplier_id ?? null,
@@ -1537,16 +1563,12 @@ function stopCountContainers(r: CountRow): void {
 
 /** F — a scan on the count: one more of that container on its row (the row is shown). */
 function onCountScan(result: ScanResult): void {
-    const row = countRows.value.find((r) => r.ingredient.uuid === result.item?.uuid);
-    if (!row) return;
-    countSearch.value = row.ingredient.name;
-    if (result.container) {
-        if (row.containers.length === 0) {
-            row.counted = '';
-            row.unit = '';
-        }
-        addScannedContainer(row, result);
-    }
+    // Fix order B-1 (T1, L8) — the pure lib/scanApply helper (node tested): a
+    // total already typed on the row is kept (in a container unit it becomes
+    // that container's row); never pre-filled from the books.
+    const outcome = applyCountScan(countRows.value, result);
+    if (outcome.index !== undefined) countSearch.value = countRows.value[outcome.index]?.ingredient.name ?? '';
+    countError.value = outcome.ok ? null : scanRefusal(outcome.reason, result);
 }
 
 const visibleCountRows = computed<CountRow[]>(() => countRows.value.filter((r) => matchesSearch(countSearch.value, r.ingredient.name, r.ingredient.name_ar, r.ingredient.sku)));
@@ -1831,10 +1853,16 @@ function openRecordWaste(): void {
 watch(
     () => wasteForm.ingredient_uuid,
     () => {
+        if (wasteScanSetItem) {
+            wasteScanSetItem = false;
+            return;
+        }
         wasteForm.unit = '';
         wasteForm.containers = [];
     },
 );
+/** Fix order B-1 — a scan picked the item and its container together (keep them). */
+let wasteScanSetItem = false;
 
 // The currently-picked waste ingredient (full object, for alt_units).
 const wasteIngredient = computed<Ingredient | null>(() => {
@@ -1864,23 +1892,13 @@ function stopWasteContainer(): void {
 
 /** F — a scan on the waste: picks the item (and the container, one more each scan). */
 function onWasteScan(result: ScanResult): void {
-    const uuid = result.item?.uuid ?? '';
-    if (!ingredientByUuid(uuid)) return;
-    if (wasteForm.ingredient_uuid !== uuid) {
-        wasteForm.ingredient_uuid = uuid;
-        wasteForm.quantity = '';
-        wasteForm.containers = [];
-    }
-    const containerUuid = result.container?.uuid;
-    if (!containerUuid) return;
-    const row = wasteForm.containers[0];
-    if (row && row.container_uuid === containerUuid) {
-        row.pieces = plusOne(row.pieces);
-    } else {
-        wasteForm.containers = [{ container_uuid: containerUuid, pieces: '1' }];
-        wasteForm.quantity = '';
-        wasteForm.unit = '';
-    }
+    // Fix order B-1 (T1, L8) — the pure lib/scanApply helper (node tested):
+    // never over another item's typed waste, one container at a time.
+    const before = wasteForm.ingredient_uuid;
+    const outcome = applyWasteScan(wasteForm, result, ingredientByUuid);
+    // The scan set the item AND its container: the item watcher must not clear them.
+    if (wasteForm.ingredient_uuid !== before) wasteScanSetItem = true;
+    wasteError.value = outcome.ok ? null : scanRefusal(outcome.reason, result);
 }
 
 async function submitRecordWaste(): Promise<void> {
@@ -2042,28 +2060,10 @@ const restockHasRaised = computed<boolean>(() => restockForm2.lines.some((l) => 
 
 /** F — a scan on the request: "1 × bottle 1.5 l" (the same scan again makes it 2). */
 function onRestockScan(result: ScanResult): void {
-    const uuid = result.item?.uuid ?? '';
-    if (!ingredientByUuid(uuid)) return;
-    let line = restockForm2.lines.find((l) => l.ingredient_uuid === uuid);
-    if (!line) {
-        line = restockForm2.lines.find((l) => l.ingredient_uuid === '') ?? undefined;
-        if (line) {
-            line.ingredient_uuid = uuid;
-        } else {
-            line = { ...blankRestockLine(), ingredient_uuid: uuid };
-            restockForm2.lines.push(line);
-        }
-    }
-    const containerUuid = result.container?.uuid;
-    if (!containerUuid) return;
-    const row = line.containers[0];
-    if (row && row.container_uuid === containerUuid) {
-        row.pieces = plusOne(row.pieces);
-    } else {
-        line.containers = [{ container_uuid: containerUuid, pieces: '1' }];
-        line.quantity = '';
-        line.unit = '';
-    }
+    // Fix order B-1 (T1, L8) — one container per line: a second container is
+    // refused with a reason, never swapped in over the typed pieces.
+    const outcome = applyLineScan(restockForm2.lines, result, ingredientByUuid, blankRestockLine, true);
+    restockModalError.value = outcome.ok ? null : scanRefusal(outcome.reason, result);
 }
 
 async function submitRestockModal(): Promise<void> {
@@ -2204,33 +2204,18 @@ const transferHasRaised = computed<boolean>(() => transferForm.lines.some((l) =>
  * container row); the same scan again makes it 2.
  */
 function onTransferScan(result: ScanResult): void {
-    const uuid = result.item?.uuid ?? '';
-    if (!ingredientByUuid(uuid)) return;
-    let line = transferForm.lines.find((l) => l.ingredient_uuid === uuid);
-    if (!line) {
-        line = transferForm.lines.find((l) => l.ingredient_uuid === '') ?? undefined;
-        if (line) {
-            line.ingredient_uuid = uuid;
-        } else {
-            line = { ...blankTransferLine(), ingredient_uuid: uuid };
-            transferForm.lines.push(line);
-        }
-    }
-    if (result.container && line.containers.length === 0) line.quantity = '';
-    addScannedContainer(line, result);
+    // Fix order B-1 (T1, L8) — the pure lib/scanApply helper (node tested): a
+    // typed amount is kept (in a container unit it becomes that container's row).
+    const outcome = applyLineScan(transferForm.lines, result, ingredientByUuid, blankTransferLine, false);
+    transferModalError.value = outcome.ok ? null : scanRefusal(outcome.reason, result);
 }
 
-/** Add one of the scanned container to a line's container rows (or one more of it). */
-function addScannedContainer(line: { unit: string; containers: ContainerRowDraft[] }, result: ScanResult): void {
-    const containerUuid = result.container?.uuid;
-    if (!containerUuid) return;
-    const row = line.containers.find((r) => r.container_uuid === containerUuid);
-    if (row) {
-        row.pieces = plusOne(row.pieces);
-    } else {
-        if (line.containers.length === 0) line.unit = '';
-        line.containers.push({ container_uuid: containerUuid, pieces: '1' });
-    }
+/** Fix order B-1 (L8) — why a scan changed nothing (it never drops typed work silently). */
+function scanRefusal(reason: ScanRefusal, result: ScanResult): string {
+    const item = (isArabic.value ? result.item?.name_ar : null) ?? result.item?.name ?? '';
+    if (reason === 'one_container') return t('scan.one_container', { item });
+    if (reason === 'other_item') return t('scan.other_item', { item: wasteIngredient.value?.name ?? '' });
+    return t('scan.not_listed', { item });
 }
 
 async function submitTransferModal(): Promise<void> {
@@ -3733,6 +3718,7 @@ async function submitSuggestions(): Promise<void> {
                         :stored-unit="ingForm.unit"
                         :ingredient-uuid="ingModalTarget?.uuid ?? null"
                         :count-container-uuid="ingModalTarget?.count_container_uuid ?? null"
+                        :allow-fractional="ingModalTarget?.allow_fractional_pieces ?? true"
                         :can-manage="canManage"
                         @changed="refreshIngredientTarget"
                     />
@@ -3743,17 +3729,20 @@ async function submitSuggestions(): Promise<void> {
                     <p v-if="ingModalErrors.piece_unit_label" class="text-xs text-rose-600">{{ ingModalErrors.piece_unit_label[0] }}</p>
                     <p v-if="ingModalErrors.units_per_piece" class="text-xs text-rose-600">{{ ingModalErrors.units_per_piece[0] }}</p>
 
-                    <label class="inline-flex items-center gap-2 text-sm font-medium text-slate-700">
-                        <input v-model="ingForm.allow_fractional_pieces" type="checkbox" class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500">
-                        {{ t('inventory.piece.allow_fractional') }}
-                    </label>
-                    <p class="-mt-3 text-xs text-slate-500">{{ t('inventory.piece.allow_fractional_hint') }}</p>
+                    <!-- Fix order B-1 (M4) — on a saved item this is set in the containers list, with the count container. -->
+                    <template v-if="ingModalMode === 'create'">
+                        <label class="inline-flex items-center gap-2 text-sm font-medium text-slate-700">
+                            <input v-model="ingForm.allow_fractional_pieces" type="checkbox" class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500">
+                            {{ t('inventory.piece.allow_fractional') }}
+                        </label>
+                        <p class="-mt-3 text-xs text-slate-500">{{ t('inventory.piece.allow_fractional_hint') }}</p>
+                    </template>
 
                     <!-- A5 — barcodes on the item itself (a container's barcodes sit on its row). -->
                     <div data-test="item-barcodes">
                         <span class="text-sm font-medium text-slate-700">{{ t('containers.item_barcodes') }}</span>
                         <p class="text-xs text-slate-500">{{ t('containers.item_barcodes_hint') }}</p>
-                        <BarcodeChips :barcodes="itemBarcodes" :editable="canManage" :busy="ingBarcodeBusy" :error="ingBarcodeError" @add="addItemBarcode" @remove="removeItemBarcode" />
+                        <BarcodeChips :barcodes="itemBarcodes" :editable="canManage" :busy="ingBarcodeBusy" :error="ingBarcodeError" :conflict="ingBarcodeConflict" @add="addItemBarcode" @remove="removeItemBarcode" @move="moveItemBarcode" />
                     </div>
                 </form>
             <template #footer>

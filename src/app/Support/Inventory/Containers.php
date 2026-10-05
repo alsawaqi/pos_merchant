@@ -65,7 +65,9 @@ final class Containers
 
         $all = self::of($ingredient);
 
-        if (str_starts_with($unit, ContainerToken::PREFIX)) {
+        // Fix order B-1 (L9) — only the EXACT token formats are tokens: an
+        // older container named "#10 can" still resolves by its name below.
+        if (ContainerToken::isToken($unit)) {
             $uuid = ContainerToken::decode($unit);
             $match = $uuid === null ? null : $all->first(static fn (IngredientAltUnit $c): bool => strtolower((string) $c->uuid) === $uuid);
             if ($match === null) {

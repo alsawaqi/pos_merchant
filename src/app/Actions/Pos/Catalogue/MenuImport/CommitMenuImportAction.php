@@ -11,6 +11,7 @@ use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
 use App\Models\Product;
 use App\Models\User;
+use App\Support\Inventory\ItemCodes;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
 
@@ -41,13 +42,19 @@ final readonly class CommitMenuImportAction
      */
     public function handle(array $sheet, bool $createCategories, User $actor, string $fileName): array
     {
-        $plan = $this->plan->handle($sheet, $createCategories);
-        if ($plan['summary']['error'] > 0) {
-            return ['saved' => false, 'plan' => $plan, 'created' => 0, 'updated' => 0, 'unchanged' => 0, 'categories_created' => 0];
-        }
         $companyId = $this->tenant->requiredId();
 
-        return DB::transaction(function () use ($plan, $actor, $companyId, $fileName): array {
+        // LAUNCH review fix order B-1 (L5) — the file is planned INSIDE the
+        // commit transaction, after the per-company SKU and barcode locks
+        // (SKU first), so its code checks cannot go stale before the write.
+        return DB::transaction(function () use ($sheet, $createCategories, $actor, $companyId, $fileName): array {
+            ItemCodes::lockSku($companyId);
+            ItemCodes::lockBarcode($companyId);
+            $plan = $this->plan->handle($sheet, $createCategories);
+            if ($plan['summary']['error'] > 0) {
+                return ['saved' => false, 'plan' => $plan, 'created' => 0, 'updated' => 0, 'unchanged' => 0, 'categories_created' => 0];
+            }
+
             $categoryIds = [];
             foreach ($plan['new_categories'] as $category) {
                 $created = $this->createCategory->handle([

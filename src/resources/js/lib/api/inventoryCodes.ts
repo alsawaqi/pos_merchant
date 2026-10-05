@@ -12,7 +12,7 @@
  * trimmed string: leading zeros stay.
  */
 
-import { apiDelete, apiGet, apiPost, type JsonValue } from '@/lib/api';
+import { ApiError, apiDelete, apiGet, apiPost, type JsonValue } from '@/lib/api';
 import type { ItemBarcodeSummary } from '@/lib/api/inventory';
 
 export type ScanItemType = 'ingredient' | 'physical' | 'product';
@@ -28,6 +28,27 @@ export interface ScanResult {
     container?: { uuid: string; token: string; display_name: string; display_name_ar: string } | null;
     pack?: { uuid: string; pieces: string; display_name: string; display_name_ar: string } | null;
     label?: string | null;
+    /** Fix order B-1 (L10) — false for a prep item or a product Purchases refuses. */
+    purchasable?: boolean;
+    not_purchasable_reason?: 'prep' | 'not_bought_in' | null;
+}
+
+/**
+ * Fix order B-1 (M2) — a refused barcode save names the holding barcode row
+ * (another live item has the code): its uuid and the message, or null.
+ */
+export function barcodeConflictOf(error: unknown): { holderUuid: string; message: string } | null {
+    if (!(error instanceof ApiError) || !error.payload || typeof error.payload !== 'object') return null;
+    const payload = error.payload as { barcode_uuid?: unknown; message?: unknown };
+    return typeof payload.barcode_uuid === 'string' && payload.barcode_uuid !== ''
+        ? { holderUuid: payload.barcode_uuid, message: String(payload.message ?? '') }
+        : null;
+}
+
+/** Fix order B-1 (M2) — take a barcode off the item that holds it and put it on this one. */
+export async function moveBarcodeHere(holderUuid: string, barcode: string, payload: BarcodeLinkPayload): Promise<{ data: ItemBarcodeSummary }> {
+    await deleteBarcode(holderUuid);
+    return createBarcode(barcode, payload);
 }
 
 export interface BarcodeLinkPayload {

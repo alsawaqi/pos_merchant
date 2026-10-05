@@ -54,6 +54,10 @@ final readonly class SaveComboAction
         }
 
         return DB::transaction(function () use ($combo, $data, $actor, $companyId): Product {
+            // LAUNCH review fix order B-1 (L5) — the SKU / barcode are claimed
+            // under the per-company locks and checked again across tables.
+            \App\Support\Inventory\ItemCodes::claimProductCodes($companyId, $data['sku'] ?? null, $data['barcode'] ?? null, $combo?->id !== null ? (int) $combo->id : null);
+
             $fields = [
                 'name' => $data['name'],
                 'name_ar' => $data['name_ar'] ?? null,

@@ -70,9 +70,6 @@ final readonly class UpdateIngredientUnitAction
                 || (int) ($containsId ?? 0) !== (int) ($unit->contains_unit_id ?? 0)
                 || abs((float) ($containsQuantity ?? 0) - (float) ($unit->contains_quantity ?? 0)) > 1e-9;
             if ($sizeChanged) {
-                if (ContainerUsage::isUsed($unit)) {
-                    throw new RuntimeException(ContainerUsage::MESSAGE);
-                }
                 $target['factor'] = $factor;
                 $target['contains_unit_id'] = $containsId;
                 $target['contains_quantity'] = $containsQuantity;
@@ -80,6 +77,17 @@ final readonly class UpdateIngredientUnitAction
         }
 
         return DB::transaction(function () use ($unit, $target, $actor, $companyId, $ingredient): IngredientAltUnit {
+            // Fix order B-1 (L6) — the size lock is checked INSIDE the
+            // transaction with the container row locked FOR UPDATE: a purchase,
+            // transfer, count or waste writing its breakdown holds a share lock
+            // on the item's containers, so it either finishes first (and the
+            // container is then "used") or waits for the resize.
+            if (array_key_exists('factor', $target)) {
+                IngredientAltUnit::query()->whereKey($unit->id)->lockForUpdate()->first();
+                if (ContainerUsage::isUsed($unit)) {
+                    throw new RuntimeException(ContainerUsage::MESSAGE);
+                }
+            }
             $changes = [];
             foreach ($target as $field => $new) {
                 $old = $unit->{$field};

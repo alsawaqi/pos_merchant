@@ -87,6 +87,7 @@
         "count_marker_hint": "Tills and day-end counts count this item in the marked container.",
         "count_marker_none": "Tills count in the item's own unit",
         "count_remove_warning": "Tills will count this item in {unit} instead of a container.",
+        "count_move_warning": "Tills will count this item in {container} after their next settings refresh. Counts not yet sent may be converted at the new size.",
         "counted_hint": "A counted item: a container holds a number of pieces (box holds 24).",
         "size_locked": "This container is in use, so its size cannot change. Add a new container for a new size.",
         "size_locked_short": "size locked",
@@ -96,6 +97,7 @@
         "add_barcode": "Add barcode",
         "barcode_placeholder": "Scan or type a barcode",
         "remove_barcode": "Remove barcode",
+        "move_barcode": "Move {code} here",
         "item_barcodes": "Barcodes on the item",
         "item_barcodes_hint": "A barcode printed on the item itself. A container's barcodes sit on its row.",
         "pieces": "Pieces",
@@ -164,7 +166,10 @@
         "one_piece": "One piece",
         "brand": "Brand or label (optional)",
         "link_submit": "Remember barcode",
-        "linking": "Saving…"
+        "linking": "Saving…",
+        "one_container": "{item} is already entered in another container: one container per line. Change it by hand.",
+        "other_item": "Finish or clear {item} first: this form records one item at a time.",
+        "not_listed": "{item} is not on this list."
     },
     "amount_safety": {
         "translation": "= {text}",
@@ -203,7 +208,9 @@
         "no_cost_yet": "No cost yet",
         "cost_incomplete": "Cost incomplete: an item has no cost yet",
         "cost_from_purchases": "The cost comes from purchases (the weighted average of what you paid).",
-        "current_cost": "Current cost"
+        "current_cost": "Current cost",
+        "scan_prep": "{item} is a prep item: it is made from its recipe, not bought.",
+        "scan_not_bought_in": "{item} is not a bought-in product, so it cannot be bought here."
     },
     "recipe_units": {
         "too_small": "{amount} is too small to record: it rounds to 0 {base} (stock keeps 4 decimals). Enter at least {minimum}, or use a smaller base unit.",

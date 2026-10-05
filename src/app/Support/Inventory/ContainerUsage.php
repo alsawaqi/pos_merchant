@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\DB;
  */
 final class ContainerUsage
 {
-    public const MESSAGE = 'This container is already used (purchases, stock, counts, transfers, waste, restock requests or recipes), so its size cannot change. Add a new container with the new size instead.';
+    public const MESSAGE = 'This container is already used (purchases, stock, counts, transfers, waste, restock requests or recipes) or the tills count in it, so its size cannot change. Add a new container with the new size instead.';
 
     public static function isUsed(IngredientAltUnit $container): bool
     {
@@ -59,6 +59,12 @@ final class ContainerUsage
         ] as $table) {
             $mark(DB::table($table)->whereIn('container_id', $ids)->distinct()->pluck('container_id'));
         }
+
+        // Fix order B-1 (M3) — the container the tills count in is always
+        // locked: a till's offline count of "3 bags" (counted_pieces, no
+        // container row) is converted at the size it has when it syncs, and
+        // '@piece' recipe lines and receipts name it too.
+        $mark(DB::table('pos_ingredients')->where('id', $ingredientId)->whereNotNull('count_container_id')->pluck('count_container_id'));
 
         // The content of another LIVE container: resizing a bottle would
         // silently break "crate holds 12 × bottle".

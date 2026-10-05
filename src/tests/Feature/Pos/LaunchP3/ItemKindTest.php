@@ -313,8 +313,12 @@ it('F6 an unused ingredient with pack sizes or a count container cannot change k
 
     $withContainer = p3Ingredient($ctx['company'], 'Syrup', 'ml', '0.002', ['piece_unit_label' => 'bottle', 'units_per_piece' => '1500']);
     $this->patchJson("/api/ingredients/{$withContainer->uuid}", ['unit' => 'piece'])->assertStatus(422)->assertJsonPath('message', $message);
-    // Clearing the container in the same save counts as removing it.
+    // Clearing the container in the same save counts as removing it. (Review
+    // fix order B-1, M4 — the piece_* mirror changes only through the count
+    // container, so it is cleared with count_container_uuid: null.)
     $this->patchJson("/api/ingredients/{$withContainer->uuid}", ['unit' => 'piece', 'piece_unit_label' => null, 'units_per_piece' => null])
+        ->assertStatus(422);
+    $this->patchJson("/api/ingredients/{$withContainer->uuid}", ['unit' => 'piece', 'count_container_uuid' => null])
         ->assertOk()->assertJsonPath('data.kind', 'counted');
 });
 

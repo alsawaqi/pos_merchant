@@ -58,6 +58,33 @@ export function nextTimes(times: number[], now: number, oldLength: number, newLe
     return [...times, now].slice(-64);
 }
 
+export type ScanDecision = 'deliver' | 'wrong_item' | 'link' | 'say_unknown' | 'silent';
+
+/**
+ * What the scan box does with a looked-up code (the real path ScanBox.vue
+ * runs). A found item of a type this screen takes is delivered; an unknown
+ * code opens "Which item is this barcode?" only for a manager AND a real
+ * scan (or a typed EAN / UPC); otherwise a document's box says "Unknown
+ * barcode" and a list search stays silent (typing there only filters).
+ */
+export function scanDecision(opts: {
+    found: boolean;
+    itemType?: string | null;
+    allowedTypes: string[];
+    canLink: boolean;
+    serverCanLink?: boolean;
+    code: string;
+    scanned: boolean;
+    mode: 'add' | 'search';
+}): ScanDecision {
+    if (opts.found) {
+        return opts.itemType && !opts.allowedTypes.includes(opts.itemType) ? 'wrong_item' : 'deliver';
+    }
+    if (opts.canLink && opts.serverCanLink === true && mayOfferLink(opts.code, opts.scanned)) return 'link';
+    if (opts.scanned || isBarcodeLike(opts.code)) return 'say_unknown';
+    return opts.mode === 'add' ? 'say_unknown' : 'silent';
+}
+
 /** Whether the whole text in the box came from one scanner burst. */
 export function wasScanned(times: number[], text: string): boolean {
     const length = text.length;

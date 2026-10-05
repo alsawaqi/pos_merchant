@@ -35,9 +35,12 @@ final readonly class ScanLookupAction
             return ['found' => false, 'code' => $code];
         }
 
+        // Fix order B-1 (L3) — barcodes match case-insensitively, like SKUs.
+        $lower = mb_strtolower($code);
         $row = ItemBarcode::query()
             ->where('company_id', $companyId)
-            ->where('barcode', $code)
+            ->whereRaw('lower(barcode) = ?', [$lower])
+            ->orderBy('id')
             ->first();
         if ($row !== null) {
             if ($row->ingredient_id !== null) {
@@ -53,12 +56,11 @@ final readonly class ScanLookupAction
             }
         }
 
-        $product = Product::query()->where('company_id', $companyId)->where('barcode', $code)->first();
+        $product = Product::query()->where('company_id', $companyId)->whereRaw('lower(barcode) = ?', [$lower])->first();
         if ($product !== null) {
             return $this->product($product, 'product_barcode', null, null);
         }
 
-        $lower = mb_strtolower($code);
         $ingredient = Ingredient::query()->where('company_id', $companyId)->whereRaw('lower(sku) = ?', [$lower])->first();
         if ($ingredient !== null) {
             return $this->ingredient($ingredient, 'sku', null, null);
@@ -99,6 +101,10 @@ final readonly class ScanLookupAction
             ],
             'pack' => null,
             'label' => $label,
+            // Fix order B-1 (L10) — Purchases refuses a prep item (it is made
+            // from its recipe, never bought); the screen says why.
+            'purchasable' => ! (bool) $ingredient->is_prep,
+            'not_purchasable_reason' => (bool) $ingredient->is_prep ? 'prep' : null,
         ];
     }
 
@@ -129,6 +135,10 @@ final readonly class ScanLookupAction
                 'display_name_ar' => Packs::displayName($pack, $all, 'ar'),
             ],
             'label' => $label,
+            // Fix order B-1 (L10) — only a bought-in (unit) product or a
+            // physical item can be bought on Purchases.
+            'purchasable' => $product->stock_mode === 'unit' && ! $product->isCombo(),
+            'not_purchasable_reason' => $product->stock_mode === 'unit' && ! $product->isCombo() ? null : 'not_bought_in',
         ];
     }
 }

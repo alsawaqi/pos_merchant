@@ -10,7 +10,7 @@ import { Check, Plus, Trash2 } from 'lucide-vue-next';
 import { reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { ApiError } from '@/lib/api';
-import { createBarcode, deleteBarcode } from '@/lib/api/inventoryCodes';
+import { barcodeConflictOf, createBarcode, deleteBarcode, moveBarcodeHere } from '@/lib/api/inventoryCodes';
 import { createPack, deletePack, listPacks, updatePack, type PhysicalItemPack } from '@/lib/api/physicalItems';
 import type { ItemBarcodeSummary } from '@/lib/api/inventory';
 import BarcodeChips from './BarcodeChips.vue';
@@ -102,13 +102,39 @@ function remove(pack: PhysicalItemPack): void {
     void run(pack.uuid, () => deletePack(uuid, pack.uuid));
 }
 
+// Fix order B-1 (M2) — a code on another live item, per pack ('piece' = one piece): offer to move it here.
+const conflicts = reactive<Record<string, { code: string; holderUuid: string; message: string } | null>>({});
+
 function addCode(packUuid: string | null, code: string): void {
     if (!props.itemUuid) return;
     const uuid = props.itemUuid;
-    busy.value = packUuid ?? 'piece';
+    const key = packUuid ?? 'piece';
+    busy.value = key;
     error.value = null;
+    conflicts[key] = null;
     createBarcode(code, { item_type: 'physical', item_uuid: uuid, pack_uuid: packUuid })
         .then(async (res) => {
+            if (packUuid === null) pieceCodes.value = [...pieceCodes.value, res.data];
+            await load();
+            emit('changed');
+        })
+        .catch((e: unknown) => {
+            const conflict = barcodeConflictOf(e);
+            if (conflict) conflicts[key] = { code, ...conflict };
+            else fail(e);
+        })
+        .finally(() => { busy.value = null; });
+}
+
+function moveCode(packUuid: string | null): void {
+    const key = packUuid ?? 'piece';
+    const conflict = conflicts[key];
+    if (!props.itemUuid || !conflict) return;
+    const uuid = props.itemUuid;
+    busy.value = key;
+    moveBarcodeHere(conflict.holderUuid, conflict.code, { item_type: 'physical', item_uuid: uuid, pack_uuid: packUuid })
+        .then(async (res) => {
+            conflicts[key] = null;
             if (packUuid === null) pieceCodes.value = [...pieceCodes.value, res.data];
             await load();
             emit('changed');
@@ -145,7 +171,7 @@ function label(p: PhysicalItemPack): string {
             <div v-if="error" class="mb-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">{{ error }}</div>
             <div class="mb-2">
                 <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('containers.packs.piece_barcodes') }}</span>
-                <BarcodeChips :barcodes="pieceCodes" :editable="canManage" :busy="busy !== null" @add="addCode(null, $event)" @remove="removeCode(pieceCodes, $event, true)" />
+                <BarcodeChips :barcodes="pieceCodes" :editable="canManage" :busy="busy !== null" :conflict="conflicts.piece ?? null" @add="addCode(null, $event)" @remove="removeCode(pieceCodes, $event, true)" @move="moveCode(null)" />
             </div>
             <ul class="space-y-2">
                 <li v-for="p in packs" :key="p.uuid" class="space-y-2 rounded border border-slate-200 bg-slate-50/50 p-2" data-test="pack-row">
@@ -168,7 +194,7 @@ function label(p: PhysicalItemPack): string {
                         </template>
                     </div>
                     <p v-if="p.size_locked" class="text-[11px] text-slate-500">{{ t('containers.size_locked') }}</p>
-                    <BarcodeChips :barcodes="p.barcodes" :editable="canManage" :busy="busy !== null" @add="addCode(p.uuid, $event)" @remove="removeCode(p.barcodes, $event, false)" />
+                    <BarcodeChips :barcodes="p.barcodes" :editable="canManage" :busy="busy !== null" :conflict="conflicts[p.uuid] ?? null" @add="addCode(p.uuid, $event)" @remove="removeCode(p.barcodes, $event, false)" @move="moveCode(p.uuid)" />
                 </li>
             </ul>
             <div v-if="canManage" class="mt-2 flex flex-wrap items-center gap-2 rounded border border-teal-100 bg-teal-50/40 p-2 text-sm" data-test="pack-new">

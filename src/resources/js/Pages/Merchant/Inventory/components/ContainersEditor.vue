@@ -27,7 +27,7 @@ import {
     updateIngredientUnit,
     type IngredientAltUnit,
 } from '@/lib/api/inventory';
-import { createBarcode, deleteBarcode } from '@/lib/api/inventoryCodes';
+import { barcodeConflictOf, createBarcode, deleteBarcode, moveBarcodeHere } from '@/lib/api/inventoryCodes';
 import { containerSizeWarning } from '@/lib/amountSafety';
 import { friendlyAmount, holdsEntry, kindOfUnit, kindUnits, toStoredAmount, unitOptionLabel } from '@/lib/itemKind';
 import BarcodeChips from './BarcodeChips.vue';
@@ -55,7 +55,9 @@ const props = withDefaults(defineProps<{
     ingredientUuid?: string | null;
     countContainerUuid?: string | null;
     canManage?: boolean;
-}>(), { drafts: () => [], ingredientUuid: null, countContainerUuid: null, canManage: true });
+    /** Edit mode: the item's whole / part containers setting (saved with the count container). */
+    allowFractional?: boolean;
+}>(), { drafts: () => [], ingredientUuid: null, countContainerUuid: null, canManage: true, allowFractional: true });
 
 const emit = defineEmits<{
     (e: 'update:drafts', drafts: ContainerDraft[]): void;
@@ -245,9 +247,27 @@ const tillUnit = computed(() => {
     return kind === 'weighed' ? 'kg' : kind === 'liquid' ? 'l' : t(`inventory.units.${props.storedUnit}`);
 });
 
+/**
+ * Fix order B-1 (M3) — what a marker change tells the merchant before it
+ * saves: removing it, or MOVING it to another container (tills switch after
+ * their next settings refresh; counts not yet sent may be converted at the
+ * new size). Null = nothing to ask (the first marker).
+ */
+function markerWarning(uuid: string | null): string | null {
+    if (uuid === null) return t('containers.count_remove_warning', { unit: tillUnit.value });
+    const current = props.countContainerUuid ?? null;
+    if (current === null || current === uuid) return null;
+    const target = rows.value.find((r) => r.uuid === uuid);
+    return t('containers.count_move_warning', { container: target ? rowLabel(target) : '' });
+}
+
 async function setCountContainer(uuid: string | null): Promise<void> {
     if (!props.ingredientUuid) return;
-    if (uuid === null && !window.confirm(t('containers.count_remove_warning', { unit: tillUnit.value }))) return;
+    const warning = markerWarning(uuid);
+    if (warning !== null && !window.confirm(warning)) {
+        await load();
+        return;
+    }
     busyUuid.value = uuid ?? 'none';
     error.value = null;
     try {
@@ -261,12 +281,51 @@ async function setCountContainer(uuid: string | null): Promise<void> {
     }
 }
 
+/**
+ * Fix order B-1 (M4) — whole or part containers is set here, with the count
+ * container (the server refuses it on its own).
+ */
+async function setFractional(value: boolean): Promise<void> {
+    if (!props.ingredientUuid) return;
+    busyUuid.value = 'fractional';
+    error.value = null;
+    try {
+        await updateIngredient(props.ingredientUuid, { count_container_uuid: props.countContainerUuid ?? null, allow_fractional_pieces: value });
+        emit('changed');
+    } catch (e) {
+        error.value = message(e, 'containers.errors.save_failed');
+    } finally {
+        busyUuid.value = null;
+    }
+}
+
+// Fix order B-1 (M2) — a code that is on another live item: offer to move it here.
+const conflicts = reactive<Record<string, { code: string; message: string; holderUuid: string } | null>>({});
+
 async function addBarcode(row: IngredientAltUnit, code: string): Promise<void> {
     if (!props.ingredientUuid) return;
     busyUuid.value = row.uuid;
     rowErrors[row.uuid] = null;
+    conflicts[row.uuid] = null;
     try {
         await createBarcode(code, { item_type: 'ingredient', item_uuid: props.ingredientUuid, container_uuid: row.uuid });
+        await load();
+    } catch (e) {
+        const conflict = barcodeConflictOf(e);
+        if (conflict) conflicts[row.uuid] = { code, ...conflict };
+        else rowErrors[row.uuid] = message(e, 'containers.errors.save_failed');
+    } finally {
+        busyUuid.value = null;
+    }
+}
+
+async function moveBarcode(row: IngredientAltUnit): Promise<void> {
+    const conflict = conflicts[row.uuid];
+    if (!props.ingredientUuid || !conflict) return;
+    busyUuid.value = row.uuid;
+    try {
+        await moveBarcodeHere(conflict.holderUuid, conflict.code, { item_type: 'ingredient', item_uuid: props.ingredientUuid, container_uuid: row.uuid });
+        conflicts[row.uuid] = null;
         await load();
     } catch (e) {
         rowErrors[row.uuid] = message(e, 'containers.errors.save_failed');
@@ -406,7 +465,7 @@ defineExpose({ reload: load });
                         <p v-if="row.size_locked" class="text-[11px] text-slate-500">{{ t('containers.size_locked') }}</p>
                         <div class="flex flex-wrap items-center gap-2">
                             <Barcode class="size-3.5 text-slate-400" />
-                            <BarcodeChips :barcodes="row.barcodes ?? []" :editable="canManage" :busy="busyUuid === row.uuid" @add="addBarcode(row, $event)" @remove="removeBarcode(row, $event)" />
+                            <BarcodeChips :barcodes="row.barcodes ?? []" :editable="canManage" :busy="busyUuid === row.uuid" :conflict="conflicts[row.uuid] ?? null" @add="addBarcode(row, $event)" @remove="removeBarcode(row, $event)" @move="moveBarcode(row)" />
                         </div>
                         <div v-if="canManage" class="flex items-center gap-1">
                             <button type="button" :disabled="busyUuid === row.uuid" class="inline-flex h-8 items-center gap-1 rounded-lg border border-teal-200 bg-teal-50 px-2.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100 disabled:opacity-60" @click="saveRow(row)">
@@ -422,6 +481,11 @@ defineExpose({ reload: load });
                 <div v-if="canManage && countContainerUuid" class="mt-2">
                     <button type="button" :disabled="busyUuid !== null" class="text-[11px] font-semibold text-slate-500 underline hover:text-slate-700" data-test="count-marker-none" @click="setCountContainer(null)">{{ t('containers.count_marker_none') }}</button>
                 </div>
+                <!-- Fix order B-1 (M4) — whole or part containers, saved with the count container. -->
+                <label v-if="rows.length > 0" class="mt-2 inline-flex items-center gap-2 text-xs font-semibold text-slate-700" data-test="containers-fractional">
+                    <input type="checkbox" :checked="allowFractional" :disabled="!canManage || busyUuid !== null" class="size-4 rounded border-slate-300 text-teal-600" @change="setFractional(($event.target as HTMLInputElement).checked)">
+                    {{ t('inventory.piece.allow_fractional') }}
+                </label>
 
                 <!-- Add a container -->
                 <div v-if="canManage" class="mt-3 space-y-2 rounded border border-teal-100 bg-teal-50/40 p-2" data-test="container-new">

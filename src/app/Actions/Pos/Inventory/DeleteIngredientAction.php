@@ -168,6 +168,10 @@ final readonly class DeleteIngredientAction
             ];
             $ingredientId = $ingredient->id;
 
+            // Fix order B-1 (M2) — its barcodes (on the item and its
+            // containers) go with it, so the code can be linked again.
+            \App\Support\Inventory\ItemCodes::forgetBarcodes($companyId, ['ingredient_id' => (int) $ingredientId]);
+
             $ingredient->delete();
 
             $this->writeAuditLog->handle(new AuditLogData(

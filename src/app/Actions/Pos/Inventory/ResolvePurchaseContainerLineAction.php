@@ -70,6 +70,10 @@ final readonly class ResolvePurchaseContainerLineAction
             }
             $factor = Containers::decimal((string) $pack->pieces);
             $cap = $pieces->multipliedBy($factor)->toScale(3, RoundingMode::HALF_UP);
+            // Fix order B-1 (L1) — the same maximum as a loose line (999,999.999 pieces).
+            if ($cap->isGreaterThan(BigDecimal::of('999999.999'))) {
+                throw new RuntimeException(sprintf('%s: %s pieces is more than the 999,999.999 pieces one line can hold.', $product->name, Containers::trim((string) $cap)));
+            }
             $amount = $row['amount'] ?? null;
             $base = $amount === null || $amount === '' ? $cap : Containers::decimal($amount)->toScale(3, RoundingMode::HALF_UP);
             if (! $base->isPositive()) {

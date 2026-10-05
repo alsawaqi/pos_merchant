@@ -168,7 +168,8 @@ test('F the scan box: lists search by name / SKU, documents add by scan, unknown
     assert.match(sfc(CREATE).template, /data-test="purchase-scan"/);
     const box = sfc(COMPONENTS[6]);
     assert.match(box.script, /scanCode\(code\)/);
-    assert.match(box.script, /props\.canLink && res\.data\.can_link/);
+    // (Fix order B-1 — the link decision is lib/scanDetect scanDecision, given canLink and the server's can_link.)
+    assert.match(box.script, /canLink: props\.canLink,\s*serverCanLink: res\.data\.can_link,/);
     assert.match(sfc(COMPONENTS[7]).script, /linkScannedCode\(/);
     const api = read('resources/js/lib/api/inventoryCodes.ts');
     assert.match(api, /\/api\/inventory\/scan\?code=\$\{encodeURIComponent\(code\)\}/);

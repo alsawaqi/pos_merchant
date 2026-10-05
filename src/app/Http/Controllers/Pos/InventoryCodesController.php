@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Pos;
 
+use App\Actions\Pos\Inventory\BarcodeTakenException;
 use App\Actions\Pos\Inventory\CreateItemBarcodeAction;
 use App\Actions\Pos\Inventory\ScanLookupAction;
 use App\Actions\Security\WriteAuditLogAction;
@@ -51,7 +52,7 @@ class InventoryCodesController extends Controller
         try {
             $row = $this->createFrom($request, $data, (string) $data['barcode']);
         } catch (RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage(), 'errors' => ['barcode' => [$e->getMessage()]]], 422);
+            return $this->refused($e, 'barcode');
         }
 
         return response()->json(['data' => $row->summary()], 201);
@@ -103,10 +104,25 @@ class InventoryCodesController extends Controller
         try {
             $this->createFrom($request, $data, (string) $data['code']);
         } catch (RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage(), 'errors' => ['code' => [$e->getMessage()]]], 422);
+            return $this->refused($e, 'code');
         }
 
         return response()->json(['data' => $this->scan->handle($this->tenant->requiredId(), (string) $data['code'])], 201);
+    }
+
+    /**
+     * A refused barcode save. Fix order B-1 (M2) — when the code is on another
+     * live item's barcode row, `barcode_uuid` names that row so the portal can
+     * offer "Remove it from there" (DELETE /api/inventory/barcodes/{uuid}).
+     */
+    private function refused(RuntimeException $e, string $field): JsonResponse
+    {
+        $payload = ['message' => $e->getMessage(), 'errors' => [$field => [$e->getMessage()]]];
+        if ($e instanceof BarcodeTakenException) {
+            $payload['barcode_uuid'] = $e->barcodeUuid;
+        }
+
+        return response()->json($payload, 422);
     }
 
     /**
@@ -150,6 +166,11 @@ class InventoryCodesController extends Controller
             $product = Product::query()->where('company_id', $companyId)->where('uuid', $data['item_uuid'])->first();
             if ($product === null || ($data['item_type'] === 'physical') !== (bool) $product->is_internal) {
                 throw new RuntimeException('Item not found.');
+            }
+            // Fix order B-1 (L10) — a scanned code is for stock: only a
+            // bought-in (unit) product or a physical item may carry one.
+            if ($product->stock_mode !== 'unit' || $product->product_type === 'combo') {
+                throw new RuntimeException('Only a bought-in product or a physical item can have a stock barcode. A cooked, made-to-order or combo product cannot.');
             }
             if (! empty($data['pack_uuid'])) {
                 $pack = Packs::findByUuid($product, (string) $data['pack_uuid']);

@@ -229,6 +229,15 @@ final readonly class CreatePurchaseReceiptAction
 
         $isIngredient = $line['item_type'] === 'ingredient';
 
+        // Fix order B-1 (L6) — the container / pack bought in is share-locked
+        // for the transaction: a resize waits, then sees this line ("used").
+        if (isset($line['container'])) {
+            \App\Models\IngredientAltUnit::query()->where('ingredient_id', (int) $line['container']->ingredient_id)->sharedLock()->pluck('id');
+        }
+        if (isset($line['pack'])) {
+            \App\Models\ProductPack::query()->where('product_id', (int) $line['pack']->product_id)->sharedLock()->pluck('id');
+        }
+
         // LAUNCH-P2 — the line row exists FIRST so the received movement can
         // point at it: the purchasing report credits a receipt's spend to the
         // receipt's supplier through this link.

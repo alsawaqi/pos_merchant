@@ -9,6 +9,7 @@ use App\Actions\Pos\Inventory\IngredientUnitConverter;
 use App\Actions\Pos\Inventory\RecordPrepWasteAction;
 use App\Actions\Pos\Inventory\RecordWasteAction;
 use App\Support\Inventory\ContainerAmount;
+use App\Support\Inventory\Containers;
 use Illuminate\Support\Facades\DB;
 use App\Enums\MerchantPermission;
 use App\Enums\WasteReason;
@@ -172,6 +173,13 @@ class WasteController extends Controller
             if ($request->filled('container_uuid')) {
                 $rows = ContainerAmount::rows($ingredient, [['container_uuid' => (string) $request->input('container_uuid'), 'pieces' => $request->input('pieces')]]);
                 $quantity = (string) ContainerAmount::amount($ingredient, $rows, $quantity, is_string($unit) && $unit !== '' ? $unit : null, $this->units);
+                $unit = null;
+            } elseif (is_string($unit) && $unit !== '' && ($asContainer = Containers::resolve($ingredient, $unit)) !== null) {
+                // Fix order B-1 (L4) — "2" typed in the container picked in
+                // the unit list is 2 of that container, as on a transfer: the
+                // breakdown loses them too.
+                $rows = ContainerAmount::rows($ingredient, [['container_uuid' => (string) $asContainer->uuid, 'pieces' => $quantity]]);
+                $quantity = (string) ContainerAmount::amount($ingredient, $rows, null, null, $this->units);
                 $unit = null;
             }
 

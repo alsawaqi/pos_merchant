@@ -237,12 +237,12 @@ class CreateIngredientRequest extends FormRequest
             if ($barcode === '') {
                 return;
             }
-            if (isset($seen[$barcode])) {
+            if (isset($seen[mb_strtolower($barcode)])) {
                 $v->errors()->add($field, 'The same barcode is entered twice.');
 
                 return;
             }
-            $seen[$barcode] = true;
+            $seen[mb_strtolower($barcode)] = true;
             if (($owner = ItemCodes::barcodeOwner($companyId, $barcode)) !== null) {
                 $v->errors()->add($field, ItemCodes::barcodeMessage($owner));
             }

@@ -40,13 +40,11 @@ final readonly class UpdateIngredientAction
         'name',
         'name_ar',
         'unit',
-        // Phase A — piece config IS mutable with history: stock
-        // stays in the primary unit, so changing the piece ratio
-        // only affects FUTURE entry conversions (each purchase
-        // batch freezes its own ratio anyway).
-        'piece_unit_label',
-        'piece_unit_label_ar',
-        'units_per_piece',
+        // Fix order B-1 (M4) — piece_unit_label / piece_unit_label_ar /
+        // units_per_piece are the count container's MIRROR: they change only
+        // through count_container_uuid (CountContainerMirror), never on their
+        // own. allow_fractional_pieces changes only together with
+        // count_container_uuid (UpdateIngredientRequest refuses it otherwise).
         'allow_fractional_pieces',
         // LAUNCH review add-on (A1) — default_unit_cost is no longer typed:
         // it comes from purchases (UpdateIngredientRequest refuses a change).
@@ -94,8 +92,10 @@ final readonly class UpdateIngredientAction
             // an amount OF THE STORED UNIT ("crate" = 12000 ml); after a kind
             // change it would silently mean 12000 g. Refuse until they are
             // removed (a container cleared in this same save counts as removed).
-            $containerLabel = array_key_exists('piece_unit_label', $attributes)
-                ? $attributes['piece_unit_label']
+            // Fix order B-1 (M4) — the count container is removed in the same
+            // save by count_container_uuid: null (the mirror never changes alone).
+            $containerLabel = array_key_exists('count_container_uuid', $attributes) && ($attributes['count_container_uuid'] === null || $attributes['count_container_uuid'] === '')
+                ? null
                 : $ingredient->piece_unit_label;
             if ($ingredient->altUnits()->exists() || ($containerLabel !== null && trim((string) $containerLabel) !== '')) {
                 throw new RuntimeException(self::KIND_CHANGE_MESSAGE);

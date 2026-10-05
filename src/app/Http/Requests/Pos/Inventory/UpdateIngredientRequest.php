@@ -24,8 +24,10 @@ use Illuminate\Validation\Validator;
  *      default_unit_cost is refused; the unchanged value an old portal tab
  *      sends back still passes.
  *   A3 the count container is a container row (count_container_uuid; '' or
- *      null = none). Once the item has one, the piece_* / units_per_piece
- *      mirror changes only through it: a changed value sent here is refused.
+ *      null = none). The piece_* / units_per_piece mirror changes only through
+ *      it: a changed value sent on its own is refused (fix order B-1, M4: also
+ *      when the item has no count container yet, and allow_fractional_pieces
+ *      changes only together with count_container_uuid).
  *   A4 sku — unique across ingredients and products (case-insensitive); a
  *      blank keeps the current code, or generates one when there is none.
  */
@@ -34,6 +36,9 @@ class UpdateIngredientRequest extends FormRequest
     public const COST_MESSAGE = 'The cost cannot be typed any more: it comes from purchases (the weighted average). Record a purchase to change it.';
 
     public const PIECE_MESSAGE = 'The count container is now one of the item\'s containers: mark it "Tills count in this" in the containers list.';
+
+    /** Fix order B-1 (M4). */
+    public const FRACTION_MESSAGE = 'Whole or part containers are set next to "Tills count in this" in the containers list, not on their own.';
 
     /**
      * @return array<string, mixed>
@@ -116,8 +121,13 @@ class UpdateIngredientRequest extends FormRequest
                 $v->errors()->add('count_container_uuid', 'The count container must be one of this item\'s containers.');
             }
 
-            // A3 — once a count container exists, the mirror follows it only.
-            if ($current instanceof Ingredient && $current->count_container_id !== null && ! $this->has('count_container_uuid')) {
+            // A3 + fix order B-1 (M4) — the piece_* / units_per_piece mirror
+            // changes only through the count container (count_container_uuid),
+            // with or without one today: a CHANGED value sent on its own is
+            // refused (an unchanged one from an old tab passes). The same for
+            // allow_fractional_pieces, which is set next to "Tills count in
+            // this" (sent together with count_container_uuid).
+            if ($current instanceof Ingredient && ! $this->has('count_container_uuid')) {
                 foreach (['piece_unit_label', 'piece_unit_label_ar', 'units_per_piece'] as $field) {
                     if (! $this->has($field)) {
                         continue;
@@ -131,24 +141,8 @@ class UpdateIngredientRequest extends FormRequest
                         $v->errors()->add($field, self::PIECE_MESSAGE);
                     }
                 }
-            }
-
-            // Phase A — both-or-neither on the EFFECTIVE piece config (the
-            // ingredient's current value merged with whatever this PATCH sends).
-            if ($this->has('piece_unit_label') || $this->has('units_per_piece')) {
-                /** @var Ingredient|null $ingredient */
-                $ingredient = $this->route('ingredient');
-                $label = $this->has('piece_unit_label')
-                    ? $this->input('piece_unit_label')
-                    : $ingredient?->piece_unit_label;
-                $ratio = $this->has('units_per_piece')
-                    ? $this->input('units_per_piece')
-                    : $ingredient?->units_per_piece;
-                if (($label === null || $label === '') !== ($ratio === null || $ratio === '')) {
-                    $v->errors()->add(
-                        $this->has('piece_unit_label') ? 'piece_unit_label' : 'units_per_piece',
-                        'Piece unit label and units-per-piece must be set together (or both cleared).',
-                    );
+                if ($this->has('allow_fractional_pieces') && $this->boolean('allow_fractional_pieces') !== (bool) $current->allow_fractional_pieces) {
+                    $v->errors()->add('allow_fractional_pieces', self::FRACTION_MESSAGE);
                 }
             }
         });

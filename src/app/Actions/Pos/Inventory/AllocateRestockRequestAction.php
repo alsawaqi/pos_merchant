@@ -111,6 +111,8 @@ final readonly class AllocateRestockRequestAction
         return DB::transaction(function () use ($request, $allocations, $actor, $branch, $companyId): RestockRequest {
             $oldStatus = $request->status->value;
             $perLine = [];
+            /** @var array<int, string> $containersNotMoved line id => why only the total moved */
+            $containersNotMoved = [];
 
             // Pre-pass: resolve every line's allocated quantity and total
             // the central-pool demand per ingredient BEFORE writing anything,
@@ -198,6 +200,14 @@ final readonly class AllocateRestockRequestAction
 
                 $ingredient = $line->ingredient;
 
+                // Fix order B-1 (M1) — which containers move with this share,
+                // decided BEFORE the legs are written so the movement note can
+                // say when only the total moved.
+                [$breakdownLeaves, $breakdownSkipped] = $this->shareLeaves($ingredient, $line, $allocated);
+                if ($breakdownSkipped !== null) {
+                    $containersNotMoved[(int) $line->id] = $breakdownSkipped;
+                }
+
                 // Paired legs: the goods LEAVE the central pool and ARRIVE
                 // at the requesting branch — conserved, like manual
                 // allocation and branch transfers.
@@ -225,27 +235,22 @@ final readonly class AllocateRestockRequestAction
                     referenceType: RestockRequestLine::class,
                     referenceId: $line->id,
                     actor: $actor,
-                    note: sprintf(
-                        'Allocation from restock request %s',
-                        $request->uuid,
-                    ),
+                    note: $breakdownSkipped === null
+                        ? sprintf('Allocation from restock request %s', $request->uuid)
+                        : sprintf('Allocation from restock request %s (total only: %s)', $request->uuid, $breakdownSkipped),
                 );
 
                 // LAUNCH review add-on (D4, tester call 10) — a line that names
-                // its container moves that part of the breakdown warehouse →
-                // branch (the share allocated: pieces × allocated ÷ requested).
-                if ($line->container_id !== null && $line->pieces !== null && (float) $line->quantity_requested > 0) {
-                    $container = IngredientAltUnit::withTrashed()->where('ingredient_id', $ingredient->id)->find($line->container_id);
-                    if ($container !== null) {
-                        $pieces = Containers::decimal((string) $line->pieces)
-                            ->multipliedBy(Containers::decimal(StockDecimal::quantity($allocated)))
-                            ->dividedBy(Containers::decimal((string) $line->quantity_requested), StockDecimal::QUANTITY_SCALE, \Brick\Math\RoundingMode::HALF_UP);
-                        $this->breakdown->move($ingredient, null, (int) $branch->id, ContainerBreakdownAction::leaves($ingredient, [['container' => $container, 'pieces' => $pieces]]), 'allocation_out', 'allocation_in', $actor, [
-                            'reference_type' => RestockRequestLine::class,
-                            'reference_id' => (int) $line->id,
-                            'to_stock_movement_id' => (int) $inLeg->id,
-                        ]);
-                    }
+                // its container moves that share of the breakdown warehouse →
+                // branch. Fix order B-1 (M1) — only WHOLE containers (or, for
+                // an item that allows part pieces, an exact share): a share
+                // that is not whole containers moves the total only.
+                if ($breakdownLeaves !== null && $breakdownLeaves !== []) {
+                    $this->breakdown->move($ingredient, null, (int) $branch->id, $breakdownLeaves, 'allocation_out', 'allocation_in', $actor, [
+                        'reference_type' => RestockRequestLine::class,
+                        'reference_id' => (int) $line->id,
+                        'to_stock_movement_id' => (int) $inLeg->id,
+                    ]);
                 }
             }
 
@@ -269,10 +274,50 @@ final readonly class AllocateRestockRequestAction
                 newValues: [
                     'status' => RestockRequestStatus::Fulfilled->value,
                     'per_line_allocated' => $perLine,
-                ],
+                ] + ($containersNotMoved !== [] ? ['containers_not_moved' => $containersNotMoved] : []),
             ));
 
             return $request->fresh(['lines.ingredient', 'branch']);
         });
+    }
+
+    /**
+     * Fix order B-1 (M1) — the LEAF containers a share of a container line
+     * moves: leaf pieces of the whole line × allocated ÷ requested, worked out
+     * in leaves (a crate is 12 bottles) BEFORE any rounding. They move only
+     * when every leaf share is exact at 4 decimals and, for an item handled in
+     * whole containers, a whole number. Otherwise only the total moves and the
+     * reason is returned (never a 0.9996 or a half bottle).
+     *
+     * @return array{0: array<int, \Brick\Math\BigDecimal>|null, 1: string|null} [leaves, why only the total moved]
+     */
+    private function shareLeaves(\App\Models\Ingredient $ingredient, RestockRequestLine $line, float $allocated): array
+    {
+        if ($line->container_id === null || $line->pieces === null || (float) $line->quantity_requested <= 0) {
+            return [null, null];
+        }
+        $container = IngredientAltUnit::withTrashed()->where('ingredient_id', $ingredient->id)->find($line->container_id);
+        if ($container === null) {
+            return [null, null];
+        }
+
+        $requested = Containers::decimal((string) $line->quantity_requested);
+        $share = Containers::decimal(StockDecimal::quantity($allocated));
+        $leaves = [];
+        foreach (ContainerBreakdownAction::leaves($ingredient, [['container' => $container, 'pieces' => Containers::decimal((string) $line->pieces)]]) as $leafId => $leafPieces) {
+            try {
+                $part = $leafPieces->multipliedBy($share)->dividedBy($requested, StockDecimal::QUANTITY_SCALE, \Brick\Math\RoundingMode::UNNECESSARY);
+            } catch (\Brick\Math\Exception\RoundingNecessaryException) {
+                return [null, 'the share is not a whole number of containers'];
+            }
+            if (! $ingredient->allow_fractional_pieces && ! $part->isEqualTo($part->toScale(0, \Brick\Math\RoundingMode::DOWN))) {
+                return [null, 'the share is not a whole number of containers'];
+            }
+            if ($part->isPositive()) {
+                $leaves[(int) $leafId] = $part;
+            }
+        }
+
+        return [$leaves, null];
     }
 }

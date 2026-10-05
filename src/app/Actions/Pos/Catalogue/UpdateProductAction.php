@@ -132,6 +132,14 @@ final readonly class UpdateProductAction
         }
 
         return DB::transaction(function () use ($product, $attributes, $actor, $companyId, $oldMode, $newMode, $hasRecipe): Product {
+            // LAUNCH review fix order B-1 (L5) — a changed SKU / barcode is
+            // claimed under the per-company locks and checked again here.
+            $newSku = array_key_exists('sku', $attributes) && (string) ($attributes['sku'] ?? '') !== (string) ($product->sku ?? '') ? $attributes['sku'] : null;
+            $newBarcode = array_key_exists('barcode', $attributes) && (string) ($attributes['barcode'] ?? '') !== (string) ($product->barcode ?? '') ? $attributes['barcode'] : null;
+            if ($newSku !== null || $newBarcode !== null) {
+                \App\Support\Inventory\ItemCodes::claimProductCodes($companyId, $newSku, $newBarcode, (int) $product->id);
+            }
+
             $changes = [];
 
             foreach (self::MUTABLE_FIELDS as $field) {

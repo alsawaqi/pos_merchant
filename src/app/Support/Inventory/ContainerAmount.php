@@ -29,6 +29,9 @@ use RuntimeException;
  */
 final class ContainerAmount
 {
+    /** The largest amount the stock columns hold (numeric(14,4)), as IngredientUnitConverter. */
+    public const MAX_BASE = '999999999.9999';
+
     /**
      * Resolve [{container_uuid, pieces}] rows of one ingredient.
      *
@@ -100,6 +103,14 @@ final class ContainerAmount
     public static function amount(Ingredient $ingredient, array $rows, mixed $amount, ?string $unit, IngredientUnitConverter $units, bool $allowZero = false): BigDecimal
     {
         $cap = self::cap($rows);
+        // Fix order B-1 (L1) — the same maximum as a loose line: what the
+        // pieces hold can never be more than the stock columns store.
+        if ($cap->isGreaterThan(BigDecimal::of(self::MAX_BASE))) {
+            throw new RuntimeException(sprintf(
+                'The converted quantity (%s) exceeds the maximum storable amount of 999,999,999.9999 in the base unit — use a smaller quantity or unit.',
+                (string) $cap->stripTrailingZeros(),
+            ));
+        }
         if ($amount === null || $amount === '') {
             return $cap;
         }

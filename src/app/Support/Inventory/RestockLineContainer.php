@@ -42,6 +42,21 @@ final class RestockLineContainer
             throw new RuntimeException(sprintf('Enter how much "%s" is needed, or its container.', $ingredient->name));
         }
 
+        // Fix order B-1 (L4) — "2" in a container picked in the unit list is
+        // 2 of that container, as on a transfer: the line names it, so the
+        // allocation moves it.
+        if ($unit !== null && ($asContainer = Containers::resolve($ingredient, $unit)) !== null) {
+            $rows = ContainerAmount::rows($ingredient, [['container_uuid' => (string) $asContainer->uuid, 'pieces' => $line['quantity_requested']]]);
+            $base = ContainerAmount::amount($ingredient, $rows, null, null, $units);
+
+            return [
+                'quantity' => (float) (string) $base,
+                'container' => $rows[0]['container'],
+                'pieces' => (string) $rows[0]['pieces'],
+                'label' => ContainerAmount::label($ingredient, $rows[0]['container']),
+            ];
+        }
+
         return [
             'quantity' => $units->toBase($ingredient, $line['quantity_requested'], $unit),
             'container' => null,

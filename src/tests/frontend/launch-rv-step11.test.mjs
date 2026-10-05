@@ -76,9 +76,9 @@ test('tester call — the scan box opens the link dialog only for a real scan; a
     const { script } = sfc(SCANBOX);
     assert.match(script, /keyTimes = nextTimes\(keyTimes, Date\.now\(\), text\.value\.length, value\.length\);/);
     assert.match(script, /const scanned = wasScanned\(keyTimes, text\.value\);/);
-    assert.match(script, /\} else if \(props\.canLink && res\.data\.can_link && mayOfferLink\(code, scanned\)\) \{\s*linkCode\.value = code;/);
-    // Plain text in a list search: no dialog and no message (the list is already filtered).
-    assert.match(script, /\} else if \(props\.mode === 'add'\) \{/);
+    // (Fix order B-1 moved the decision into lib/scanDetect scanDecision, run in launch-rv-b1.test.mjs.)
+    assert.match(script, /const decision = scanDecision\(\{[\s\S]*?scanned,\s*mode: props\.mode,\s*\}\);/);
+    assert.match(script, /\} else if \(decision === 'link'\) \{\s*linkCode\.value = code;/);
     assert.doesNotMatch(script, /\} else if \(props\.canLink && res\.data\.can_link\) \{/);
 });
 

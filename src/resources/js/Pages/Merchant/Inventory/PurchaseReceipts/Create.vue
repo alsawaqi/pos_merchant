@@ -36,7 +36,8 @@ import { listTaxes, type Tax } from '@/lib/api/taxes';
 import { createPurchaseReceipt, type CreatePurchaseReceiptPayload, type PurchaseReceiptLinePayload } from '@/lib/api/purchaseReceipts';
 import type { ScanResult } from '@/lib/api/inventoryCodes';
 import { purchaseCostWarning } from '@/lib/amountSafety';
-import { amountInStored, amountProblem, containerLabel, containerLineText, containersOf, findContainer, friendly, plusOne, type ContainerSource } from '@/lib/containers';
+import { amountInStored, amountProblem, containerLabel, containerLineText, containersOf, findContainer, friendly, type ContainerSource } from '@/lib/containers';
+import { applyPurchaseScan } from '@/lib/scanApply';
 import { kindUnits, unitOptionLabel } from '@/lib/itemKind';
 import { useAmountConfirm } from '@/composables/useAmountConfirm';
 import AmountConfirmDialog from '@/Pages/Merchant/Inventory/components/AmountConfirmDialog.vue';
@@ -396,32 +397,22 @@ const canSubmit = computed(() => {
  * F — a scan adds "Milk · 1 × bottle 1.5 l"; the same scan again makes it 2.
  * A code naming only the item adds it in its first container.
  */
+const scanMessage = ref<string | null>(null);
+
+/**
+ * Fix order B-1 (M5, L10) — the pure lib/scanApply applyPurchaseScan (node
+ * tested): an item-level code scanned again makes the line 2 too, and an item
+ * Purchases refuses (a prep item, a cooked / combo product) is never added.
+ */
 function onScan(result: ScanResult): void {
-    const uuid = result.item?.uuid;
-    if (!uuid || !result.item_type) return;
-    const key = `${result.item_type}:${uuid}`;
-    const containerUuid = result.container?.uuid ?? result.pack?.uuid ?? '';
-    const existing = lines.value.find((l) => l.itemKey === key && (containerUuid === '' || l.container_uuid === containerUuid));
-    if (existing) {
-        if (containerUuid !== '') existing.pieces = plusOne(existing.pieces);
-        else if (!byPieces(existing) && result.item_type !== 'ingredient') existing.amount = plusOne(existing.amount);
-        return;
-    }
-    let line = lines.value.find((l) => l.itemKey === '');
-    if (!line) {
-        line = blankLine();
-        lines.value.push(line);
-    }
-    line.itemKey = key;
-    onItemChange(line);
-    if (containerUuid !== '') {
-        line.container_uuid = containerUuid;
-        line.pieces = '1';
-    } else if (result.item_type !== 'ingredient') {
-        line.amount = '1';
-    } else if (line.container_uuid !== '') {
-        line.pieces = '1';
-    }
+    const outcome = applyPurchaseScan(lines.value, result, { blankLine, onItemChange });
+    scanMessage.value = outcome.ok ? null : scanRefusalText(outcome.reason, result.item?.name ?? '');
+}
+
+function scanRefusalText(reason: string, item: string): string {
+    if (reason === 'not_purchasable_prep') return t('purchases_v2.scan_prep', { item });
+    if (reason === 'not_purchasable') return t('purchases_v2.scan_not_bought_in', { item });
+    return t('scan.wrong_item', { item });
 }
 
 // ---- submit --------------------------------------------------------
@@ -643,6 +634,7 @@ onMounted(async () => {
                     data-test="purchase-scan"
                     @found="onScan"
                 />
+                <p v-if="scanMessage" class="mt-1 text-xs font-semibold text-amber-700" data-test="purchase-scan-refused">{{ scanMessage }}</p>
 
                 <div class="mt-3 space-y-3">
                     <div v-for="(line, idx) in lines" :key="line.id" class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" data-test="purchase-line">

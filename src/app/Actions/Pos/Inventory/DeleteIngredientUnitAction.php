@@ -65,7 +65,7 @@ final readonly class DeleteIngredientUnitAction
                 CountContainerMirror::apply($ingredient, null);
             }
 
-            ItemBarcode::query()->where('container_id', $unit->id)->delete();
+            \App\Support\Inventory\ItemCodes::forgetBarcodes($companyId, ['container_id' => (int) $unit->id]);
 
             $unit->delete();
         });
