@@ -23,6 +23,7 @@ import {
     type ProductStockSummary,
 } from '@/lib/api/productStock';
 import { listTaxes, type Tax } from '@/lib/api/taxes';
+import type { PhysicalItemPack } from '@/lib/api/physicalItems';
 
 const props = defineProps<{
     open: boolean;
@@ -31,11 +32,13 @@ const props = defineProps<{
     canManage: boolean;
     /** PD2 — the product's cost price, for the qty x cost suggestion. */
     costPrice?: string | null;
+    /** LAUNCH review add-on (D3) — a physical item's packs: amounts may be typed in packs. */
+    packs?: PhysicalItemPack[];
 }>();
 
 const emit = defineEmits<{ (e: 'close'): void }>();
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 type Action = 'distribute' | 'receive' | 'allocate' | 'transfer' | 'adjust' | 'waste';
 
@@ -98,11 +101,27 @@ function qty(v: string | number): string {
     return String(v ?? '').trim();
 }
 
+/**
+ * LAUNCH review add-on (D3) — "Count in" a pack ("box 50 pcs"): every amount
+ * below is then typed in packs and sent in pieces (2 boxes → 100). '' = pieces.
+ */
+const packUuid = ref('');
+const pack = computed(() => (props.packs ?? []).find((p) => p.uuid === packUuid.value) ?? null);
+
+function inPieces(v: string | number): string {
+    const text = qty(v);
+    if (!pack.value || text === '') return text;
+    const n = parseFloat(text);
+    const per = parseFloat(pack.value.pieces);
+    if (!Number.isFinite(n) || !Number.isFinite(per)) return text;
+    return String(Math.round(n * per * 1000) / 1000);
+}
+
 // PD2 — placeholder suggestion for the purchase cost: quantity x the
 // product's cost price. A suggestion only — the merchant types what was
 // actually paid.
 function costSuggestion(quantity: string | number): string {
-    const q = parseFloat(qty(quantity));
+    const q = parseFloat(inPieces(quantity));
     const c = parseFloat(props.costPrice ?? '');
     if (!isFinite(q) || q <= 0 || !isFinite(c) || c <= 0) return 'e.g. 12.500';
     return (Math.round(q * c * 1000) / 1000).toFixed(3);
@@ -201,6 +220,7 @@ watch(
     () => {
         if (props.open && props.productUuid) {
             action.value = availableActions.value[0];
+            packUuid.value = '';
             void load();
         }
     },
@@ -236,10 +256,10 @@ async function run(fn: () => Promise<{ data: ProductStockSummary; warning?: stri
 
 function doDistribute(): void {
     if (!props.productUuid || qty(distributeForm.quantity) === '') return;
-    const total = parseFloat(qty(distributeForm.quantity)) || 0;
+    const total = parseFloat(inPieces(distributeForm.quantity)) || 0;
     const lines = distributeRows.value
         .filter((r) => qty(r.quantity) !== '' && (parseFloat(qty(r.quantity)) || 0) > 0)
-        .map((r) => ({ branch_uuid: r.branch_uuid, quantity: qty(r.quantity) }));
+        .map((r) => ({ branch_uuid: r.branch_uuid, quantity: inPieces(r.quantity) }));
     const distributed = lines.reduce((s, l) => s + (parseFloat(String(l.quantity)) || 0), 0);
     if (distributed > total + 1e-9) {
         actionError.value = 'You are distributing more than the received total.';
@@ -247,7 +267,7 @@ function doDistribute(): void {
     }
     void run(
         () => receiveAndDistributeProductStock(props.productUuid as string, {
-            quantity: qty(distributeForm.quantity),
+            quantity: inPieces(distributeForm.quantity),
             allocations: lines,
             note: distributeForm.note || null,
             ...costPayload(distributeCost.value),
@@ -260,7 +280,7 @@ function doReceive(): void {
     if (!props.productUuid || qty(receiveForm.quantity) === '') return;
     void run(
         () => receiveProductStock(props.productUuid as string, {
-            quantity: qty(receiveForm.quantity),
+            quantity: inPieces(receiveForm.quantity),
             note: receiveForm.note || null,
             ...costPayload(receiveCost.value),
         }),
@@ -272,7 +292,7 @@ function doAllocate(): void {
     if (!props.productUuid) return;
     const lines = allocateRows.value
         .filter((r) => qty(r.quantity) !== '' && (parseFloat(qty(r.quantity)) || 0) > 0)
-        .map((r) => ({ branch_uuid: r.branch_uuid, quantity: qty(r.quantity) }));
+        .map((r) => ({ branch_uuid: r.branch_uuid, quantity: inPieces(r.quantity) }));
     if (lines.length === 0) {
         actionError.value = 'Enter a quantity for at least one branch.';
         return;
@@ -293,7 +313,7 @@ function doTransfer(): void {
         () => transferProductStock(props.productUuid as string, {
             from_branch_uuid: transferForm.from_branch_uuid,
             to_branch_uuid: transferForm.to_branch_uuid,
-            quantity: qty(transferForm.quantity),
+            quantity: inPieces(transferForm.quantity),
             note: transferForm.note || null,
         }),
         'Transferred between branches.',
@@ -305,7 +325,7 @@ function doAdjust(): void {
     void run(
         () => adjustProductStock(props.productUuid as string, {
             branch_uuid: adjustForm.branch_uuid || null,
-            signed_quantity: qty(adjustForm.signed_quantity),
+            signed_quantity: inPieces(adjustForm.signed_quantity),
             note: adjustForm.note,
         }),
         'Adjusted.',
@@ -317,7 +337,7 @@ const wasteBranchBalance = computed(() =>
     branches.value.find((b) => b.branch_uuid === wasteForm.branch_uuid)?.stock_qty ?? '0.000',
 );
 const wasteCostPreview = computed(() => {
-    const q = parseFloat(qty(wasteForm.quantity));
+    const q = parseFloat(inPieces(wasteForm.quantity));
     const c = parseFloat(props.costPrice ?? '');
     if (!isFinite(q) || q <= 0 || !isFinite(c) || c <= 0) return null;
     return (Math.round(q * c * 1000) / 1000).toFixed(3);
@@ -328,7 +348,7 @@ function doWaste(): void {
     void run(
         () => recordProductWaste(props.productUuid as string, {
             branch_uuid: wasteForm.branch_uuid,
-            quantity: qty(wasteForm.quantity),
+            quantity: inPieces(wasteForm.quantity),
             reason: wasteForm.reason,
             notes: wasteForm.notes || null,
         }),
@@ -398,6 +418,16 @@ function fmtType(t: string): string {
                                 @click="action = a; actionError = null; actionOk = null; actionWarning = null"
                             >{{ actionLabel(a) }}</button>
                         </div>
+
+                        <!-- D3 — every amount below may be typed in a pack ("2 × box 50 pcs" = 100 pieces). -->
+                        <label v-if="(packs ?? []).length > 0" class="mb-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
+                            {{ t('containers.packs.count_in') }}
+                            <select v-model="packUuid" data-test="stock-dialog-pack" class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm font-normal">
+                                <option value="">{{ t('containers.packs.pieces') }}</option>
+                                <option v-for="p in packs" :key="p.uuid" :value="p.uuid">{{ locale === 'ar' ? p.display_name_ar : p.display_name }}</option>
+                            </select>
+                            <span v-if="pack" class="font-normal text-slate-500" data-test="stock-dialog-pack-hint">{{ t('containers.packs.count_in_hint', { pack: locale === 'ar' ? pack.display_name_ar : pack.display_name, pieces: pack.pieces }) }}</span>
+                        </label>
 
                         <p v-if="actionError" class="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{{ actionError }}</p>
                         <p v-if="actionOk" class="mb-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">{{ actionOk }}</p>

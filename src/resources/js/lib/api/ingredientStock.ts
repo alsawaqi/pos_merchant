@@ -9,6 +9,7 @@
  */
 
 import { apiGet, apiPost, type JsonValue } from '@/lib/api';
+import type { BreakdownEntry } from '@/lib/api/inventory';
 
 // ---- Domain types -----------------------------------------------
 
@@ -17,6 +18,9 @@ export interface IngredientStockBranch {
     branch_name: string;
     /** Per-branch balance; null = this branch has never stocked it. */
     quantity: string | null;
+    /** LAUNCH review add-on (B2) — the breakdown by container and when it was counted. */
+    breakdown?: BreakdownEntry[];
+    containers_counted_at?: string | null;
 }
 
 export interface IngredientStockMovement {
@@ -36,6 +40,9 @@ export interface IngredientStockSummary {
     unit: string;
     /** Central warehouse balance. */
     central_quantity: string;
+    /** LAUNCH review add-on (B2) — the warehouse breakdown and its last correction. */
+    central_breakdown?: BreakdownEntry[];
+    central_containers_counted_at?: string | null;
     branches: IngredientStockBranch[];
     recent_movements: IngredientStockMovement[];
 }
@@ -112,4 +119,16 @@ export function adjustIngredientStock(
     payload: { branch_uuid?: string | null; signed_quantity: string | number; note: string } & EntryUnitField,
 ): Promise<{ data: IngredientStockSummary }> {
     return apiPost<{ data: IngredientStockSummary }>(`/api/ingredients/${uuid}/stock/adjust`, payload as unknown as JsonValue);
+}
+
+/**
+ * LAUNCH review add-on (B, tester call 8) — "Correct containers": set the
+ * warehouse breakdown to exactly these containers (pieces ≥ 0); the total does
+ * not move. inventory.manage + access to all branches.
+ */
+export function correctWarehouseContainers(
+    uuid: string,
+    payload: { containers: { container_uuid: string; pieces: string | number }[]; note?: string | null },
+): Promise<{ data: IngredientStockSummary }> {
+    return apiPost<{ data: IngredientStockSummary }>(`/api/ingredients/${uuid}/stock/containers`, payload as unknown as JsonValue);
 }

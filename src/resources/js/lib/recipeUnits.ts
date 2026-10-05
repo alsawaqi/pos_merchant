@@ -18,12 +18,24 @@ export const QUANTITY_DECIMALS = 4;
 
 export interface RecipeUnitSource {
     unit: string;
-    alt_units?: { name: string; factor: string }[];
+    /**
+     * LAUNCH review add-on (A2) — the item's containers: with a token (what
+     * the recipe line stores, "#…") and display names ("bottle 1.5 l"); the
+     * same word may have several sizes, so options are keyed by token.
+     */
+    alt_units?: { name: string; factor: string; uuid?: string; token?: string; display_name?: string; display_name_ar?: string }[];
     auto_units?: { name: string; factor: string }[];
     piece_unit_label?: string | null;
     /** Fix order 1, K8 — the piece unit's Arabic label, used when the locale is ar. */
     piece_unit_label_ar?: string | null;
     units_per_piece?: string | null;
+    /** Review add-on A3 — the count container row (then '@piece' is not offered again). */
+    count_container_uuid?: string | null;
+}
+
+/** Whether the count container is one of the container rows. */
+function countContainerIsRow(ingredient: RecipeUnitSource): boolean {
+    return !!ingredient.count_container_uuid && (ingredient.alt_units ?? []).some((c) => c.uuid === ingredient.count_container_uuid);
 }
 
 /**
@@ -91,7 +103,14 @@ export function recipeUnitOptions(ingredient: RecipeUnitSource | null | undefine
     const seen = new Set<string>([base]);
     for (const alt of ingredient.alt_units ?? []) {
         const factor = positive(alt.factor);
-        if (seen.has(alt.name) || factor === null) continue;
+        const key = alt.token ?? alt.name;
+        if (seen.has(key) || factor === null) continue;
+        seen.add(key);
+        if (alt.token) {
+            const label = (locale === 'ar' ? alt.display_name_ar : undefined) ?? alt.display_name ?? `${alt.name} (${friendlyText(factor, base)})`;
+            options.push({ value: alt.token, label, factor });
+            continue;
+        }
         seen.add(alt.name);
         options.push({ value: alt.name, label: `${alt.name} (${friendlyText(factor, base)})`, factor });
     }
@@ -104,7 +123,7 @@ export function recipeUnitOptions(ingredient: RecipeUnitSource | null | undefine
         options.push({ value: auto.name, label: us ? `${locale === 'ar' ? us.ar : us.en} (${us.size})` : auto.name, factor });
     }
     const perPiece = positive(ingredient.units_per_piece);
-    if (ingredient.piece_unit_label && perPiece !== null && !(base === 'piece' && perPiece === 1)) {
+    if (ingredient.piece_unit_label && perPiece !== null && !(base === 'piece' && perPiece === 1) && !countContainerIsRow(ingredient)) {
         options.push({
             value: PIECE_UNIT,
             label: `${pieceUnitLabel(ingredient, locale)} (${friendlyText(perPiece, base)})`,
@@ -127,6 +146,9 @@ export function recipeUnitName(ingredient: RecipeUnitSource | null | undefined, 
     if (value === PIECE_UNIT) return pieceUnitLabel(ingredient, locale) ?? 'piece';
     // G1 — "2 gal" / "2 جالون".
     if (locale === 'ar' && US_UNITS[value]) return US_UNITS[value]!.ar;
+    // Review add-on A2 — a container token reads as the container ("2 × bottle 1.5 l").
+    const container = (ingredient.alt_units ?? []).find((c) => c.token === value);
+    if (container) return `× ${locale === 'ar' && container.display_name_ar ? container.display_name_ar : (container.display_name ?? container.name)}`;
     return value;
 }
 

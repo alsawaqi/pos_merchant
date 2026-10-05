@@ -37,6 +37,7 @@ import {
     type MerchantBranch, type BranchProductRow, type BranchStaffMember, type BranchActivity, type BranchDevice,
 } from '@/lib/api/branches';
 import { ApiError } from '@/lib/api';
+import { getInventorySettings } from '@/lib/api/inventory';
 import { friendlyAmount } from '@/lib/itemKind';
 import { usePermissions } from '@/composables/usePermissions';
 import { canMarkSoldOut, MerchantPermission } from '@/lib/permissions';
@@ -230,7 +231,17 @@ async function safe<T>(fn: () => Promise<{ data: T }>, target: { value: T | null
     }
 }
 
+// LAUNCH review add-on (A1) — "Add stock" is refused while single stock-in is on
+// (stock comes in through Purchases), and its form reads the old default cost:
+// hidden unless the company turned single stock-in off.
+const singleStockIn = ref(true);
+
 onMounted(() => {
+    if (canInventoryManage) {
+        getInventorySettings()
+            .then((res) => { singleStockIn.value = res.data.single_stock_in; })
+            .catch(() => { singleStockIn.value = true; });
+    }
     void loadCore();
     void safe(() => listBranchDevices(uuid), devices);
     if (canCatalogue) void safe(() => getBranchProducts(uuid), products);
@@ -281,9 +292,10 @@ onMounted(() => {
 
                         <div class="flex shrink-0 flex-wrap items-center gap-2">
                             <button
-                                v-if="canInventoryManage"
+                                v-if="canInventoryManage && !singleStockIn"
                                 type="button"
                                 class="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700"
+                                data-test="branch-add-stock"
                                 @click="showAddStock = true"
                             >
                                 <Plus class="size-4" />

@@ -11,13 +11,24 @@
 
 export const PIECE_UNIT = '@piece';
 
-/** What the picker needs from an ingredient (a subset of the API shape). */
+/**
+ * What the picker needs from an ingredient (a subset of the API shape).
+ * LAUNCH review add-on (A2) — a container with a token is keyed by it and
+ * shown by its display name (two "bottle" sizes both show); the count
+ * container, once a container row, is not offered again as '@piece'.
+ */
 export interface PurchaseUnitSource {
     unit: string;
-    alt_units?: { name: string; factor: string }[];
+    alt_units?: { name: string; factor: string; uuid?: string; token?: string; display_name?: string; display_name_ar?: string }[];
     auto_units?: { name: string; factor: string }[];
     piece_unit_label?: string | null;
     units_per_piece?: string | null;
+    count_container_uuid?: string | null;
+}
+
+/** Whether the count container is one of the container rows. */
+function countContainerIsRow(ingredient: PurchaseUnitSource): boolean {
+    return !!ingredient.count_container_uuid && (ingredient.alt_units ?? []).some((c) => c.uuid === ingredient.count_container_uuid);
 }
 
 export interface PurchaseUnitOption {
@@ -106,7 +117,14 @@ export function purchaseUnitOptions(ingredient: PurchaseUnitSource | null | unde
     const seen = new Set<string>([base]);
     for (const alt of ingredient.alt_units ?? []) {
         const factor = positive(alt.factor);
-        if (seen.has(alt.name) || factor === null) continue;
+        const key = alt.token ?? alt.name;
+        if (seen.has(key) || factor === null) continue;
+        seen.add(key);
+        if (alt.token) {
+            const label = (locale === 'ar' ? alt.display_name_ar : undefined) ?? alt.display_name ?? `${alt.name} (${holdsText(factor, base)})`;
+            options.push({ value: alt.token, label, factor });
+            continue;
+        }
         seen.add(alt.name);
         options.push({ value: alt.name, label: `${alt.name} (${holdsText(factor, base)})`, factor });
     }
@@ -128,7 +146,7 @@ export function purchaseUnitOptions(ingredient: PurchaseUnitSource | null | unde
     us.sort((a, b) => b.factor - a.factor);
     options.push(...metric, ...us);
     const perPiece = positive(ingredient.units_per_piece);
-    if (ingredient.piece_unit_label && perPiece !== null && !(base === 'piece' && perPiece === 1)) {
+    if (ingredient.piece_unit_label && perPiece !== null && !(base === 'piece' && perPiece === 1) && !countContainerIsRow(ingredient)) {
         options.push({
             value: PIECE_UNIT,
             label: `${ingredient.piece_unit_label} (${holdsText(perPiece, base)})`,
@@ -154,6 +172,9 @@ export function purchaseUnitName(ingredient: PurchaseUnitSource | null | undefin
     if (value === '' || value === ingredient.unit) return ingredient.unit;
     if (value === PIECE_UNIT) return ingredient.piece_unit_label ?? 'piece';
     if (locale === 'ar' && US_UNITS[value]) return US_UNITS[value]!.ar;
+    // Review add-on A2 — a container token reads as the container's name.
+    const container = (ingredient.alt_units ?? []).find((c) => c.token === value);
+    if (container) return locale === 'ar' && container.display_name_ar ? container.display_name_ar : (container.display_name ?? container.name);
     return value;
 }
 

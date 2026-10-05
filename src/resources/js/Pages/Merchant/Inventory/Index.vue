@@ -53,6 +53,19 @@ import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import IngredientStockDialog from './IngredientStockDialog.vue';
 import PrepItemsTab from './PrepItemsTab.vue';
 import AmountDisplaySwitch from './AmountDisplaySwitch.vue';
+// LAUNCH review add-on (part B) — containers, scan box, unit safety, breakdown.
+import AmountConfirmDialog from './components/AmountConfirmDialog.vue';
+import AmountInput from './components/AmountInput.vue';
+import BarcodeChips from './components/BarcodeChips.vue';
+import ContainerRows, { type ContainerRowDraft } from './components/ContainerRows.vue';
+import ContainersEditor, { type ContainerDraft } from './components/ContainersEditor.vue';
+import PacksEditor from './components/PacksEditor.vue';
+import ScanBox from './components/ScanBox.vue';
+import StockBreakdown from './components/StockBreakdown.vue';
+import { useAmountConfirm } from '@/composables/useAmountConfirm';
+import { containerSizeWarning, thresholdWarning } from '@/lib/amountSafety';
+import { amountInStored, amountProblem, containerLabel, findContainer, plusOne, rowsCap } from '@/lib/containers';
+import { createBarcode, deleteBarcode, type ScanResult } from '@/lib/api/inventoryCodes';
 import { useAmountDisplay } from '@/composables/useAmountDisplay';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
@@ -65,11 +78,9 @@ import {
     cancelRestockRequest,
     createBranchTransfer,
     createIngredient,
-    createIngredientUnit,
     createRestockRequest,
     createSupplier,
     deleteIngredient,
-    deleteIngredientUnit,
     deleteSupplier,
     getInventorySettings,
     ingredientUnitFactor,
@@ -77,7 +88,6 @@ import {
     listBranchStock,
     listBranchTransfers,
     listIngredients,
-    listIngredientUnits,
     listRestockRequests,
     listStockCounts,
     listStockMovements,
@@ -90,15 +100,14 @@ import {
     submitRestockRequest,
     submitStockCount,
     updateIngredient,
-    updateIngredientUnit,
     updateRestockRequest,
     updateSupplier,
     type BranchStockMeta,
     type BranchStockRow,
     type BranchTransfer,
     type BranchTransferLinePayload,
+    type ContainerDraftPayload,
     type Ingredient,
-    type IngredientAltUnit,
     type IngredientUnit,
     type InventoryStatus,
     type PaginatedMovements,
@@ -119,6 +128,7 @@ import {
 import {
     createPhysicalItem,
     deletePhysicalItem,
+    generateMissingPhysicalSkus,
     listPhysicalItems,
     updatePhysicalItem,
     type PhysicalItem,
@@ -128,7 +138,6 @@ import ProductStockDialog from '@/Pages/Merchant/Catalogue/ProductStockDialog.vu
 import {
     ITEM_KINDS,
     conversionsOf,
-    costUnit,
     displayAmount,
     friendlyAmount,
     hasConversions,
@@ -140,7 +149,6 @@ import {
     PIECE_UNIT,
     storedUnitForKind,
     toStoredAmount,
-    toStoredCost,
     trimAmount,
     unitOptionLabel,
     type ItemKind,
@@ -194,7 +202,22 @@ const physicalItemForm = reactive<{
     cost_price: string;
     low_stock_threshold: string;
     status: 'active' | 'inactive';
-}>({ name: '', name_ar: '', purpose: 'packaging', cost_price: '', low_stock_threshold: '', status: 'active' });
+    /** LAUNCH review add-on (A4) — blank = a generated PHY-0001. */
+    sku: string;
+}>({ name: '', name_ar: '', purpose: 'packaging', cost_price: '', low_stock_threshold: '', status: 'active', sku: '' });
+const generatingSkus = ref(false);
+
+// LAUNCH review add-on (F1) — the search on the Ingredients, Physical items and
+// Branch stock lists: typing filters by name or SKU; a scan opens the item.
+const ingredientSearch = ref('');
+const physicalSearch = ref('');
+const stockSearch = ref('');
+const highlightedIngredientId = ref<number | null>(null);
+
+function matchesSearch(text: string, ...fields: (string | null | undefined)[]): boolean {
+    const needle = text.trim().toLowerCase();
+    return needle === '' || fields.some((f) => (f ?? '').toLowerCase().includes(needle));
+}
 // Stock dialog target (receive w/ cost -> expense, distribute, transfer...).
 const physicalItemStockTarget = ref<PhysicalItem | null>(null);
 // Delete confirm (the server 422s while the item is still attached to
@@ -235,11 +258,19 @@ const transferModalOpen = ref(false);
 const transferModalBusy = ref(false);
 const transferModalError = ref<string | null>(null);
 const transferModalErrors = ref<Record<string, string[]>>({});
+// LAUNCH review add-on (D1) — a line may move CONTAINERS ("3 × bottle 1.5 l"):
+// the amount then fills in as pieces × size and may only be lowered.
+interface TransferLineDraft {
+    ingredient_uuid: string;
+    quantity: string;
+    unit: string;
+    containers: ContainerRowDraft[];
+}
 const transferForm = reactive<{
     from_branch_uuid: string;
     to_branch_uuid: string;
     note: string;
-    lines: { ingredient_uuid: string; quantity: string; unit: string }[];
+    lines: TransferLineDraft[];
 }>({ from_branch_uuid: '', to_branch_uuid: '', note: '', lines: [] });
 
 const loading = ref(true);
@@ -257,41 +288,42 @@ const ingModalMode = ref<'create' | 'edit'>('create');
 const ingModalTarget = ref<Ingredient | null>(null);
 const ingModalErrors = ref<Record<string, string[]>>({});
 const ingModalError = ref<string | null>(null);
+// LAUNCH review add-on — A1: no cost field (the cost comes from purchases);
+// A3: no "Count container" field (a container row is marked "Tills count in
+// this" in the containers editor); A4: the SKU (blank = generated).
 const ingForm = reactive<{
     name: string;
     name_ar: string;
     /** '' until the kind question is answered on a new ingredient. */
     unit: IngredientUnit | '';
-    piece_unit_label: string;
-    piece_unit_label_ar: string;
-    /** A5 — what the count container holds ("1.5" + "l"); sent as units_per_piece in the stored unit. */
-    container_amount: string;
-    container_unit: string;
     allow_fractional_pieces: boolean;
-    /** F1 — the cost as typed, per cost_unit (per kg / l by default); sent per stored unit. */
-    default_unit_cost: string;
-    cost_unit: string;
     min_stock_threshold: string;
     /** A7 — the unit of the kind the minimum is typed in (sent in the stored unit). */
     min_stock_unit: string;
     primary_supplier_id: number | null;
     status: InventoryStatus;
+    sku: string;
 }>({
     name: '',
     name_ar: '',
     unit: 'g',
-    piece_unit_label: '',
-    piece_unit_label_ar: '',
-    container_amount: '',
-    container_unit: '',
     allow_fractional_pieces: true,
-    default_unit_cost: '0.000',
-    cost_unit: '',
     min_stock_threshold: '',
     min_stock_unit: '',
     primary_supplier_id: null,
     status: 'active',
+    sku: '',
 });
+
+// A2 — the containers typed on a NEW ingredient (sent with it); A5 — the
+// barcodes typed on the item itself (a new one; a saved one saves each).
+const containerDrafts = ref<ContainerDraft[]>([]);
+const ingBarcodeDrafts = ref<string[]>([]);
+const ingBarcodeBusy = ref(false);
+const ingBarcodeError = ref<string | null>(null);
+
+// E2 — "Is this right?" before saving an unrealistic amount (warns, never blocks).
+const { warnings: amountWarnings, confirm: confirmAmounts, answer: answerAmounts } = useAmountConfirm();
 
 // LAUNCH item kind (owner decision 2026-10-03) — a new ingredient is asked
 // what KIND of item it is, never a base unit: Weighed is stored in g, Liquid
@@ -319,7 +351,7 @@ const kindChangeBlocked = computed<boolean>(() => ingModalMode.value === 'edit'
     && ingModalTarget.value !== null
     && ingForm.unit !== ''
     && kindOfUnit(ingForm.unit) !== kindOfUnit(ingModalTarget.value.unit)
-    && (altUnits.value.length > 0 || ingForm.piece_unit_label.trim() !== ''));
+    && ((ingModalTarget.value.alt_units?.length ?? 0) > 0 || (ingModalTarget.value.piece_unit_label ?? '').trim() !== ''));
 
 function chooseKind(kind: ItemKind): void {
     if (kindLocked.value) return;
@@ -335,63 +367,23 @@ function holdUnitLabel(unit: string): string {
     return unit === 'piece' || unit === 'pack' || unit === 'box' ? unitLabel(unit) : unitOptionLabel(unit, locale.value);
 }
 
-// =================== LAUNCH item kind, A3 — pack sizes on create ===
-// "How do you buy it?" (optional): crate holds 12 l, sack holds 25 kg, box
-// holds 24 pieces. Sent with the ingredient (pack_sizes[]) and saved in the
-// same transaction; the server works out each factor from the amount.
+// =================== LAUNCH review add-on (A2, A3, A5) — containers =======
+// "Containers — how do you buy it?" (ContainersEditor): on a NEW ingredient
+// the rows are drafts sent with it (pack_sizes[] in one transaction: the same
+// word in different sizes, nested "crate holds 12 × bottle 1 l", one row
+// marked "Tills count in this", barcodes per row); on a saved one each row
+// saves on its own and a used container's size is locked.
 
-interface PackSizeDraft {
-    name: string;
-    name_ar: string;
-    amount: string;
-    unit: string;
-}
-const packSizeDrafts = ref<PackSizeDraft[]>([]);
-
-function addPackSizeDraft(): void {
-    packSizeDrafts.value.push({ name: '', name_ar: '', amount: '', unit: holdUnits.value[0]?.value ?? '' });
-}
-
-function removePackSizeDraft(index: number): void {
-    packSizeDrafts.value.splice(index, 1);
-}
-
-// A kind change moves every pack row to a unit of the new kind.
+// A7 — the minimum's unit follows the kind.
 watch(
     () => ingForm.unit,
     () => {
         const allowed = holdUnits.value.map((u) => u.value);
-        for (const draft of packSizeDrafts.value) {
-            if (!allowed.includes(draft.unit)) draft.unit = allowed[0] ?? '';
-        }
-    },
-);
-
-// A5 — the count container's unit follows the kind too (A7: and the minimum's).
-watch(
-    () => ingForm.unit,
-    () => {
-        const allowed = holdUnits.value.map((u) => u.value);
-        if (!allowed.includes(ingForm.container_unit)) ingForm.container_unit = allowed[0] ?? '';
         if (!allowed.includes(ingForm.min_stock_unit)) ingForm.min_stock_unit = allowed[0] ?? '';
-        // F1 — the cost is per kg / l by default.
-        if (!allowed.includes(ingForm.cost_unit)) ingForm.cost_unit = ingForm.unit === '' ? '' : costUnit(ingForm.unit);
+        // A kind change moves every container draft to a unit of the new kind.
+        containerDrafts.value = containerDrafts.value.map((d) => (allowed.includes(d.unit) ? d : { ...d, unit: allowed[0] ?? '' }));
     },
 );
-
-/**
- * F1 — the cost per STORED unit: "0.150" per l on a ml item → "0.00015".
- * Unchanged on edit: the saved value goes back as it was (no audit noise);
- * anything that does not convert goes as typed (the server explains).
- */
-function costInStoredUnit(storedUnit: string): string {
-    const text = String(ingForm.default_unit_cost ?? '').trim();
-    const stored = toStoredCost(text, ingForm.cost_unit, storedUnit);
-    if (text === '' || stored === null) return text;
-    const saved = ingModalTarget.value?.default_unit_cost ?? null;
-    if (saved !== null && ingModalTarget.value?.unit === storedUnit && Math.abs(parseFloat(saved) - stored) < 1e-9) return saved;
-    return String(stored);
-}
 
 /**
  * A7 — the minimum stock in the stored unit: "5" kg on a g item → "5000".
@@ -409,69 +401,103 @@ function minimumInStoredUnit(storedUnit: string): string | null {
     return trimAmount(stored);
 }
 
-/**
- * A5 — what the count container holds, in the stored unit (units_per_piece):
- * "bottle holds 1.5 l" on a ml item → "1500". Blank = no container. An
- * amount that does not convert (0, negative) goes as typed, so the server
- * explains it next to the field.
- */
-function containerUnitsPerPiece(storedUnit: string): string | null {
-    const text = String(ingForm.container_amount ?? '').trim();
-    if (text === '') return null;
-    const stored = toStoredAmount(text, ingForm.container_unit, storedUnit);
-    return stored === null ? text : trimAmount(stored);
-}
-
-/** The rows to send: a fully blank row is left out; anything typed is sent (the server explains what is missing). */
-function packSizesPayload(): { name: string; name_ar: string | null; amount: string; unit: string }[] {
-    return packSizeDrafts.value
-        .filter((d) => d.name.trim() !== '' || d.name_ar.trim() !== '' || String(d.amount ?? '').trim() !== '')
-        .map((d) => ({ name: d.name.trim(), name_ar: d.name_ar.trim() || null, amount: String(d.amount ?? '').trim(), unit: d.unit }));
-}
-
-/** The first server error of one pack row (name, amount or unit). */
-function packSizeError(index: number): string | null {
-    for (const field of ['name', 'amount', 'unit']) {
-        const messages = ingModalErrors.value[`pack_sizes.${index}.${field}`];
-        if (messages && messages.length > 0) return messages[0]!;
+/** A draft container's size in the stored unit, or null while incomplete. */
+function draftFactor(index: number, storedUnit: string, depth = 0): number | null {
+    const d = containerDrafts.value[index];
+    if (!d || depth > 3) return null;
+    if (d.mode === 'nested') {
+        if (d.contains_index === null) return null;
+        const child = draftFactor(d.contains_index, storedUnit, depth + 1);
+        const q = parseFloat(String(d.contains_quantity));
+        return child !== null && Number.isFinite(q) ? child * q : null;
     }
-    return null;
+    return toStoredAmount(d.amount, d.unit, storedUnit);
 }
 
-// =================== Alternate units (v2 #13) ====================
-// Sub-editor inside the ingredient EDIT modal. Each row maps to a
-// separate CRUD endpoint under the ingredient uuid, so changes
-// persist immediately (add/save-factor/delete) rather than riding
-// the parent form submit. Only meaningful in edit mode — a brand-
-// new ingredient has no uuid yet, so the section shows a
-// "save first" hint instead. `factor` stays a STRING end-to-end.
+/** The container rows to send with a new ingredient (a fully blank row is left out). */
+function containersPayload(): ContainerDraftPayload[] {
+    return containerDrafts.value
+        .filter((d) => d.name.trim() !== '' || d.name_ar.trim() !== '' || String(d.amount ?? '').trim() !== '' || d.contains_index !== null)
+        .map((d) => (d.mode === 'nested'
+            ? { name: d.name.trim(), name_ar: d.name_ar.trim() || null, contains_index: d.contains_index, contains_quantity: String(d.contains_quantity ?? '').trim(), count_container: d.count_container, barcodes: d.barcodes }
+            : { name: d.name.trim(), name_ar: d.name_ar.trim() || null, amount: String(d.amount ?? '').trim(), unit: d.unit, count_container: d.count_container, barcodes: d.barcodes }));
+}
 
-const altUnits = ref<IngredientAltUnit[]>([]);
-const altUnitsLoading = ref(false);
-const altUnitsError = ref<string | null>(null);
-// Per-row inline field errors keyed by unit uuid (plus '' for the
-// add-new row), so a 422 highlights the exact row.
-const altUnitFieldErrors = ref<Record<string, Record<string, string[]>>>({});
-// uuid of the row whose save/delete is currently in flight.
-const altUnitBusyUuid = ref<string | null>(null);
-// LAUNCH item kind, A4 — these are the item's PACK SIZES: each row says
-// what the pack holds ("crate holds 12 l", an amount + a unit of the kind);
-// the server works out the factor. Nobody types a factor.
-// New-row draft.
-const altUnitNew = reactive<{ name: string; name_ar: string; amount: string; unit: string }>({
-    name: '',
-    name_ar: '',
-    amount: '',
-    unit: '',
-});
-const altUnitNewBusy = ref(false);
-// Editable buffers for existing rows, keyed by unit uuid. Lets the
-// user tweak what it holds / Arabic name without mutating the source
-// list until they hit Save.
-const altUnitDrafts = reactive<Record<string, { name_ar: string; amount: string; unit: string }>>({});
+/** The first server error of one container draft (name, amount, unit, what it holds, barcodes). */
+function containerDraftErrors(): string[] {
+    return Object.entries(ingModalErrors.value)
+        .filter(([field]) => field === 'pack_sizes' || field.startsWith('pack_sizes.') || field.startsWith('barcodes.'))
+        .map(([, messages]) => messages[0] ?? '')
+        .filter((m) => m !== '');
+}
 
-/** A4 — pack sizes are saved straight away, so they hold units of the SAVED kind. */
-const savedHoldUnits = computed<KindUnit[]>(() => kindUnits(ingModalTarget.value?.unit));
+/** E2 — the warnings an ingredient save asks about: containers too big / small, a minimum below one container. */
+function ingredientWarnings(storedUnit: string): ReturnType<typeof thresholdWarning>[] {
+    const warnings: ReturnType<typeof thresholdWarning>[] = [];
+    const factors: number[] = [];
+    if (ingModalMode.value === 'create') {
+        containerDrafts.value.forEach((_, i) => {
+            const factor = draftFactor(i, storedUnit);
+            if (factor !== null) {
+                factors.push(factor);
+                warnings.push(containerSizeWarning(factor, storedUnit));
+            }
+        });
+    } else {
+        for (const c of ingModalTarget.value?.alt_units ?? []) factors.push(parseFloat(c.factor));
+    }
+    warnings.push(thresholdWarning(minimumInStoredUnit(storedUnit), factors, storedUnit));
+    return warnings;
+}
+
+/** A5 — a barcode on the item itself: a draft on a new item, saved straight away on an existing one. */
+async function addItemBarcode(code: string): Promise<void> {
+    if (ingModalMode.value === 'create' || !ingModalTarget.value) {
+        if (!ingBarcodeDrafts.value.includes(code)) ingBarcodeDrafts.value.push(code);
+        return;
+    }
+    ingBarcodeBusy.value = true;
+    ingBarcodeError.value = null;
+    try {
+        await createBarcode(code, { item_type: 'ingredient', item_uuid: ingModalTarget.value.uuid });
+        await refreshIngredientTarget();
+    } catch (err) {
+        ingBarcodeError.value = err instanceof ApiError ? (err.firstValidationMessage() ?? err.message) : t('containers.errors.save_failed');
+    } finally {
+        ingBarcodeBusy.value = false;
+    }
+}
+
+async function removeItemBarcode(index: number): Promise<void> {
+    if (ingModalMode.value === 'create' || !ingModalTarget.value) {
+        ingBarcodeDrafts.value.splice(index, 1);
+        return;
+    }
+    const code = ingModalTarget.value.barcodes?.[index];
+    if (!code) return;
+    ingBarcodeBusy.value = true;
+    try {
+        await deleteBarcode(code.uuid);
+        await refreshIngredientTarget();
+    } catch (err) {
+        ingBarcodeError.value = err instanceof Error ? err.message : t('containers.errors.delete_failed');
+    } finally {
+        ingBarcodeBusy.value = false;
+    }
+}
+
+/** Re-read the list and the item being edited (its containers, count container and barcodes changed). */
+async function refreshIngredientTarget(): Promise<void> {
+    await fetchIngredients();
+    if (ingModalTarget.value) {
+        ingModalTarget.value = ingredients.value.find((i) => i.uuid === ingModalTarget.value?.uuid) ?? ingModalTarget.value;
+    }
+}
+
+/** The barcodes shown on the item (drafts on a new one). */
+const itemBarcodes = computed<{ uuid?: string; barcode: string; label?: string | null }[]>(() => (ingModalMode.value === 'create'
+    ? ingBarcodeDrafts.value.map((barcode) => ({ barcode }))
+    : (ingModalTarget.value?.barcodes ?? [])));
 
 // =================== Supplier modal ==============================
 
@@ -557,8 +583,16 @@ interface CountRow {
      * unit, kg/l, a pack size, or '@piece' = the count container.
      */
     unit: string;
+    /**
+     * LAUNCH review add-on (D2) — counted by container ("3 × bottle 1.5 l +
+     * 5 × bottle 500 ml"); `counted` is then the total (fills in, lower
+     * only) in `unit` ('' or a kind unit). Never pre-filled: counts stay blind.
+     */
+    containers: ContainerRowDraft[];
 }
 const countRows = ref<CountRow[]>([]);
+/** F — the count row a scan just found, so the screen can scroll to it. */
+const countSearch = ref('');
 // =================== Phase 5c modals ============================
 // 5 new modals: record waste, create/edit restock request, show
 // restock request, approve+reject (shared review modal), cancel,
@@ -578,7 +612,9 @@ const wasteForm = reactive<{
     notes: string;
     occurred_at: string;
     unit: string;
-}>({ ingredient_uuid: '', quantity: '', reason: 'spoiled', notes: '', occurred_at: '', unit: '' });
+    /** LAUNCH review add-on (D3) — by container: one row ("2 × bottle 1.5 l"). */
+    containers: ContainerRowDraft[];
+}>({ ingredient_uuid: '', quantity: '', reason: 'spoiled', notes: '', occurred_at: '', unit: '', containers: [] });
 
 const restockModalOpen = ref(false);
 const restockModalBusy = ref(false);
@@ -586,10 +622,18 @@ const restockModalError = ref<string | null>(null);
 const restockModalErrors = ref<Record<string, string[]>>({});
 const restockModalMode = ref<'create' | 'edit'>('create');
 const restockModalTarget = ref<RestockRequest | null>(null);
+/** D4 — a request line; `containers` holds at most one row ("1 × bottle 1.5 l", what a scan adds). */
+interface RestockLineDraft {
+    ingredient_uuid: string;
+    quantity: string;
+    note: string;
+    unit: string;
+    containers: ContainerRowDraft[];
+}
 const restockForm2 = reactive<{
     branch_uuid: string;
     note: string;
-    lines: { ingredient_uuid: string; quantity: string; note: string; unit: string }[];
+    lines: RestockLineDraft[];
 }>({ branch_uuid: '', note: '', lines: [] });
 
 const showOpen = ref(false);
@@ -723,6 +767,7 @@ function openCreatePhysicalItem(): void {
     physicalItemForm.cost_price = '';
     physicalItemForm.low_stock_threshold = '';
     physicalItemForm.status = 'active';
+    physicalItemForm.sku = '';
     physicalItemModalErrors.value = {};
     physicalItemModalError.value = null;
     physicalItemModalOpen.value = true;
@@ -737,6 +782,7 @@ function openEditPhysicalItem(item: PhysicalItem): void {
     physicalItemForm.cost_price = item.cost_price ?? '';
     physicalItemForm.low_stock_threshold = item.low_stock_threshold ?? '';
     physicalItemForm.status = (item.status ?? 'active') as 'active' | 'inactive';
+    physicalItemForm.sku = item.sku ?? '';
     physicalItemModalErrors.value = {};
     physicalItemModalError.value = null;
     physicalItemModalOpen.value = true;
@@ -753,9 +799,15 @@ async function submitPhysicalItem(): Promise<void> {
             purpose: physicalItemForm.purpose,
             cost_price: String(physicalItemForm.cost_price ?? '').trim() === '' ? null : String(physicalItemForm.cost_price).trim(),
             low_stock_threshold: String(physicalItemForm.low_stock_threshold ?? '').trim() === '' ? null : String(physicalItemForm.low_stock_threshold).trim(),
+            // LAUNCH review add-on (A4) — blank = generated (PHY-0001).
+            sku: physicalItemForm.sku.trim() || null,
         };
         if (physicalItemModalMode.value === 'create') {
-            await createPhysicalItem(payload);
+            // D3 — packs are added once the item is saved: reopen it for them.
+            const created = await createPhysicalItem(payload);
+            await fetchPhysicalItems();
+            openEditPhysicalItem(physicalItems.value.find((i) => i.uuid === created.data.uuid) ?? created.data);
+            return;
         } else if (physicalItemModalTarget.value) {
             await updatePhysicalItem(physicalItemModalTarget.value.uuid, { ...payload, status: physicalItemForm.status });
         }
@@ -775,6 +827,59 @@ async function submitPhysicalItem(): Promise<void> {
         physicalItemModalBusy.value = false;
     }
 }
+
+/** LAUNCH review add-on (A4) — "Generate missing SKUs" for older physical items. */
+async function generateSkus(): Promise<void> {
+    generatingSkus.value = true;
+    try {
+        const res = await generateMissingPhysicalSkus();
+        success.value = t('containers.sku.generated', { count: res.data.generated });
+        await fetchPhysicalItems();
+    } catch (err) {
+        error.value = extractMessage(err, t('containers.errors.save_failed'));
+    } finally {
+        generatingSkus.value = false;
+    }
+}
+
+/** D3 — the packs editor changed packs / barcodes: keep the list (and the open item) current. */
+async function onPacksChanged(): Promise<void> {
+    await fetchPhysicalItems();
+    if (physicalItemModalTarget.value) {
+        physicalItemModalTarget.value = physicalItems.value.find((i) => i.uuid === physicalItemModalTarget.value?.uuid) ?? physicalItemModalTarget.value;
+    }
+}
+
+/** F1 — a scan on the Ingredients list opens that ingredient. */
+function onIngredientScan(result: ScanResult): void {
+    const ingredient = ingredients.value.find((i) => i.uuid === result.item?.uuid);
+    if (!ingredient) return;
+    ingredientSearch.value = '';
+    if (canManage.value) openEditIngredient(ingredient);
+    else openWarehouseDialog(ingredient);
+}
+
+/** F1 — a scan on the Physical items list opens that item. */
+function onPhysicalScan(result: ScanResult): void {
+    const item = physicalItems.value.find((i) => i.uuid === result.item?.uuid);
+    if (!item) return;
+    physicalSearch.value = '';
+    if (canManage.value) openEditPhysicalItem(item);
+    else physicalItemStockTarget.value = item;
+}
+
+/** F1 — a scan on the Branch stock list highlights the row and shows its amount in every unit. */
+function onStockScan(result: ScanResult): void {
+    const ingredient = ingredients.value.find((i) => i.uuid === result.item?.uuid);
+    if (!ingredient) return;
+    stockSearch.value = '';
+    highlightedIngredientId.value = ingredient.id;
+    conversionsOpenId.value = ingredient.id;
+}
+
+const filteredIngredients = computed(() => ingredients.value.filter((i) => matchesSearch(ingredientSearch.value, i.name, i.name_ar, i.sku)));
+const filteredPhysicalItems = computed(() => physicalItems.value.filter((i) => matchesSearch(physicalSearch.value, i.name, i.name_ar, i.sku)));
+const filteredBranchStock = computed(() => branchStock.value.filter((r) => matchesSearch(stockSearch.value, r.ingredient?.name, r.ingredient?.name_ar, ingredients.value.find((i) => i.id === r.ingredient_id)?.sku)));
 
 async function confirmDeletePhysicalItem(): Promise<void> {
     if (!physicalItemDeleteTarget.value) return;
@@ -975,21 +1080,17 @@ function openCreateIngredient(): void {
     ingForm.name_ar = '';
     // No kind until the person picks one: milk must never be saved as Weighed by default.
     ingForm.unit = '';
-    ingForm.piece_unit_label = '';
-    ingForm.piece_unit_label_ar = '';
-    ingForm.container_amount = '';
-    ingForm.container_unit = '';
     ingForm.allow_fractional_pieces = true;
-    ingForm.default_unit_cost = '0.000';
-    ingForm.cost_unit = '';
     ingForm.min_stock_threshold = '';
     ingForm.min_stock_unit = '';
     ingForm.primary_supplier_id = null;
     ingForm.status = 'active';
+    ingForm.sku = '';
     ingModalErrors.value = {};
     ingModalError.value = null;
-    resetAltUnits();
-    packSizeDrafts.value = [];
+    containerDrafts.value = [];
+    ingBarcodeDrafts.value = [];
+    ingBarcodeError.value = null;
     ingModalOpen.value = true;
 }
 
@@ -999,28 +1100,19 @@ function openEditIngredient(ingredient: Ingredient): void {
     ingForm.name = ingredient.name;
     ingForm.name_ar = ingredient.name_ar ?? '';
     ingForm.unit = ingredient.unit;
-    ingForm.piece_unit_label = ingredient.piece_unit_label ?? '';
-    ingForm.piece_unit_label_ar = ingredient.piece_unit_label_ar ?? '';
-    // A5 — "1500.0000" ml reopens as "bottle holds 1.5 l".
-    const holds = holdsEntry(ingredient.units_per_piece, ingredient.unit);
-    ingForm.container_amount = holds.amount;
-    ingForm.container_unit = holds.amount !== '' ? holds.unit : (kindUnits(ingredient.unit)[0]?.value ?? '');
     ingForm.allow_fractional_pieces = ingredient.allow_fractional_pieces;
-    // F1 — 0.00015 per ml reopens as 0.150 per l.
-    ingForm.default_unit_cost = friendlyCost(ingredient.default_unit_cost, ingredient.unit).amount;
-    ingForm.cost_unit = costUnit(ingredient.unit);
     // A7 — a 5000 g minimum reopens as 5 kg (exactly, or in the stored unit).
     const minimum = holdsEntry(ingredient.min_stock_threshold, ingredient.unit);
     ingForm.min_stock_threshold = ingredient.min_stock_threshold === null ? '' : (minimum.amount === '' ? trimAmount(parseFloat(ingredient.min_stock_threshold)) : minimum.amount);
     ingForm.min_stock_unit = minimum.amount === '' ? ingredient.unit : minimum.unit;
     ingForm.primary_supplier_id = ingredient.primary_supplier_id;
     ingForm.status = ingredient.status;
+    ingForm.sku = ingredient.sku ?? '';
     ingModalErrors.value = {};
     ingModalError.value = null;
-    // Seed alt units from the eager-loaded array, then refresh from
-    // the API so the editor always reflects server truth.
-    seedAltUnits(ingredient.alt_units ?? []);
-    void loadAltUnits(ingredient.uuid);
+    containerDrafts.value = [];
+    ingBarcodeDrafts.value = [];
+    ingBarcodeError.value = null;
     ingModalOpen.value = true;
 }
 
@@ -1038,32 +1130,30 @@ async function submitIngredient(): Promise<void> {
         return;
     }
     const unit: IngredientUnit = ingForm.unit;
+    // E2 — "Is this right?" (warns, never blocks).
+    if (!(await confirmAmounts(ingredientWarnings(unit)))) return;
     ingModalBusy.value = true;
     try {
+        // Review add-on — A1: no cost (it comes from purchases); A3: the count
+        // container is a container row; A4: blank SKU = generated.
         const payload = {
             name: ingForm.name.trim(),
             name_ar: ingForm.name_ar.trim() || null,
             unit,
-            // Phase A — piece config travels as a pair (server enforces
-            // both-or-neither); blanks become null = "not piece-tracked".
-            piece_unit_label: ingForm.piece_unit_label.trim() || null,
-            piece_unit_label_ar: ingForm.piece_unit_label_ar.trim() || null,
-            // A5 — "bottle holds 1.5 l" → 1500 (ml).
-            units_per_piece: containerUnitsPerPiece(unit),
             allow_fractional_pieces: ingForm.allow_fractional_pieces,
-            // F1 — typed per kg / l, sent per stored unit (6 decimals).
-            default_unit_cost: costInStoredUnit(unit),
-            // The bound input is type="number", so Vue casts this to a
-            // number as soon as the user types — String() keeps the
-            // empty-check safe for both the number and blank-string cases.
             // A7 — typed in a unit of the kind, sent in the stored unit.
             min_stock_threshold: minimumInStoredUnit(unit),
             primary_supplier_id: ingForm.primary_supplier_id ?? null,
+            sku: ingForm.sku.trim() || null,
         };
         if (ingModalMode.value === 'create') {
-            // A3 — the pack sizes ride the same request (one transaction).
-            const packSizes = packSizesPayload();
-            await createIngredient(packSizes.length > 0 ? { ...payload, pack_sizes: packSizes } : payload);
+            // A2 — the containers ride the same request (one transaction).
+            const containers = containersPayload();
+            await createIngredient({
+                ...payload,
+                ...(containers.length > 0 ? { pack_sizes: containers } : {}),
+                ...(ingBarcodeDrafts.value.length > 0 ? { barcodes: ingBarcodeDrafts.value } : {}),
+            });
         } else if (ingModalTarget.value) {
             await updateIngredient(ingModalTarget.value.uuid, {
                 ...payload,
@@ -1104,149 +1194,6 @@ async function confirmDeleteIngredient(): Promise<void> {
         }
     } finally {
         deleting.value = false;
-    }
-}
-
-// =================== Alternate-unit flows (v2 #13) ===============
-
-function resetAltUnits(): void {
-    altUnits.value = [];
-    altUnitsError.value = null;
-    altUnitFieldErrors.value = {};
-    altUnitBusyUuid.value = null;
-    altUnitNew.name = '';
-    altUnitNew.name_ar = '';
-    altUnitNew.amount = '';
-    altUnitNew.unit = savedHoldUnits.value[0]?.value ?? '';
-    altUnitNewBusy.value = false;
-    for (const k of Object.keys(altUnitDrafts)) delete altUnitDrafts[k];
-}
-
-function seedAltUnits(units: IngredientAltUnit[]): void {
-    resetAltUnits();
-    altUnits.value = [...units].sort((a, b) => a.sort_order - b.sort_order);
-    syncAltUnitDrafts();
-}
-
-// Mirror the source list into editable drafts (what it holds + Arabic
-// name), so editing a row doesn't mutate the canonical data. A4 — a
-// factor of 12000 on a ml item reopens as "holds 12 l".
-function syncAltUnitDrafts(): void {
-    for (const k of Object.keys(altUnitDrafts)) delete altUnitDrafts[k];
-    for (const u of altUnits.value) {
-        const holds = holdsEntry(u.factor, ingModalTarget.value?.unit);
-        altUnitDrafts[u.uuid] = { name_ar: u.name_ar ?? '', amount: holds.amount, unit: holds.unit };
-    }
-}
-
-/** A4 — the first field error of a pack row ('' = the add-new row). */
-function altUnitError(uuid: string): string | null {
-    const errors = altUnitFieldErrors.value[uuid] ?? {};
-    for (const field of ['name', 'amount', 'unit', 'factor']) {
-        const messages = errors[field];
-        if (messages && messages.length > 0) return messages[0]!;
-    }
-    return null;
-}
-
-/** A4 — a saved pack size as people read it: "holds 12 l". */
-function packHoldsText(unit: IngredientAltUnit): string {
-    const holds = friendlyAmount(unit.factor, ingModalTarget.value?.unit);
-    return t('item_kind.holds_amount', { amount: `${holds.amount} ${holdUnitLabel(holds.unit)}` });
-}
-
-async function loadAltUnits(ingredientUuid: string): Promise<void> {
-    altUnitsLoading.value = true;
-    altUnitsError.value = null;
-    try {
-        const response = await listIngredientUnits(ingredientUuid);
-        altUnits.value = [...response.data].sort((a, b) => a.sort_order - b.sort_order);
-        syncAltUnitDrafts();
-    } catch (err) {
-        altUnitsError.value =
-            err instanceof Error ? err.message : t('item_kind.pack_sizes.errors.load_failed');
-    } finally {
-        altUnitsLoading.value = false;
-    }
-}
-
-function altUnitErrorMessage(err: unknown, fallbackKey: string): string {
-    if (err instanceof ApiError && err.payload && typeof err.payload === 'object' && 'message' in err.payload) {
-        return String((err.payload as { message?: unknown }).message ?? t(fallbackKey));
-    }
-    return err instanceof Error ? err.message : t(fallbackKey);
-}
-
-async function addAltUnit(): Promise<void> {
-    if (!ingModalTarget.value) return;
-    altUnitNewBusy.value = true;
-    altUnitsError.value = null;
-    altUnitFieldErrors.value = { ...altUnitFieldErrors.value, '': {} };
-    try {
-        await createIngredientUnit(ingModalTarget.value.uuid, {
-            name: altUnitNew.name.trim(),
-            name_ar: altUnitNew.name_ar.trim() || null,
-            // A4 — what the pack holds; the server works out the factor.
-            amount: String(altUnitNew.amount).trim(),
-            unit: altUnitNew.unit,
-        });
-        altUnitNew.name = '';
-        altUnitNew.name_ar = '';
-        altUnitNew.amount = '';
-        await loadAltUnits(ingModalTarget.value.uuid);
-    } catch (err) {
-        if (err instanceof ApiError && err.isValidationError()) {
-            altUnitFieldErrors.value = { ...altUnitFieldErrors.value, '': err.payload.errors };
-            altUnitsError.value = t('inventory.validation_summary');
-        } else {
-            altUnitsError.value = altUnitErrorMessage(err, 'item_kind.pack_sizes.errors.save_failed');
-        }
-    } finally {
-        altUnitNewBusy.value = false;
-    }
-}
-
-async function saveAltUnit(unit: IngredientAltUnit): Promise<void> {
-    if (!ingModalTarget.value) return;
-    altUnitBusyUuid.value = unit.uuid;
-    altUnitsError.value = null;
-    altUnitFieldErrors.value = { ...altUnitFieldErrors.value, [unit.uuid]: {} };
-    const draft = altUnitDrafts[unit.uuid];
-    try {
-        // name is IMMUTABLE — only what it holds + Arabic name go up.
-        await updateIngredientUnit(ingModalTarget.value.uuid, unit.uuid, {
-            name_ar: draft.name_ar.trim() || null,
-            amount: String(draft.amount).trim(),
-            unit: draft.unit,
-        });
-        await loadAltUnits(ingModalTarget.value.uuid);
-    } catch (err) {
-        if (err instanceof ApiError && err.isValidationError()) {
-            altUnitFieldErrors.value = {
-                ...altUnitFieldErrors.value,
-                [unit.uuid]: err.payload.errors,
-            };
-            altUnitsError.value = t('inventory.validation_summary');
-        } else {
-            altUnitsError.value = altUnitErrorMessage(err, 'item_kind.pack_sizes.errors.save_failed');
-        }
-    } finally {
-        altUnitBusyUuid.value = null;
-    }
-}
-
-async function removeAltUnit(unit: IngredientAltUnit): Promise<void> {
-    if (!ingModalTarget.value) return;
-    if (!window.confirm(t('item_kind.pack_sizes.delete_confirm'))) return;
-    altUnitBusyUuid.value = unit.uuid;
-    altUnitsError.value = null;
-    try {
-        await deleteIngredientUnit(ingModalTarget.value.uuid, unit.uuid);
-        await loadAltUnits(ingModalTarget.value.uuid);
-    } catch (err) {
-        altUnitsError.value = altUnitErrorMessage(err, 'item_kind.pack_sizes.errors.delete_failed');
-    } finally {
-        altUnitBusyUuid.value = null;
     }
 }
 
@@ -1508,8 +1455,9 @@ function openCount(): void {
     // stock row), and never the quantity on the books.
     countRows.value = ingredients.value
         .filter((ingredient) => ingredient.status === 'active')
-        .map((ingredient) => ({ ingredient, counted: '', unit: defaultCountUnit(ingredient) }));
+        .map((ingredient) => ({ ingredient, counted: '', unit: defaultCountUnit(ingredient), containers: [] }));
     countNote.value = '';
+    countSearch.value = '';
     countError.value = null;
     countOpen.value = true;
 }
@@ -1525,30 +1473,93 @@ function defaultCountUnit(ingredient: Ingredient): string {
 
 /** Whether a row is counted in whole pieces (the container, or a piece-stored item in pieces). */
 function countsPieces(r: CountRow): boolean {
-    return r.unit === PIECE_UNIT || (r.unit === '' && r.ingredient.unit === 'piece');
+    return r.containers.length === 0 && (r.unit === PIECE_UNIT || (r.unit === '' && r.ingredient.unit === 'piece'));
+}
+
+/** The count rows with a container row filled in (0 is a count). */
+function countContainerRows(r: CountRow): { container_uuid: string; pieces: string | number }[] {
+    return r.containers.filter((c) => c.container_uuid !== '' && String(c.pieces).trim() !== '');
 }
 
 /**
  * A7 — one count line: containers (and a piece-stored item counted in
  * pieces) go as counted_pieces, as before; any other unit goes as
  * counted_units + the unit, converted by the server (2.5 l → 2500 ml).
+ * D2 — counted by container: the containers, and the total only when typed
+ * (it may be lower than what they hold, never higher).
  */
 function countLinePayload(r: CountRow): StockCountLinePayload {
+    const containers = countContainerRows(r);
+    if (containers.length > 0) {
+        const total = String(r.counted).trim();
+        return {
+            ingredient_uuid: r.ingredient.uuid,
+            containers,
+            ...(total !== '' ? { counted_units: total, ...(r.unit !== '' ? { unit: r.unit } : {}) } : {}),
+        };
+    }
     if (countsPieces(r)) return { ingredient_uuid: r.ingredient.uuid, counted_pieces: r.counted };
     return r.unit === ''
         ? { ingredient_uuid: r.ingredient.uuid, counted_units: r.counted }
         : { ingredient_uuid: r.ingredient.uuid, counted_units: r.counted, unit: r.unit };
 }
 
-const countFilledRows = computed<number>(() =>
-    countRows.value.filter((r) => String(r.counted).trim() !== '').length,
-);
+/** Whether a row was counted (an amount, or at least one container row). */
+function countRowFilled(r: CountRow): boolean {
+    return String(r.counted).trim() !== '' || countContainerRows(r).length > 0;
+}
+
+const countFilledRows = computed<number>(() => countRows.value.filter(countRowFilled).length);
+
+/** D2 — a count total typed above what its containers hold (0 is a count). */
+const countHasRaised = computed<boolean>(() => countRows.value.some((r) => containerLineRaised({
+    ingredient_uuid: r.ingredient.uuid,
+    quantity: r.counted,
+    unit: r.unit,
+    containers: r.containers,
+}, true)));
+
+/** D2 — count this row by container: one empty row of its first container (never pre-filled). */
+function startCountContainers(r: CountRow): void {
+    const first = r.ingredient.alt_units?.[0];
+    if (!first) return;
+    r.containers = [{ container_uuid: first.uuid, pieces: '' }];
+    r.counted = '';
+    r.unit = '';
+}
+
+/** D2 — back to one amount (the containers are dropped). */
+function stopCountContainers(r: CountRow): void {
+    r.containers = [];
+    r.counted = '';
+    r.unit = defaultCountUnit(r.ingredient);
+}
+
+/** F — a scan on the count: one more of that container on its row (the row is shown). */
+function onCountScan(result: ScanResult): void {
+    const row = countRows.value.find((r) => r.ingredient.uuid === result.item?.uuid);
+    if (!row) return;
+    countSearch.value = row.ingredient.name;
+    if (result.container) {
+        if (row.containers.length === 0) {
+            row.counted = '';
+            row.unit = '';
+        }
+        addScannedContainer(row, result);
+    }
+}
+
+const visibleCountRows = computed<CountRow[]>(() => countRows.value.filter((r) => matchesSearch(countSearch.value, r.ingredient.name, r.ingredient.name_ar, r.ingredient.sku)));
 
 async function submitCount(): Promise<void> {
     if (selectedBranchUuid.value === null) return;
+    if (countHasRaised.value) {
+        countError.value = t('containers.total_raised_summary');
+        return;
+    }
     const lines: StockCountLinePayload[] = [];
     for (const r of countRows.value) {
-        if (String(r.counted).trim() === '') continue;
+        if (!countRowFilled(r)) continue;
         lines.push(countLinePayload(r));
     }
     if (lines.length === 0) {
@@ -1624,6 +1635,13 @@ function stockRowIngredient(row: BranchStockRow): Ingredient | null {
 function qty(quantity: string | number | null | undefined, unit: string | null | undefined): string {
     const friendly = friendlyAmount(quantity, unit);
     return friendly.unit === '' ? friendly.amount : `${friendly.amount} ${friendly.unit}`;
+}
+
+/** D1–D4 — saved container rows as people read them: "3 × bottle 1.5 l + 5 × bottle 500 ml". */
+function piecesText(rows: { pieces: string; container_label: string | null }[]): string {
+    return rows
+        .map((r) => `${trimAmount(parseFloat(r.pieces))} × ${r.container_label ?? '—'}`)
+        .join(' + ');
 }
 
 function unitShort(unit: IngredientUnit | null): string {
@@ -1748,26 +1766,49 @@ const wasteCurrentBalance = computed<string>(() => {
     return row?.quantity ?? '0.000';
 });
 
+/**
+ * The waste amount in the stored unit: the typed amount, or (by container,
+ * nothing typed) what the containers hold.
+ */
+const wasteStoredAmount = computed<number>(() => {
+    const ing = wasteIngredient.value;
+    if (!ing) return 0;
+    if (wasteForm.containers.length > 0) {
+        const typed = amountInStored(wasteForm.quantity, wasteForm.unit, ing.unit);
+        return typed ?? rowsCap(ing, wasteForm.containers);
+    }
+    return toBaseUnits(parseFloat(wasteForm.quantity || '0'), ing, wasteForm.unit);
+});
+
 const wasteInsufficient = computed<boolean>(() => {
     if (wasteIsPrep.value) return false;
     const balance = parseFloat(wasteCurrentBalance.value);
     // The balance is in BASE units — convert the entered amount (which
     // may be in an alt unit) to base before comparing.
-    const qty = toBaseUnits(parseFloat(wasteForm.quantity || '0'), wasteIngredient.value, wasteForm.unit);
+    const qty = wasteStoredAmount.value;
     if (!Number.isFinite(balance) || !Number.isFinite(qty)) return false;
     return qty > 0 && qty > balance;
 });
 
-const wasteCostPreview = computed<string>(() => {
+/** A1 — the waste cost preview; null = "No cost yet" (the item has no cost from a purchase). */
+const wasteCostPreview = computed<string | null>(() => {
     const ing = wasteIngredient.value;
     if (!ing) return '0.000';
-    // default_unit_cost is per BASE unit — convert the entered amount
-    // to base units first so the preview stays correct for alt units.
-    const baseQty = toBaseUnits(parseFloat(wasteForm.quantity || '0'), ing, wasteForm.unit);
-    const cost = parseFloat(ing.default_unit_cost) * baseQty;
+    if (ing.has_cost === false || !(parseFloat(ing.default_unit_cost) > 0)) return null;
+    // The cost is per BASE unit — convert the entered amount to base
+    // units first so the preview stays correct for alt units.
+    const cost = parseFloat(ing.default_unit_cost) * wasteStoredAmount.value;
     if (!Number.isFinite(cost)) return '0.000';
     return cost.toFixed(3);
 });
+
+/** D3 — a waste total typed above what its container holds. */
+const wasteRaised = computed<boolean>(() => containerLineRaised({
+    ingredient_uuid: wasteForm.ingredient_uuid,
+    quantity: wasteForm.quantity,
+    unit: wasteForm.unit,
+    containers: wasteForm.containers,
+}));
 
 const wasteReasons: WasteReason[] = ['expired', 'spoiled', 'broken', 'dropped', 'contamination', 'other'];
 
@@ -1778,6 +1819,7 @@ function openRecordWaste(): void {
     wasteForm.notes = '';
     wasteForm.occurred_at = '';
     wasteForm.unit = '';
+    wasteForm.containers = [];
     wasteErrors.value = {};
     wasteError.value = null;
     wasteOpen.value = true;
@@ -1790,6 +1832,7 @@ watch(
     () => wasteForm.ingredient_uuid,
     () => {
         wasteForm.unit = '';
+        wasteForm.containers = [];
     },
 );
 
@@ -1804,20 +1847,64 @@ const wasteIngredient = computed<Ingredient | null>(() => {
 /** LAUNCH-P3 P3-4 — the picked waste item is a prep item (its raw ingredients are wasted). */
 const wasteIsPrep = computed<boolean>(() => wasteIngredient.value?.is_prep === true);
 
+/** D3 — waste by container: one row of the item's first container (a prep item has none). */
+function startWasteContainer(): void {
+    const first = wasteIngredient.value?.alt_units?.[0];
+    if (!first || wasteIsPrep.value) return;
+    wasteForm.containers = [{ container_uuid: first.uuid, pieces: '1' }];
+    wasteForm.quantity = '';
+    wasteForm.unit = '';
+}
+
+function stopWasteContainer(): void {
+    wasteForm.containers = [];
+    wasteForm.quantity = '';
+    wasteForm.unit = '';
+}
+
+/** F — a scan on the waste: picks the item (and the container, one more each scan). */
+function onWasteScan(result: ScanResult): void {
+    const uuid = result.item?.uuid ?? '';
+    if (!ingredientByUuid(uuid)) return;
+    if (wasteForm.ingredient_uuid !== uuid) {
+        wasteForm.ingredient_uuid = uuid;
+        wasteForm.quantity = '';
+        wasteForm.containers = [];
+    }
+    const containerUuid = result.container?.uuid;
+    if (!containerUuid) return;
+    const row = wasteForm.containers[0];
+    if (row && row.container_uuid === containerUuid) {
+        row.pieces = plusOne(row.pieces);
+    } else {
+        wasteForm.containers = [{ container_uuid: containerUuid, pieces: '1' }];
+        wasteForm.quantity = '';
+        wasteForm.unit = '';
+    }
+}
+
 async function submitRecordWaste(): Promise<void> {
     if (selectedBranchUuid.value === null) return;
+    if (wasteRaised.value) {
+        wasteError.value = t('containers.total_raised_summary');
+        return;
+    }
     wasteBusy.value = true;
     wasteErrors.value = {};
     wasteError.value = null;
     wasteWarning.value = null;
     try {
+        const container = wasteForm.containers.find((c) => c.container_uuid !== '' && String(c.pieces).trim() !== '');
+        const quantity = String(wasteForm.quantity).trim();
         const response = await recordWaste(selectedBranchUuid.value, {
             ingredient_uuid: wasteForm.ingredient_uuid,
-            quantity: wasteForm.quantity,
+            // D3 — by container: the container and pieces; the amount only when lowered.
+            ...(container
+                ? { container_uuid: container.container_uuid, pieces: container.pieces, ...(quantity !== '' ? { quantity, unit: wireUnit(wasteForm.unit) } : {}) }
+                : { quantity: wasteForm.quantity, unit: wireUnit(wasteForm.unit) }),
             reason: wasteForm.reason,
             notes: wasteForm.notes.trim() || null,
             occurred_at: wasteForm.occurred_at.trim() || null,
-            unit: wireUnit(wasteForm.unit),
         });
         // LAUNCH-P3 fix order 1, K3 — never refused on stock numbers: the
         // server warns when the waste took a balance below zero.
@@ -1885,12 +1972,16 @@ const restockHasDuplicates = computed<boolean>(() => {
     return false;
 });
 
+function blankRestockLine(): RestockLineDraft {
+    return { ingredient_uuid: '', quantity: '', note: '', unit: '', containers: [] };
+}
+
 function openCreateRestock(): void {
     restockModalMode.value = 'create';
     restockModalTarget.value = null;
     restockForm2.branch_uuid = selectedBranchUuid.value ?? (branches.value[0]?.uuid ?? '');
     restockForm2.note = '';
-    restockForm2.lines = [{ ingredient_uuid: '', quantity: '', note: '', unit: '' }];
+    restockForm2.lines = [blankRestockLine()];
     restockModalErrors.value = {};
     restockModalError.value = null;
     restockModalOpen.value = true;
@@ -1902,15 +1993,17 @@ function openEditRestock(req: RestockRequest): void {
     restockForm2.branch_uuid = req.branch?.uuid ?? '';
     restockForm2.note = req.note ?? '';
     // Stored request lines hold quantity in BASE units already, so
-    // preload the entry unit as base ('').
+    // preload the entry unit as base (''). D4 — a line asked by container
+    // reopens with its container and pieces.
     restockForm2.lines = (req.lines ?? []).map((l) => ({
         ingredient_uuid: l.ingredient?.uuid ?? '',
         quantity: l.quantity_requested,
         note: l.note ?? '',
         unit: '',
+        containers: l.container_uuid ? [{ container_uuid: l.container_uuid, pieces: l.pieces ?? '' }] : [],
     }));
     if (restockForm2.lines.length === 0) {
-        restockForm2.lines = [{ ingredient_uuid: '', quantity: '', note: '', unit: '' }];
+        restockForm2.lines = [blankRestockLine()];
     }
     restockModalErrors.value = {};
     restockModalError.value = null;
@@ -1918,7 +2011,7 @@ function openEditRestock(req: RestockRequest): void {
 }
 
 function addRestockLine(): void {
-    restockForm2.lines.push({ ingredient_uuid: '', quantity: '', note: '', unit: '' });
+    restockForm2.lines.push(blankRestockLine());
 }
 
 function removeRestockLine(idx: number): void {
@@ -1930,7 +2023,54 @@ function removeRestockLine(idx: number): void {
     }
 }
 
+/** D4 — ask by container: one row of the item's first container. */
+function startRestockContainer(line: RestockLineDraft): void {
+    const first = ingredientByUuid(line.ingredient_uuid)?.alt_units?.[0];
+    if (!first) return;
+    line.containers = [{ container_uuid: first.uuid, pieces: '1' }];
+    line.quantity = '';
+    line.unit = '';
+}
+
+function stopRestockContainer(line: RestockLineDraft): void {
+    line.containers = [];
+    line.quantity = '';
+    line.unit = '';
+}
+
+const restockHasRaised = computed<boolean>(() => restockForm2.lines.some((l) => containerLineRaised(l)));
+
+/** F — a scan on the request: "1 × bottle 1.5 l" (the same scan again makes it 2). */
+function onRestockScan(result: ScanResult): void {
+    const uuid = result.item?.uuid ?? '';
+    if (!ingredientByUuid(uuid)) return;
+    let line = restockForm2.lines.find((l) => l.ingredient_uuid === uuid);
+    if (!line) {
+        line = restockForm2.lines.find((l) => l.ingredient_uuid === '') ?? undefined;
+        if (line) {
+            line.ingredient_uuid = uuid;
+        } else {
+            line = { ...blankRestockLine(), ingredient_uuid: uuid };
+            restockForm2.lines.push(line);
+        }
+    }
+    const containerUuid = result.container?.uuid;
+    if (!containerUuid) return;
+    const row = line.containers[0];
+    if (row && row.container_uuid === containerUuid) {
+        row.pieces = plusOne(row.pieces);
+    } else {
+        line.containers = [{ container_uuid: containerUuid, pieces: '1' }];
+        line.quantity = '';
+        line.unit = '';
+    }
+}
+
 async function submitRestockModal(): Promise<void> {
+    if (restockHasRaised.value) {
+        restockModalError.value = t('containers.total_raised_summary');
+        return;
+    }
     restockModalBusy.value = true;
     restockModalErrors.value = {};
     restockModalError.value = null;
@@ -1940,13 +2080,26 @@ async function submitRestockModal(): Promise<void> {
         // requires at least 1 — if everything's blank, the
         // server will reject with a clean message.
         const cleanLines: RestockLinePayload[] = restockForm2.lines
-            .filter((l) => l.ingredient_uuid && l.quantity)
-            .map((l) => ({
-                ingredient_uuid: l.ingredient_uuid,
-                quantity_requested: l.quantity,
-                note: l.note.trim() || null,
-                unit: wireUnit(l.unit),
-            }));
+            .filter((l) => l.ingredient_uuid && (String(l.quantity).trim() !== '' || l.containers.some((c) => c.container_uuid && String(c.pieces).trim() !== '')))
+            .map((l) => {
+                const container = l.containers.find((c) => c.container_uuid && String(c.pieces).trim() !== '');
+                const quantity = String(l.quantity).trim();
+                if (container) {
+                    return {
+                        ingredient_uuid: l.ingredient_uuid,
+                        container_uuid: container.container_uuid,
+                        pieces: container.pieces,
+                        ...(quantity !== '' ? { quantity_requested: quantity, unit: wireUnit(l.unit) } : {}),
+                        note: l.note.trim() || null,
+                    };
+                }
+                return {
+                    ingredient_uuid: l.ingredient_uuid,
+                    quantity_requested: l.quantity,
+                    note: l.note.trim() || null,
+                    unit: wireUnit(l.unit),
+                };
+            });
 
         if (restockModalMode.value === 'create') {
             if (!restockForm2.branch_uuid) {
@@ -1996,18 +2149,22 @@ const transferHasDuplicates = computed<boolean>(() => {
     return false;
 });
 
+function blankTransferLine(): TransferLineDraft {
+    return { ingredient_uuid: '', quantity: '', unit: '', containers: [] };
+}
+
 function openCreateTransfer(): void {
     transferForm.from_branch_uuid = selectedBranchUuid.value ?? (branches.value[0]?.uuid ?? '');
     transferForm.to_branch_uuid = '';
     transferForm.note = '';
-    transferForm.lines = [{ ingredient_uuid: '', quantity: '', unit: '' }];
+    transferForm.lines = [blankTransferLine()];
     transferModalErrors.value = {};
     transferModalError.value = null;
     transferModalOpen.value = true;
 }
 
 function addTransferLine(): void {
-    transferForm.lines.push({ ingredient_uuid: '', quantity: '', unit: '' });
+    transferForm.lines.push(blankTransferLine());
 }
 
 /** Resolve an ingredient (for its alt_units) from a line's uuid. */
@@ -2023,7 +2180,64 @@ function removeTransferLine(idx: number): void {
     }
 }
 
+/** D1 — a line starts counting by container: one row of its first container, the amount filled in. */
+function startContainers(line: { ingredient_uuid: string; unit: string; quantity: string; containers: ContainerRowDraft[] }): void {
+    const first = ingredientByUuid(line.ingredient_uuid)?.alt_units?.[0];
+    if (!first) return;
+    line.containers = [{ container_uuid: first.uuid, pieces: '' }];
+    line.unit = '';
+    line.quantity = '';
+}
+
+/** D1–D4 — a container line whose amount is above what its containers hold (never raised). */
+function containerLineRaised(line: { ingredient_uuid: string; quantity: string | number; unit: string; containers: ContainerRowDraft[] }, allowZero = false): boolean {
+    const ingredient = ingredientByUuid(line.ingredient_uuid);
+    if (!ingredient || line.containers.length === 0) return false;
+    const cap = rowsCap(ingredient, line.containers);
+    return amountProblem(amountInStored(line.quantity, line.unit, ingredient.unit), cap, allowZero) === 'raised';
+}
+
+const transferHasRaised = computed<boolean>(() => transferForm.lines.some((l) => containerLineRaised(l)));
+
+/**
+ * F — a scan on the transfer: "Milk · 1 × bottle 1.5 l" adds a line (or a
+ * container row); the same scan again makes it 2.
+ */
+function onTransferScan(result: ScanResult): void {
+    const uuid = result.item?.uuid ?? '';
+    if (!ingredientByUuid(uuid)) return;
+    let line = transferForm.lines.find((l) => l.ingredient_uuid === uuid);
+    if (!line) {
+        line = transferForm.lines.find((l) => l.ingredient_uuid === '') ?? undefined;
+        if (line) {
+            line.ingredient_uuid = uuid;
+        } else {
+            line = { ...blankTransferLine(), ingredient_uuid: uuid };
+            transferForm.lines.push(line);
+        }
+    }
+    if (result.container && line.containers.length === 0) line.quantity = '';
+    addScannedContainer(line, result);
+}
+
+/** Add one of the scanned container to a line's container rows (or one more of it). */
+function addScannedContainer(line: { unit: string; containers: ContainerRowDraft[] }, result: ScanResult): void {
+    const containerUuid = result.container?.uuid;
+    if (!containerUuid) return;
+    const row = line.containers.find((r) => r.container_uuid === containerUuid);
+    if (row) {
+        row.pieces = plusOne(row.pieces);
+    } else {
+        if (line.containers.length === 0) line.unit = '';
+        line.containers.push({ container_uuid: containerUuid, pieces: '1' });
+    }
+}
+
 async function submitTransferModal(): Promise<void> {
+    if (transferHasRaised.value) {
+        transferModalError.value = t('containers.total_raised_summary');
+        return;
+    }
     transferModalBusy.value = true;
     transferModalErrors.value = {};
     transferModalError.value = null;
@@ -2040,9 +2254,17 @@ async function submitTransferModal(): Promise<void> {
             transferModalError.value = t('inventory.transfers.create_modal.same_branch');
             return;
         }
+        // D1 — a container line sends its containers and (when lowered) its amount.
         const cleanLines: BranchTransferLinePayload[] = transferForm.lines
-            .filter((l) => l.ingredient_uuid && l.quantity)
-            .map((l) => ({ ingredient_uuid: l.ingredient_uuid, quantity: l.quantity, unit: wireUnit(l.unit) }));
+            .filter((l) => l.ingredient_uuid && (String(l.quantity).trim() !== '' || l.containers.some((c) => c.container_uuid && String(c.pieces).trim() !== '')))
+            .map((l) => {
+                const containers = l.containers.filter((c) => c.container_uuid && String(c.pieces).trim() !== '');
+                if (containers.length > 0) {
+                    const quantity = String(l.quantity).trim();
+                    return { ingredient_uuid: l.ingredient_uuid, containers, ...(quantity !== '' ? { quantity, unit: wireUnit(l.unit) } : {}) };
+                }
+                return { ingredient_uuid: l.ingredient_uuid, quantity: l.quantity, unit: wireUnit(l.unit) };
+            });
         if (cleanLines.length === 0) {
             transferModalError.value = t('inventory.transfers.create_modal.no_lines');
             return;
@@ -2515,11 +2737,23 @@ async function submitSuggestions(): Promise<void> {
 
             <!-- ================== INGREDIENTS TAB ================== -->
             <section v-if="activeTab === 'ingredients'" class="space-y-4">
-                <div class="flex justify-end">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                    <!-- F — type to filter by name or SKU; a scanner's Enter opens the item. -->
+                    <ScanBox
+                        v-model="ingredientSearch"
+                        mode="search"
+                        class="w-full max-w-md"
+                        :can-link="canManage"
+                        :ingredients="ingredients"
+                        :physical-items="physicalItems"
+                        :item-types="['ingredient']"
+                        data-test="ingredient-search"
+                        @found="onIngredientScan"
+                    />
                     <button
                         v-if="canManage"
                         type="button"
-                        class="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-teal-600 to-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-teal-600/30 transition hover:-translate-y-0.5 hover:shadow-xl"
+                        class="ms-auto inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-teal-600 to-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-teal-600/30 transition hover:-translate-y-0.5 hover:shadow-xl"
                         @click="openCreateIngredient"
                     >
                         <Plus class="size-4" />
@@ -2539,7 +2773,9 @@ async function submitSuggestions(): Promise<void> {
                         <thead class="bg-slate-50">
                             <tr>
                                 <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.table.name') }}</th>
+                                <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('containers.sku.column') }}</th>
                                 <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.column') }}</th>
+                                <!-- A1 — "Current cost": read-only, it comes from purchases. -->
                                 <th class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.table.default_cost') }}</th>
                                 <th class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.table.min_threshold') }}</th>
                                 <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.table.supplier') }}</th>
@@ -2548,18 +2784,22 @@ async function submitSuggestions(): Promise<void> {
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 bg-white">
-                            <tr v-for="ing in ingredients" :key="ing.id" class="transition hover:bg-slate-50">
+                            <tr v-for="ing in filteredIngredients" :key="ing.id" class="transition hover:bg-slate-50" :class="highlightedIngredientId === ing.id ? 'bg-teal-50' : ''">
                                 <td class="px-5 py-4">
                                     <span class="block text-sm font-semibold text-slate-950">{{ ing.name }}</span>
                                     <span v-if="ing.name_ar" class="block text-xs text-slate-500" dir="rtl">{{ ing.name_ar }}</span>
                                 </td>
+                                <td class="px-5 py-4 font-mono text-xs text-slate-600" data-test="ingredient-sku">{{ ing.sku ?? '—' }}</td>
                                 <!-- LAUNCH item kind — the kind, not a unit; an older kg / l / pack / box one notes its stored unit. -->
                                 <td class="px-5 py-4 text-sm text-slate-700" data-test="ingredient-kind">
                                     {{ t(`item_kind.kinds.${kindOfUnit(ing.unit)}`) }}
                                     <span v-if="isLegacyStoredUnit(ing.unit)" class="block text-[10px] text-slate-400">{{ t('item_kind.stored_in', { unit: ing.unit }) }}</span>
                                 </td>
                                 <!-- F1 — "0.150 OMR / l", not "0.00015 OMR / ml". -->
-                                <td class="px-5 py-4 text-end text-sm tabular-nums text-slate-950" data-test="ingredient-cost">{{ friendlyCost(ing.default_unit_cost, ing.unit).amount }} <span class="text-[10px] text-slate-400">OMR / {{ friendlyCost(ing.default_unit_cost, ing.unit).unit }}</span></td>
+                                <td class="px-5 py-4 text-end text-sm tabular-nums text-slate-950" data-test="ingredient-cost">
+                                    <span v-if="ing.has_cost === false" class="text-xs italic text-slate-400" data-test="no-cost-yet">{{ t('purchases_v2.no_cost_yet') }}</span>
+                                    <template v-else>{{ friendlyCost(ing.default_unit_cost, ing.unit).amount }} <span class="text-[10px] text-slate-400">OMR / {{ friendlyCost(ing.default_unit_cost, ing.unit).unit }}</span></template>
+                                </td>
                                 <td class="px-5 py-4 text-end text-sm tabular-nums text-slate-500">{{ ing.min_stock_threshold !== null ? qty(ing.min_stock_threshold, ing.unit) : '—' }}</td>
                                 <td class="px-5 py-4 text-sm text-slate-700">{{ ing.primary_supplier?.name ?? '—' }}</td>
                                 <td class="px-5 py-4">
@@ -2593,16 +2833,41 @@ async function submitSuggestions(): Promise<void> {
             <section v-if="activeTab === 'physical_items'" class="space-y-4">
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <p class="max-w-2xl text-xs text-slate-500">{{ t('inventory.physical_items.subtitle') }}</p>
-                    <button
-                        v-if="canManage"
-                        type="button"
-                        class="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-teal-600 to-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-teal-600/30 transition hover:-translate-y-0.5 hover:shadow-xl"
-                        @click="openCreatePhysicalItem"
-                    >
-                        <Plus class="size-4" />
-                        {{ t('inventory.physical_items.add') }}
-                    </button>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <!-- A4 — older items get a PHY-0001 code in one go. -->
+                        <button
+                            v-if="canManage && physicalItems.some((i) => !i.sku)"
+                            type="button"
+                            :disabled="generatingSkus"
+                            class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                            data-test="generate-skus"
+                            @click="generateSkus"
+                        >
+                            {{ t('containers.sku.generate_missing') }}
+                        </button>
+                        <button
+                            v-if="canManage"
+                            type="button"
+                            class="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-teal-600 to-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-teal-600/30 transition hover:-translate-y-0.5 hover:shadow-xl"
+                            @click="openCreatePhysicalItem"
+                        >
+                            <Plus class="size-4" />
+                            {{ t('inventory.physical_items.add') }}
+                        </button>
+                    </div>
                 </div>
+                <!-- F — type to filter by name or SKU; a scanner's Enter opens the item. -->
+                <ScanBox
+                    v-model="physicalSearch"
+                    mode="search"
+                    class="w-full max-w-md"
+                    :can-link="canManage"
+                    :ingredients="ingredients"
+                    :physical-items="physicalItems"
+                    :item-types="['physical']"
+                    data-test="physical-search"
+                    @found="onPhysicalScan"
+                />
 
                 <div v-if="physicalItems.length === 0" class="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">
                     <Lightbulb class="mx-auto size-10 text-slate-300" />
@@ -2613,6 +2878,7 @@ async function submitSuggestions(): Promise<void> {
                         <thead class="bg-slate-50">
                             <tr>
                                 <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.physical_items.table.name') }}</th>
+                                <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('containers.sku.column') }}</th>
                                 <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.physical_items.table.kind') }}</th>
                                 <th class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.physical_items.table.cost') }}</th>
                                 <th class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('inventory.physical_items.table.low_stock') }}</th>
@@ -2622,11 +2888,12 @@ async function submitSuggestions(): Promise<void> {
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 bg-white">
-                            <tr v-for="item in physicalItems" :key="item.id" class="transition hover:bg-slate-50">
+                            <tr v-for="item in filteredPhysicalItems" :key="item.id" class="transition hover:bg-slate-50">
                                 <td class="px-5 py-3">
                                     <span class="block text-sm font-semibold text-slate-950">{{ item.name }}</span>
                                     <span v-if="item.name_ar" class="block text-xs text-slate-500" dir="rtl">{{ item.name_ar }}</span>
                                 </td>
+                                <td class="px-5 py-3 font-mono text-xs text-slate-600" data-test="physical-sku">{{ item.sku ?? '—' }}</td>
                                 <td class="px-5 py-3">
                                     <span class="inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider" :class="item.purpose === 'packaging' ? 'bg-sky-100 text-sky-700' : 'bg-slate-200 text-slate-700'">
                                         {{ t(`inventory.physical_items.purposes.${item.purpose}`) }}
@@ -2811,6 +3078,19 @@ async function submitSuggestions(): Promise<void> {
                     <span :class="branchStockMeta.below_minimum_count > 0 ? 'font-semibold text-amber-600' : 'text-slate-400'">{{ t('inventory.stock.below_minimum_count', { count: branchStockMeta.below_minimum_count }) }}</span>
                 </div>
 
+                <!-- F — type to filter by name or SKU; a scanner's Enter finds the row. -->
+                <ScanBox
+                    v-model="stockSearch"
+                    mode="search"
+                    class="w-full max-w-md"
+                    :can-link="canManage"
+                    :ingredients="ingredients"
+                    :physical-items="physicalItems"
+                    :item-types="['ingredient']"
+                    data-test="stock-search"
+                    @found="onStockScan"
+                />
+
                 <div v-if="branchStock.length === 0" class="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">
                     <Package class="mx-auto size-10 text-slate-300" />
                     <p class="mt-3 text-sm font-semibold text-slate-600">{{ stockFilter === 'low' ? t('inventory.stock.no_low') : t('inventory.empty_stock') }}</p>
@@ -2828,7 +3108,7 @@ async function submitSuggestions(): Promise<void> {
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 bg-white">
-                            <tr v-for="row in branchStock" :key="row.ingredient_id" class="transition hover:bg-slate-50" :class="stockRowClass(row.stock_status)" :data-stock-status="row.stock_status">
+                            <tr v-for="row in filteredBranchStock" :key="row.ingredient_id" class="transition hover:bg-slate-50" :class="[stockRowClass(row.stock_status), highlightedIngredientId === row.ingredient_id ? 'ring-2 ring-inset ring-teal-300' : '']" :data-stock-status="row.stock_status">
                                 <td class="px-5 py-4">
                                     <span class="block text-sm font-semibold text-slate-950">{{ row.ingredient?.name ?? '—' }}</span>
                                     <span v-if="row.ingredient?.name_ar" class="block text-xs text-slate-500" dir="rtl">{{ row.ingredient.name_ar }}</span>
@@ -2852,6 +3132,13 @@ async function submitSuggestions(): Promise<void> {
                                     </button>
                                     <span v-if="row.ingredient?.min_stock_threshold" class="block text-[10px] font-normal text-slate-400">{{ t('inventory.stock.minimum', { quantity: shownAmount(row.ingredient.min_stock_threshold, row.ingredient.unit) }) }}</span>
                                     <bdi v-if="conversionsOpenId === row.ingredient_id" dir="ltr" class="mt-1 block text-[11px] font-normal text-slate-600" data-test="conversions">{{ conversionsOf(row.quantity, stockRowIngredient(row), locale).join(' = ') }}</bdi>
+                                    <!-- B — the total, and what it is in: "3 × bottle 1.5 l + 5 × bottle 500 ml". -->
+                                    <StockBreakdown
+                                        :rows="row.breakdown"
+                                        :counted-at="row.containers_counted_at"
+                                        :total-count-at="row.containers_total_count_at"
+                                        class="mt-1 font-normal"
+                                    />
                                 </td>
                                 <td class="px-5 py-4 text-end text-sm tabular-nums" :class="Number(row.stock_value) < 0 ? 'text-rose-600' : 'text-slate-700'">{{ row.stock_value }}</td>
                                 <td class="px-5 py-4">
@@ -3033,6 +3320,8 @@ async function submitSuggestions(): Promise<void> {
                                 </td>
                                 <td class="px-5 py-3 text-end text-sm font-semibold tabular-nums text-rose-700">
                                     -{{ friendlyAmount(w.quantity, w.unit_at_set).amount }} <span class="text-[10px] text-slate-500">{{ friendlyAmount(w.quantity, w.unit_at_set).unit }}</span>
+                                    <!-- D3 — entered by container: "2 × bottle 1.5 l". -->
+                                    <bdi v-if="w.pieces && w.container_label" dir="ltr" class="block text-[10px] font-normal text-slate-500" data-test="waste-container">{{ piecesText([{ pieces: w.pieces, container_label: w.container_label }]) }}</bdi>
                                 </td>
                                 <td class="px-5 py-3 text-sm">
                                     <span class="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800">
@@ -3130,6 +3419,8 @@ async function submitSuggestions(): Promise<void> {
                                                             <span class="text-slate-400">(= {{ qty(line.counted_units, line.ingredient?.unit) }})</span>
                                                         </template>
                                                         <template v-else>{{ qty(line.counted_units, line.ingredient?.unit) }}</template>
+                                                        <!-- D2 — counted by container. -->
+                                                        <bdi v-if="line.containers && line.containers.length > 0" dir="ltr" class="block text-[10px] text-slate-500" data-test="count-line-containers">{{ piecesText(line.containers) }}</bdi>
                                                     </td>
                                                     <td class="px-2 py-1.5 text-end tabular-nums text-slate-600">{{ line.expected_units !== undefined ? qty(line.expected_units, line.ingredient?.unit) : '' }}</td>
                                                     <td class="px-2 py-1.5 text-end font-semibold tabular-nums" :class="Number(line.variance_units) < 0 ? 'text-rose-600' : Number(line.variance_units) > 0 ? 'text-amber-600' : 'text-emerald-600'">
@@ -3312,7 +3603,7 @@ async function submitSuggestions(): Promise<void> {
                                 </td>
                                 <td class="px-5 py-3 text-end text-sm tabular-nums text-slate-700">{{ tr.lines.length }}</td>
                                 <td class="px-5 py-3 text-sm text-slate-600">
-                                    <span v-for="(l, i) in tr.lines" :key="l.ingredient_id">{{ l.ingredient_name ?? ('#' + l.ingredient_id) }} ({{ qty(l.quantity, l.unit) }}){{ i < tr.lines.length - 1 ? ', ' : '' }}</span>
+                                    <span v-for="(l, i) in tr.lines" :key="l.ingredient_id">{{ l.ingredient_name ?? ('#' + l.ingredient_id) }} ({{ qty(l.quantity, l.unit) }})<template v-if="l.containers && l.containers.length > 0"> <bdi dir="ltr" class="text-slate-400" data-test="transfer-line-containers">[{{ piecesText(l.containers) }}]</bdi></template>{{ i < tr.lines.length - 1 ? ', ' : '' }}</span>
                                 </td>
                                 <td class="px-5 py-3 text-sm text-slate-500">{{ tr.note || '—' }}</td>
                             </tr>
@@ -3380,73 +3671,39 @@ async function submitSuggestions(): Promise<void> {
                         <p v-if="ingModalErrors.unit" class="mt-1 text-xs text-rose-600">{{ ingModalErrors.unit[0] }}</p>
                     </fieldset>
                     <div class="grid gap-3 sm:grid-cols-2">
+                        <!-- A1 — no cost box: the cost comes from purchases ("Current cost" in the list). -->
                         <label class="block">
-                            <!-- F1 — the cost is typed per kg / l (or per g / ml, or per piece)
-                                 and sent per stored unit. -->
-                            <span class="text-sm font-medium text-slate-700">{{ ingForm.unit !== '' ? t('item_kind.cost_per', { unit: ingForm.cost_unit }) : t('inventory.fields.default_unit_cost') }} (OMR)</span>
-                            <div class="mt-1 flex gap-2">
-                                <input v-model="ingForm.default_unit_cost" type="number" step="0.000001" min="0" class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                                <select v-model="ingForm.cost_unit" :disabled="holdUnits.length === 0" :title="t('item_kind.pack_sizes.unit')" data-test="cost-unit" class="w-24 shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100 disabled:bg-slate-50">
-                                    <option v-for="u in holdUnits" :key="u.value" :value="u.value">{{ t('item_kind.per_unit', { unit: holdUnitLabel(u.value) }) }}</option>
-                                </select>
-                            </div>
-                            <p v-if="ingModalErrors.default_unit_cost" class="mt-1 text-xs text-rose-600">{{ ingModalErrors.default_unit_cost[0] }}</p>
+                            <span class="text-sm font-medium text-slate-700">{{ t('containers.sku.label') }}</span>
+                            <input v-model="ingForm.sku" type="text" maxlength="64" :placeholder="t('containers.sku.placeholder')" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 font-mono text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100" data-test="ingredient-sku-input">
+                            <p class="mt-1 text-xs text-slate-500">{{ t('containers.sku.hint') }}</p>
+                            <p v-if="ingModalErrors.sku" class="mt-1 text-xs text-rose-600">{{ ingModalErrors.sku[0] }}</p>
                         </label>
                         <label class="block">
                             <span class="text-sm font-medium text-slate-700">{{ t('inventory.fields.min_stock_threshold') }}</span>
-                            <!-- A7 — typed in any unit of the kind (5 kg), kept in the stored unit. -->
-                            <div class="mt-1 flex gap-2">
-                                <input v-model="ingForm.min_stock_threshold" type="number" step="0.0001" min="0" placeholder="—" class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                                <select v-model="ingForm.min_stock_unit" :disabled="holdUnits.length === 0" :title="t('item_kind.pack_sizes.unit')" data-test="min-stock-unit" class="w-24 shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100 disabled:bg-slate-50">
-                                    <option v-for="u in holdUnits" :key="u.value" :value="u.value">{{ holdUnitLabel(u.value) }}</option>
-                                </select>
-                            </div>
+                            <!-- A7 — typed in any unit of the kind (5 kg), kept in the stored unit; E1 — "= 5 kg". -->
+                            <AmountInput
+                                v-model="ingForm.min_stock_threshold"
+                                v-model:unit="ingForm.min_stock_unit"
+                                class="mt-1"
+                                :options="holdUnits.map((u) => ({ value: u.value, label: holdUnitLabel(u.value) }))"
+                                :stored-unit="ingForm.unit || 'g'"
+                                step="0.0001"
+                                placeholder="—"
+                                data-test="min-stock-input"
+                            />
                             <p class="mt-1 text-xs text-slate-500">{{ t('inventory.fields.min_stock_threshold_hint') }}</p>
                             <p v-if="ingModalErrors.min_stock_threshold" class="mt-1 text-xs text-rose-600">{{ ingModalErrors.min_stock_threshold[0] }}</p>
                         </label>
                     </div>
-                    <!-- Phase A — piece unit (Additions §2.3), now the COUNT
-                         CONTAINER. Label + ratio are a pair: both set = staff
-                         count and receive in containers, both blank = not.
-                         LAUNCH item kind, A5 — the ratio is typed as what the
-                         container holds ("bottle holds 1.5 l", a unit of the
-                         kind), not "1500 ml per piece"; the portal converts it
-                         to units_per_piece in the stored unit. -->
-                    <fieldset class="rounded-lg border border-amber-200 bg-amber-50/40 p-3" data-test="count-container">
-                        <legend class="px-2 text-sm font-semibold text-slate-700">
-                            <Package class="me-1 inline size-3.5 text-amber-600" />
-                            {{ t('item_kind.container.title') }}
-                        </legend>
-                        <p class="mb-2 text-xs text-slate-500">{{ t('item_kind.container.hint') }}</p>
-                        <div class="flex flex-wrap items-end gap-2">
-                            <label class="block min-w-[8rem] flex-1">
-                                <span class="text-sm font-medium text-slate-700">{{ t('item_kind.container.label') }}</span>
-                                <input v-model="ingForm.piece_unit_label" type="text" maxlength="32" :placeholder="t('item_kind.container.label_placeholder')" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            </label>
-                            <label class="block w-36">
-                                <span class="text-sm font-medium text-slate-700">{{ t('item_kind.container.label_ar') }}</span>
-                                <input v-model="ingForm.piece_unit_label_ar" type="text" dir="rtl" maxlength="32" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            </label>
-                            <span class="pb-3 text-sm font-medium text-slate-600">{{ t('item_kind.holds') }}</span>
-                            <label class="block w-28">
-                                <span class="text-sm font-medium text-slate-700">{{ t('item_kind.pack_sizes.amount') }}</span>
-                                <input v-model="ingForm.container_amount" type="number" step="0.0001" min="0" inputmode="decimal" placeholder="1.5" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            </label>
-                            <label class="block w-28">
-                                <span class="text-sm font-medium text-slate-700">{{ t('item_kind.pack_sizes.unit') }}</span>
-                                <select v-model="ingForm.container_unit" :disabled="holdUnits.length === 0" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100 disabled:bg-slate-50">
-                                    <option v-for="u in holdUnits" :key="u.value" :value="u.value">{{ holdUnitLabel(u.value) }}</option>
-                                </select>
-                            </label>
-                        </div>
-                        <p v-if="ingModalErrors.piece_unit_label" class="mt-1 text-xs text-rose-600">{{ ingModalErrors.piece_unit_label[0] }}</p>
-                        <p v-if="ingModalErrors.units_per_piece" class="mt-1 text-xs text-rose-600">{{ ingModalErrors.units_per_piece[0] }}</p>
-                        <label class="mt-2 inline-flex items-center gap-2 text-sm font-medium text-slate-700">
-                            <input v-model="ingForm.allow_fractional_pieces" type="checkbox" class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500">
-                            {{ t('inventory.piece.allow_fractional') }}
-                        </label>
-                        <p class="mt-1 text-xs text-slate-500">{{ t('inventory.piece.allow_fractional_hint') }}</p>
-                    </fieldset>
+                    <p class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600" data-test="cost-from-purchases">
+                        {{ t('purchases_v2.cost_from_purchases') }}
+                        <template v-if="ingModalMode === 'edit' && ingModalTarget">
+                            · {{ t('purchases_v2.current_cost') }}:
+                            <span v-if="ingModalTarget.has_cost === false" class="italic">{{ t('purchases_v2.no_cost_yet') }}</span>
+                            <span v-else class="font-semibold tabular-nums">{{ friendlyCost(ingModalTarget.default_unit_cost, ingModalTarget.unit).amount }} OMR / {{ friendlyCost(ingModalTarget.default_unit_cost, ingModalTarget.unit).unit }}</span>
+                        </template>
+                    </p>
+                    <p v-if="ingModalErrors.default_unit_cost" class="text-xs text-rose-600">{{ ingModalErrors.default_unit_cost[0] }}</p>
 
                     <label class="block">
                         <span class="text-sm font-medium text-slate-700">
@@ -3466,205 +3723,38 @@ async function submitSuggestions(): Promise<void> {
                         </select>
                     </label>
 
-                    <!-- v2 #13 — Alternate units. Edit-mode only (needs a
-                         saved ingredient uuid). Each row persists via its
-                         own CRUD endpoint, so add / save-factor / delete
-                         hit the API immediately. `factor` stays a string. -->
-                    <fieldset class="rounded-lg border border-slate-200 p-3">
-                        <legend class="px-2 text-sm font-semibold text-slate-700">
-                            <Boxes class="me-1 inline size-3.5 text-amber-600" />
-                            {{ ingModalMode === 'edit' ? t('item_kind.pack_sizes.title_edit') : t('item_kind.pack_sizes.title') }}
-                        </legend>
+                    <!-- A2 / A3 — "Containers — how do you buy it?": the same word in
+                         different sizes, nested ("crate holds 12 × bottle 1 l"), one
+                         marked "Tills count in this", barcodes per container. -->
+                    <ContainersEditor
+                        v-if="ingKind"
+                        v-model:drafts="containerDrafts"
+                        :mode="ingModalMode"
+                        :stored-unit="ingForm.unit"
+                        :ingredient-uuid="ingModalTarget?.uuid ?? null"
+                        :count-container-uuid="ingModalTarget?.count_container_uuid ?? null"
+                        :can-manage="canManage"
+                        @changed="refreshIngredientTarget"
+                    />
+                    <p v-else class="rounded-lg border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">{{ t('item_kind.pack_sizes.choose_kind_first') }}</p>
+                    <ul v-if="containerDraftErrors().length > 0" class="space-y-0.5 text-xs text-rose-600" data-test="container-errors">
+                        <li v-for="(message, i) in containerDraftErrors()" :key="i">{{ message }}</li>
+                    </ul>
+                    <p v-if="ingModalErrors.piece_unit_label" class="text-xs text-rose-600">{{ ingModalErrors.piece_unit_label[0] }}</p>
+                    <p v-if="ingModalErrors.units_per_piece" class="text-xs text-rose-600">{{ ingModalErrors.units_per_piece[0] }}</p>
 
-                        <!-- LAUNCH item kind, A3 — "How do you buy it?" on a new
-                             ingredient: optional pack sizes sent with it. -->
-                        <div v-if="ingModalMode !== 'edit'" data-test="pack-sizes-create">
-                            <p class="mb-2 text-xs text-slate-500">{{ t('item_kind.pack_sizes.hint') }}</p>
-                            <ul v-if="packSizeDrafts.length > 0" class="mb-2 space-y-2">
-                                <li v-for="(pack, i) in packSizeDrafts" :key="i" class="flex flex-wrap items-end gap-2 rounded border border-slate-200 bg-slate-50/50 p-2" data-test="pack-size-draft">
-                                    <label class="block min-w-[8rem] flex-1">
-                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.pack_sizes.name') }} *</span>
-                                        <input v-model="pack.name" type="text" maxlength="32" :placeholder="t('item_kind.pack_sizes.name_placeholder')" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
-                                    </label>
-                                    <label class="block w-32">
-                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.pack_sizes.name_ar') }}</span>
-                                        <input v-model="pack.name_ar" type="text" dir="rtl" maxlength="32" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
-                                    </label>
-                                    <span class="pb-2 text-sm font-medium text-slate-600">{{ t('item_kind.holds') }}</span>
-                                    <label class="block w-24">
-                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.pack_sizes.amount') }} *</span>
-                                        <input v-model="pack.amount" type="number" step="0.0001" min="0" inputmode="decimal" placeholder="12" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
-                                    </label>
-                                    <label class="block w-24">
-                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.pack_sizes.unit') }}</span>
-                                        <select v-model="pack.unit" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
-                                            <option v-for="u in holdUnits" :key="u.value" :value="u.value">{{ holdUnitLabel(u.value) }}</option>
-                                        </select>
-                                    </label>
-                                    <button type="button" class="grid size-9 place-items-center rounded-lg border border-rose-200 text-rose-700 transition hover:bg-rose-50" :title="t('item_kind.pack_sizes.remove')" @click="removePackSizeDraft(i)">
-                                        <Trash2 class="size-4" />
-                                    </button>
-                                    <p v-if="packSizeError(i)" class="basis-full text-[11px] text-rose-600">{{ packSizeError(i) }}</p>
-                                </li>
-                            </ul>
-                            <button
-                                type="button"
-                                :disabled="!ingKind"
-                                class="inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                data-test="add-pack-size"
-                                @click="addPackSizeDraft"
-                            >
-                                <Plus class="size-3.5" />
-                                {{ t('item_kind.pack_sizes.add') }}
-                            </button>
-                            <p v-if="!ingKind" class="mt-1 text-[11px] text-slate-500">{{ t('item_kind.pack_sizes.choose_kind_first') }}</p>
-                        </div>
+                    <label class="inline-flex items-center gap-2 text-sm font-medium text-slate-700">
+                        <input v-model="ingForm.allow_fractional_pieces" type="checkbox" class="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500">
+                        {{ t('inventory.piece.allow_fractional') }}
+                    </label>
+                    <p class="-mt-3 text-xs text-slate-500">{{ t('inventory.piece.allow_fractional_hint') }}</p>
 
-                        <!-- LAUNCH item kind, A4 — the item's PACK SIZES (once the
-                             "Alternate units"): each saved row reads "holds 12 l"
-                             and is edited as holds [amount] [unit]; no factor is
-                             typed. Each row persists through its own endpoint. -->
-                        <template v-else>
-                            <p class="mb-2 text-xs text-slate-500">{{ t('item_kind.pack_sizes.edit_hint') }}</p>
-
-                            <!-- Section-level error banner (rose). -->
-                            <div v-if="altUnitsError" class="mb-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
-                                {{ altUnitsError }}
-                            </div>
-
-                            <div v-if="altUnitsLoading" class="text-xs text-slate-500">{{ t('common.loading') }}</div>
-
-                            <template v-else>
-                                <div v-if="altUnits.length === 0" class="rounded border border-dashed border-slate-200 p-3 text-center text-xs italic text-slate-500">
-                                    {{ t('item_kind.pack_sizes.empty') }}
-                                </div>
-                                <ul v-else class="space-y-2" data-test="pack-sizes-edit">
-                                    <li
-                                        v-for="unit in altUnits"
-                                        :key="unit.uuid"
-                                        class="flex flex-wrap items-end gap-2 rounded border border-slate-200 bg-slate-50/50 p-2"
-                                    >
-                                        <label class="block flex-1 min-w-[8rem]">
-                                            <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.pack_sizes.name') }}</span>
-                                            <input
-                                                :value="unit.name"
-                                                type="text"
-                                                readonly
-                                                :title="t('item_kind.pack_sizes.name_immutable_hint')"
-                                                class="mt-1 w-full cursor-not-allowed rounded-lg border border-slate-200 bg-slate-100 px-2.5 py-1.5 text-sm text-slate-600"
-                                            >
-                                            <span class="mt-0.5 block text-[11px] text-slate-500" data-test="pack-size-holds">{{ packHoldsText(unit) }}</span>
-                                        </label>
-                                        <label v-if="altUnitDrafts[unit.uuid]" class="block w-32">
-                                            <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.pack_sizes.name_ar') }}</span>
-                                            <input
-                                                v-model="altUnitDrafts[unit.uuid].name_ar"
-                                                type="text"
-                                                dir="rtl"
-                                                :disabled="!canManage"
-                                                class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100 disabled:bg-slate-50"
-                                            >
-                                        </label>
-                                        <template v-if="altUnitDrafts[unit.uuid]">
-                                            <span class="pb-2 text-sm font-medium text-slate-600">{{ t('item_kind.holds') }}</span>
-                                            <label class="block w-24">
-                                                <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.pack_sizes.amount') }}</span>
-                                                <input
-                                                    v-model="altUnitDrafts[unit.uuid].amount"
-                                                    type="number"
-                                                    step="0.0001"
-                                                    min="0"
-                                                    inputmode="decimal"
-                                                    :disabled="!canManage"
-                                                    class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100 disabled:bg-slate-50"
-                                                >
-                                            </label>
-                                            <label class="block w-24">
-                                                <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.pack_sizes.unit') }}</span>
-                                                <select v-model="altUnitDrafts[unit.uuid].unit" :disabled="!canManage" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100 disabled:bg-slate-50">
-                                                    <option v-for="u in savedHoldUnits" :key="u.value" :value="u.value">{{ holdUnitLabel(u.value) }}</option>
-                                                </select>
-                                            </label>
-                                        </template>
-                                        <div v-if="canManage" class="flex items-center gap-1">
-                                            <button
-                                                type="button"
-                                                :disabled="altUnitBusyUuid === unit.uuid"
-                                                class="inline-flex h-9 items-center gap-1 rounded-lg border border-teal-200 bg-teal-50 px-2.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100 disabled:cursor-wait disabled:opacity-60"
-                                                @click="saveAltUnit(unit)"
-                                            >
-                                                <Check class="size-3.5" />
-                                                {{ altUnitBusyUuid === unit.uuid ? t('inventory.alt_units.saving') : t('inventory.alt_units.save') }}
-                                            </button>
-                                            <button
-                                                type="button"
-                                                :disabled="altUnitBusyUuid === unit.uuid"
-                                                class="grid size-9 place-items-center rounded-lg border border-rose-200 text-rose-700 transition hover:bg-rose-50 disabled:cursor-wait disabled:opacity-60"
-                                                :title="t('item_kind.pack_sizes.remove')"
-                                                @click="removeAltUnit(unit)"
-                                            >
-                                                <Trash2 class="size-4" />
-                                            </button>
-                                        </div>
-                                        <p v-if="altUnitError(unit.uuid)" class="basis-full text-[11px] text-rose-600">{{ altUnitError(unit.uuid) }}</p>
-                                    </li>
-                                </ul>
-
-                                <!-- Add-new row — manage-gated. -->
-                                <div v-if="canManage" class="mt-3 flex flex-wrap items-end gap-2 rounded border border-teal-100 bg-teal-50/40 p-2" data-test="pack-size-new">
-                                    <label class="block flex-1 min-w-[8rem]">
-                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.pack_sizes.name') }} *</span>
-                                        <input
-                                            v-model="altUnitNew.name"
-                                            type="text"
-                                            maxlength="32"
-                                            :placeholder="t('item_kind.pack_sizes.name_placeholder')"
-                                            class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
-                                        >
-                                    </label>
-                                    <label class="block w-32">
-                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.pack_sizes.name_ar') }}</span>
-                                        <input
-                                            v-model="altUnitNew.name_ar"
-                                            type="text"
-                                            dir="rtl"
-                                            maxlength="32"
-                                            class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
-                                        >
-                                    </label>
-                                    <span class="pb-2 text-sm font-medium text-slate-600">{{ t('item_kind.holds') }}</span>
-                                    <label class="block w-24">
-                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.pack_sizes.amount') }} *</span>
-                                        <input
-                                            v-model="altUnitNew.amount"
-                                            type="number"
-                                            step="0.0001"
-                                            min="0"
-                                            inputmode="decimal"
-                                            placeholder="12"
-                                            class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
-                                        >
-                                    </label>
-                                    <label class="block w-24">
-                                        <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('item_kind.pack_sizes.unit') }}</span>
-                                        <select v-model="altUnitNew.unit" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
-                                            <option v-for="u in savedHoldUnits" :key="u.value" :value="u.value">{{ holdUnitLabel(u.value) }}</option>
-                                        </select>
-                                    </label>
-                                    <button
-                                        type="button"
-                                        :disabled="altUnitNewBusy || !altUnitNew.name.trim() || String(altUnitNew.amount).trim() === ''"
-                                        class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 text-xs font-semibold text-teal-700 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                        @click="addAltUnit"
-                                    >
-                                        <Plus class="size-3.5" />
-                                        {{ altUnitNewBusy ? t('inventory.alt_units.saving') : t('item_kind.pack_sizes.add') }}
-                                    </button>
-                                    <p v-if="altUnitError('')" class="basis-full text-[11px] text-rose-600">{{ altUnitError('') }}</p>
-                                </div>
-                            </template>
-                        </template>
-                    </fieldset>
+                    <!-- A5 — barcodes on the item itself (a container's barcodes sit on its row). -->
+                    <div data-test="item-barcodes">
+                        <span class="text-sm font-medium text-slate-700">{{ t('containers.item_barcodes') }}</span>
+                        <p class="text-xs text-slate-500">{{ t('containers.item_barcodes_hint') }}</p>
+                        <BarcodeChips :barcodes="itemBarcodes" :editable="canManage" :busy="ingBarcodeBusy" :error="ingBarcodeError" @add="addItemBarcode" @remove="removeItemBarcode" />
+                    </div>
                 </form>
             <template #footer>
                 <div class="flex justify-end gap-2">
@@ -3738,13 +3828,19 @@ async function submitSuggestions(): Promise<void> {
                         <span class="text-sm font-medium text-slate-700">
                             {{ t('inventory.fields.signed_quantity') }} *
                         </span>
-                        <div class="mt-1 flex gap-2">
-                            <input v-model="adjustForm.signed_quantity" required type="number" step="0.0001" class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                            <select v-model="adjustForm.unit" :title="t('inventory.fields.unit')" class="shrink-0 rounded-lg border border-slate-200 px-2 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                                <!-- PD4 — base + custom alt + auto metric siblings. -->
-                                <option v-for="u in ingredientUnitOptions(adjustTarget.ingredient, locale)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
-                            </select>
-                        </div>
+                        <!-- PD4 — base + custom alt + auto metric siblings; E1 — "= 2 l 500 ml". -->
+                        <AmountInput
+                            v-model="adjustForm.signed_quantity"
+                            v-model:unit="adjustForm.unit"
+                            class="mt-1"
+                            :options="ingredientUnitOptions(adjustTarget.ingredient, locale)"
+                            :stored-unit="adjustTarget.ingredient.unit"
+                            :containers="adjustTarget.ingredient.alt_units ?? []"
+                            step="0.0001"
+                            min=""
+                            required
+                            data-test="adjust-quantity"
+                        />
                         <p class="mt-1 text-xs text-slate-500">{{ t('inventory.fields.signed_quantity_hint') }}</p>
                         <p v-if="adjustErrors.signed_quantity" class="mt-1 text-xs text-rose-600">{{ adjustErrors.signed_quantity[0] }}</p>
                         <p v-if="adjustErrors.unit" class="mt-1 text-xs text-rose-600">{{ adjustErrors.unit[0] }}</p>
@@ -3927,6 +4023,12 @@ async function submitSuggestions(): Promise<void> {
                 </div>
                 <!-- LAUNCH-P2 P2-6 — a BLIND count: what is on the shelf, never the books. -->
                 <p v-if="countRows.length > 0" class="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600" data-test="blind-count-hint">{{ t('inventory.counts.modal.blind_hint') }}</p>
+                <!-- F — a scan finds the row and adds one of that container (never pre-filled). -->
+                <ScanBox v-if="countRows.length > 0" :can-link="canManage" :ingredients="ingredients" :physical-items="physicalItems" :item-types="['ingredient']" data-test="count-scan" @found="onCountScan" />
+                <label v-if="countRows.length > 0" class="block max-w-xs">
+                    <span class="sr-only">{{ t('scan.search_placeholder') }}</span>
+                    <input v-model="countSearch" type="search" :placeholder="t('scan.search_placeholder')" class="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-sm" data-test="count-search">
+                </label>
                 <div v-if="countRows.length > 0" class="max-h-96 overflow-y-auto rounded-lg border border-slate-200">
                     <table class="min-w-full divide-y divide-slate-200 text-sm">
                         <thead class="sticky top-0 bg-slate-50">
@@ -3936,26 +4038,49 @@ async function submitSuggestions(): Promise<void> {
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
-                            <tr v-for="(r, i) in countRows" :key="r.ingredient.uuid">
+                            <tr v-for="r in visibleCountRows" :key="r.ingredient.uuid" class="align-top" data-test="count-row">
                                 <td class="px-4 py-2.5">
                                     <span class="block font-medium text-slate-800">{{ isArabic && r.ingredient.name_ar ? r.ingredient.name_ar : r.ingredient.name }}</span>
+                                    <!-- D2 — count by container: rows of pieces, never pre-filled from the books. -->
+                                    <button
+                                        v-if="r.containers.length === 0 && (r.ingredient.alt_units?.length ?? 0) > 0"
+                                        type="button"
+                                        class="mt-0.5 text-[11px] font-semibold text-teal-700 hover:underline"
+                                        data-test="count-by-container"
+                                        @click="startCountContainers(r)"
+                                    >
+                                        {{ t('containers.by_container') }}
+                                    </button>
+                                    <button v-else-if="r.containers.length > 0" type="button" class="mt-0.5 text-[11px] font-semibold text-slate-500 hover:underline" @click="stopCountContainers(r)">
+                                        {{ t('containers.by_amount') }}
+                                    </button>
                                 </td>
                                 <td class="px-4 py-2.5 text-end">
                                     <!-- LAUNCH item kind, A7 — counted in any unit the item knows:
-                                         kg/g or l/ml, a pack size, or the count container. -->
-                                    <div class="inline-flex items-center gap-2">
-                                        <input
-                                            v-model="countRows[i].counted"
-                                            type="number"
-                                            :step="countsPieces(r) && r.ingredient.allow_fractional_pieces === false ? '1' : 'any'"
-                                            min="0"
-                                            :placeholder="t('inventory.counts.modal.skip_placeholder')"
-                                            class="w-28 rounded-lg border border-slate-200 px-2.5 py-1.5 text-end text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
-                                        >
-                                        <select v-model="countRows[i].unit" :title="t('item_kind.count_unit')" data-test="count-unit" class="w-36 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
-                                            <option v-for="u in ingredientUnitOptions(r.ingredient, locale)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
-                                        </select>
-                                    </div>
+                                         kg/g or l/ml, a pack size, or the count container; E1 — "= 2 l 500 ml". -->
+                                    <AmountInput
+                                        v-if="r.containers.length === 0"
+                                        v-model="r.counted"
+                                        v-model:unit="r.unit"
+                                        class="inline-block w-72 text-start"
+                                        :options="ingredientUnitOptions(r.ingredient, locale)"
+                                        :stored-unit="r.ingredient.unit"
+                                        :containers="r.ingredient.alt_units ?? []"
+                                        :step="countsPieces(r) && r.ingredient.allow_fractional_pieces === false ? '1' : 'any'"
+                                        :placeholder="t('inventory.counts.modal.skip_placeholder')"
+                                        input-class="w-28 rounded-lg border border-slate-200 px-2.5 py-1.5 text-end text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                                        select-class="w-36 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                                        data-test="count-amount"
+                                    />
+                                    <ContainerRows
+                                        v-else
+                                        v-model:rows="r.containers"
+                                        v-model:amount="r.counted"
+                                        v-model:amount-unit="r.unit"
+                                        class="inline-block text-start"
+                                        allow-zero
+                                        :ingredient="r.ingredient"
+                                    />
                                 </td>
                             </tr>
                         </tbody>
@@ -3971,7 +4096,7 @@ async function submitSuggestions(): Promise<void> {
                     <span class="text-xs text-slate-500">{{ t('inventory.counts.modal.filled', { filled: countFilledRows, total: countRows.length }) }}</span>
                     <div class="flex gap-2">
                         <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="countOpen = false">{{ t('common.cancel') }}</button>
-                        <button type="submit" form="count-modal-form" :disabled="countBusy || countFilledRows === 0" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60">
+                        <button type="submit" form="count-modal-form" :disabled="countBusy || countFilledRows === 0 || countHasRaised" class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60">
                             {{ countBusy ? t('inventory.counts.modal.submitting') : t('inventory.counts.modal.submit') }}
                         </button>
                     </div>
@@ -4028,6 +4153,8 @@ async function submitSuggestions(): Promise<void> {
                     <div v-if="wasteError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
                         {{ wasteError }}
                     </div>
+                    <!-- F — a scan picks the item (and its container: one more each scan). -->
+                    <ScanBox :can-link="canManage" :ingredients="ingredients" :physical-items="physicalItems" :item-types="['ingredient']" data-test="waste-scan" @found="onWasteScan" />
                     <label class="block">
                         <span class="text-sm font-medium text-slate-700">{{ t('inventory.waste.modal.ingredient') }} *</span>
                         <select v-model="wasteForm.ingredient_uuid" required class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
@@ -4046,18 +4173,49 @@ async function submitSuggestions(): Promise<void> {
                         <span class="font-semibold text-slate-900">{{ wasteCurrentBalance === '—' ? '—' : qty(wasteCurrentBalance, wasteIngredient?.unit) }}</span>
                     </div>
                     <div class="grid gap-3 sm:grid-cols-2">
-                        <label class="block">
+                        <div class="block">
                             <span class="text-sm font-medium text-slate-700">{{ t('inventory.waste.modal.quantity') }} *</span>
-                            <div class="mt-1 flex gap-2">
-                                <input v-model="wasteForm.quantity" type="number" step="0.0001" min="0.0001" required class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                                <select v-model="wasteForm.unit" :title="t('inventory.fields.unit')" class="shrink-0 rounded-lg border border-slate-200 px-2 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
-                                    <!-- PD4 — base + custom alt + auto metric siblings. -->
-                                    <option v-for="u in ingredientUnitOptions(wasteIngredient, locale)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
-                                </select>
-                            </div>
+                            <!-- E1 — "= 2 l 500 ml" under the box. -->
+                            <AmountInput
+                                v-if="wasteForm.containers.length === 0"
+                                v-model="wasteForm.quantity"
+                                v-model:unit="wasteForm.unit"
+                                class="mt-1"
+                                :options="ingredientUnitOptions(wasteIngredient, locale)"
+                                :stored-unit="wasteIngredient?.unit ?? 'g'"
+                                :containers="wasteIngredient?.alt_units ?? []"
+                                step="0.0001"
+                                min="0.0001"
+                                required
+                                data-test="waste-quantity"
+                            />
+                            <!-- D3 — by container: "2 × bottle 1.5 l" (the amount fills in, lower only). -->
+                            <ContainerRows
+                                v-else-if="wasteIngredient"
+                                v-model:rows="wasteForm.containers"
+                                v-model:amount="wasteForm.quantity"
+                                v-model:amount-unit="wasteForm.unit"
+                                class="mt-1"
+                                single
+                                :ingredient="wasteIngredient"
+                            />
+                            <button
+                                v-if="wasteForm.containers.length === 0 && !wasteIsPrep && (wasteIngredient?.alt_units?.length ?? 0) > 0"
+                                type="button"
+                                class="mt-1 text-xs font-semibold text-teal-700 hover:underline"
+                                data-test="waste-by-container"
+                                @click="startWasteContainer"
+                            >
+                                {{ t('containers.by_container') }}
+                            </button>
+                            <button v-else-if="wasteForm.containers.length > 0" type="button" class="mt-1 text-xs font-semibold text-slate-500 hover:underline" @click="stopWasteContainer">
+                                {{ t('containers.by_amount') }}
+                            </button>
                             <p v-if="wasteErrors.quantity" class="mt-1 text-xs text-rose-600">{{ wasteErrors.quantity[0] }}</p>
                             <p v-if="wasteErrors.unit" class="mt-1 text-xs text-rose-600">{{ wasteErrors.unit[0] }}</p>
-                        </label>
+                            <p v-if="wasteErrors.container_uuid" class="mt-1 text-xs text-rose-600">{{ wasteErrors.container_uuid[0] }}</p>
+                            <p v-if="wasteErrors.pieces" class="mt-1 text-xs text-rose-600">{{ wasteErrors.pieces[0] }}</p>
+                        </div>
                         <label class="block">
                             <span class="text-sm font-medium text-slate-700">{{ t('inventory.waste.modal.reason') }} *</span>
                             <select v-model="wasteForm.reason" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm">
@@ -4076,9 +4234,11 @@ async function submitSuggestions(): Promise<void> {
                         <input v-model="wasteForm.occurred_at" type="datetime-local" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                         <p class="mt-1 text-xs text-slate-500">{{ t('inventory.waste.modal.occurred_at_help') }}</p>
                     </label>
-                    <div v-if="wasteForm.ingredient_uuid && wasteForm.quantity" class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                    <div v-if="wasteForm.ingredient_uuid && (wasteForm.quantity || wasteForm.containers.length > 0)" class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2" data-test="waste-cost-preview">
                         <p class="text-[10px] font-semibold uppercase tracking-wide text-amber-700">{{ t('inventory.waste.modal.cost_preview') }}</p>
-                        <p class="mt-0.5 text-base font-bold tabular-nums text-amber-900">{{ wasteCostPreview }} <span class="text-[10px] font-normal text-amber-700">OMR</span></p>
+                        <!-- A1 — an item with no cost from a purchase yet says so. -->
+                        <p v-if="wasteCostPreview === null" class="mt-0.5 text-sm font-semibold italic text-amber-900">{{ t('purchases_v2.no_cost_yet') }}</p>
+                        <p v-else class="mt-0.5 text-base font-bold tabular-nums text-amber-900">{{ wasteCostPreview }} <span class="text-[10px] font-normal text-amber-700">OMR</span></p>
                         <p class="mt-0.5 text-[10px] text-amber-700">{{ t('inventory.waste.modal.cost_preview_hint') }}</p>
                     </div>
                     <!-- LAUNCH-P3 fix order 1, K3 — sell-but-warn: a warning, never a block. -->
@@ -4092,7 +4252,7 @@ async function submitSuggestions(): Promise<void> {
                     <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="wasteOpen = false">
                         {{ t('inventory.waste.modal.cancel') }}
                     </button>
-                    <button type="submit" form="waste-modal-form" :disabled="wasteBusy" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60">
+                    <button type="submit" form="waste-modal-form" :disabled="wasteBusy || wasteRaised" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60">
                         {{ wasteBusy ? t('inventory.waste.modal.submitting') : t('inventory.waste.modal.submit') }}
                     </button>
                 </div>
@@ -4125,20 +4285,54 @@ async function submitSuggestions(): Promise<void> {
 
                     <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
                         <p class="mb-3 text-sm font-semibold text-slate-700">{{ t('inventory.restock.create_modal.lines_header') }}</p>
+                        <!-- F — a scan adds "Milk · 1 × bottle 1.5 l"; the same scan again makes it 2. -->
+                        <ScanBox class="mb-3" :can-link="canManage" :ingredients="ingredients" :physical-items="physicalItems" :item-types="['ingredient']" data-test="restock-scan" @found="onRestockScan" />
                         <div class="space-y-2">
-                            <div v-for="(line, idx) in restockForm2.lines" :key="idx" class="grid gap-2 rounded-lg bg-white p-3 shadow-sm sm:grid-cols-12">
-                                <select v-model="line.ingredient_uuid" class="sm:col-span-4 rounded-lg border border-slate-200 px-2 py-2 text-sm" @change="line.unit = ''">
-                                    <option value="">{{ t('inventory.restock.create_modal.ingredient_placeholder') }}</option>
-                                    <option v-for="i in ingredients" :key="i.uuid" :value="i.uuid">{{ isArabic && i.name_ar ? i.name_ar : i.name }} ({{ i.unit }})</option>
-                                </select>
-                                <input v-model="line.quantity" type="number" step="0.0001" min="0.0001" :placeholder="t('inventory.restock.create_modal.quantity')" class="sm:col-span-2 rounded-lg border border-slate-200 px-2 py-2 text-sm tabular-nums">
-                                <select v-model="line.unit" :title="t('inventory.fields.unit')" class="sm:col-span-2 rounded-lg border border-slate-200 px-2 py-2 text-sm">
-                                    <!-- PD4 — base + custom alt + auto metric siblings. -->
-                                    <option v-for="u in ingredientUnitOptions(ingredientByUuid(line.ingredient_uuid), locale)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
-                                </select>
-                                <input v-model="line.note" type="text" :placeholder="t('inventory.restock.create_modal.line_note')" class="sm:col-span-3 rounded-lg border border-slate-200 px-2 py-2 text-sm">
-                                <button type="button" :title="t('inventory.restock.create_modal.remove_line')" class="sm:col-span-1 inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-2 py-2 text-rose-700 transition hover:bg-rose-100" @click="removeRestockLine(idx)">
-                                    <Minus class="size-4" />
+                            <div v-for="(line, idx) in restockForm2.lines" :key="idx" class="space-y-2 rounded-lg bg-white p-3 shadow-sm" data-test="restock-line">
+                                <div class="grid gap-2 sm:grid-cols-12">
+                                    <select v-model="line.ingredient_uuid" class="sm:col-span-4 rounded-lg border border-slate-200 px-2 py-2 text-sm" @change="line.unit = ''; line.containers = []">
+                                        <option value="">{{ t('inventory.restock.create_modal.ingredient_placeholder') }}</option>
+                                        <option v-for="i in ingredients" :key="i.uuid" :value="i.uuid">{{ isArabic && i.name_ar ? i.name_ar : i.name }} ({{ i.unit }})</option>
+                                    </select>
+                                    <!-- E1 — "= 2 l 500 ml" under the box. -->
+                                    <AmountInput
+                                        v-if="line.containers.length === 0"
+                                        v-model="line.quantity"
+                                        v-model:unit="line.unit"
+                                        class="sm:col-span-4"
+                                        :options="ingredientUnitOptions(ingredientByUuid(line.ingredient_uuid), locale)"
+                                        :stored-unit="ingredientByUuid(line.ingredient_uuid)?.unit ?? 'g'"
+                                        :containers="ingredientByUuid(line.ingredient_uuid)?.alt_units ?? []"
+                                        :placeholder="t('inventory.restock.create_modal.quantity')"
+                                        input-class="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm tabular-nums"
+                                        select-class="shrink-0 rounded-lg border border-slate-200 px-2 py-2 text-sm"
+                                        data-test="restock-quantity"
+                                    />
+                                    <input v-model="line.note" type="text" :placeholder="t('inventory.restock.create_modal.line_note')" class="rounded-lg border border-slate-200 px-2 py-2 text-sm" :class="line.containers.length === 0 ? 'sm:col-span-3' : 'sm:col-span-7'">
+                                    <button type="button" :title="t('inventory.restock.create_modal.remove_line')" class="sm:col-span-1 inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-2 py-2 text-rose-700 transition hover:bg-rose-100" @click="removeRestockLine(idx)">
+                                        <Minus class="size-4" />
+                                    </button>
+                                </div>
+                                <!-- D4 — asked by container: "2 × bottle 1.5 l" (the amount fills in, lower only). -->
+                                <ContainerRows
+                                    v-if="line.containers.length > 0 && ingredientByUuid(line.ingredient_uuid)"
+                                    v-model:rows="line.containers"
+                                    v-model:amount="line.quantity"
+                                    v-model:amount-unit="line.unit"
+                                    single
+                                    :ingredient="ingredientByUuid(line.ingredient_uuid)!"
+                                />
+                                <button
+                                    v-if="line.containers.length === 0 && (ingredientByUuid(line.ingredient_uuid)?.alt_units?.length ?? 0) > 0"
+                                    type="button"
+                                    class="text-xs font-semibold text-teal-700 hover:underline"
+                                    data-test="restock-by-container"
+                                    @click="startRestockContainer(line)"
+                                >
+                                    {{ t('containers.by_container') }}
+                                </button>
+                                <button v-else-if="line.containers.length > 0" type="button" class="text-xs font-semibold text-slate-500 hover:underline" @click="stopRestockContainer(line)">
+                                    {{ t('containers.by_amount') }}
                                 </button>
                             </div>
                         </div>
@@ -4157,7 +4351,7 @@ async function submitSuggestions(): Promise<void> {
                     <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="restockModalOpen = false">
                         {{ t('inventory.restock.create_modal.cancel') }}
                     </button>
-                    <button type="submit" form="restock-request-form" :disabled="restockModalBusy || restockHasDuplicates" class="rounded-lg bg-gradient-to-r from-indigo-600 to-cyan-600 px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
+                    <button type="submit" form="restock-request-form" :disabled="restockModalBusy || restockHasDuplicates || restockHasRaised" class="rounded-lg bg-gradient-to-r from-indigo-600 to-cyan-600 px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
                         {{ restockModalBusy ? t('inventory.restock.create_modal.submitting') : (restockModalMode === 'create' ? t('inventory.restock.create_modal.submit_create') : t('inventory.restock.create_modal.submit_edit')) }}
                     </button>
                 </div>
@@ -4199,19 +4393,52 @@ async function submitSuggestions(): Promise<void> {
 
                     <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
                         <p class="mb-3 text-sm font-semibold text-slate-700">{{ t('inventory.transfers.create_modal.lines_header') }}</p>
+                        <!-- F — a scan adds "Milk · 1 × bottle 1.5 l"; the same scan again makes it 2. -->
+                        <ScanBox class="mb-3" :can-link="canManage" :ingredients="ingredients" :physical-items="physicalItems" :item-types="['ingredient']" data-test="transfer-scan" @found="onTransferScan" />
                         <div class="space-y-2">
-                            <div v-for="(line, idx) in transferForm.lines" :key="idx" class="grid gap-2 rounded-lg bg-white p-3 shadow-sm sm:grid-cols-12">
-                                <select v-model="line.ingredient_uuid" class="sm:col-span-6 rounded-lg border border-slate-200 px-2 py-2 text-sm" @change="line.unit = ''">
-                                    <option value="">{{ t('inventory.transfers.create_modal.ingredient_placeholder') }}</option>
-                                    <option v-for="i in ingredients" :key="i.uuid" :value="i.uuid">{{ isArabic && i.name_ar ? i.name_ar : i.name }} ({{ i.unit }})</option>
-                                </select>
-                                <input v-model="line.quantity" type="number" step="0.0001" min="0.0001" :placeholder="t('inventory.transfers.create_modal.quantity')" class="sm:col-span-3 rounded-lg border border-slate-200 px-2 py-2 text-sm tabular-nums">
-                                <select v-model="line.unit" :title="t('inventory.fields.unit')" class="sm:col-span-2 rounded-lg border border-slate-200 px-2 py-2 text-sm">
-                                    <!-- PD4 — base + custom alt + auto metric siblings. -->
-                                    <option v-for="u in ingredientUnitOptions(ingredientByUuid(line.ingredient_uuid), locale)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
-                                </select>
-                                <button type="button" :title="t('inventory.transfers.create_modal.remove_line')" class="sm:col-span-1 inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-2 py-2 text-rose-700 transition hover:bg-rose-100" @click="removeTransferLine(idx)">
-                                    <Minus class="size-4" />
+                            <div v-for="(line, idx) in transferForm.lines" :key="idx" class="space-y-2 rounded-lg bg-white p-3 shadow-sm" data-test="transfer-line">
+                                <div class="grid gap-2 sm:grid-cols-12">
+                                    <select v-model="line.ingredient_uuid" class="rounded-lg border border-slate-200 px-2 py-2 text-sm" :class="line.containers.length > 0 ? 'sm:col-span-11' : 'sm:col-span-5'" @change="line.unit = ''; line.containers = []">
+                                        <option value="">{{ t('inventory.transfers.create_modal.ingredient_placeholder') }}</option>
+                                        <option v-for="i in ingredients" :key="i.uuid" :value="i.uuid">{{ isArabic && i.name_ar ? i.name_ar : i.name }} ({{ i.unit }})</option>
+                                    </select>
+                                    <!-- E1 — "= 2 l 500 ml" under the box. -->
+                                    <AmountInput
+                                        v-if="line.containers.length === 0"
+                                        v-model="line.quantity"
+                                        v-model:unit="line.unit"
+                                        class="sm:col-span-6"
+                                        :options="ingredientUnitOptions(ingredientByUuid(line.ingredient_uuid), locale)"
+                                        :stored-unit="ingredientByUuid(line.ingredient_uuid)?.unit ?? 'g'"
+                                        :containers="ingredientByUuid(line.ingredient_uuid)?.alt_units ?? []"
+                                        :placeholder="t('inventory.transfers.create_modal.quantity')"
+                                        input-class="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm tabular-nums"
+                                        select-class="shrink-0 rounded-lg border border-slate-200 px-2 py-2 text-sm"
+                                        data-test="transfer-quantity"
+                                    />
+                                    <button type="button" :title="t('inventory.transfers.create_modal.remove_line')" class="sm:col-span-1 inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-2 py-2 text-rose-700 transition hover:bg-rose-100" @click="removeTransferLine(idx)">
+                                        <Minus class="size-4" />
+                                    </button>
+                                </div>
+                                <!-- D1 — by container: rows of pieces × container and a total that may be lowered, never raised. -->
+                                <ContainerRows
+                                    v-if="line.containers.length > 0 && ingredientByUuid(line.ingredient_uuid)"
+                                    v-model:rows="line.containers"
+                                    v-model:amount="line.quantity"
+                                    v-model:amount-unit="line.unit"
+                                    :ingredient="ingredientByUuid(line.ingredient_uuid)!"
+                                />
+                                <button
+                                    v-if="line.containers.length === 0 && (ingredientByUuid(line.ingredient_uuid)?.alt_units?.length ?? 0) > 0"
+                                    type="button"
+                                    class="text-xs font-semibold text-teal-700 hover:underline"
+                                    data-test="transfer-by-container"
+                                    @click="startContainers(line)"
+                                >
+                                    {{ t('containers.by_container') }}
+                                </button>
+                                <button v-else-if="line.containers.length > 0" type="button" class="text-xs font-semibold text-slate-500 hover:underline" @click="line.containers = []; line.quantity = ''; line.unit = ''">
+                                    {{ t('containers.by_amount') }}
                                 </button>
                             </div>
                         </div>
@@ -4230,7 +4457,7 @@ async function submitSuggestions(): Promise<void> {
                     <button type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" @click="transferModalOpen = false">
                         {{ t('inventory.transfers.create_modal.cancel') }}
                     </button>
-                    <button type="submit" form="branch-transfer-form" :disabled="transferModalBusy || transferHasDuplicates" class="rounded-lg bg-gradient-to-r from-indigo-600 to-cyan-600 px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
+                    <button type="submit" form="branch-transfer-form" :disabled="transferModalBusy || transferHasDuplicates || transferHasRaised" class="rounded-lg bg-gradient-to-r from-indigo-600 to-cyan-600 px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
                         {{ transferModalBusy ? t('inventory.transfers.create_modal.submitting') : t('inventory.transfers.create_modal.submit') }}
                     </button>
                 </div>
@@ -4281,7 +4508,11 @@ async function submitSuggestions(): Promise<void> {
                             <tbody class="divide-y divide-slate-100">
                                 <tr v-for="l in showTarget.lines" :key="l.id">
                                     <td class="px-3 py-2 font-medium text-slate-900">{{ l.ingredient ? (isArabic && l.ingredient.name_ar ? l.ingredient.name_ar : l.ingredient.name) : '—' }}</td>
-                                    <td class="px-3 py-2 text-end tabular-nums text-slate-700">{{ friendlyAmount(l.quantity_requested, l.unit_at_set).amount }} <span class="text-[10px] text-slate-500">{{ friendlyAmount(l.quantity_requested, l.unit_at_set).unit }}</span></td>
+                                    <td class="px-3 py-2 text-end tabular-nums text-slate-700">
+                                        {{ friendlyAmount(l.quantity_requested, l.unit_at_set).amount }} <span class="text-[10px] text-slate-500">{{ friendlyAmount(l.quantity_requested, l.unit_at_set).unit }}</span>
+                                        <!-- D4 — asked by container: "2 × bottle 1.5 l". -->
+                                        <bdi v-if="l.pieces && l.container_label" dir="ltr" class="block text-[10px] text-slate-500" data-test="restock-line-container">{{ piecesText([{ pieces: l.pieces, container_label: l.container_label }]) }}</bdi>
+                                    </td>
                                     <td class="px-3 py-2 text-end tabular-nums font-semibold text-emerald-700">{{ qty(l.quantity_allocated, l.unit_at_set) }}</td>
                                     <td class="px-3 py-2 text-slate-600">{{ l.note || '—' }}</td>
                                 </tr>
@@ -4389,12 +4620,19 @@ async function submitSuggestions(): Promise<void> {
                                 </td>
                                 <!-- F5 — typed in any unit of the line's item (36 l, 3 crates). -->
                                 <td class="px-3 py-2 text-end">
-                                    <div class="inline-flex items-center gap-1.5">
-                                        <input v-model="allocateOverrides[String(l.id)]" type="number" step="0.0001" min="0" class="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-sm tabular-nums text-end">
-                                        <select v-model="allocateUnits[String(l.id)]" :title="t('inventory.fields.unit')" data-test="allocate-unit" class="w-32 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm">
-                                            <option v-for="u in ingredientUnitOptions(restockLineIngredient(l), locale)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
-                                        </select>
-                                    </div>
+                                    <!-- E1 — "= 36 × bottle 1 l = 36 l" under the box. -->
+                                    <AmountInput
+                                        v-model="allocateOverrides[String(l.id)]"
+                                        v-model:unit="allocateUnits[String(l.id)]"
+                                        class="inline-block w-60 text-start"
+                                        :options="ingredientUnitOptions(restockLineIngredient(l), locale)"
+                                        :stored-unit="l.unit_at_set"
+                                        :containers="ingredientByUuid(l.ingredient?.uuid ?? '')?.alt_units ?? []"
+                                        step="0.0001"
+                                        input-class="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-sm tabular-nums text-end"
+                                        select-class="w-32 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm"
+                                        data-test="allocate-quantity"
+                                    />
                                 </td>
                             </tr>
                         </tbody>
@@ -4519,12 +4757,20 @@ async function submitSuggestions(): Promise<void> {
                                 </td>
                                 <!-- F5 — typed in any unit of the item (the kind's units, pack sizes, container). -->
                                 <td class="px-3 py-2 text-end">
-                                    <div class="inline-flex items-center gap-1.5">
-                                        <input v-model="row.qty" :disabled="!row.include" type="number" step="0.0001" min="0" class="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-sm tabular-nums text-end focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100 disabled:bg-slate-50 disabled:text-slate-400">
-                                        <select v-model="row.unit" :disabled="!row.include" :title="t('inventory.fields.unit')" data-test="suggestion-unit" class="w-32 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm disabled:bg-slate-50 disabled:text-slate-400">
-                                            <option v-for="u in ingredientUnitOptions(suggestionIngredient(row.suggestion), locale)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
-                                        </select>
-                                    </div>
+                                    <!-- E1 — "= 2 l 500 ml" under the box. -->
+                                    <AmountInput
+                                        v-model="row.qty"
+                                        v-model:unit="row.unit"
+                                        class="inline-block w-60 text-start"
+                                        :options="ingredientUnitOptions(suggestionIngredient(row.suggestion), locale)"
+                                        :stored-unit="row.suggestion.unit"
+                                        :containers="ingredientByUuid(row.suggestion.ingredient_uuid)?.alt_units ?? []"
+                                        :disabled="!row.include"
+                                        step="0.0001"
+                                        input-class="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-sm tabular-nums text-end focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100 disabled:bg-slate-50 disabled:text-slate-400"
+                                        select-class="w-32 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm disabled:bg-slate-50 disabled:text-slate-400"
+                                        data-test="suggestion-quantity"
+                                    />
                                 </td>
                             </tr>
                         </tbody>
@@ -4621,6 +4867,13 @@ async function submitSuggestions(): Promise<void> {
                         <p v-if="physicalItemModalErrors.low_stock_threshold" class="mt-1 text-xs text-rose-600">{{ physicalItemModalErrors.low_stock_threshold[0] }}</p>
                     </label>
                 </div>
+                <!-- A4 — the supplier's code, or blank = generated (PHY-0001). -->
+                <label class="block max-w-xs">
+                    <span class="text-sm font-medium text-slate-700">{{ t('containers.sku.label') }}</span>
+                    <input v-model="physicalItemForm.sku" type="text" maxlength="64" :placeholder="t('containers.sku.placeholder_physical')" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 font-mono text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100" data-test="physical-sku-input">
+                    <p class="mt-1 text-xs text-slate-500">{{ t('containers.sku.hint_physical') }}</p>
+                    <p v-if="physicalItemModalErrors.sku" class="mt-1 text-xs text-rose-600">{{ physicalItemModalErrors.sku[0] }}</p>
+                </label>
                 <label v-if="physicalItemModalMode === 'edit'" class="block">
                     <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.status') }}</span>
                     <select v-model="physicalItemForm.status" class="mt-1 w-full max-w-xs rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
@@ -4628,6 +4881,13 @@ async function submitSuggestions(): Promise<void> {
                         <option value="inactive">{{ t('catalogue.statuses.inactive') }}</option>
                     </select>
                 </label>
+                <!-- D3 — packs ("box holds 50 cups") with barcodes per pack and per piece. -->
+                <PacksEditor
+                    :item-uuid="physicalItemModalMode === 'edit' ? (physicalItemModalTarget?.uuid ?? null) : null"
+                    :piece-barcodes="physicalItemModalTarget?.barcodes ?? []"
+                    :can-manage="canManage"
+                    @changed="onPacksChanged"
+                />
             </form>
             <template #footer>
                 <div class="flex justify-end gap-2">
@@ -4666,6 +4926,7 @@ async function submitSuggestions(): Promise<void> {
             :product-name="physicalItemStockTarget?.name ?? ''"
             :can-manage="canManage"
             :cost-price="physicalItemStockTarget?.cost_price ?? null"
+            :packs="physicalItemStockTarget?.packs ?? []"
             @close="physicalItemStockTarget = null"
         />
 
@@ -4679,5 +4940,8 @@ async function submitSuggestions(): Promise<void> {
             :single-stock-in="singleStockIn"
             @close="warehouseDialogIngredient = null"
         />
+
+        <!-- E2 — "Is this right?" (warns, never blocks). -->
+        <AmountConfirmDialog :warnings="amountWarnings" @answer="answerAmounts" />
     </MerchantLayout>
 </template>

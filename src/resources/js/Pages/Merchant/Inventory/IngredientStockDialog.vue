@@ -34,6 +34,11 @@ import { ArrowLeftRight } from 'lucide-vue-next';
 import { conversionsOf, costUnit, displayAmount, entryUnitOptions, hasConversions } from '@/lib/itemKind';
 import { useAmountDisplay } from '@/composables/useAmountDisplay';
 import AmountDisplaySwitch from './AmountDisplaySwitch.vue';
+// LAUNCH review add-on — B the breakdown and "Correct containers", E1 the live translation.
+import { correctWarehouseContainers } from '@/lib/api/ingredientStock';
+import { capOf, containerLabel, containersOf, friendly } from '@/lib/containers';
+import AmountInput from './components/AmountInput.vue';
+import StockBreakdown from './components/StockBreakdown.vue';
 
 const props = withDefaults(defineProps<{
     open: boolean;
@@ -56,7 +61,7 @@ const { mode: amountDisplay } = useAmountDisplay();
 
 const emit = defineEmits<{ (e: 'close'): void }>();
 
-type Action = 'distribute' | 'receive' | 'allocate' | 'transfer' | 'adjust';
+type Action = 'distribute' | 'receive' | 'allocate' | 'transfer' | 'adjust' | 'containers';
 
 const loading = ref(false);
 const busy = ref(false);
@@ -79,6 +84,46 @@ const availableActions = computed<Action[]>(() =>
             ? ['allocate', 'transfer', 'adjust']
             : ['distribute', 'receive', 'allocate', 'transfer', 'adjust'],
 );
+
+/**
+ * LAUNCH review add-on (B, tester call 8) — "Correct containers": set the
+ * warehouse breakdown to what is on the shelf (the total never moves). Only
+ * for accounts with access to all branches, on an item with containers.
+ */
+const itemContainers = computed(() => containersOf(props.ingredient ?? null));
+const shownActions = computed<Action[]>(() =>
+    !isBranchRestricted.value && itemContainers.value.length > 0
+        ? [...availableActions.value, 'containers']
+        : availableActions.value,
+);
+const correctRows = ref<{ container_uuid: string; label: string; factor: string; pieces: string | number }[]>([]);
+const correctNote = ref('');
+
+/** One row per container, filled with the warehouse breakdown as it stands. */
+function resetCorrectRows(): void {
+    const stored = props.ingredient?.unit ?? unit.value;
+    correctRows.value = itemContainers.value.map((c) => ({
+        container_uuid: c.uuid,
+        label: containerLabel(c, locale.value, stored),
+        factor: c.factor,
+        pieces: summary.value?.central_breakdown?.find((b) => b.container_uuid === c.uuid)?.pieces ?? '',
+    }));
+    correctNote.value = '';
+}
+
+/** What the corrected containers hold, in the stored unit. */
+const correctHolds = computed(() => capOf(correctRows.value.map((r) => ({ factor: r.factor, pieces: String(r.pieces).trim() === '' ? 0 : r.pieces }))));
+
+function doCorrectContainers(): void {
+    if (!props.ingredientUuid) return;
+    const containers = correctRows.value
+        .filter((r) => qty(r.pieces) !== '')
+        .map((r) => ({ container_uuid: r.container_uuid, pieces: qty(r.pieces) }));
+    void run(
+        () => correctWarehouseContainers(props.ingredientUuid as string, { containers, note: correctNote.value || null }),
+        t('containers.correct.done'),
+    );
+}
 
 // Quantity fields are bound to type="number" inputs: Vue's v-model stores a
 // NUMBER once a value is typed ('' only while blank) — hence string | number,
@@ -192,9 +237,11 @@ function resetForms(): void {
     adjustForm.branch_uuid = '';
     adjustForm.signed_quantity = '';
     adjustForm.note = '';
+    resetCorrectRows();
 }
 
 function actionLabel(a: Action): string {
+    if (a === 'containers') return t('containers.correct.action');
     return a === 'distribute' ? 'Receive & Distribute' : a;
 }
 
@@ -403,6 +450,8 @@ function fmtType(t: string): string {
                                 </button>
                             </p>
                             <bdi v-if="conversionsOpen === 'central'" dir="ltr" class="mt-1 block text-[11px] text-teal-800" data-test="warehouse-conversions">{{ conversionsOf(summary.central_quantity, conversionSource, locale).join(' = ') }}</bdi>
+                            <!-- B — the total, and what it is in. -->
+                            <StockBreakdown :rows="summary.central_breakdown" :counted-at="summary.central_containers_counted_at" tone="teal" class="mt-1" />
                         </div>
                         <div class="rounded-xl border border-slate-200">
                             <table class="w-full text-sm">
@@ -430,6 +479,7 @@ function fmtType(t: string): string {
                                                 <ArrowLeftRight class="size-3" />
                                             </button>
                                             <bdi v-if="conversionsOpen === b.branch_uuid" dir="ltr" class="block text-[11px] font-normal text-slate-600">{{ conversionsOf(b.quantity, conversionSource, locale).join(' = ') }}</bdi>
+                                            <StockBreakdown :rows="b.breakdown" :counted-at="b.containers_counted_at" class="text-end" />
                                         </td>
                                     </tr>
                                     <tr v-if="branches.length === 0">
@@ -444,7 +494,7 @@ function fmtType(t: string): string {
                     <div v-if="canManage" class="rounded-xl border border-slate-200 p-4">
                         <div class="mb-3 flex flex-wrap gap-2">
                             <button
-                                v-for="a in availableActions"
+                                v-for="a in shownActions"
                                 :key="a"
                                 type="button"
                                 class="rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition"
@@ -454,7 +504,7 @@ function fmtType(t: string): string {
                         </div>
 
                         <!-- F4 — every amount below is typed in this unit (kg / l, a pack size, the container). -->
-                        <label class="mb-3 flex items-center gap-2 text-xs font-semibold text-slate-600">
+                        <label v-if="action !== 'containers'" class="mb-3 flex items-center gap-2 text-xs font-semibold text-slate-600">
                             Amounts in
                             <select v-model="entryUnit" data-test="warehouse-unit" class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm font-normal">
                                 <option v-for="o in unitOptions" :key="o.value || 'base'" :value="o.value">{{ o.label }}</option>
@@ -469,7 +519,7 @@ function fmtType(t: string): string {
                             <p class="text-xs text-slate-500">Receive a purchase and split it across branches in one step ("100 in: 20 / 20 / 25"). Anything you don't distribute stays in the warehouse.</p>
                             <div class="flex flex-wrap items-center gap-3">
                                 <label class="text-xs font-semibold text-slate-600">Total received ({{ entryUnitName }})</label>
-                                <input v-model="distributeForm.quantity" type="number" step="0.0001" min="0" placeholder="e.g. 100" class="w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
+                                <AmountInput v-model="distributeForm.quantity" :unit="entryUnit" :stored-unit="unit" :containers="itemContainers" step="0.0001" placeholder="e.g. 100" input-class="w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums" />
                             </div>
                             <div class="space-y-2">
                                 <div v-for="row in distributeRows" :key="row.branch_uuid" class="flex items-center gap-3">
@@ -491,7 +541,7 @@ function fmtType(t: string): string {
                         <form v-else-if="action === 'receive'" class="space-y-3" @submit.prevent="doReceive">
                             <p class="text-xs text-slate-500">Add a purchase to the central warehouse ({{ entryUnitName }}).</p>
                             <div class="flex flex-wrap gap-3">
-                                <input v-model="receiveForm.quantity" type="number" step="0.0001" min="0" placeholder="Quantity" class="w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
+                                <AmountInput v-model="receiveForm.quantity" :unit="entryUnit" :stored-unit="unit" :containers="itemContainers" step="0.0001" placeholder="Quantity" input-class="w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums" />
                                 <input v-model="receiveForm.note" type="text" placeholder="Note (optional)" class="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm">
                             </div>
                             <PurchaseCostFields v-model="receiveCost" :taxes="taxes" />
@@ -502,9 +552,9 @@ function fmtType(t: string): string {
                         <form v-else-if="action === 'allocate'" class="space-y-3" @submit.prevent="doAllocate">
                             <p class="text-xs text-slate-500">Distribute the warehouse ({{ amount(summary.central_quantity) }}) across branches. Total entered: <span class="font-semibold">{{ round3(allocateTotal) }} {{ entryUnitName }}</span></p>
                             <div class="space-y-2">
-                                <div v-for="row in allocateRows" :key="row.branch_uuid" class="flex items-center gap-3">
-                                    <span class="flex-1 text-sm text-slate-700">{{ row.branch_name }}</span>
-                                    <input v-model="row.quantity" type="number" step="0.0001" min="0" placeholder="0" class="w-28 rounded-lg border border-slate-200 px-3 py-1.5 text-sm tabular-nums">
+                                <div v-for="row in allocateRows" :key="row.branch_uuid" class="flex items-start gap-3">
+                                    <span class="flex-1 pt-1.5 text-sm text-slate-700">{{ row.branch_name }}</span>
+                                    <AmountInput v-model="row.quantity" :unit="entryUnit" :stored-unit="unit" :containers="itemContainers" step="0.0001" placeholder="0" input-class="w-28 rounded-lg border border-slate-200 px-3 py-1.5 text-sm tabular-nums" data-test="allocate-amount" />
                                 </div>
                             </div>
                             <input v-model="allocateNote" type="text" placeholder="Note (optional)" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
@@ -522,10 +572,24 @@ function fmtType(t: string): string {
                                 <select v-model="transferForm.to_branch_uuid" class="rounded-lg border border-slate-200 px-3 py-2 text-sm">
                                     <option v-for="b in branches" :key="b.branch_uuid" :value="b.branch_uuid">{{ b.branch_name }}</option>
                                 </select>
-                                <input v-model="transferForm.quantity" type="number" step="0.0001" min="0" placeholder="Qty" class="w-28 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
+                                <AmountInput v-model="transferForm.quantity" :unit="entryUnit" :stored-unit="unit" :containers="itemContainers" step="0.0001" placeholder="Qty" input-class="w-28 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums" />
                             </div>
                             <input v-model="transferForm.note" type="text" placeholder="Note (optional)" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
                             <button type="submit" :disabled="busy" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Transfer</button>
+                        </form>
+
+                        <!-- B (tester call 8) — Correct containers: what is on the warehouse shelf; the total does not move. -->
+                        <form v-else-if="action === 'containers'" class="space-y-3" data-test="correct-containers" @submit.prevent="doCorrectContainers">
+                            <p class="text-xs text-slate-500">{{ t('containers.correct.hint') }}</p>
+                            <div class="space-y-2">
+                                <div v-for="row in correctRows" :key="row.container_uuid" class="flex items-center gap-3">
+                                    <span class="flex-1 text-sm text-slate-700">{{ row.label }}</span>
+                                    <input v-model="row.pieces" type="number" step="any" min="0" placeholder="0" class="w-28 rounded-lg border border-slate-200 px-3 py-1.5 text-sm tabular-nums" data-test="correct-pieces">
+                                </div>
+                            </div>
+                            <p class="text-xs text-slate-500" data-test="correct-holds">{{ t('containers.correct.holds', { holds: friendly(correctHolds, unit), total: amount(summary.central_quantity) }) }}</p>
+                            <input v-model="correctNote" type="text" :placeholder="t('containers.correct.note')" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                            <button type="submit" :disabled="busy" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{{ t('containers.correct.submit') }}</button>
                         </form>
 
                         <!-- Adjust -->
@@ -536,7 +600,7 @@ function fmtType(t: string): string {
                                     <option v-if="!isBranchRestricted" value="">Warehouse</option>
                                     <option v-for="b in branches" :key="b.branch_uuid" :value="b.branch_uuid">{{ b.branch_name }}</option>
                                 </select>
-                                <input v-model="adjustForm.signed_quantity" type="number" step="0.0001" placeholder="±Qty" class="w-28 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums">
+                                <AmountInput v-model="adjustForm.signed_quantity" :unit="entryUnit" :stored-unit="unit" :containers="itemContainers" step="0.0001" min="" placeholder="±Qty" input-class="w-28 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums" />
                             </div>
                             <input v-model="adjustForm.note" type="text" placeholder="Reason (required)" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
                             <button type="submit" :disabled="busy" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Adjust</button>

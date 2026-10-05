@@ -76,6 +76,42 @@ export interface IngredientAltUnit {
     sort_order: number;
     created_at: string | null;
     updated_at: string | null;
+    /**
+     * LAUNCH review add-on (A2) — a CONTAINER: its token (what every amount
+     * picker sends, "#…"), the server-made display names, what it holds (an
+     * amount, or N × another container), its leaf, the "Tills count in this"
+     * marker (A3), the size lock (once used; only on the units endpoint) and
+     * its barcodes (A5).
+     */
+    token?: string;
+    display_name?: string;
+    display_name_ar?: string;
+    contains_unit_uuid?: string | null;
+    contains_quantity?: string | null;
+    is_leaf?: boolean;
+    leaf_uuid?: string;
+    leaf_pieces?: string;
+    is_count_container?: boolean;
+    size_locked?: boolean | null;
+    barcodes?: ItemBarcodeSummary[];
+}
+
+/** LAUNCH review add-on (A5) — a remembered barcode. */
+export interface ItemBarcodeSummary {
+    uuid: string;
+    barcode: string;
+    label: string | null;
+}
+
+/** LAUNCH review add-on (B) — one container line of the breakdown under a total. */
+export interface BreakdownEntry {
+    container_uuid: string;
+    display_name: string;
+    display_name_ar: string;
+    removed?: boolean;
+    pieces: string;
+    /** pieces × size, in the stored unit. */
+    amount: string;
 }
 
 export interface Ingredient {
@@ -122,6 +158,16 @@ export interface Ingredient {
      */
     is_prep?: boolean;
     prep_yield_quantity?: string | null;
+    /** LAUNCH review add-on (A1) — false = "No cost yet" (no priced purchase). */
+    has_cost?: boolean;
+    /** A1 — a prep item whose recipe has an item with no cost yet (when sent). */
+    cost_complete?: boolean;
+    /** A4 — the supplier's code, or a generated ING-0001. */
+    sku?: string | null;
+    /** A3 — the container tills count in (its mirror is piece_unit_label / units_per_piece). */
+    count_container_uuid?: string | null;
+    /** A5 — barcodes on the item itself (container barcodes ride each container). */
+    barcodes?: ItemBarcodeSummary[];
     created_at: string | null;
     updated_at: string | null;
 }
@@ -133,7 +179,7 @@ export interface AutoUnit {
 }
 
 type UnitSource = Pick<Ingredient, 'unit' | 'alt_units' | 'auto_units'>
-    & Partial<Pick<Ingredient, 'piece_unit_label' | 'piece_unit_label_ar' | 'units_per_piece'>>;
+    & Partial<Pick<Ingredient, 'piece_unit_label' | 'piece_unit_label_ar' | 'units_per_piece' | 'count_container_uuid'>>;
 
 /**
  * PD4 — the unit dropdown options for an ingredient: base (value '') + custom
@@ -199,6 +245,10 @@ export interface BranchStockRow {
     /** quantity × weighted-average cost, OMR 3dp. */
     stock_value: string;
     has_stock_row: boolean;
+    /** LAUNCH review add-on (B2) — the breakdown by container under the live total. */
+    breakdown?: BreakdownEntry[];
+    containers_counted_at?: string | null;
+    containers_total_count_at?: string | null;
     ingredient?: {
         id: number;
         uuid: string;
@@ -206,6 +256,8 @@ export interface BranchStockRow {
         name_ar: string | null;
         unit: IngredientUnit;
         default_unit_cost: string;
+        /** Review add-on (A1) — false = "No cost yet". */
+        has_cost?: boolean;
         min_stock_threshold: string | null;
     };
 }
@@ -250,29 +302,47 @@ export interface CreateIngredientPayload {
     piece_unit_label_ar?: string | null;
     units_per_piece?: string | number | null;
     allow_fractional_pieces?: boolean;
-    default_unit_cost?: string | number;
     min_stock_threshold?: string | number | null;
     primary_supplier_id?: number | null;
+    /** LAUNCH review add-on (A4) — blank = a generated ING-0001. */
+    sku?: string | null;
+    /** A5 — barcodes on the item itself. */
+    barcodes?: string[];
     /**
      * LAUNCH item kind, A3 — optional pack sizes ("crate holds 12 l"), saved
      * with the ingredient in one transaction. amount + unit (of the item's
      * kind); the server works out the factor.
+     *
+     * LAUNCH review add-on (A2, A3, A5) — the item's containers: a row may
+     * hold N × an EARLIER row (contains_index + contains_quantity), one row
+     * may be the count container, and each may carry barcodes.
      */
-    pack_sizes?: { name: string; name_ar?: string | null; amount: string | number; unit: string }[];
+    pack_sizes?: ContainerDraftPayload[];
+}
+
+export interface ContainerDraftPayload {
+    name: string;
+    name_ar?: string | null;
+    amount?: string | number | null;
+    unit?: string | null;
+    contains_index?: number | null;
+    contains_quantity?: number | string | null;
+    count_container?: boolean;
+    barcodes?: string[];
 }
 
 export interface UpdateIngredientPayload {
     name?: string;
     name_ar?: string | null;
     unit?: IngredientUnit;
-    piece_unit_label?: string | null;
-    piece_unit_label_ar?: string | null;
-    units_per_piece?: string | number | null;
     allow_fractional_pieces?: boolean;
-    default_unit_cost?: string | number;
     min_stock_threshold?: string | number | null;
     primary_supplier_id?: number | null;
     status?: InventoryStatus;
+    /** LAUNCH review add-on (A4) — blank keeps the code (or generates one). */
+    sku?: string | null;
+    /** A3 — the container tills count in; null = none. */
+    count_container_uuid?: string | null;
 }
 
 export interface CreateSupplierPayload {
@@ -361,16 +431,22 @@ export interface CreateIngredientUnitPayload {
     /** amount + a unit of the item's kind ("holds 12 l"); the server works out the factor. */
     amount?: string | number;
     unit?: string;
+    /** LAUNCH review add-on (A2) — or N × another container of the item. */
+    contains_unit_uuid?: string | null;
+    contains_quantity?: string | number | null;
     sort_order?: number;
 }
 
 export interface UpdateIngredientUnitPayload {
-    /** name is IMMUTABLE — not sent on update. */
+    /** LAUNCH review add-on (A2) — the name stays editable; the size locks once used. */
+    name?: string;
     name_ar?: string | null;
     factor?: string | number;
     /** LAUNCH item kind, A4 — what it holds (amount + a unit of the item's kind). */
     amount?: string | number;
     unit?: string;
+    contains_unit_uuid?: string | null;
+    contains_quantity?: string | number | null;
     sort_order?: number;
 }
 
@@ -548,6 +624,9 @@ export interface WasteRecord {
     unit_cost_at_time: string;
     /** Pre-computed per-event cost (quantity × unit_cost_at_time). */
     total_cost: string;
+    /** LAUNCH review add-on (D3) — entered by container ("2 × bottle 1.5 l"). */
+    pieces?: string | null;
+    container_label?: string | null;
     notes: string | null;
     occurred_at: string | null;
     created_at: string | null;
@@ -589,6 +668,10 @@ export interface RestockRequestLine {
     unit_at_set: IngredientUnit;
     note: string | null;
     sort_order: number;
+    /** LAUNCH review add-on (D4) — the optional container on the line. */
+    container_uuid?: string | null;
+    pieces?: string | null;
+    container_label?: string | null;
     ingredient?: {
         id: number;
         uuid: string;
@@ -639,8 +722,11 @@ export interface RestockRequest {
 
 export interface RecordWastePayload {
     ingredient_uuid: string;
-    /** Positive only — server enforces. */
-    quantity: string | number;
+    /** Positive only — server enforces. Review add-on (D3): optional by container (fills in, lower only). */
+    quantity?: string | number | null;
+    /** LAUNCH review add-on (D3) — waste by container. */
+    container_uuid?: string | null;
+    pieces?: string | number | null;
     reason: WasteReason;
     notes?: string | null;
     /** ISO8601; defaults to now when omitted. */
@@ -654,7 +740,11 @@ export interface RecordWastePayload {
 
 export interface RestockLinePayload {
     ingredient_uuid: string;
-    quantity_requested: string | number;
+    /** Review add-on (D4): optional with a container (fills in as pieces × size, lower only). */
+    quantity_requested?: string | number | null;
+    /** LAUNCH review add-on (D4) — an optional container (what a scan adds). */
+    container_uuid?: string | null;
+    pieces?: string | number | null;
     note?: string | null;
     /**
      * v2 #13 — alt-unit NAME the quantity was entered in. null/omit
@@ -985,6 +1075,8 @@ export interface StockCountLine {
     } | null;
     counted_pieces: string | null;
     counted_units: string;
+    /** LAUNCH review add-on (D2) — what was counted by container. */
+    containers?: { container_label: string | null; pieces: string }[];
     /**
      * LAUNCH-P2 P2-6 — the book side (counts are blind): present only for
      * users who may see stock values (inventory.view).
@@ -1032,6 +1124,11 @@ export interface StockCountLinePayload {
      * pack size, '@piece'); null/omit = the stored unit. Server converts.
      */
     unit?: string | null;
+    /**
+     * LAUNCH review add-on (D2) — counted by container; counted_units (in
+     * `unit`) may then be LOWER than Σ pieces × size, never higher.
+     */
+    containers?: { container_uuid: string; pieces: string | number }[];
 }
 
 export interface SubmitStockCountPayload {
@@ -1076,6 +1173,8 @@ export interface BranchTransferLine {
     quantity: string;
     unit: string | null;
     unit_cost_at_time: string;
+    /** LAUNCH review add-on (D1) — the containers moved. */
+    containers?: { container_label: string | null; container_factor: string; pieces: string }[];
 }
 
 export interface BranchTransfer {
@@ -1093,7 +1192,10 @@ export interface BranchTransfer {
 
 export interface BranchTransferLinePayload {
     ingredient_uuid: string;
-    quantity: string | number;
+    /** Review add-on (D1): optional with containers (fills in, lower only). */
+    quantity?: string | number | null;
+    /** LAUNCH review add-on (D1) — the containers moved. */
+    containers?: { container_uuid: string; pieces: string | number }[];
     /**
      * v2 #13 — alt-unit NAME the quantity was entered in. null/omit
      * = the ingredient's base unit. Server converts to base.

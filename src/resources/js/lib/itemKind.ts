@@ -216,14 +216,43 @@ export function toStoredCost(cost: string | number | null | undefined, unit: str
 /** The token that names an ingredient's count container (its piece unit) on the wire. */
 export const PIECE_UNIT = '@piece';
 
-/** What the amount pickers need from an ingredient (a subset of the API shape). */
+/**
+ * What the amount pickers need from an ingredient (a subset of the API shape).
+ *
+ * LAUNCH review add-on (A2) — alt_units are the item's CONTAINERS: each may
+ * carry its token (what the server takes, "#…") and its display names
+ * ("bottle 1.5 l", "crate (12 × bottle 1 l)"); the same word can have
+ * several sizes, so options are keyed by token, never by name. A container
+ * marked "Tills count in this" (count_container_uuid) is listed once, as
+ * itself — the '@piece' option stays only for an older item whose count
+ * container is not a container row.
+ */
 export interface EntryUnitSource {
     unit: string;
-    alt_units?: { name: string; factor: string }[];
+    alt_units?: { name: string; factor: string; uuid?: string; token?: string; display_name?: string; display_name_ar?: string }[];
     auto_units?: { name: string; factor: string }[];
     piece_unit_label?: string | null;
     piece_unit_label_ar?: string | null;
     units_per_piece?: string | null;
+    count_container_uuid?: string | null;
+}
+
+/** A container's option value + label: its token and display name when the server sent them, else its name. */
+function containerOption(
+    pack: { name: string; token?: string; display_name?: string; display_name_ar?: string },
+    holds: string,
+    locale?: string | null,
+): { value: string; label: string } {
+    if (pack.token) {
+        const label = (locale === 'ar' ? pack.display_name_ar : undefined) ?? pack.display_name ?? `${pack.name} (${holds})`;
+        return { value: pack.token, label };
+    }
+    return { value: pack.name, label: `${pack.name} (${holds})` };
+}
+
+/** Whether the item's count container is one of its container rows (then '@piece' is not offered separately). */
+function countContainerIsRow(ingredient: EntryUnitSource): boolean {
+    return !!ingredient.count_container_uuid && (ingredient.alt_units ?? []).some((c) => c.uuid === ingredient.count_container_uuid);
 }
 
 export interface EntryUnitOption {
@@ -257,9 +286,13 @@ export function entryUnitOptions(ingredient: EntryUnitSource | null | undefined,
     const seen = new Set<string>([base]);
     for (const pack of ingredient.alt_units ?? []) {
         const factor = positiveNumber(pack.factor);
-        if (seen.has(pack.name) || factor === null) continue;
-        seen.add(pack.name);
-        options.push({ value: pack.name, label: `${pack.name} (${holds(factor)})`, factor });
+        // Review add-on A2 — a container with a token is keyed by it (two
+        // "bottle" sizes both show); an older row without one by its name.
+        const key = pack.token ?? pack.name;
+        if (seen.has(key) || factor === null) continue;
+        seen.add(key);
+        if (!pack.token) seen.add(pack.name);
+        options.push({ ...containerOption(pack, holds(factor), locale), factor });
     }
     for (const auto of ingredient.auto_units ?? []) {
         const factor = positiveNumber(auto.factor);
@@ -269,7 +302,7 @@ export function entryUnitOptions(ingredient: EntryUnitSource | null | undefined,
         options.push({ value: auto.name, label: unitOptionLabel(auto.name, locale), factor });
     }
     const perPiece = positiveNumber(ingredient.units_per_piece);
-    if (ingredient.piece_unit_label && perPiece !== null && !(base === 'piece' && perPiece === 1)) {
+    if (ingredient.piece_unit_label && perPiece !== null && !(base === 'piece' && perPiece === 1) && !countContainerIsRow(ingredient)) {
         const label = locale === 'ar' && ingredient.piece_unit_label_ar ? ingredient.piece_unit_label_ar : ingredient.piece_unit_label;
         options.push({ value: PIECE_UNIT, label: `${label} (${holds(perPiece)})`, factor: perPiece });
     }
@@ -303,10 +336,12 @@ export function conversionsOf(quantity: string | number | null | undefined, ingr
         : kindUnits(base).map((u) => `${trimAmount(n / u.factor)} ${unitShortName(u.value, locale)}`);
     for (const pack of ingredient.alt_units ?? []) {
         const factor = positiveNumber(pack.factor);
-        if (factor !== null) parts.push(`${trimAmount(n / factor)} ${pack.name}`);
+        // Review add-on A2 — a container says its size ("2 × bottle 1.5 l").
+        const name = pack.token ? ((locale === 'ar' ? pack.display_name_ar : undefined) ?? pack.display_name ?? pack.name) : pack.name;
+        if (factor !== null) parts.push(pack.token ? `${trimAmount(n / factor)} × ${name}` : `${trimAmount(n / factor)} ${name}`);
     }
     const perPiece = positiveNumber(ingredient.units_per_piece);
-    if (ingredient.piece_unit_label && perPiece !== null && !(base === 'piece' && perPiece === 1)) {
+    if (ingredient.piece_unit_label && perPiece !== null && !(base === 'piece' && perPiece === 1) && !countContainerIsRow(ingredient)) {
         const label = locale === 'ar' && ingredient.piece_unit_label_ar ? ingredient.piece_unit_label_ar : ingredient.piece_unit_label;
         parts.push(`${trimAmount(n / perPiece)} ${label}`);
     }

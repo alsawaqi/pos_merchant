@@ -56,6 +56,9 @@ import {
     wireRecipeUnit,
 } from '@/lib/recipeUnits';
 import RecipeHistoryPanel from '@/Pages/Merchant/Catalogue/RecipeHistoryPanel.vue';
+// LAUNCH review add-on — A1 "No cost yet", E1 the live translation under each amount.
+import { translateAmount } from '@/lib/amountSafety';
+import AmountInput from './components/AmountInput.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -157,6 +160,21 @@ const batchCost = computed<number>(() => {
 const yieldNumber = computed<number | null>(() => toStoredAmount(form.prep_yield_quantity, form.yield_unit, form.unit));
 
 const unitCost = computed<string | null>(() => (yieldNumber.value === null ? null : (batchCost.value / yieldNumber.value).toFixed(6)));
+
+/** A1 — a line's item has no cost from a purchase yet (its cost counts as 0). */
+function lineHasNoCost(line: { ingredient_uuid: string }): boolean {
+    const ingredient = ingredientByUuid(line.ingredient_uuid);
+    return ingredient !== null && ingredient !== undefined && (ingredient.has_cost === false || ingredient.cost_complete === false);
+}
+
+/** A1 — the batch cost leaves out an item with no cost yet: "Cost incomplete". */
+const costIncomplete = computed<boolean>(() => form.lines.some(lineHasNoCost));
+
+/** E1 — "= 2 l 500 ml" under the yield. */
+const yieldTranslation = computed<string>(() => {
+    const parts = translateAmount({ amount: form.prep_yield_quantity ?? '', unit: form.yield_unit ?? '', storedUnit: form.unit, locale: locale.value });
+    return parts.length > 0 ? t('amount_safety.translation', { text: parts.join(' = ') }) : '';
+});
 
 const hasDuplicates = computed<boolean>(() => {
     const seen = new Set<string>();
@@ -339,6 +357,7 @@ onMounted(async () => {
                                 <option v-for="u in yieldUnits" :key="u.value" :value="u.value">{{ yieldUnitLabel(u.value) }}</option>
                             </select>
                         </div>
+                        <span v-if="yieldTranslation" class="mt-1 block text-xs font-medium text-teal-700" data-test="prep-yield-translation"><bdi dir="ltr">{{ yieldTranslation }}</bdi></span>
                         <span class="mt-1 block text-xs text-slate-500">{{ t('item_kind.prep_yield_hint') }}</span>
                         <span v-if="firstError('prep_yield_quantity')" class="mt-1 block text-xs text-rose-600">{{ firstError('prep_yield_quantity') }}</span>
                     </label>
@@ -371,20 +390,27 @@ onMounted(async () => {
                                         </optgroup>
                                     </select>
                                 </label>
-                                <label class="block w-28">
-                                    <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.recipe.quantity') }}</span>
-                                    <input v-model="line.quantity" type="number" step="0.0001" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
-                                </label>
-                                <label class="block w-36">
-                                    <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.recipe.unit') }}</span>
-                                    <select v-model="line.unit" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
-                                        <option v-for="u in recipeUnitOptions(ingredientByUuid(line.ingredient_uuid), locale)" :key="u.value || 'base'" :value="u.value">{{ u.label }}</option>
-                                    </select>
-                                </label>
+                                <!-- E1 — the amount and its unit, "= 2 l 500 ml" underneath. -->
+                                <div class="block w-72">
+                                    <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.recipe.quantity') }} · {{ t('catalogue.recipe.unit') }}</span>
+                                    <AmountInput
+                                        v-model="line.quantity"
+                                        v-model:unit="line.unit"
+                                        class="mt-1"
+                                        :options="recipeUnitOptions(ingredientByUuid(line.ingredient_uuid), locale)"
+                                        :stored-unit="ingredientByUuid(line.ingredient_uuid)?.unit ?? 'g'"
+                                        :containers="ingredientByUuid(line.ingredient_uuid)?.alt_units ?? []"
+                                        step="0.0001"
+                                        input-class="w-28 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                                        select-class="w-40 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                                        data-test="prep-line-amount"
+                                    />
+                                </div>
                                 <button type="button" class="grid size-9 place-items-center rounded-lg border border-rose-200 text-rose-700 transition hover:bg-rose-50" :title="t('catalogue.recipe.remove_line')" @click="removeLine(idx)">
                                     <Minus class="size-4" />
                                 </button>
                                 <p v-if="lineMessage(line)" class="basis-full text-xs font-semibold text-rose-700" data-test="prep-line-problem">{{ lineMessage(line) }}</p>
+                                <p v-if="lineHasNoCost(line)" class="basis-full text-xs italic text-amber-700" data-test="prep-line-no-cost">{{ t('purchases_v2.no_cost_yet') }}</p>
                             </li>
                         </ul>
                         <button type="button" class="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100" @click="addLine">
@@ -398,6 +424,8 @@ onMounted(async () => {
                         <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
                             <p class="text-[10px] font-semibold uppercase tracking-wide text-amber-700">{{ t('prep_items.batch_cost') }}</p>
                             <p class="text-base font-semibold tabular-nums text-amber-900">{{ money(batchCost) }} <span class="text-[10px] font-normal text-amber-600">OMR</span></p>
+                            <!-- A1 — an item with no cost yet is left out of the total. -->
+                            <p v-if="costIncomplete" class="text-[10px] font-semibold text-amber-800" data-test="prep-cost-incomplete">{{ t('purchases_v2.cost_incomplete') }}</p>
                         </div>
                         <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
                             <!-- F1 — per kg / l for a g / ml prep item. -->

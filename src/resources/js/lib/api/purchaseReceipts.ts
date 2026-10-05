@@ -18,6 +18,8 @@ export interface PurchaseReceiptLineAllocation {
     branch_uuid: string;
     branch_name: string;
     quantity: string;
+    /** LAUNCH review add-on — the share in pieces on a container line. */
+    pieces?: string;
 }
 
 export interface PurchaseReceiptLine {
@@ -40,6 +42,10 @@ export interface PurchaseReceiptLine {
     purchase_quantity?: string | null;
     unit_price?: string | null;
     unit_cost?: string | null;
+    /** LAUNCH review add-on (C1, D3) — bought in a container / pack: how many, its label and size. */
+    pieces?: string | null;
+    container_label?: string | null;
+    container_factor?: string | null;
 }
 
 export interface PurchaseReceiptCharge {
@@ -111,8 +117,20 @@ export interface PaginatedPurchaseReceipts {
 export interface PurchaseReceiptLinePayload {
     item_type: 'ingredient' | 'product';
     item_uuid: string;
-    /** In the line's `unit` (the base unit when omitted). */
-    quantity: string | number;
+    /** In the line's `unit` (the base unit when omitted). Not sent on a container / pack line. */
+    quantity?: string | number;
+    /**
+     * LAUNCH review add-on (C1, D3) — bought BY CONTAINER (an ingredient's
+     * container_uuid, a physical item's pack_uuid): how many (pieces), and an
+     * optional amount that may only be lowered (amount_unit = a kind unit; for
+     * a pack, the item's pieces). The price paid is line_cost (required, 0 =
+     * free); the split is in pieces.
+     */
+    container_uuid?: string | null;
+    pack_uuid?: string | null;
+    pieces?: string | number;
+    amount?: string | number | null;
+    amount_unit?: string | null;
     /**
      * LAUNCH-P2 P2-3 — the unit the quantity and split are in (NULL = base;
      * kg/g, l/ml, an extra unit's name or '@piece') and the price PER THAT
@@ -125,7 +143,8 @@ export interface PurchaseReceiptLinePayload {
     /** PT — optional tax paid on the line (on top of line_cost). */
     tax_amount?: string | number | null;
     tax_rate?: string | number | null;
-    allocations?: Array<{ branch_uuid: string; quantity: string | number }>;
+    /** The split: in the line's unit, or (review add-on) in pieces on a container line. */
+    allocations?: Array<{ branch_uuid: string; quantity?: string | number; pieces?: string | number }>;
 }
 
 export interface PurchaseReceiptChargePayload {
