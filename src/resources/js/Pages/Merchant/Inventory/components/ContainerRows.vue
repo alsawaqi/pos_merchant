@@ -5,18 +5,26 @@
  * as Σ pieces × size. The total may be LOWERED (a half-used bottle: 3
  * bottles = 4 l) but never RAISED — the box turns red and the screen blocks
  * the save. Used by transfers, day-end counts (several containers, 0 allowed,
- * never pre-filled: counts stay blind), waste and restock requests (one row).
+ * never pre-filled: counts stay blind), waste and restock requests (one row),
+ * and the warehouse dialog's Allocate / Transfer (fix order B-2).
+ *
+ * Fix order B-2 (the owner's broken bottle) — a NESTED container row (2 ×
+ * crate of 12 × bottle 1 l) shows its inner count "= 24 × bottle 1 l" as a
+ * box that defaults to the full count and may be lowered (23: one broken),
+ * never raised; the total follows it.
  */
 import { Minus, Plus } from 'lucide-vue-next';
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { amountInStored, amountProblem, containerLabel, containersOf, friendly, rowsCap, type ContainerHolder } from '@/lib/containers';
+import { amountInStored, amountProblem, containerLabel, containersOf, friendly, innerCount, rowsCap, type ContainerHolder } from '@/lib/containers';
 import { kindUnits, unitOptionLabel } from '@/lib/itemKind';
 import AmountInput from './AmountInput.vue';
 
 export interface ContainerRowDraft {
     container_uuid: string;
     pieces: string | number;
+    /** Fix order B-2 — a nested container's inner count, lowered ('' = the full count). */
+    leaf_pieces?: string | number;
 }
 
 const props = withDefaults(defineProps<{
@@ -26,7 +34,9 @@ const props = withDefaults(defineProps<{
     amountUnit: string;
     single?: boolean;
     allowZero?: boolean;
-}>(), { single: false, allowZero: false });
+    /** Show the inner count of nested containers (not where the server takes none). */
+    inner?: boolean;
+}>(), { single: false, allowZero: false, inner: true });
 
 const emit = defineEmits<{
     (e: 'update:rows', rows: ContainerRowDraft[]): void;
@@ -38,7 +48,7 @@ const { t, locale } = useI18n();
 
 const containers = computed(() => containersOf(props.ingredient));
 const storedUnit = computed(() => props.ingredient.unit);
-const cap = computed(() => rowsCap(props.ingredient, props.rows.filter((r) => r.container_uuid !== '')));
+const cap = computed(() => rowsCap(props.ingredient, props.rows.filter((r) => r.container_uuid !== '').map((r) => (props.inner ? r : { ...r, leaf_pieces: '' }))));
 const typed = computed(() => amountInStored(props.amount, props.amountUnit, storedUnit.value));
 const problem = computed(() => amountProblem(typed.value, cap.value, props.allowZero));
 
@@ -47,8 +57,15 @@ const unitOptions = computed(() => {
     return [{ value: '', label: storedUnit.value }, ...units.map((u) => ({ value: u.value, label: unitOptionLabel(u.value, locale.value) }))];
 });
 
+/** The inner count of a nested row (null for a container that holds an amount). */
+function inner(row: ContainerRowDraft): ReturnType<typeof innerCount> {
+    return props.inner ? innerCount(props.ingredient, row) : null;
+}
+
 function update(index: number, patch: Partial<ContainerRowDraft>): void {
-    emit('update:rows', props.rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
+    // Another container or another number of them starts the inner count again (full).
+    const reset = patch.container_uuid !== undefined || patch.pieces !== undefined ? { leaf_pieces: '' } : {};
+    emit('update:rows', props.rows.map((r, i) => (i === index ? { ...r, ...reset, ...patch } : r)));
 }
 
 function addRow(): void {
@@ -85,6 +102,26 @@ function removeRow(index: number): void {
             <button v-if="!single" type="button" class="grid size-8 place-items-center rounded-lg border border-rose-200 text-rose-700 transition hover:bg-rose-50" :title="t('containers.remove')" @click="removeRow(i)">
                 <Minus class="size-3.5" />
             </button>
+            <template v-if="inner(row) !== null && inner(row)!.full > 0">
+                <div class="flex w-full flex-wrap items-center gap-2 ps-4" data-test="container-inner">
+                    <span class="text-sm text-slate-500">=</span>
+                    <input
+                        :value="row.leaf_pieces ?? ''"
+                        type="number"
+                        step="any"
+                        min="0"
+                        :placeholder="String(inner(row)!.full)"
+                        :class="`w-20 rounded-lg border px-2 py-1.5 text-sm tabular-nums ${inner(row)!.raised ? 'border-rose-400 bg-rose-50 text-rose-700' : 'border-slate-200'}`"
+                        data-test="container-inner-pieces"
+                        @input="update(i, { leaf_pieces: ($event.target as HTMLInputElement).value })"
+                    >
+                    <span class="text-sm text-slate-600">× {{ containerLabel(inner(row)!.leaf, locale, storedUnit) }}</span>
+                    <span class="text-[11px] text-slate-500">{{ t('containers.inner_hint', { full: inner(row)!.full }) }}</span>
+                    <p v-if="inner(row)!.raised" class="w-full text-[11px] font-semibold text-rose-600" data-test="container-inner-raised">
+                        {{ t('containers.inner_raised', { full: inner(row)!.full, leaf: containerLabel(inner(row)!.leaf, locale, storedUnit) }) }}
+                    </p>
+                </div>
+            </template>
         </div>
         <button v-if="!single && containers.length > 0" type="button" class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-50" data-test="add-container-row" @click="addRow">
             <Plus class="size-3.5" /> {{ t('containers.add_row') }}
@@ -104,7 +141,6 @@ function removeRow(index: number): void {
                 @update:unit="emit('update:amountUnit', $event)"
             />
             <p class="mt-0.5 text-[11px] text-slate-500">{{ t('containers.total_hint', { cap: friendly(cap, storedUnit) }) }}</p>
-            <p v-if="problem === 'raised'" class="mt-0.5 text-[11px] font-semibold text-rose-600" data-test="container-total-raised">{{ t('containers.total_raised', { cap: friendly(cap, storedUnit) }) }}</p>
-        </div>
+            <p v-if="problem === 'raised'" class="mt-0.5 text-[11px] font-semibold text-rose-600" data-test="container-total-raised">{{ t('containers.total_raised', { cap: friendly(cap, storedUnit) }) }}</p>        </div>
     </div>
 </template>

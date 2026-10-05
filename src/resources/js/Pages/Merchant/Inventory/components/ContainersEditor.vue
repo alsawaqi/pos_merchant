@@ -28,7 +28,7 @@ import {
     type IngredientAltUnit,
 } from '@/lib/api/inventory';
 import { barcodeConflictOf, createBarcode, deleteBarcode, moveBarcodeHere } from '@/lib/api/inventoryCodes';
-import { containerSizeWarning } from '@/lib/amountSafety';
+import { containerSizeWarning, holdsTranslation } from '@/lib/amountSafety';
 import { friendlyAmount, holdsEntry, kindOfUnit, kindUnits, toStoredAmount, unitOptionLabel } from '@/lib/itemKind';
 import BarcodeChips from './BarcodeChips.vue';
 
@@ -352,6 +352,19 @@ function rowLabel(row: IngredientAltUnit): string {
     return (locale.value === 'ar' ? row.display_name_ar : undefined) ?? row.display_name ?? row.name;
 }
 
+/**
+ * Fix order B-2 (E1) — the live line next to a "holds" box: "500 ml" → "= 0.5 l",
+ * "12 × bottle 1 l" → "= 12 l"; blank when it says nothing new.
+ */
+function holdsLine(source: { mode: 'amount' | 'nested'; amount: string | number; unit: string; contains_quantity: string | number }, childFactor: string | number | null | undefined): string {
+    const parts = holdsTranslation({ mode: source.mode, amount: source.amount, unit: source.unit, storedUnit: props.storedUnit, childFactor, quantity: source.contains_quantity });
+    return parts.length > 0 ? `= ${parts.join(' = ')}` : '';
+}
+
+function rowFactor(uuid: string): string | null {
+    return rows.value.find((c) => c.uuid === uuid)?.factor ?? null;
+}
+
 defineExpose({ reload: load });
 </script>
 
@@ -389,7 +402,7 @@ defineExpose({ reload: load });
                                 <option v-for="u in holdUnits" :key="u.value" :value="u.value">{{ unitLabel(u.value) }}</option>
                             </select>
                         </template>
-                        <template v-else>
+                        <template v-if="d.mode !== 'amount'">
                             <input :value="d.contains_quantity" type="number" step="1" min="2" placeholder="12" class="w-20 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm tabular-nums" @input="patchDraft(i, { contains_quantity: ($event.target as HTMLInputElement).value })">
                             <span>×</span>
                             <select :value="d.contains_index ?? ''" class="min-w-[9rem] rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" @change="patchDraft(i, { contains_index: ($event.target as HTMLSelectElement).value === '' ? null : Number(($event.target as HTMLSelectElement).value) })">
@@ -397,6 +410,7 @@ defineExpose({ reload: load });
                                 <option v-for="j in i" :key="j - 1" :value="j - 1">{{ draftLabel(j - 1) }}</option>
                             </select>
                         </template>
+                        <span v-if="holdsLine(d, d.contains_index === null ? null : draftFactor(d.contains_index))" class="text-xs tabular-nums text-slate-500" data-test="container-holds-translation">{{ holdsLine(d, d.contains_index === null ? null : draftFactor(d.contains_index)) }}</span>
                         <label class="ms-auto inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700" data-test="count-marker">
                             <input type="radio" name="count-container-draft" :checked="d.count_container" class="size-4 border-slate-300 text-teal-600" @change="patchDraft(i, { count_container: true })">
                             {{ t('containers.count_marker') }}
@@ -457,6 +471,7 @@ defineExpose({ reload: load });
                                     <option v-for="c in rows.filter((x) => x.uuid !== row.uuid)" :key="c.uuid" :value="c.uuid">{{ rowLabel(c) }}</option>
                                 </select>
                             </template>
+                            <span v-if="!row.size_locked && holdsLine(edits[row.uuid], rowFactor(edits[row.uuid].contains_unit_uuid))" class="text-xs tabular-nums text-slate-500" data-test="container-holds-translation">{{ holdsLine(edits[row.uuid], rowFactor(edits[row.uuid].contains_unit_uuid)) }}</span>
                             <label class="ms-auto inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700" data-test="count-marker">
                                 <input type="radio" name="count-container-edit" :checked="row.is_count_container === true" :disabled="!canManage || busyUuid !== null" class="size-4 border-slate-300 text-teal-600" @change="setCountContainer(row.uuid)">
                                 {{ t('containers.count_marker') }}
@@ -519,6 +534,7 @@ defineExpose({ reload: load });
                                 <option v-for="c in rows" :key="c.uuid" :value="c.uuid">{{ rowLabel(c) }}</option>
                             </select>
                         </template>
+                        <span v-if="holdsLine(fresh, rowFactor(fresh.contains_unit_uuid))" class="text-xs tabular-nums text-slate-500" data-test="container-holds-translation">{{ holdsLine(fresh, rowFactor(fresh.contains_unit_uuid)) }}</span>
                         <button type="button" :disabled="busyUuid !== null || !fresh.name.trim()" class="ms-auto inline-flex h-8 items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 text-xs font-semibold text-teal-700 transition hover:bg-teal-100 disabled:opacity-60" @click="addRow">
                             <Plus class="size-3.5" /> {{ t('containers.add') }}
                         </button>

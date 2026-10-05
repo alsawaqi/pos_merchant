@@ -29,6 +29,7 @@ class CreateBranchTransferRequest extends FormRequest
             'lines.*.containers' => ['sometimes', 'array', 'max:20'],
             'lines.*.containers.*.container_uuid' => ['required', 'string', 'max:64'],
             'lines.*.containers.*.pieces' => ['required', 'numeric', 'gt:0', 'max:999999.9999'],
+            'lines.*.containers.*.leaf_pieces' => ['nullable', 'numeric', 'min:0', 'max:999999999.9999'],
             // #13 — per-line entered unit (alt-unit name, or null = base);
             // converted to base before the over-draw check + the movements.
             'lines.*.unit' => ['nullable', 'string', 'max:32'],

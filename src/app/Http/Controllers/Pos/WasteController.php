@@ -171,7 +171,7 @@ class WasteController extends Controller
             $quantity = $request->input('quantity');
             $unit = $request->input('unit');
             if ($request->filled('container_uuid')) {
-                $rows = ContainerAmount::rows($ingredient, [['container_uuid' => (string) $request->input('container_uuid'), 'pieces' => $request->input('pieces')]]);
+                $rows = ContainerAmount::rows($ingredient, [['container_uuid' => (string) $request->input('container_uuid'), 'pieces' => $request->input('pieces'), 'leaf_pieces' => $request->input('leaf_pieces')]]);
                 $quantity = (string) ContainerAmount::amount($ingredient, $rows, $quantity, is_string($unit) && $unit !== '' ? $unit : null, $this->units);
                 $unit = null;
             } elseif (is_string($unit) && $unit !== '' && ($asContainer = Containers::resolve($ingredient, $unit)) !== null) {

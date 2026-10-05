@@ -129,6 +129,8 @@ export interface PurchaseReceiptLinePayload {
     container_uuid?: string | null;
     pack_uuid?: string | null;
     pieces?: string | number;
+    /** Fix order B-2 — a nested container's inner count, lowered (2 crates of 12: 23 bottles). */
+    leaf_pieces?: string | number;
     amount?: string | number | null;
     amount_unit?: string | null;
     /**

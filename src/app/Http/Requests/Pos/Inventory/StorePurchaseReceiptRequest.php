@@ -51,6 +51,8 @@ class StorePurchaseReceiptRequest extends FormRequest
             'lines.*.container_uuid' => ['nullable', 'string', 'max:64'],
             'lines.*.pack_uuid' => ['nullable', 'string', 'max:64'],
             'lines.*.pieces' => ['nullable', 'numeric', 'gt:0', 'max:999999.9999'],
+            // Fix order B-2 — a nested container's inner count, lowered (one broken bottle).
+            'lines.*.leaf_pieces' => ['nullable', 'numeric', 'min:0', 'max:999999999.9999'],
             'lines.*.amount' => ['nullable', 'numeric', 'gt:0', 'max:999999999.9999'],
             'lines.*.amount_unit' => ['nullable', 'string', 'max:40'],
             'lines.*.quantity' => ['required_without:lines.*.pieces', 'nullable', 'numeric', 'gt:0', 'max:999999.999'],

@@ -36,7 +36,7 @@ import { listTaxes, type Tax } from '@/lib/api/taxes';
 import { createPurchaseReceipt, type CreatePurchaseReceiptPayload, type PurchaseReceiptLinePayload } from '@/lib/api/purchaseReceipts';
 import type { ScanResult } from '@/lib/api/inventoryCodes';
 import { purchaseCostWarning } from '@/lib/amountSafety';
-import { amountInStored, amountProblem, containerLabel, containerLineText, containersOf, findContainer, friendly, type ContainerSource } from '@/lib/containers';
+import { amountInStored, amountProblem, containerLabel, containerLineText, containersOf, costPerText, findContainer, friendly, innerCount, rowsCap, type ContainerSource } from '@/lib/containers';
 import { applyPurchaseScan } from '@/lib/scanApply';
 import { kindUnits, unitOptionLabel } from '@/lib/itemKind';
 import { useAmountConfirm } from '@/composables/useAmountConfirm';
@@ -75,6 +75,12 @@ interface LineRow {
     container_uuid: string;
     /** How many of the container / pack. */
     pieces: string | number;
+    /**
+     * Fix order B-2 (the owner's broken bottle) — a NESTED container's inner
+     * count (2 crates of 12: 24 bottles), lowered when one is broken (23);
+     * '' = the full count. Never raised.
+     */
+    leaf_pieces: string | number;
     /**
      * The amount: on a container line it fills in as pieces × size and may
      * only be lowered ('' = exactly that); with no container it is the
@@ -124,7 +130,7 @@ function blankAllocations(): AllocationRow[] {
 }
 
 function blankLine(): LineRow {
-    return { id: nextRowId(), itemKey: '', container_uuid: '', pieces: '', amount: '', amount_unit: '', line_cost: '', tax: { tax_amount: 0, tax_rate: null }, showAllocations: false, allocations: blankAllocations() };
+    return { id: nextRowId(), itemKey: '', container_uuid: '', pieces: '', leaf_pieces: '', amount: '', amount_unit: '', line_cost: '', tax: { tax_amount: 0, tax_rate: null }, showAllocations: false, allocations: blankAllocations() };
 }
 
 function addLine(): void {
@@ -145,6 +151,7 @@ function onItemChange(line: LineRow): void {
     const ing = lineIngredient(line);
     line.container_uuid = ing ? (containersOf(ing)[0]?.uuid ?? '') : '';
     line.pieces = '';
+    line.leaf_pieces = '';
     line.amount = '';
     line.amount_unit = ing ? bigUnit(ing.unit) : '';
     resetSplit(line);
@@ -153,6 +160,7 @@ function onItemChange(line: LineRow): void {
 /** Picking another container (or none) clears what was typed for the old one. */
 function onContainerChange(line: LineRow): void {
     line.amount = '';
+    line.leaf_pieces = '';
     const ing = lineIngredient(line);
     line.amount_unit = ing ? bigUnit(ing.unit) : '';
     if (line.container_uuid !== '' && String(line.pieces).trim() === '') line.pieces = '1';
@@ -238,12 +246,21 @@ function round4(n: number): number {
     return Math.round(n * 10000) / 10000;
 }
 
-/** What the pieces hold (the cap): in the stored unit for a container, in pieces for a pack. */
+/** Fix order B-2 — a nested container line's inner count (null for any other line). */
+function lineInner(line: LineRow): ReturnType<typeof innerCount> {
+    const ing = lineIngredient(line);
+    return ing && lineContainer(line) ? innerCount(ing, line) : null;
+}
+
+/**
+ * What the pieces hold (the cap): in the stored unit for a container (fix
+ * order B-2: the inner count when lowered, 23 bottles), in pieces for a pack.
+ */
 function lineCap(line: LineRow): number {
     const pieces = Number(line.pieces);
     if (!Number.isFinite(pieces) || pieces <= 0) return 0;
     const container = lineContainer(line);
-    if (container) return round4(pieces * Number(container.factor));
+    if (container) return rowsCap(lineIngredient(line), [line]);
     const pack = linePack(line);
     return pack ? round4(pieces * Number(pack.pieces)) : 0;
 }
@@ -265,7 +282,7 @@ function lineAmount(line: LineRow): number | null {
 
 /** C1 — the amount typed above what the pieces hold (never raised). */
 function lineRaised(line: LineRow): boolean {
-    return byPieces(line) && amountProblem(typedAmount(line), lineCap(line)) === 'raised';
+    return byPieces(line) && (lineInner(line)?.raised === true || amountProblem(typedAmount(line), lineCap(line)) === 'raised');
 }
 
 function lineCost(line: LineRow): number {
@@ -288,7 +305,7 @@ function liveLine(line: LineRow): string | null {
     let free = false;
     if (ing) {
         const container = lineContainer(line);
-        const text = containerLineText({ container, all: containersOf(ing), pieces: line.pieces, amountStored: amount, storedUnit: ing.unit, lineCost: line.line_cost, locale: locale.value });
+        const text = containerLineText({ container, all: containersOf(ing), pieces: line.pieces, amountStored: amount, storedUnit: ing.unit, lineCost: line.line_cost, locale: locale.value, leafPieces: line.leaf_pieces });
         const pieces = Number(line.pieces);
         if (text.leaf) parts.push(text.leaf);
         else if (container && Number.isFinite(pieces) && pieces > 0) parts.push(`${friendly(pieces, '').trim()} × ${containerLabel(container, locale.value, ing.unit)}`);
@@ -300,7 +317,11 @@ function liveLine(line: LineRow): string | null {
         const cost = String(line.line_cost).trim() === '' ? NaN : Number(line.line_cost);
         free = Number.isFinite(cost) && cost === 0;
         if (Number.isFinite(cost) && cost > 0 && amount !== null && amount > 0) {
-            costPer = { cost: (cost / amount).toFixed(3), unit: t('purchases_v2.piece') };
+            // Fix order B-2 — 3 decimals per piece; per the pack (or 1000) when that is 0.000.
+            const pack = linePack(line);
+            const packs = Number(line.pieces);
+            const per = costPerText(cost, amount, 'piece', pack && Number.isFinite(packs) && packs > 0 ? { label: isAr.value ? pack.display_name_ar : pack.display_name, pieces: packs } : null);
+            costPer = per === null ? null : { cost: per.cost, unit: per.unit === 'piece' ? t('purchases_v2.piece') : per.unit === '1000 piece' ? `1000 × ${t('purchases_v2.piece')}` : per.unit };
         }
     }
     if (parts.length === 0) return null;
@@ -405,7 +426,10 @@ const scanMessage = ref<string | null>(null);
  * Purchases refuses (a prep item, a cooked / combo product) is never added.
  */
 function onScan(result: ScanResult): void {
+    // Fix order B-2 — a line whose pieces the scan changes starts its inner count again (full).
+    const before = new Map(lines.value.map((l) => [l.id, String(l.pieces)]));
     const outcome = applyPurchaseScan(lines.value, result, { blankLine, onItemChange });
+    for (const l of lines.value) if (before.get(l.id) !== String(l.pieces)) l.leaf_pieces = '';
     scanMessage.value = outcome.ok ? null : scanRefusalText(outcome.reason, result.item?.name ?? '');
 }
 
@@ -442,6 +466,8 @@ function linePayload(l: LineRow): PurchaseReceiptLinePayload {
             ...base,
             ...(kind === 'ingredient' ? { container_uuid: l.container_uuid } : { pack_uuid: l.container_uuid }),
             pieces: l.pieces,
+            // Fix order B-2 — a nested container's inner count, only when typed (blank = full).
+            ...(kind === 'ingredient' && lineInner(l) !== null && String(l.leaf_pieces).trim() !== '' ? { leaf_pieces: String(l.leaf_pieces).trim() } : {}),
             ...(typed !== '' ? { amount: typed, amount_unit: kind === 'ingredient' && l.amount_unit !== '' ? l.amount_unit : null } : {}),
         };
     }
@@ -664,8 +690,25 @@ onMounted(async () => {
                             </label>
                             <label v-if="byPieces(line)" class="block w-24">
                                 <span class="text-xs font-medium text-slate-600">{{ t('purchases_v2.pieces') }}</span>
-                                <input v-model="line.pieces" type="number" step="any" min="0" placeholder="0" data-test="line-pieces" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm tabular-nums shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
+                                <input v-model="line.pieces" type="number" step="any" min="0" placeholder="0" data-test="line-pieces" class="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm tabular-nums shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" @input="line.leaf_pieces = ''">
                             </label>
+                            <!-- Fix order B-2 — a nested container: "= 24 × bottle 1 l", lowered for a broken one (23), never raised. -->
+                            <div v-if="lineInner(line) !== null && lineInner(line)!.full > 0" class="block w-48" data-test="line-inner">
+                                <span class="text-xs font-medium text-slate-600">{{ t('containers.inner') }}</span>
+                                <div class="mt-1 flex items-center gap-1.5">
+                                    <span class="text-sm text-slate-500">=</span>
+                                    <input
+                                        v-model="line.leaf_pieces"
+                                        type="number"
+                                        step="any"
+                                        min="0"
+                                        :placeholder="String(lineInner(line)!.full)"
+                                        data-test="line-inner-pieces"
+                                        :class="`block w-20 rounded-lg border bg-white px-3 py-2 text-sm tabular-nums shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100 ${lineInner(line)!.raised ? 'border-rose-400 bg-rose-50 text-rose-700' : 'border-slate-200'}`"
+                                    >
+                                    <span class="whitespace-nowrap text-sm text-slate-600">× {{ containerLabel(lineInner(line)!.leaf, locale, lineStoredUnit(line)) }}</span>
+                                </div>
+                            </div>
                             <!-- C1 — the amount fills in as pieces × size; it may be lowered, never raised. -->
                             <div v-if="line.itemKey" class="block w-56">
                                 <span class="text-xs font-medium text-slate-600">{{ byPieces(line) ? t('purchases_v2.amount_lower_only') : t('purchases_v2.amount') }}</span>
@@ -692,7 +735,8 @@ onMounted(async () => {
                         </div>
 
                         <p v-if="lineIncomplete(line)" class="mt-2 text-xs text-rose-600">{{ byPieces(line) ? t('purchases_v2.needs_pieces') : t('purchase_receipts.form.needs_quantity') }}</p>
-                        <p v-if="lineRaised(line)" class="mt-2 text-xs font-semibold text-rose-600" data-test="line-raised">{{ t('containers.total_raised', { cap: friendly(lineCap(line), lineStoredUnit(line) === 'piece' ? '' : lineStoredUnit(line)).trim() }) }}</p>
+                        <p v-if="lineInner(line)?.raised" class="mt-2 text-xs font-semibold text-rose-600" data-test="line-inner-raised">{{ t('containers.inner_raised', { full: lineInner(line)!.full, leaf: containerLabel(lineInner(line)!.leaf, locale, lineStoredUnit(line)) }) }}</p>
+                        <p v-else-if="lineRaised(line)" class="mt-2 text-xs font-semibold text-rose-600" data-test="line-raised">{{ t('containers.total_raised', { cap: friendly(lineCap(line), lineStoredUnit(line) === 'piece' ? '' : lineStoredUnit(line)).trim() }) }}</p>
                         <p v-if="lineNeedsPrice(line)" class="mt-2 text-xs text-rose-600" data-test="line-needs-price">{{ t('purchases_v2.needs_price') }}</p>
                         <!-- C1 — the live line: "= 24 × bottle 1 l = 24 l · 0.150 per l". -->
                         <p v-if="liveLine(line)" class="mt-2 text-xs font-medium text-teal-700" data-test="line-live">

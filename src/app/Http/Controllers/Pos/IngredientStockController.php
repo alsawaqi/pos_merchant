@@ -232,22 +232,42 @@ class IngredientStockController extends Controller
             if ($branch === null) {
                 return response()->json(['message' => 'A selected branch was not found.'], 422);
             }
-            $lines[] = ['branch' => $branch, 'quantity' => $row['quantity']];
+            $lines[] = ['branch' => $branch, 'quantity' => $row['quantity'] ?? null, 'containers' => (array) ($row['containers'] ?? []), 'amount_unit' => $row['amount_unit'] ?? null];
         }
 
         try {
             DB::transaction(function () use ($ingredient, $lines, $request): void {
-                $legs = $this->allocate->handle($ingredient, $this->storedLines($ingredient, $lines, $request->input('unit')), $request->input('note'), $request->user());
-
-                // LAUNCH review add-on (B3) — amounts typed in a container
-                // ("2 crates") move that breakdown warehouse → branch.
-                $container = Containers::resolve($ingredient, is_string($request->input('unit')) ? $request->input('unit') : null);
-                if ($container === null) {
-                    return;
-                }
+                // Fix order B-2 — a branch's share BY CONTAINER (3 bottles,
+                // and a total that may be lowered: 2.5 l when one is half
+                // used), like the branch transfer; else an amount in the
+                // dialog's unit (a container picked there is by container too).
+                $unitContainer = Containers::resolve($ingredient, is_string($request->input('unit')) ? $request->input('unit') : null);
+                $stored = [];
+                $rowsByLine = [];
                 foreach ($lines as $i => $line) {
-                    $leaves = ContainerBreakdownAction::leaves($ingredient, [['container' => $container, 'pieces' => $line['quantity']]]);
-                    $this->breakdown->move($ingredient, null, (int) $line['branch']->id, $leaves, 'allocation_out', 'allocation_in', $request->user(), [
+                    if ($line['containers'] !== []) {
+                        $rows = ContainerAmount::rows($ingredient, $line['containers']);
+                        $unit = is_string($line['amount_unit']) && $line['amount_unit'] !== '' ? $line['amount_unit'] : null;
+                        $stored[] = ['branch' => $line['branch'], 'quantity' => (float) (string) ContainerAmount::amount($ingredient, $rows, $line['quantity'], $unit, $this->units)];
+                        $rowsByLine[$i] = $rows;
+
+                        continue;
+                    }
+                    if ($line['quantity'] === null || $line['quantity'] === '') {
+                        throw new RuntimeException('Enter how much each branch gets, or its containers.');
+                    }
+                    $stored[] = ['branch' => $line['branch'], 'quantity' => $this->stored($ingredient, $line['quantity'], $request->input('unit'))];
+                    if ($unitContainer !== null) {
+                        $rowsByLine[$i] = [['container' => $unitContainer, 'pieces' => Containers::decimal($line['quantity'])]];
+                    }
+                }
+
+                $legs = $this->allocate->handle($ingredient, $stored, $request->input('note'), $request->user());
+
+                // LAUNCH review add-on (B3) — the containers sent move that
+                // breakdown warehouse → branch.
+                foreach ($rowsByLine as $i => $rows) {
+                    $this->breakdown->move($ingredient, null, (int) $lines[$i]['branch']->id, ContainerBreakdownAction::leaves($ingredient, $rows), 'allocation_out', 'allocation_in', $request->user(), [
                         'stock_movement_id' => isset($legs[$i]) ? (int) $legs[$i]->id : null,
                     ]);
                 }
@@ -333,7 +353,11 @@ class IngredientStockController extends Controller
                 $from,
                 $to,
                 // F4 — TransferStockAction converts the line's unit itself.
-                [['ingredient_uuid' => (string) $ingredient->uuid, 'quantity' => $request->input('quantity'), 'unit' => $request->input('unit')]],
+                // Fix order B-2 — or by container, like the branch transfer
+                // modal: rows + a total that may be lowered (in amount_unit).
+                [(array) $request->input('containers', []) !== []
+                    ? ['ingredient_uuid' => (string) $ingredient->uuid, 'containers' => (array) $request->input('containers'), 'quantity' => $request->input('quantity'), 'unit' => $request->input('amount_unit')]
+                    : ['ingredient_uuid' => (string) $ingredient->uuid, 'quantity' => $request->input('quantity'), 'unit' => $request->input('unit')]],
                 $request->user(),
                 $request->input('note'),
             );

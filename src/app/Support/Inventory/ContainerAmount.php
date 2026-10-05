@@ -52,12 +52,51 @@ final class ContainerAmount
             if ($container === null) {
                 throw new RuntimeException(sprintf('A container on the "%s" line is not one of its containers.', $ingredient->name));
             }
-            $pieces = Containers::decimal($row['pieces'] ?? '0');
-            self::checkPieces($ingredient, $container, $pieces, $allowZero);
-            $out[] = ['container' => $container, 'pieces' => $pieces];
+            $out[] = self::row($ingredient, $container, Containers::decimal($row['pieces'] ?? '0'), $row['leaf_pieces'] ?? null, $allowZero);
         }
 
         return $out;
+    }
+
+    /**
+     * One resolved row. Fix order B-2 (the owner's broken bottle) — a NESTED
+     * container (2 × crate of 12 × bottle 1 l) may say how many of its inner
+     * containers really came: leaf_pieces ("23 bottles", one broken). It
+     * defaults to the full count, may be lowered, never raised; the amount and
+     * the breakdown then follow it (23 bottles = 23 l, still lowerable).
+     *
+     * @return array{container: IngredientAltUnit, pieces: BigDecimal, leaf: ?IngredientAltUnit, leaf_pieces: ?BigDecimal}
+     *
+     * @throws RuntimeException
+     */
+    public static function row(Ingredient $ingredient, IngredientAltUnit $container, BigDecimal $pieces, mixed $leafPieces, bool $allowZero = false): array
+    {
+        self::checkPieces($ingredient, $container, $pieces, $allowZero);
+        $row = ['container' => $container, 'pieces' => $pieces, 'leaf' => null, 'leaf_pieces' => null];
+        if ($leafPieces === null || $leafPieces === '' || $container->contains_unit_id === null) {
+            return $row;
+        }
+
+        [$leaf, $perLeaf] = Containers::leaf($container, Containers::of($ingredient));
+        $full = $pieces->multipliedBy($perLeaf);
+        $count = Containers::decimal($leafPieces);
+        self::checkPieces($ingredient, $leaf, $count, $allowZero);
+        if ($count->isGreaterThan($full)) {
+            throw new RuntimeException(sprintf(
+                '%s: %s × %s is more than %s %s hold (%s). The count may be lowered (a broken one), never raised.',
+                $ingredient->name,
+                Containers::trim((string) $count),
+                $leaf->name,
+                Containers::trim((string) $pieces),
+                $container->name,
+                Containers::trim((string) $full),
+            ));
+        }
+        if ($count->isEqualTo($full)) {
+            return $row;
+        }
+
+        return ['container' => $container, 'pieces' => $pieces, 'leaf' => $leaf, 'leaf_pieces' => $count];
     }
 
     /**
@@ -85,7 +124,10 @@ final class ContainerAmount
     {
         $sum = BigDecimal::zero();
         foreach ($rows as $row) {
-            $sum = $sum->plus($row['pieces']->multipliedBy(Containers::decimal((string) $row['container']->factor)));
+            // Fix order B-2 — a lowered inner count holds its leaves only.
+            $sum = isset($row['leaf_pieces'], $row['leaf']) && $row['leaf_pieces'] instanceof BigDecimal
+                ? $sum->plus($row['leaf_pieces']->multipliedBy(Containers::decimal((string) $row['leaf']->factor)))
+                : $sum->plus($row['pieces']->multipliedBy(Containers::decimal((string) $row['container']->factor)));
         }
 
         return $sum->toScale(StockDecimal::QUANTITY_SCALE, RoundingMode::HALF_UP);

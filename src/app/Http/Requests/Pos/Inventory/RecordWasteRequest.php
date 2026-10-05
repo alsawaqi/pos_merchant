@@ -37,6 +37,7 @@ class RecordWasteRequest extends FormRequest
             // LOWERED (half a bottle spilled), never raised.
             'container_uuid' => ['nullable', 'string', 'max:64'],
             'pieces' => ['nullable', 'required_with:container_uuid', 'numeric', 'gt:0', 'max:999999.9999'],
+            'leaf_pieces' => ['nullable', 'numeric', 'min:0', 'max:999999999.9999'],
             'quantity' => ['required_without:container_uuid', 'nullable', 'numeric', 'gt:0', 'max:999999.999'],
             // #13 — entered unit (alt-unit name, or null = base); converted to
             // base before write. Validity enforced by IngredientUnitConverter → 422.

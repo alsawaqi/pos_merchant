@@ -42,6 +42,7 @@ class SubmitStockCountRequest extends FormRequest
             'lines.*.containers' => ['sometimes', 'array', 'max:20'],
             'lines.*.containers.*.container_uuid' => ['required', 'string', 'max:64'],
             'lines.*.containers.*.pieces' => ['required', 'numeric', 'min:0', 'max:999999.9999'],
+            'lines.*.containers.*.leaf_pieces' => ['nullable', 'numeric', 'min:0', 'max:999999999.9999'],
         ];
     }
 

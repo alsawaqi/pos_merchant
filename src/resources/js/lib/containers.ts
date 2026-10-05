@@ -162,9 +162,64 @@ export function amountInStored(amount: string | number | null | undefined, unit:
     return from !== undefined && to !== undefined ? round4((n * from) / to) : null;
 }
 
-/** The [{container_uuid, pieces}] rows of an item → their cap in the stored unit (unknown containers count 0). */
-export function rowsCap(holder: ContainerHolder | null | undefined, rows: { container_uuid: string; pieces: string | number }[]): number {
-    return capOf(rows.map((r) => ({ factor: findContainer(holder, r.container_uuid)?.factor ?? '0', pieces: r.pieces })));
+/**
+ * The [{container_uuid, pieces}] rows of an item → their cap in the stored
+ * unit (unknown containers count 0). Fix order B-2 — a nested row with a
+ * lowered inner count (leaf_pieces: "23 bottles" of 2 crates) holds its leaves.
+ */
+export function rowsCap(holder: ContainerHolder | null | undefined, rows: { container_uuid: string; pieces: string | number; leaf_pieces?: string | number | null }[]): number {
+    return capOf(rows.map((r) => {
+        const container = findContainer(holder, r.container_uuid);
+        const inner = container ? innerCount(holder, r) : null;
+        return inner !== null && inner.lowered
+            ? { factor: inner.leaf.factor, pieces: inner.count }
+            : { factor: container?.factor ?? '0', pieces: r.pieces };
+    }));
+}
+
+/**
+ * Fix order B-2 (the owner's broken bottle) — a NESTED container row's inner
+ * count: its leaf container ("bottle 1 l"), the full count (2 crates of 12 =
+ * 24), the count typed (blank = full) and whether it is lowered / raised.
+ * Null for a container that holds an amount (no inner count).
+ */
+export function innerCount(
+    holder: ContainerHolder | null | undefined,
+    row: { container_uuid: string; pieces: string | number; leaf_pieces?: string | number | null },
+): { leaf: ContainerSource; full: number; count: number; lowered: boolean; raised: boolean } | null {
+    const container = findContainer(holder, row.container_uuid);
+    if (!container || !container.contains_unit_uuid) return null;
+    const { leaf, perLeaf } = leafOf(container, containersOf(holder));
+    const pieces = num(row.pieces);
+    const full = Number.isFinite(pieces) && pieces > 0 ? round4(pieces * perLeaf) : 0;
+    const typedText = String(row.leaf_pieces ?? '').trim();
+    const typed = typedText === '' ? NaN : num(typedText);
+    const count = Number.isFinite(typed) ? typed : full;
+    return { leaf, full, count, lowered: Number.isFinite(typed) && typed < full - 1e-9, raised: Number.isFinite(typed) && typed > full + 1e-9 };
+}
+
+/** Fix order B-2 — whether any row's inner count was typed above the full count (never raised). */
+export function innerRaised(
+    holder: ContainerHolder | null | undefined,
+    rows: { container_uuid: string; pieces: string | number; leaf_pieces?: string | number | null }[],
+): boolean {
+    return rows.some((r) => innerCount(holder, r)?.raised === true);
+}
+
+/**
+ * The container rows a screen sends: filled rows only ({container_uuid,
+ * pieces}), and (fix order B-2) a nested row's inner count only when typed —
+ * blank means the full count.
+ */
+export function containerRowsPayload(
+    rows: { container_uuid: string; pieces: string | number; leaf_pieces?: string | number | null }[],
+): { container_uuid: string; pieces: string | number; leaf_pieces?: string | number }[] {
+    return rows
+        .filter((r) => r.container_uuid !== '' && String(r.pieces ?? '').trim() !== '')
+        .map((r) => {
+            const leaf = String(r.leaf_pieces ?? '').trim();
+            return leaf === '' ? { container_uuid: r.container_uuid, pieces: r.pieces } : { container_uuid: r.container_uuid, pieces: r.pieces, leaf_pieces: leaf };
+        });
 }
 
 /**
@@ -191,27 +246,49 @@ export function containerLineText(opts: {
     storedUnit: string;
     lineCost?: string | number | null;
     locale?: string | null;
+    /** Fix order B-2 — the inner count typed on a nested container (blank = full). */
+    leafPieces?: string | number | null;
 }): { leaf: string | null; amount: string | null; costPer: { cost: string; unit: string } | null; free: boolean } {
     const pieces = num(opts.pieces);
     const amount = opts.amountStored;
     let leaf: string | null = null;
     if (opts.container && Number.isFinite(pieces) && pieces > 0 && opts.container.contains_unit_uuid) {
         const { leaf: leafContainer, perLeaf } = leafOf(opts.container, opts.all);
-        leaf = `${trim(pieces * perLeaf)} × ${containerLabel(leafContainer, opts.locale, opts.storedUnit)}`;
+        const typed = String(opts.leafPieces ?? '').trim() === '' ? NaN : num(opts.leafPieces);
+        leaf = `${trim(Number.isFinite(typed) ? typed : pieces * perLeaf)} × ${containerLabel(leafContainer, opts.locale, opts.storedUnit)}`;
     }
     const amountText = amount !== null && Number.isFinite(amount) && amount > 0 ? friendly(amount, opts.storedUnit) : null;
     const costText = opts.lineCost === null || opts.lineCost === undefined ? '' : String(opts.lineCost).trim();
     const cost = costText === '' ? NaN : num(costText);
     let costPer: { cost: string; unit: string } | null = null;
     if (Number.isFinite(cost) && cost > 0 && amount !== null && amount > 0) {
-        const perBase = cost / amount;
-        const big = opts.storedUnit === 'g' || opts.storedUnit === 'ml';
-        const value = big ? perBase * 1000 : perBase;
-        const fixed = (Math.round(value * 1e6) / 1e6).toFixed(6);
-        const [whole, decimals = ''] = fixed.split('.');
-        costPer = { cost: `${whole}.${decimals.replace(/0+$/, '').padEnd(3, '0')}`, unit: big ? (opts.storedUnit === 'g' ? 'kg' : 'l') : opts.storedUnit };
+        costPer = costPerText(cost, amount, opts.storedUnit, opts.container && Number.isFinite(pieces) && pieces > 0
+            ? { label: containerLabel(opts.container, opts.locale, opts.storedUnit), pieces }
+            : null);
     }
     return { leaf, amount: amountText, costPer, free: Number.isFinite(cost) && cost === 0 };
+}
+
+/**
+ * Fix order B-2 — the cost a line gives, as people read it: 3 decimals per
+ * l / kg / piece ("0.209 per l", never "0.208696 per l"). When that rounds to
+ * 0.000, it is said per the larger unit instead — the line's container ("0.400
+ * per tank 1000 l"), or per 1000 l / kg / pieces. Storage keeps 6 decimals.
+ */
+export function costPerText(
+    cost: number,
+    amountStored: number,
+    storedUnit: string,
+    container: { label: string; pieces: number } | null,
+): { cost: string; unit: string } | null {
+    if (!Number.isFinite(cost) || cost <= 0 || !Number.isFinite(amountStored) || amountStored <= 0) return null;
+    const small = storedUnit === 'g' || storedUnit === 'ml';
+    const perUnit = (cost / amountStored) * (small ? 1000 : 1);
+    const unit = small ? (storedUnit === 'g' ? 'kg' : 'l') : storedUnit;
+    const three = (value: number): string => (Math.round((value + Number.EPSILON) * 1000) / 1000).toFixed(3);
+    if (three(perUnit) !== '0.000') return { cost: three(perUnit), unit };
+    if (container !== null && container.pieces > 0) return { cost: three(cost / container.pieces), unit: container.label };
+    return { cost: three(perUnit * 1000), unit: `1000 ${unit}` };
 }
 
 /** One breakdown row from the server. */

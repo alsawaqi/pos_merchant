@@ -9,7 +9,7 @@
  */
 
 import { apiGet, apiPost, type JsonValue } from '@/lib/api';
-import type { BreakdownEntry } from '@/lib/api/inventory';
+import type { BreakdownEntry, ContainerRowPayload } from '@/lib/api/inventory';
 
 // ---- Domain types -----------------------------------------------
 
@@ -53,6 +53,18 @@ export interface IngredientAllocationLine {
 }
 
 /**
+ * Fix order B-2 — one branch's share on Allocate: an amount (in the dialog's
+ * unit), or BY CONTAINER — rows and a total (in amount_unit, '' / omit = the
+ * stored unit) that may be lowered, never raised.
+ */
+export interface IngredientAllocateLine {
+    branch_uuid: string;
+    quantity?: string | number;
+    containers?: ContainerRowPayload[];
+    amount_unit?: string | null;
+}
+
+/**
  * PD5 — the cash-model purchase cost on a receive. A positive total_cost (or an
  * explicit no_cost) is required; total_cost books an 'ingredients' expense and
  * delivery_cost a separate 'delivery' expense.
@@ -90,7 +102,7 @@ export function receiveIngredientStock(
 
 export function allocateIngredientStock(
     uuid: string,
-    payload: { allocations: IngredientAllocationLine[]; note?: string | null } & EntryUnitField,
+    payload: { allocations: IngredientAllocateLine[]; note?: string | null } & EntryUnitField,
 ): Promise<{ data: IngredientStockSummary }> {
     return apiPost<{ data: IngredientStockSummary }>(`/api/ingredients/${uuid}/stock/allocate`, payload as unknown as JsonValue);
 }
@@ -109,7 +121,15 @@ export function receiveAndDistributeIngredientStock(
 /** Branch → branch move; lands as a regular BranchTransfer (Transfers tab). */
 export function transferIngredientStock(
     uuid: string,
-    payload: { from_branch_uuid: string; to_branch_uuid: string; quantity: string | number; note?: string | null } & EntryUnitField,
+    payload: {
+        from_branch_uuid: string;
+        to_branch_uuid: string;
+        /** The amount; by container (fix order B-2) the total, lowered only (in amount_unit), or omitted. */
+        quantity?: string | number;
+        containers?: ContainerRowPayload[];
+        amount_unit?: string | null;
+        note?: string | null;
+    } & EntryUnitField,
 ): Promise<{ data: IngredientStockSummary }> {
     return apiPost<{ data: IngredientStockSummary }>(`/api/ingredients/${uuid}/stock/transfer`, payload as unknown as JsonValue);
 }

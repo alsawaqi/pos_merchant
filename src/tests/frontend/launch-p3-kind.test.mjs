@@ -261,7 +261,7 @@ test('A7 waste, adjust, transfers, restock requests and the count offer the kind
     assert.match(inventoryApi, /return entryUnitOptions\(ingredient, locale\)\.map\(\(\{ value, label \}\) => \(\{ value, label \}\)\);/);
     assert.match(inventoryApi, /return entryUnitFactor\(ingredient, selected\);/);
     // (LAUNCH review add-on D2 adds the counted containers after the unit.)
-    assert.match(inventoryApi, /unit\?: string \| null;[\s\S]{0,400}containers\?: \{ container_uuid: string; pieces: string \| number \}\[\];\s*\}\s*\n\s*export interface SubmitStockCountPayload/);
+    assert.match(inventoryApi, /unit\?: string \| null;[\s\S]{0,400}containers\?: ContainerRowPayload\[\];\s*\}\s*\n\s*export interface SubmitStockCountPayload/);
 
     const { script, template } = sfc('resources/js/Pages/Merchant/Inventory/Index.vue');
     for (const source of ['adjustTarget\\.ingredient', 'restockTarget\\.ingredient', 'wasteIngredient', 'ingredientByUuid\\(line\\.ingredient_uuid\\)']) {
@@ -398,7 +398,7 @@ test('F2 goods received offers pack sizes first, then kg / l, g / ml, the contai
     const { script } = sfc('resources/js/Pages/Merchant/Inventory/PurchaseReceipts/Create.vue');
     assert.match(script, /line\.container_uuid = ing \? \(containersOf\(ing\)\[0\]\?\.uuid \?\? ''\) : '';/);
     assert.match(script, /line\.amount_unit = ing \? bigUnit\(ing\.unit\) : '';/);
-    assert.match(script, /const text = containerLineText\(\{ container, all: containersOf\(ing\), pieces: line\.pieces, amountStored: amount, storedUnit: ing\.unit, lineCost: line\.line_cost, locale: locale\.value \}\);/);
+    assert.match(script, /const text = containerLineText\(\{ container, all: containersOf\(ing\), pieces: line\.pieces, amountStored: amount, storedUnit: ing\.unit, lineCost: line\.line_cost, locale: locale\.value, leafPieces: line\.leaf_pieces \}\);/);
     assert.match(script, /if \(costPer\) text \+= ` · \$\{t\('purchases_v2\.cost_per', costPer\)\}`;/);
 });
 

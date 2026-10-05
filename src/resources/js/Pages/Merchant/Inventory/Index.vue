@@ -64,8 +64,9 @@ import ScanBox from './components/ScanBox.vue';
 import StockBreakdown from './components/StockBreakdown.vue';
 import { useAmountConfirm } from '@/composables/useAmountConfirm';
 import { containerSizeWarning, thresholdWarning } from '@/lib/amountSafety';
-import { amountInStored, amountProblem, containerLabel, findContainer, rowsCap } from '@/lib/containers';
+import { amountInStored, amountProblem, containerLabel, containerRowsPayload, findContainer, innerRaised, rowsCap } from '@/lib/containers';
 import { applyCountScan, applyLineScan, applyWasteScan, findScanned, type ScanRefusal } from '@/lib/scanApply';
+import { latestOnly, upsertByUuid } from '@/lib/listUpsert';
 import { barcodeConflictOf, createBarcode, deleteBarcode, moveBarcodeHere, type ScanResult } from '@/lib/api/inventoryCodes';
 import { useAmountDisplay } from '@/composables/useAmountDisplay';
 import { usePermissions } from '@/composables/usePermissions';
@@ -753,9 +754,14 @@ async function fetchBranches(): Promise<void> {
     }
 }
 
+// Fix order B-2 (item 6) — the list is re-read from several places: only the latest read writes it.
+const ingredientsRead = latestOnly();
+
 async function fetchIngredients(): Promise<void> {
+    const ticket = ingredientsRead.start();
     try {
         const response = await listIngredients();
+        if (!ingredientsRead.isLatest(ticket)) return;
         ingredients.value = response.data;
     } catch (err) {
         error.value = err instanceof Error ? err.message : 'Failed to load ingredients';
@@ -1172,21 +1178,28 @@ async function submitIngredient(): Promise<void> {
             primary_supplier_id: ingForm.primary_supplier_id ?? null,
             sku: ingForm.sku.trim() || null,
         };
+        let saved: Ingredient | null = null;
         if (ingModalMode.value === 'create') {
             // A2 — the containers ride the same request (one transaction).
             const containers = containersPayload();
-            await createIngredient({
+            saved = (await createIngredient({
                 ...payload,
                 ...(containers.length > 0 ? { pack_sizes: containers } : {}),
                 ...(ingBarcodeDrafts.value.length > 0 ? { barcodes: ingBarcodeDrafts.value } : {}),
-            });
+            })).data;
         } else if (ingModalTarget.value) {
-            await updateIngredient(ingModalTarget.value.uuid, {
+            saved = (await updateIngredient(ingModalTarget.value.uuid, {
                 ...payload,
                 status: ingForm.status,
-            });
+            })).data;
         }
         ingModalOpen.value = false;
+        // Fix order B-2 (item 6) — the saved item shows at once (and counts), then the list is re-read.
+        if (saved) {
+            ingredients.value = upsertByUuid(ingredients.value, saved);
+            if (!matchesSearch(ingredientSearch.value, saved.name, saved.name_ar, saved.sku)) ingredientSearch.value = '';
+            highlightedIngredientId.value = saved.id;
+        }
         await fetchIngredients();
         // Refresh stock too — supplier names may have changed
         // and the stock list inlines them.
@@ -1503,8 +1516,9 @@ function countsPieces(r: CountRow): boolean {
 }
 
 /** The count rows with a container row filled in (0 is a count). */
-function countContainerRows(r: CountRow): { container_uuid: string; pieces: string | number }[] {
-    return r.containers.filter((c) => c.container_uuid !== '' && String(c.pieces).trim() !== '');
+function countContainerRows(r: CountRow): ReturnType<typeof containerRowsPayload> {
+    // Fix order B-2 — a nested row carries its inner count when lowered.
+    return containerRowsPayload(r.containers);
 }
 
 /**
@@ -1918,7 +1932,13 @@ async function submitRecordWaste(): Promise<void> {
             ingredient_uuid: wasteForm.ingredient_uuid,
             // D3 — by container: the container and pieces; the amount only when lowered.
             ...(container
-                ? { container_uuid: container.container_uuid, pieces: container.pieces, ...(quantity !== '' ? { quantity, unit: wireUnit(wasteForm.unit) } : {}) }
+                ? {
+                    container_uuid: container.container_uuid,
+                    pieces: container.pieces,
+                    // Fix order B-2 — a nested container's inner count, when lowered.
+                    ...(String(container.leaf_pieces ?? '').trim() !== '' ? { leaf_pieces: String(container.leaf_pieces).trim() } : {}),
+                    ...(quantity !== '' ? { quantity, unit: wireUnit(wasteForm.unit) } : {}),
+                }
                 : { quantity: wasteForm.quantity, unit: wireUnit(wasteForm.unit) }),
             reason: wasteForm.reason,
             notes: wasteForm.notes.trim() || null,
@@ -2193,6 +2213,8 @@ function startContainers(line: { ingredient_uuid: string; unit: string; quantity
 function containerLineRaised(line: { ingredient_uuid: string; quantity: string | number; unit: string; containers: ContainerRowDraft[] }, allowZero = false): boolean {
     const ingredient = ingredientByUuid(line.ingredient_uuid);
     if (!ingredient || line.containers.length === 0) return false;
+    // Fix order B-2 — an inner count above the full one (never raised) blocks too.
+    if (innerRaised(ingredient, line.containers)) return true;
     const cap = rowsCap(ingredient, line.containers);
     return amountProblem(amountInStored(line.quantity, line.unit, ingredient.unit), cap, allowZero) === 'raised';
 }
@@ -2243,7 +2265,7 @@ async function submitTransferModal(): Promise<void> {
         const cleanLines: BranchTransferLinePayload[] = transferForm.lines
             .filter((l) => l.ingredient_uuid && (String(l.quantity).trim() !== '' || l.containers.some((c) => c.container_uuid && String(c.pieces).trim() !== '')))
             .map((l) => {
-                const containers = l.containers.filter((c) => c.container_uuid && String(c.pieces).trim() !== '');
+                const containers = containerRowsPayload(l.containers);
                 if (containers.length > 0) {
                     const quantity = String(l.quantity).trim();
                     return { ingredient_uuid: l.ingredient_uuid, containers, ...(quantity !== '' ? { quantity, unit: wireUnit(l.unit) } : {}) };
@@ -4309,6 +4331,7 @@ async function submitSuggestions(): Promise<void> {
                                     v-model:amount="line.quantity"
                                     v-model:amount-unit="line.unit"
                                     single
+                                    :inner="false"
                                     :ingredient="ingredientByUuid(line.ingredient_uuid)!"
                                 />
                                 <button

@@ -720,6 +720,13 @@ export interface RestockRequest {
 
 // ---- Payloads ---------------------------------------------------
 
+/** LAUNCH review add-on (D1/D2) — one container row; fix order B-2: leaf_pieces = a lowered inner count. */
+export interface ContainerRowPayload {
+    container_uuid: string;
+    pieces: string | number;
+    leaf_pieces?: string | number;
+}
+
 export interface RecordWastePayload {
     ingredient_uuid: string;
     /** Positive only — server enforces. Review add-on (D3): optional by container (fills in, lower only). */
@@ -727,6 +734,8 @@ export interface RecordWastePayload {
     /** LAUNCH review add-on (D3) — waste by container. */
     container_uuid?: string | null;
     pieces?: string | number | null;
+    /** Fix order B-2 — a nested container's inner count, lowered (a broken bottle). */
+    leaf_pieces?: string | number | null;
     reason: WasteReason;
     notes?: string | null;
     /** ISO8601; defaults to now when omitted. */
@@ -1128,7 +1137,7 @@ export interface StockCountLinePayload {
      * LAUNCH review add-on (D2) — counted by container; counted_units (in
      * `unit`) may then be LOWER than Σ pieces × size, never higher.
      */
-    containers?: { container_uuid: string; pieces: string | number }[];
+    containers?: ContainerRowPayload[];
 }
 
 export interface SubmitStockCountPayload {
@@ -1195,7 +1204,7 @@ export interface BranchTransferLinePayload {
     /** Review add-on (D1): optional with containers (fills in, lower only). */
     quantity?: string | number | null;
     /** LAUNCH review add-on (D1) — the containers moved. */
-    containers?: { container_uuid: string; pieces: string | number }[];
+    containers?: ContainerRowPayload[];
     /**
      * v2 #13 — alt-unit NAME the quantity was entered in. null/omit
      * = the ingredient's base unit. Server converts to base.

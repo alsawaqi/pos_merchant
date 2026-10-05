@@ -54,8 +54,14 @@ final readonly class ContainerBreakdownAction
         $out = [];
         foreach ($rows as $row) {
             [$leaf, $per] = Containers::leaf($row['container'], $all);
-            $pieces = $row['pieces'] instanceof BigDecimal ? $row['pieces'] : Containers::decimal($row['pieces']);
             $id = (int) $leaf->id;
+            // Fix order B-2 — a lowered inner count ("23 bottles" of 2 crates) is the leaves.
+            if (isset($row['leaf_pieces']) && $row['leaf_pieces'] instanceof BigDecimal) {
+                $out[$id] = ($out[$id] ?? BigDecimal::zero())->plus($row['leaf_pieces']);
+
+                continue;
+            }
+            $pieces = $row['pieces'] instanceof BigDecimal ? $row['pieces'] : Containers::decimal($row['pieces']);
             $out[$id] = ($out[$id] ?? BigDecimal::zero())->plus($pieces->multipliedBy($per));
         }
 

@@ -4,10 +4,13 @@
  * AmountInput.vue (E1, the live line under the box) and the "Is this right?"
  * confirm dialog (E2, which WARNS and never blocks).
  *
- * E1 — a live translation of the typed amount:
+ * E1 — a live translation of the typed amount, shown only when it adds
+ * information (fix order B-2: never a whole l / kg turned into ml / g):
  *   2.5 l       → "2 l 500 ml"         (a big unit with a part)
- *   1500 ml     → "1.5 l"              (a small unit of 1000 or more)
- *   200 l       → "200000 ml"          (so "200 l for a latte" stands out)
+ *   0.5 l       → "500 ml"             (less than one big unit)
+ *   23 l        → nothing              (a whole big unit says it already)
+ *   1500 ml     → "1.5 l"              (a small unit of 100 or more)
+ *   50 ml       → nothing
  *   2 gal       → "7.5708 l"           (the US units in metric)
  *   3 crates    → "36 × bottle 1 l = 36 l" (a container: its leaves + amount)
  *   Counted items get only the container translation.
@@ -76,10 +79,12 @@ export function compoundAmount(amount: string | number, unit: string): string | 
         const whole = Math.floor(round(n, 6));
         const part = round((n - whole) * 1000, 4);
         if (whole > 0 && part > 0) return `${whole} ${big} ${trim(part)} ${small}`;
-        return `${trim(canonical)} ${small}`;
+        // Fix order B-2 — a whole l / kg is never turned into ml / g.
+        return whole === 0 ? `${trim(canonical)} ${small}` : null;
     }
     if (unit === small) {
-        return `${trim(canonical / 1000)} ${big}`;
+        // Fix order B-2 — a small amount (under 100 ml / g) says nothing new in l / kg.
+        return canonical >= 100 ? `${trim(canonical / 1000)} ${big}` : null;
     }
     // A US unit: say it in metric, the friendly way.
     return canonical >= 1000 ? `${trim(canonical / 1000)} ${big}` : `${trim(canonical)} ${small}`;
@@ -257,4 +262,29 @@ export function prepLineWarning(opts: {
         }
     }
     return null;
+}
+
+/**
+ * Fix order B-2 (E1) — the live line under a container's "holds" boxes on the
+ * ingredient form: an amount ("holds 500 ml" → "0.5 l") through the same
+ * translation as every amount box, or what a nested container holds in all
+ * ("crate holds 12 × bottle 1 l" → "12 l"). `childFactor` is the inner
+ * container's size in the stored unit.
+ */
+export function holdsTranslation(opts: {
+    mode: 'amount' | 'nested';
+    amount?: string | number;
+    unit?: string;
+    storedUnit: string;
+    childFactor?: string | number | null;
+    quantity?: string | number;
+}): string[] {
+    if (opts.mode === 'nested') {
+        const child = num(opts.childFactor);
+        const q = num(opts.quantity);
+        if (!Number.isFinite(child) || child <= 0 || !Number.isFinite(q) || q <= 0) return [];
+        const total = child * q;
+        return kindOf(opts.storedUnit) === 'counted' ? [`${trim(total)} ${opts.storedUnit}`] : [friendlyStored(total, opts.storedUnit)];
+    }
+    return translateAmount({ amount: opts.amount ?? '', unit: opts.unit ?? '', storedUnit: opts.storedUnit });
 }

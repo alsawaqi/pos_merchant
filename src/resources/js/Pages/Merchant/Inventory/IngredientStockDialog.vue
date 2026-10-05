@@ -12,6 +12,11 @@
  * (kg / l, g / ml, a pack size, the count container), picked once for the
  * form and sent as `unit`; the server converts. Balances read the friendly
  * way ("24 l", not "24000.000 ml").
+ *
+ * Fix order B-2 — Allocate (per branch) and Transfer may be entered BY
+ * CONTAINER, like the branch transfer modal: container rows ("3 × bottle
+ * 1 l", a crate's inner count lowered for a broken bottle) and a total that
+ * may be lowered (3 bottles = 2.5 l), never raised.
  */
 import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -26,6 +31,7 @@ import {
     receiveAndDistributeIngredientStock,
     receiveIngredientStock,
     transferIngredientStock,
+    type IngredientAllocateLine,
     type IngredientStockSummary,
 } from '@/lib/api/ingredientStock';
 import { listTaxes, type Tax } from '@/lib/api/taxes';
@@ -36,8 +42,9 @@ import { useAmountDisplay } from '@/composables/useAmountDisplay';
 import AmountDisplaySwitch from './AmountDisplaySwitch.vue';
 // LAUNCH review add-on — B the breakdown and "Correct containers", E1 the live translation.
 import { correctWarehouseContainers } from '@/lib/api/ingredientStock';
-import { capOf, containerLabel, containersOf, friendly } from '@/lib/containers';
+import { amountInStored, amountProblem, capOf, containerLabel, containerRowsPayload, containersOf, friendly, innerRaised, rowsCap } from '@/lib/containers';
 import AmountInput from './components/AmountInput.vue';
+import ContainerRows, { type ContainerRowDraft } from './components/ContainerRows.vue';
 import StockBreakdown from './components/StockBreakdown.vue';
 
 const props = withDefaults(defineProps<{
@@ -138,10 +145,23 @@ const receiveCost = ref<PurchaseCostModel>(blankCost());
 const distributeCost = ref<PurchaseCostModel>(blankCost());
 // PT — active company taxes offered as purchase-tax rates (loaded once).
 const taxes = ref<Tax[]>([]);
-const allocateRows = ref<{ branch_uuid: string; branch_name: string; quantity: string | number }[]>([]);
+/**
+ * A branch's share: an amount in the dialog's unit, or (fix order B-2) by
+ * container — rows, and a total in amount_unit that may be lowered ('' = what
+ * the containers hold).
+ */
+interface AllocateRow {
+    branch_uuid: string;
+    branch_name: string;
+    quantity: string | number;
+    containers: ContainerRowDraft[];
+    amount: string | number;
+    amount_unit: string;
+}
+const allocateRows = ref<AllocateRow[]>([]);
 const allocateNote = ref('');
-const transferForm = reactive<{ from_branch_uuid: string; to_branch_uuid: string; quantity: string | number; note: string }>(
-    { from_branch_uuid: '', to_branch_uuid: '', quantity: '', note: '' },
+const transferForm = reactive<{ from_branch_uuid: string; to_branch_uuid: string; quantity: string | number; note: string; containers: ContainerRowDraft[]; amount: string | number; amount_unit: string }>(
+    { from_branch_uuid: '', to_branch_uuid: '', quantity: '', note: '', containers: [], amount: '', amount_unit: '' },
 );
 const adjustForm = reactive<{ branch_uuid: string; signed_quantity: string | number; note: string }>(
     { branch_uuid: '', signed_quantity: '', note: '' },
@@ -191,8 +211,47 @@ function amount(quantity: string | null | undefined): string {
     return `${shown.amount} ${shown.unit}`;
 }
 
+// ---- fix order B-2: by container -----------------------------------
+
+/** The total's unit by container: kg / l for a Weighed / Liquid item (the stored unit otherwise). */
+function containerAmountUnit(): string {
+    const big = costUnit(unit.value);
+    return big !== unit.value ? big : '';
+}
+
+/** One row of the item's first container (pieces typed next). */
+function firstContainerRow(): ContainerRowDraft[] {
+    const first = itemContainers.value[0];
+    return first ? [{ container_uuid: first.uuid, pieces: '' }] : [];
+}
+
+/** By container: an inner count or a total above what the containers hold (never raised). */
+function containersRaised(rows: ContainerRowDraft[], amount: string | number, amountUnit: string): boolean {
+    const ing = props.ingredient;
+    if (!ing || rows.length === 0) return false;
+    if (innerRaised(ing, rows)) return true;
+    return amountProblem(amountInStored(amount, amountUnit, ing.unit), rowsCap(ing, rows.filter((r) => r.container_uuid !== ''))) === 'raised';
+}
+
+const allocateRaised = computed(() => allocateRows.value.some((r) => containersRaised(r.containers, r.amount, r.amount_unit)));
+const transferRaised = computed(() => containersRaised(transferForm.containers, transferForm.amount, transferForm.amount_unit));
+
+/** The size of one of the dialog's unit, in the stored unit. */
+const entryFactor = computed(() => unitOptions.value.find((o) => o.value === entryUnit.value)?.factor ?? 1);
+
+/** A branch's share in the stored unit (by container: the total typed, else what the containers hold). */
+function allocateStored(r: AllocateRow): number {
+    if (r.containers.length > 0) {
+        const ing = props.ingredient;
+        if (!ing) return 0;
+        return amountInStored(r.amount, r.amount_unit, ing.unit) ?? rowsCap(ing, r.containers.filter((c) => c.container_uuid !== ''));
+    }
+    return (parseFloat(qty(r.quantity)) || 0) * entryFactor.value;
+}
+
+/** "Total entered" — in the stored unit, read the friendly way. */
 const allocateTotal = computed(() =>
-    allocateRows.value.reduce((s, r) => s + (parseFloat(qty(r.quantity)) || 0), 0),
+    allocateRows.value.reduce((s, r) => s + allocateStored(r), 0),
 );
 
 const distributeTotal = computed(() =>
@@ -228,12 +287,18 @@ function resetForms(): void {
         branch_uuid: b.branch_uuid,
         branch_name: b.branch_name,
         quantity: '',
+        containers: [],
+        amount: '',
+        amount_unit: containerAmountUnit(),
     }));
     allocateNote.value = '';
     transferForm.from_branch_uuid = branches.value[0]?.branch_uuid ?? '';
     transferForm.to_branch_uuid = branches.value[1]?.branch_uuid ?? '';
     transferForm.quantity = '';
     transferForm.note = '';
+    transferForm.containers = [];
+    transferForm.amount = '';
+    transferForm.amount_unit = containerAmountUnit();
     adjustForm.branch_uuid = '';
     adjustForm.signed_quantity = '';
     adjustForm.note = '';
@@ -361,9 +426,22 @@ function doReceive(): void {
 
 function doAllocate(): void {
     if (!props.ingredientUuid) return;
-    const lines = allocateRows.value
-        .filter((r) => qty(r.quantity) !== '' && (parseFloat(qty(r.quantity)) || 0) > 0)
-        .map((r) => ({ branch_uuid: r.branch_uuid, quantity: qty(r.quantity) }));
+    if (allocateRaised.value) {
+        actionError.value = t('containers.total_raised_summary');
+        return;
+    }
+    // Fix order B-2 — a branch by container sends its rows and (when typed) its lowered total.
+    const lines: IngredientAllocateLine[] = [];
+    for (const r of allocateRows.value) {
+        if (r.containers.length > 0) {
+            const containers = containerRowsPayload(r.containers);
+            if (containers.length === 0) continue;
+            const total = qty(r.amount);
+            lines.push({ branch_uuid: r.branch_uuid, containers, ...(total !== '' ? { quantity: total, amount_unit: r.amount_unit || null } : {}) });
+        } else if (qty(r.quantity) !== '' && (parseFloat(qty(r.quantity)) || 0) > 0) {
+            lines.push({ branch_uuid: r.branch_uuid, quantity: qty(r.quantity) });
+        }
+    }
     if (lines.length === 0) {
         actionError.value = 'Enter a quantity for at least one branch.';
         return;
@@ -375,17 +453,27 @@ function doAllocate(): void {
 }
 
 function doTransfer(): void {
-    if (!props.ingredientUuid || qty(transferForm.quantity) === '') return;
+    if (!props.ingredientUuid) return;
+    // Fix order B-2 — by container: the rows and (when typed) the lowered total.
+    const containers = containerRowsPayload(transferForm.containers);
+    const byContainer = transferForm.containers.length > 0;
+    if (byContainer ? containers.length === 0 : qty(transferForm.quantity) === '') return;
     if (transferForm.from_branch_uuid === transferForm.to_branch_uuid) {
         actionError.value = 'Choose two different branches.';
         return;
     }
+    if (transferRaised.value) {
+        actionError.value = t('containers.total_raised_summary');
+        return;
+    }
+    const total = qty(transferForm.amount);
     void run(
         () => transferIngredientStock(props.ingredientUuid as string, {
             from_branch_uuid: transferForm.from_branch_uuid,
             to_branch_uuid: transferForm.to_branch_uuid,
-            quantity: qty(transferForm.quantity),
-            unit: wireUnit(),
+            ...(byContainer
+                ? { containers, ...(total !== '' ? { quantity: total, amount_unit: transferForm.amount_unit || null } : {}) }
+                : { quantity: qty(transferForm.quantity), unit: wireUnit() }),
             note: transferForm.note || null,
         }),
         'Transferred between branches.',
@@ -550,15 +638,28 @@ function fmtType(t: string): string {
 
                         <!-- Allocate -->
                         <form v-else-if="action === 'allocate'" class="space-y-3" @submit.prevent="doAllocate">
-                            <p class="text-xs text-slate-500">Distribute the warehouse ({{ amount(summary.central_quantity) }}) across branches. Total entered: <span class="font-semibold">{{ round3(allocateTotal) }} {{ entryUnitName }}</span></p>
+                            <p class="text-xs text-slate-500">Distribute the warehouse ({{ amount(summary.central_quantity) }}) across branches. Total entered: <span class="font-semibold" data-test="allocate-total">{{ friendly(allocateTotal, unit) }}</span></p>
                             <div class="space-y-2">
-                                <div v-for="row in allocateRows" :key="row.branch_uuid" class="flex items-start gap-3">
+                                <div v-for="row in allocateRows" :key="row.branch_uuid" class="flex flex-wrap items-start gap-3" data-test="allocate-row">
                                     <span class="flex-1 pt-1.5 text-sm text-slate-700">{{ row.branch_name }}</span>
-                                    <AmountInput v-model="row.quantity" :unit="entryUnit" :stored-unit="unit" :containers="itemContainers" step="0.0001" placeholder="0" input-class="w-28 rounded-lg border border-slate-200 px-3 py-1.5 text-sm tabular-nums" data-test="allocate-amount" />
+                                    <div class="flex flex-col items-end gap-1">
+                                        <AmountInput v-if="row.containers.length === 0" v-model="row.quantity" :unit="entryUnit" :stored-unit="unit" :containers="itemContainers" step="0.0001" placeholder="0" input-class="w-28 rounded-lg border border-slate-200 px-3 py-1.5 text-sm tabular-nums" data-test="allocate-amount" />
+                                        <!-- Fix order B-2 — by container, like the branch transfer: rows + a total that may be lowered. -->
+                                        <ContainerRows
+                                            v-else-if="ingredient"
+                                            v-model:rows="row.containers"
+                                            v-model:amount="row.amount"
+                                            v-model:amount-unit="row.amount_unit"
+                                            :ingredient="ingredient"
+                                            data-test="allocate-containers"
+                                        />
+                                        <button v-if="row.containers.length === 0 && itemContainers.length > 0" type="button" class="text-xs font-semibold text-teal-700 hover:underline" data-test="allocate-by-container" @click="row.containers = firstContainerRow(); row.quantity = ''">{{ t('containers.by_container') }}</button>
+                                        <button v-else-if="row.containers.length > 0" type="button" class="text-xs font-semibold text-slate-500 hover:underline" @click="row.containers = []; row.amount = ''">{{ t('containers.by_amount') }}</button>
+                                    </div>
                                 </div>
                             </div>
                             <input v-model="allocateNote" type="text" placeholder="Note (optional)" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                            <button type="submit" :disabled="busy" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Allocate</button>
+                            <button type="submit" :disabled="busy || allocateRaised" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Allocate</button>
                         </form>
 
                         <!-- Transfer -->
@@ -572,10 +673,21 @@ function fmtType(t: string): string {
                                 <select v-model="transferForm.to_branch_uuid" class="rounded-lg border border-slate-200 px-3 py-2 text-sm">
                                     <option v-for="b in branches" :key="b.branch_uuid" :value="b.branch_uuid">{{ b.branch_name }}</option>
                                 </select>
-                                <AmountInput v-model="transferForm.quantity" :unit="entryUnit" :stored-unit="unit" :containers="itemContainers" step="0.0001" placeholder="Qty" input-class="w-28 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums" />
+                                <AmountInput v-if="transferForm.containers.length === 0" v-model="transferForm.quantity" :unit="entryUnit" :stored-unit="unit" :containers="itemContainers" step="0.0001" placeholder="Qty" input-class="w-28 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums" />
                             </div>
+                            <!-- Fix order B-2 — by container, like the branch transfer: rows + a total that may be lowered. -->
+                            <ContainerRows
+                                v-if="transferForm.containers.length > 0 && ingredient"
+                                v-model:rows="transferForm.containers"
+                                v-model:amount="transferForm.amount"
+                                v-model:amount-unit="transferForm.amount_unit"
+                                :ingredient="ingredient"
+                                data-test="transfer-containers"
+                            />
+                            <button v-if="transferForm.containers.length === 0 && itemContainers.length > 0" type="button" class="text-xs font-semibold text-teal-700 hover:underline" data-test="warehouse-transfer-by-container" @click="transferForm.containers = firstContainerRow(); transferForm.quantity = ''">{{ t('containers.by_container') }}</button>
+                            <button v-else-if="transferForm.containers.length > 0" type="button" class="text-xs font-semibold text-slate-500 hover:underline" @click="transferForm.containers = []; transferForm.amount = ''">{{ t('containers.by_amount') }}</button>
                             <input v-model="transferForm.note" type="text" placeholder="Note (optional)" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                            <button type="submit" :disabled="busy" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Transfer</button>
+                            <button type="submit" :disabled="busy || transferRaised" class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Transfer</button>
                         </form>
 
                         <!-- B (tester call 8) — Correct containers: what is on the warehouse shelf; the total does not move. -->

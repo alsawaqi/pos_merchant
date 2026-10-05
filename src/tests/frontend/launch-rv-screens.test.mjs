@@ -105,7 +105,7 @@ test('C purchases: item → container → pieces → amount (lower only) → pri
     assert.doesNotMatch(script, /unit_price/, 'no price per unit any more');
     assert.match(script, /line_cost: l\.line_cost,/);
     assert.match(script, /if \(lineOverDistributed\(l\) \|\| lineRaised\(l\) \|\| lineNeedsPrice\(l\)\)/);
-    assert.match(script, /return byPieces\(line\) && amountProblem\(typedAmount\(line\), lineCap\(line\)\) === 'raised';/);
+    assert.match(script, /return byPieces\(line\) && \(lineInner\(line\)\?\.raised === true \|\| amountProblem\(typedAmount\(line\), lineCap\(line\)\) === 'raised'\);/);
     // A container line sends pieces (+ a lowered amount); the split is in pieces.
     assert.match(script, /pieces: l\.pieces,/);
     assert.match(script, /\{ branch_uuid: a\.branch_uuid, pieces: a\.quantity \}/);
@@ -138,7 +138,7 @@ test('D transfers, counts, waste and restock by container; counts stay blind', (
     // Payloads.
     assert.match(script, /return \{ ingredient_uuid: l\.ingredient_uuid, containers, \.\.\.\(quantity !== '' \? \{ quantity, unit: wireUnit\(l\.unit\) \} : \{\}\) \};/);
     assert.match(script, /ingredient_uuid: r\.ingredient\.uuid,\s*containers,/);
-    assert.match(script, /\{ container_uuid: container\.container_uuid, pieces: container\.pieces,/);
+    assert.match(script, /\{\s*container_uuid: container\.container_uuid,\s*pieces: container\.pieces,/);
     assert.match(script, /container_uuid: container\.container_uuid,\s*pieces: container\.pieces,/);
     // A raised total blocks the save.
     for (const flag of ['transferHasRaised', 'countHasRaised', 'wasteRaised', 'restockHasRaised']) {

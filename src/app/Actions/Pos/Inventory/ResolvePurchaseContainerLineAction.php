@@ -52,8 +52,8 @@ final readonly class ResolvePurchaseContainerLineAction
             if ($container === null) {
                 throw new RuntimeException(sprintf('The container on the "%s" line is not one of its containers.', $ingredient->name));
             }
-            ContainerAmount::checkPieces($ingredient, $container, $pieces);
-            $rows = [['container' => $container, 'pieces' => $pieces]];
+            // Fix order B-2 — "23 bottles" of 2 crates of 12 (one broken): leaf_pieces.
+            $rows = [ContainerAmount::row($ingredient, $container, $pieces, $row['leaf_pieces'] ?? null)];
             $amountUnit = isset($row['amount_unit']) && trim((string) $row['amount_unit']) !== '' ? trim((string) $row['amount_unit']) : null;
             $base = ContainerAmount::amount($ingredient, $rows, $row['amount'] ?? null, $amountUnit, $this->units);
             $factor = Containers::decimal((string) $container->factor);
@@ -101,18 +101,47 @@ final readonly class ResolvePurchaseContainerLineAction
         $sumPieces = BigDecimal::zero();
         $sum = BigDecimal::zero();
         $scale = $ingredient !== null ? StockDecimal::QUANTITY_SCALE : 3;
+        // Fix order B-2 — with a lowered inner count (23 bottles of 2 crates),
+        // each branch share gets whole crates of leaves while they last (the
+        // missing bottle stays with the last share or the warehouse), and its
+        // amount follows those leaves.
+        $lowered = $ingredient !== null && isset($rows[0]['leaf_pieces']) && $rows[0]['leaf_pieces'] instanceof BigDecimal;
+        $remaining = $leaves;
+        $leafTotal = $lowered ? $rows[0]['leaf_pieces'] : null;
+        $perPiece = [];
+        if ($lowered) {
+            [, $per] = Containers::leaf($rows[0]['container'], Containers::of($ingredient));
+            foreach (array_keys($leaves) as $leafId) {
+                $perPiece[$leafId] = Containers::decimal((string) $per);
+            }
+        }
         foreach ($allocations as $allocation) {
             $share = Containers::decimal($allocation['pieces']);
             if (! $share->isPositive()) {
                 throw new RuntimeException('Each branch share needs more than 0 pieces.');
             }
             $sumPieces = $sumPieces->plus($share);
-            $quantity = $base->multipliedBy($share)->dividedBy($pieces, $scale, RoundingMode::HALF_UP);
-            $sum = $sum->plus($quantity);
             $shareLeaves = [];
             foreach ($leaves as $leafId => $leafPieces) {
-                $shareLeaves[$leafId] = $leafPieces->multipliedBy($share)->dividedBy($pieces, StockDecimal::QUANTITY_SCALE, RoundingMode::HALF_UP);
+                if ($lowered) {
+                    $want = $share->multipliedBy($perPiece[$leafId]);
+                    $have = $remaining[$leafId] ?? BigDecimal::zero();
+                    $shareLeaves[$leafId] = $want->isGreaterThan($have) ? $have : $want;
+                    $remaining[$leafId] = $have->minus($shareLeaves[$leafId]);
+                } else {
+                    $shareLeaves[$leafId] = $leafPieces->multipliedBy($share)->dividedBy($pieces, StockDecimal::QUANTITY_SCALE, RoundingMode::HALF_UP);
+                }
             }
+            if ($lowered && $leafTotal !== null && $leafTotal->isPositive()) {
+                $shareLeafSum = BigDecimal::zero();
+                foreach ($shareLeaves as $leafShare) {
+                    $shareLeafSum = $shareLeafSum->plus($leafShare);
+                }
+                $quantity = $base->multipliedBy($shareLeafSum)->dividedBy($leafTotal, $scale, RoundingMode::HALF_UP);
+            } else {
+                $quantity = $base->multipliedBy($share)->dividedBy($pieces, $scale, RoundingMode::HALF_UP);
+            }
+            $sum = $sum->plus($quantity);
             $split[] = ['branch' => $allocation['branch'], 'quantity' => $quantity, 'leaves' => $shareLeaves, 'pieces' => (string) $share];
         }
         if ($sumPieces->isGreaterThan($pieces)) {
