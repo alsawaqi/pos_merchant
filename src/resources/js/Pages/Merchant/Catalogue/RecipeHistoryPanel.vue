@@ -8,8 +8,9 @@
 import { History } from 'lucide-vue-next';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { RecipeHistory } from '@/lib/api/catalogue';
+import type { RecipeHistory, RecipeLineChange } from '@/lib/api/catalogue';
 import { friendlyAmount } from '@/lib/itemKind';
+import { ALL_ORDER_TYPES, ticked } from '@/lib/orderTypes';
 
 const props = defineProps<{
     /** Fetches the history (product or prep item endpoint). */
@@ -47,6 +48,21 @@ const versions = computed(() => history.value?.versions ?? []);
 function when(iso: string | null): string {
     if (!iso) return '—';
     return new Date(iso).toLocaleString(locale.value === 'ar' ? 'ar-OM' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+/**
+ * LAUNCH packaging add-on — a change's "Used for" ticks ("To go · Delivery",
+ * "All → To go"); '' when the line is for every order type on both sides.
+ */
+function typesText(c: RecipeLineChange): string {
+    const text = (mask: number | null | undefined): string => (mask === null || mask === undefined
+        ? ''
+        : mask === ALL_ORDER_TYPES ? t('order_types.all') : ticked(mask).map((b) => t(`order_types.short.${b}`)).join(' · '));
+    if (c.before_order_types === undefined && c.after_order_types === undefined) return '';
+    if (c.change === 'changed' && c.before_order_types !== c.after_order_types) {
+        return `${text(c.before_order_types)} → ${text(c.after_order_types)}`;
+    }
+    return text(c.change === 'removed' ? c.before_order_types : c.after_order_types);
 }
 
 /** LAUNCH item kind, A8 — a prep yield as people read it ("2 l", not "2000 ml"). */
@@ -99,7 +115,7 @@ function changeClass(change: string): string {
                         <bdi dir="ltr" class="tabular-nums"><template v-if="v.yield_before">{{ yieldText(v.yield_before) }} → </template>{{ yieldText(v.yield_after) }}</bdi>
                     </p>
                     <ul v-if="v.changes.length > 0" class="mt-2 space-y-1">
-                        <li v-for="c in v.changes" :key="`${c.ingredient_id}-${c.change}`" class="flex flex-wrap items-center gap-2 text-xs">
+                        <li v-for="(c, ci) in v.changes" :key="`${c.ingredient_id}-${c.change}-${ci}`" class="flex flex-wrap items-center gap-2 text-xs">
                             <span class="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase" :class="changeClass(c.change)">{{ t(`recipe_history.${c.change}`) }}</span>
                             <span class="font-medium text-slate-900">{{ c.ingredient }}</span>
                             <bdi dir="ltr" class="tabular-nums text-slate-600" data-test="recipe-history-amount">
@@ -107,6 +123,8 @@ function changeClass(change: string): string {
                                 <template v-else-if="c.change === 'added'">{{ c.after }}</template>
                                 <template v-else>{{ c.before }}</template>
                             </bdi>
+                            <!-- LAUNCH packaging add-on — the "Used for" ticks, when not every order type. -->
+                            <span v-if="typesText(c)" class="text-[11px] text-slate-500" data-test="recipe-history-types">({{ t('order_types.used_for') }}: {{ typesText(c) }})</span>
                         </li>
                     </ul>
                     <p v-else-if="!v.note" class="mt-1 text-xs italic text-slate-400">{{ t('recipe_history.no_line_changes') }}</p>

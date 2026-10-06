@@ -4186,6 +4186,58 @@
         "inclusive_orders": "{count} orders had VAT inside their prices; it was taken out.",
         "included_in_prices": "included in prices"
     },
+    "order_types": {
+        "used_for": "Used for",
+        "all": "All",
+        "short": {
+            "dine_in": "Dine in",
+            "quick": "Quick",
+            "to_go": "To go",
+            "delivery": "Delivery"
+        },
+        "long": {
+            "dine_in": "Dine in",
+            "quick": "Quick order",
+            "to_go": "To go",
+            "delivery": "Delivery"
+        },
+        "pick_one": "Tick at least one order type.",
+        "overlap": "This item is already on another line for one of these order types. Untick the type there or here.",
+        "cooked_note": "Cooked products use their recipe when they are made, before any order: their recipe lines are used for every order type. Physical items can still be ticked."
+    },
+    "order_packaging": {
+        "tab": "Order packaging",
+        "subtitle": "What every order takes once, whatever is in it: bags, napkins, cutlery, a sticker. One list per order type; the list of the order's final type is taken from stock once when the order is paid (or handed to delivery). QR table orders count as Dine in, QR quick orders as Quick order.",
+        "load_failed": "Could not load the packaging lists.",
+        "readonly_hint": "Changing the packaging lists needs the \"Edit recipes\" permission.",
+        "empty": "No packaging for this order type.",
+        "cost_per_order": "Cost per order",
+        "kind": "Kind",
+        "kind_ingredient": "Ingredient",
+        "kind_item": "Physical item",
+        "pieces": "pieces",
+        "pieces_total": "= {n} pieces",
+        "add_line": "Add an item",
+        "duplicate": "This item is already on this list. Put the whole amount on one line.",
+        "saved": "Saved.",
+        "save_failed": "Could not save the list.",
+        "scan_into": "Scan into",
+        "scan": {
+            "not_found": "Unknown code.",
+            "prep": "A prep item is never packaging.",
+            "not_pieces": "Only physical items counted in pieces can be packaging.",
+            "other_unit": "This item is already on the list in another unit. Change that line instead."
+        },
+        "warnings": {
+            "recipe": "One order would use {amount}. Is that right?",
+            "recipe_suggest": "One order would use {amount}. Did you mean {suggestion}?"
+        },
+        "reports": {
+            "sales_packaging": "The cost of goods includes {amount} OMR of per-order packaging, counted once per order.",
+            "performance_note": "Per-order packaging belongs to the whole order, not to a product: it is in the Sales report's cost of goods, not here.",
+            "recipe_cost_note": "A recipe with lines for some order types only shows its cost per order type. The theoretical cost is the dearest type, and the cost change compares the actual cost with the same mix of order types. Per-order packaging is never part of a recipe."
+        }
+    },
     "meals": {
         "main_title": "Make it a meal?",
         "main_hint": "Mark the slot that holds the main item. Customers who tap that item alone are offered this combo with it already picked. Only a slot where exactly one item is picked (least 1, most 1) can be the main.",

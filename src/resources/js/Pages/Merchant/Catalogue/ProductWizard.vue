@@ -126,6 +126,9 @@ import { recipeLineWarning, type AmountWarning } from '@/lib/amountSafety';
 import { useAmountConfirm } from '@/composables/useAmountConfirm';
 import AmountConfirmDialog from '@/Pages/Merchant/Inventory/components/AmountConfirmDialog.vue';
 import AmountInput from '@/Pages/Merchant/Inventory/components/AmountInput.vue';
+// LAUNCH packaging add-on — "Used for" ticks per stock line.
+import OrderTypeTicks from '@/Pages/Merchant/Catalogue/OrderTypeTicks.vue';
+import { ALL_ORDER_TYPES, costByType, noTicks, ORDER_TYPE_BUCKETS, overlapMessage, overlappingLines, readMask } from '@/lib/orderTypes';
 
 const route = useRoute();
 const router = useRouter();
@@ -216,9 +219,10 @@ const form = reactive<{
     stock_mode: string;
     low_stock_threshold: string;
     shelf_life_days: string;
-    component_rows: { component_uuid: string; quantity: string }[];
+    /** LAUNCH packaging add-on — order_types: the "Used for" ticks (15 = all). */
+    component_rows: { component_uuid: string; quantity: string; order_types: number }[];
     addon_group_uuids: string[];
-    recipe_lines: { ingredient_uuid: string; quantity: string; unit: string }[];
+    recipe_lines: { ingredient_uuid: string; quantity: string; unit: string; order_types: number }[];
     /** LAUNCH-P3 P3-2 — optional note saved with the recipe change. */
     recipe_note: string;
     /** LAUNCH-P4 H6 — every branch, or only the selected ones (no shelf counts, H7). */
@@ -596,6 +600,8 @@ function consumptionToPayload(lines: AddOnConsumptionLine[] | undefined): Consum
             direction: l.direction,
             quantity: entry.quantity,
             unit: entry.unit,
+            // LAUNCH packaging add-on — "Used for" (15 = every order type).
+            order_types: readMask(l.order_types),
             ingredient_label: l.ingredient?.name,
             product_label: l.product?.name,
         };
@@ -666,8 +672,34 @@ async function saveOptionStock(uuid: string): Promise<void> {
 
 // ---- Recipe helpers (ported from the modal) -------------------------
 function addRecipeLine(): void {
-    form.recipe_lines.push({ ingredient_uuid: '', quantity: '', unit: '' });
+    form.recipe_lines.push({ ingredient_uuid: '', quantity: '', unit: '', order_types: ALL_ORDER_TYPES });
 }
+
+// ---- LAUNCH packaging add-on — "Used for" ticks ----------------------
+/**
+ * Ingredient ticks only on made-to-order products: a cooked product uses its
+ * recipe when it is made, before any order exists (tester call 4), so its
+ * lines are for every type. Physical items work for every product.
+ */
+const recipeTicksShown = computed<boolean>(() => form.stock_mode === 'ingredient');
+
+/** The ticks a recipe line is saved with. */
+function recipeLineTypes(line: { order_types: number }): number {
+    return recipeTicksShown.value ? line.order_types : ALL_ORDER_TYPES;
+}
+
+/** Recipe lines repeating an ingredient with overlapping ticks (the server refuses them). */
+const recipeOverlaps = computed<number[]>(() => overlappingLines(form.recipe_lines, (l) => l.ingredient_uuid, recipeLineTypes));
+
+/** Physical-item rows repeating an item with overlapping ticks. */
+const componentOverlaps = computed<number[]>(() => overlappingLines(form.component_rows, (r) => r.component_uuid, (r) => r.order_types));
+
+/** A line with no tick at all cannot be saved. */
+const ticksMissing = computed<boolean>(() => (recipeTicksShown.value && form.recipe_lines.some((l) => l.ingredient_uuid !== '' && noTicks(l.order_types)))
+    || form.component_rows.some((r) => r.component_uuid !== '' && noTicks(r.order_types)));
+
+/** Anything in the ticks that blocks Next / Save. */
+const ticksBlocked = computed<boolean>(() => recipeOverlaps.value.length > 0 || componentOverlaps.value.length > 0 || ticksMissing.value);
 
 function removeRecipeLine(idx: number): void {
     form.recipe_lines.splice(idx, 1);
@@ -796,14 +828,23 @@ const recipeLiveMargin = computed<string | null>(() => {
     return (((basePrice - cost) / basePrice) * 100).toFixed(1);
 });
 
-const recipeHasDuplicates = computed<boolean>(() => {
-    const seen = new Set<string>();
-    for (const line of form.recipe_lines) {
-        if (!line.ingredient_uuid) continue;
-        if (seen.has(line.ingredient_uuid)) return true;
-        seen.add(line.ingredient_uuid);
-    }
-    return false;
+// LAUNCH packaging add-on (tester call 3) — the same ingredient twice is
+// fine when the lines are used for different order types.
+const recipeHasDuplicates = computed<boolean>(() => hasRecipeStep.value && recipeOverlaps.value.length > 0);
+
+/**
+ * LAUNCH packaging add-on — the recipe's cost per order type once a line is
+ * ticked for some types only ("Dine in 0.420 · To go 0.505").
+ */
+const recipeCostByType = computed<string | null>(() => {
+    if (!recipeTicksShown.value) return null;
+    const picked = form.recipe_lines.filter((l) => l.ingredient_uuid !== '' && String(l.quantity).trim() !== '');
+    const costs = costByType(picked, (l) => l.order_types, (l) => {
+        const ingredient = ingredientByUuid(l.ingredient_uuid);
+        return ingredient ? toBaseUnits(parseFloat(l.quantity), ingredient, l.unit) * parseFloat(ingredient.default_unit_cost) : 0;
+    });
+    if (costs === null) return null;
+    return ORDER_TYPE_BUCKETS.map((b) => `${t(`order_types.short.${b}`)} ${costTotalText(costs[b])}`).join(' · ');
 });
 
 // ---- Branch helpers --------------------------------------------------
@@ -814,6 +855,9 @@ function branchName(branchId: number): string {
 
 // ---- Misc helpers ----------------------------------------------------
 function apiMessage(err: unknown, fallback: string): string {
+    // LAUNCH packaging add-on — overlapping ticks: the server's message in the page's language.
+    const overlap = err instanceof ApiError ? overlapMessage(err.payload, locale.value) : null;
+    if (overlap !== null) return overlap;
     if (err instanceof ApiError && err.payload && typeof err.payload === 'object' && 'message' in err.payload) {
         const message = (err.payload as { message?: unknown }).message;
         if (typeof message === 'string' && message !== '') return message;
@@ -953,13 +997,13 @@ function recipePayload(): RecipeLinePayload[] {
     // never a line silently left out (that deleted it on an edit).
     return form.recipe_lines
         .filter((l) => l.ingredient_uuid)
-        .map((l) => ({ ingredient_uuid: l.ingredient_uuid, quantity: String(l.quantity ?? '').trim(), unit: wireUnit(l.unit) }));
+        .map((l) => ({ ingredient_uuid: l.ingredient_uuid, quantity: String(l.quantity ?? '').trim(), unit: wireUnit(l.unit), order_types: recipeLineTypes(l) }));
 }
 
 function componentsPayload(): ComponentLinePayload[] {
     return form.component_rows
         .filter((l) => l.component_uuid && l.quantity !== '')
-        .map((l) => ({ component_uuid: l.component_uuid, quantity: l.quantity }));
+        .map((l) => ({ component_uuid: l.component_uuid, quantity: l.quantity, order_types: l.order_types }));
 }
 
 /**
@@ -1018,7 +1062,7 @@ async function submit(): Promise<void> {
     if (!canSubmit.value) return;
     // LAUNCH-P3 P3-1 — an amount that rounds to 0 is refused before it is
     // sent; fix order 1, L5 — so is a picked ingredient with no amount.
-    if (recipeHasProblems.value) {
+    if (recipeHasProblems.value || ticksBlocked.value) {
         step.value = 2;
         return;
     }
@@ -1176,6 +1220,7 @@ function prefillFromProduct(product: Product): void {
     form.component_rows = (product.component_lines ?? []).map((line) => ({
         component_uuid: line.component_uuid,
         quantity: line.quantity,
+        order_types: readMask(line.order_types),
     }));
     for (const line of product.component_lines ?? []) {
         attachedComponentNames.value[line.component_uuid] = line.component_name ?? line.component_uuid;
@@ -1189,6 +1234,7 @@ function prefillFromProduct(product: Product): void {
     form.recipe_lines = (product.recipe_lines ?? []).map((line) => ({
         ingredient_uuid: line.ingredient?.uuid ?? '',
         ...lineEntry(line, line.ingredient?.unit),
+        order_types: readMask(line.order_types),
     }));
     form.recipe_note = '';
     form.branch_scope = product.branch_scope ?? 'all';
@@ -1879,6 +1925,8 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                             <!-- Fix order C-1, M1 — ticks that did not load are locked and never sent. -->
                             <p v-if="removableLoad === 'failed'" class="mt-1 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700" data-test="removable-load-failed">{{ t('menu_extras.removable.load_failed') }}</p>
                             <p v-if="removableOnlyPrints" class="mt-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800" data-test="removable-only-prints">{{ t('menu_extras.removable.only_prints') }}</p>
+                            <!-- LAUNCH packaging add-on (tester call 4) — no ingredient ticks on cooked products. -->
+                            <p v-if="form.stock_mode === 'cooked'" class="mt-1 text-xs text-slate-500" data-test="order-types-cooked-note">{{ t('order_types.cooked_note') }}</p>
                             <p v-if="fieldError('recipe_lines')" class="mt-2 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700">{{ fieldError('recipe_lines') }}</p>
 
                             <!-- LAUNCH-P3 P3-3 — without "Edit recipes" the recipe is read-only. -->
@@ -1888,6 +1936,7 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                 <ul v-else class="space-y-1">
                                     <!-- Fix order 1, L4 — the amount is isolated left-to-right so it never garbles in Arabic. -->
                                     <li v-for="(line, idx) in form.recipe_lines" :key="idx" class="text-sm text-slate-700"><bdi dir="ltr" class="tabular-nums">{{ recipeLineAmount(line) }}</bdi> {{ ingredientName(line.ingredient_uuid) }}
+                                        <OrderTypeTicks v-if="recipeTicksShown" :model-value="line.order_types" readonly />
                                         <!-- LAUNCH review add-on — a catalogue manager ticks "Can be removed" without "Edit recipes". -->
                                         <RemovableTick v-if="line.ingredient_uuid" :model-value="removableTicks[line.ingredient_uuid]" :ingredient-name="ingredientName(line.ingredient_uuid)" :ingredient-name-ar="ingredientByUuid(line.ingredient_uuid)?.name_ar ?? null" :disabled="removableLocked" @update:model-value="setRemovable(line.ingredient_uuid, $event)" />
                                     </li>
@@ -1941,6 +1990,11 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                         <p v-else-if="recipeLineCost(line) !== null" class="basis-full text-[11px] tabular-nums text-slate-500" data-test="recipe-line-cost">≈ {{ recipeLineCost(line) }} OMR</p>
                                         <!-- LAUNCH review add-on — "Can be removed" (catalogue.manage). -->
                                         <RemovableTick v-if="line.ingredient_uuid" :model-value="removableTicks[line.ingredient_uuid]" :ingredient-name="ingredientName(line.ingredient_uuid)" :ingredient-name-ar="ingredientByUuid(line.ingredient_uuid)?.name_ar ?? null" :disabled="removableLocked" @update:model-value="setRemovable(line.ingredient_uuid, $event)" />
+                                        <!-- LAUNCH packaging add-on — "Used for" (made-to-order only). -->
+                                        <div v-if="recipeTicksShown" class="basis-full">
+                                            <OrderTypeTicks v-model="line.order_types" />
+                                            <p v-if="recipeOverlaps.includes(idx)" class="mt-0.5 text-[11px] font-semibold text-rose-700" data-test="recipe-line-overlap">{{ t('order_types.overlap') }}</p>
+                                        </div>
                                     </li>
                                 </ul>
                                 <button type="button" class="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100" @click="addRecipeLine">
@@ -1948,7 +2002,7 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                     {{ t('catalogue.recipe.add_line') }}
                                 </button>
                                 <p v-if="recipeHasDuplicates" class="mt-2 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700">
-                                    {{ t('catalogue.recipe.duplicate_ingredient') }}
+                                    {{ recipeTicksShown ? t('order_types.overlap') : t('catalogue.recipe.duplicate_ingredient') }}
                                 </p>
                                 <div v-if="form.recipe_lines.length > 0" class="mt-3 grid gap-2 sm:grid-cols-2">
                                     <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
@@ -1956,6 +2010,8 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                         <p class="text-base font-semibold tabular-nums text-amber-900">{{ recipeLiveCostText }} <span class="text-[10px] font-normal text-amber-600">OMR</span></p>
                                         <!-- Step 11, A1 — an item with no cost yet is left out of the total. -->
                                         <p v-if="recipeCostIncomplete" class="text-[10px] font-semibold text-amber-800" data-test="recipe-cost-incomplete">{{ t('purchases_v2.cost_incomplete') }}</p>
+                                        <!-- LAUNCH packaging add-on — the cost per order type once a line is ticked. -->
+                                        <p v-if="recipeCostByType" class="text-[10px] tabular-nums text-amber-800" data-test="recipe-cost-by-type">{{ recipeCostByType }}</p>
                                     </div>
                                     <div v-if="recipeLiveMargin !== null" class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
                                         <p class="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">{{ t('catalogue.recipe.margin') }}</p>
@@ -1991,7 +2047,7 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                     {{ t('catalogue.wizard.physical_none') }}
                                 </div>
                                 <ul v-else class="mt-3 space-y-2">
-                                    <li v-for="(row, idx) in form.component_rows" :key="idx" class="flex items-center gap-2">
+                                    <li v-for="(row, idx) in form.component_rows" :key="idx" class="flex flex-wrap items-center gap-2">
                                         <select v-model="row.component_uuid" class="w-full flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
                                             <option value="" disabled>{{ t('catalogue.wizard.physical_pick') }}</option>
                                             <option v-for="opt in componentOptions" :key="opt.uuid" :value="opt.uuid" :disabled="opt.uuid === editUuid">
@@ -2005,9 +2061,14 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                         <button type="button" class="grid size-8 shrink-0 place-items-center rounded-lg border border-slate-200 text-rose-600 transition hover:bg-rose-50" @click="form.component_rows.splice(idx, 1)">
                                             <Trash2 class="size-3.5" />
                                         </button>
+                                        <!-- LAUNCH packaging add-on — "Used for" (every product: physical items leave at sale). -->
+                                        <div class="basis-full">
+                                            <OrderTypeTicks v-model="row.order_types" :readonly="readOnly" />
+                                            <p v-if="componentOverlaps.includes(idx)" class="mt-0.5 text-[11px] font-semibold text-rose-700" data-test="component-overlap">{{ t('order_types.overlap') }}</p>
+                                        </div>
                                     </li>
                                 </ul>
-                                <button type="button" class="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 transition hover:bg-sky-100" @click="form.component_rows.push({ component_uuid: '', quantity: '1' })">
+                                <button type="button" class="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 transition hover:bg-sky-100" @click="form.component_rows.push({ component_uuid: '', quantity: '1', order_types: ALL_ORDER_TYPES })">
                                     <Plus class="size-3.5" />
                                     {{ t('catalogue.wizard.physical_add') }}
                                 </button>
@@ -2105,7 +2166,7 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                 <p v-if="reviewRecipeLines.length === 0" class="mt-2 text-xs italic text-slate-500">{{ t('catalogue.wizard.review_none') }}</p>
                                 <ul v-else class="mt-3 space-y-1 text-sm">
                                     <li v-for="(line, i) in reviewRecipeLines" :key="i" class="flex justify-between text-slate-700">
-                                        <span>{{ ingredientName(line.ingredient_uuid) }}<span v-if="removableTicks[line.ingredient_uuid]?.ticked" class="ms-1.5 rounded bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700" data-test="review-removable">{{ t('menu_extras.removable.badge') }}</span></span>
+                                        <span>{{ ingredientName(line.ingredient_uuid) }}<span v-if="removableTicks[line.ingredient_uuid]?.ticked" class="ms-1.5 rounded bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700" data-test="review-removable">{{ t('menu_extras.removable.badge') }}</span> <OrderTypeTicks v-if="recipeTicksShown" :model-value="line.order_types" readonly /></span>
                                         <bdi dir="ltr" class="tabular-nums">{{ recipeLineAmount(line) }}</bdi>
                                     </li>
                                 </ul>
@@ -2127,7 +2188,7 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                             <p v-if="reviewComponents.length === 0" class="mt-2 text-xs italic text-slate-500">{{ t('catalogue.wizard.review_none') }}</p>
                             <ul v-else class="mt-3 space-y-1 text-sm">
                                 <li v-for="(row, i) in reviewComponents" :key="i" class="flex justify-between text-slate-700">
-                                    <span>{{ componentName(row.component_uuid) }}</span>
+                                    <span>{{ componentName(row.component_uuid) }} <OrderTypeTicks :model-value="row.order_types" readonly /></span>
                                     <span class="tabular-nums">× {{ row.quantity }}</span>
                                 </li>
                             </ul>
@@ -2165,7 +2226,7 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                         <button
                             v-if="step < 3"
                             type="button"
-                            :disabled="step === 2 && recipeHasDuplicates"
+                            :disabled="step === 2 && (recipeHasDuplicates || ticksBlocked)"
                             class="rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                             @click="goNext"
                         >
@@ -2174,7 +2235,7 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                         <button
                             v-else-if="canSubmit"
                             type="button"
-                            :disabled="submitting || recipeHasDuplicates"
+                            :disabled="submitting || recipeHasDuplicates || ticksBlocked"
                             class="rounded-lg bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
                             @click="submit"
                         >

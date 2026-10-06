@@ -11,6 +11,11 @@
  * (the server refuses it too) before it is sent.
  */
 
+// LAUNCH packaging add-on — the "Used for" mask (twin of lib/orderTypes.ts,
+// kept inline: this file loads on its own in the older node tests).
+const ALL_ORDER_TYPES = 15;
+const noTicks = (mask: number): boolean => (mask & ALL_ORDER_TYPES) === 0;
+
 export const PIECE_UNIT = '@piece';
 
 /** The base unit keeps 4 decimals. */
@@ -309,6 +314,29 @@ export interface ConsumptionLineDraft {
     direction: 'add' | 'remove';
     quantity: string | number;
     unit?: string | null;
+    /** LAUNCH packaging add-on — "Used for" ticks (15 = every order type). */
+    order_types?: number;
+}
+
+/** LAUNCH packaging add-on — one item in one direction (lines of it may not overlap in their ticks). */
+function consumptionKey(line: ConsumptionLineDraft): string {
+    const ref = line.type === 'ingredient' ? (line.ingredient_uuid ?? '') : (line.product_uuid ?? '');
+    return ref === '' ? '' : `${line.type}:${ref}:${line.direction}`;
+}
+
+/** LAUNCH packaging add-on — the indexes of lines repeating an item and direction with overlapping ticks. */
+export function consumptionOverlaps(lines: ConsumptionLineDraft[]): number[] {
+    const used = new Map<string, number>();
+    const out: number[] = [];
+    lines.forEach((line, index) => {
+        const key = consumptionKey(line);
+        if (key === '') return;
+        const mask = line.order_types ?? ALL_ORDER_TYPES;
+        const before = used.get(key) ?? 0;
+        if ((before & mask) !== 0) out.push(index);
+        used.set(key, before | mask);
+    });
+    return out;
 }
 
 /**
@@ -321,6 +349,10 @@ export function consumptionLineProblem(
     find: (uuid: string) => RecipeUnitSource | null | undefined,
     locale?: string | null,
 ): { key: string; params: Record<string, string> } | null {
+    // LAUNCH packaging add-on — a picked line used for no order type.
+    if (consumptionKey(line) !== '' && line.order_types !== undefined && noTicks(line.order_types)) {
+        return { key: 'order_types.pick_one', params: {} };
+    }
     if (line.type === 'ingredient') {
         const uuid = line.ingredient_uuid ?? '';
         return recipeLineProblem(uuid === '' ? null : (find(uuid) ?? null), line.unit ?? '', line.quantity, uuid !== '', locale);
@@ -339,7 +371,7 @@ export function consumptionLinesHaveProblems(
     lines: ConsumptionLineDraft[],
     find: (uuid: string) => RecipeUnitSource | null | undefined,
 ): boolean {
-    return lines.some((l) => consumptionLineProblem(l, find) !== null);
+    return lines.some((l) => consumptionLineProblem(l, find) !== null) || consumptionOverlaps(lines).length > 0;
 }
 
 /**
@@ -358,6 +390,8 @@ export function completeConsumptionLines<T extends ConsumptionLineDraft>(lines: 
             direction: l.direction,
             quantity: String(l.quantity ?? '').trim(),
             unit: l.type === 'ingredient' ? (l.unit || null) : null,
+            // LAUNCH packaging add-on — "Used for" (every type when the editor never set it).
+            order_types: l.order_types ?? ALL_ORDER_TYPES,
         }));
 }
 

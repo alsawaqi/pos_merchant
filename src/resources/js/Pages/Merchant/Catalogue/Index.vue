@@ -55,6 +55,7 @@ import {
 import AddonConsumptionEditor from '@/Pages/Merchant/Catalogue/AddonConsumptionEditor.vue';
 import { listIngredients, type Ingredient } from '@/lib/api/inventory';
 import { completeConsumptionLines, consumptionLinesHaveProblems, lineEntry } from '@/lib/recipeUnits';
+import { overlapMessage, readMask } from '@/lib/orderTypes';
 import { listBranches, type Branch as BranchLite } from '@/lib/api/branches';
 import {
     createDeliveryProvider,
@@ -629,6 +630,8 @@ function consumptionToPayload(lines: AddOnConsumptionLine[] | undefined): Consum
             direction: l.direction,
             quantity: entry.quantity,
             unit: entry.unit,
+            // LAUNCH packaging add-on — "Used for" (15 = every order type).
+            order_types: readMask(l.order_types),
             ingredient_label: l.ingredient?.name,
             product_label: l.product?.name,
         };
@@ -757,7 +760,9 @@ async function submitAddOn(): Promise<void> {
             aoModalErrors.value = err.payload.errors;
             aoModalError.value = t('catalogue.validation_summary');
         } else {
-            aoModalError.value = err instanceof Error ? err.message : 'Failed';
+            // LAUNCH packaging add-on — overlapping ticks: the server's message in the page's language.
+            aoModalError.value = (err instanceof ApiError ? overlapMessage(err.payload, locale.value) : null)
+                ?? (err instanceof Error ? err.message : 'Failed');
         }
     } finally {
         aoModalBusy.value = false;

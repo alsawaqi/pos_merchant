@@ -102,6 +102,8 @@ export interface Product {
         component_uuid: string;
         component_name: string | null;
         quantity: string;
+        /** LAUNCH packaging add-on — "Used for" ticks (1 dine in, 2 quick, 4 to go, 8 delivery; 15 = all). */
+        order_types?: number;
     }[];
     cost_price: string | null;
     /** Percentage (5.00 = 5%). null = inherit company default. */
@@ -168,6 +170,8 @@ export interface ProductRecipeLine {
      */
     entered_unit?: string | null;
     entered_quantity?: string | null;
+    /** LAUNCH packaging add-on — "Used for" ticks (15 = every order type). */
+    order_types?: number;
     ingredient?: {
         id: number;
         uuid: string;
@@ -194,6 +198,9 @@ export interface RecipeLineChange {
     after: string | null;
     before_base: string | null;
     after_base: string | null;
+    /** LAUNCH packaging add-on — the "Used for" ticks, only when a side is not every order type. */
+    before_order_types?: number | null;
+    after_order_types?: number | null;
 }
 
 export interface RecipeHistoryVersion {
@@ -232,6 +239,8 @@ export interface RecipeLinePayload {
      * = the ingredient's base unit. Server converts to base.
      */
     unit?: string | null;
+    /** LAUNCH packaging add-on — "Used for" ticks; omitted = keep the stored ticks. */
+    order_types?: number;
 }
 
 export interface UpdateProductRecipePayload {
@@ -245,6 +254,8 @@ export interface ComponentLinePayload {
     component_uuid: string;
     /** Per ONE unit sold (coffee = 1 x cup + 1 x lid). */
     quantity: string | number;
+    /** LAUNCH packaging add-on — "Used for" ticks; omitted = keep the stored ticks. */
+    order_types?: number;
 }
 
 export interface ComponentOption {
@@ -270,6 +281,8 @@ export interface AddOnConsumptionLine {
     /** LAUNCH-P3 P3-1 — ingredient lines: how they were typed (null = base). */
     entered_unit?: string | null;
     entered_quantity?: string | null;
+    /** LAUNCH packaging add-on — "Used for" ticks (15 = every order type). */
+    order_types?: number;
     ingredient: { uuid: string; name: string; unit: string | null; is_prep?: boolean } | null;
     product: { uuid: string; name: string; stock_mode: string | null; is_internal: boolean } | null;
 }
@@ -284,6 +297,8 @@ export interface ConsumptionLinePayload {
     direction: ConsumptionDirection;
     quantity: string | number;
     unit?: string | null;
+    /** LAUNCH packaging add-on — "Used for" ticks; omitted = keep the stored ticks. */
+    order_types?: number;
     ingredient_label?: string;
     product_label?: string;
 }

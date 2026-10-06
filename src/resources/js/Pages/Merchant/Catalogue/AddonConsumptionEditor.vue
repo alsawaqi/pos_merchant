@@ -12,7 +12,10 @@ import { useI18n } from 'vue-i18n';
 import { Plus, Trash2 } from 'lucide-vue-next';
 import type { ComponentOption, ConsumptionLinePayload } from '@/lib/api/catalogue';
 import type { Ingredient } from '@/lib/api/inventory';
-import { consumptionLineProblem, lineAmountText, recipeUnitFactor, recipeUnitOptions } from '@/lib/recipeUnits';
+import { consumptionLineProblem, consumptionOverlaps, lineAmountText, recipeUnitFactor, recipeUnitOptions } from '@/lib/recipeUnits';
+// LAUNCH packaging add-on — "Used for" ticks per stock line.
+import { ALL_ORDER_TYPES } from '@/lib/orderTypes';
+import OrderTypeTicks from '@/Pages/Merchant/Catalogue/OrderTypeTicks.vue';
 // LAUNCH review add-on (step 11) — E1 the live translation, E2 "Is this right?".
 import { recipeLineWarning, translateAmount } from '@/lib/amountSafety';
 
@@ -44,14 +47,14 @@ function patch(idx: number, partial: Partial<ConsumptionLinePayload>): void {
 function onTypeChange(idx: number, type: 'ingredient' | 'product'): void {
     const current = props.modelValue[idx];
     if (!current) return;
-    // Switching kind drops the old ref + unit, keeps direction + qty.
-    replaceAt(idx, { type, direction: current.direction, quantity: current.quantity, ingredient_uuid: '', product_uuid: '', unit: '' });
+    // Switching kind drops the old ref + unit, keeps direction + qty (+ the ticks).
+    replaceAt(idx, { type, direction: current.direction, quantity: current.quantity, ingredient_uuid: '', product_uuid: '', unit: '', order_types: current.order_types ?? ALL_ORDER_TYPES });
 }
 
 function addLine(): void {
     emit('update:modelValue', [
         ...props.modelValue,
-        { type: 'ingredient', direction: 'add', ingredient_uuid: '', product_uuid: '', quantity: '', unit: '' },
+        { type: 'ingredient', direction: 'add', ingredient_uuid: '', product_uuid: '', quantity: '', unit: '', order_types: ALL_ORDER_TYPES },
     ]);
 }
 
@@ -133,6 +136,9 @@ function lineWarning(line: ConsumptionLinePayload): string | null {
     return warning === null ? null : t(warning.key, warning.params);
 }
 
+/** LAUNCH packaging add-on — lines repeating an item and direction with overlapping ticks. */
+const overlaps = computed<number[]>(() => consumptionOverlaps(props.modelValue));
+
 /** Read-only rendering of one line: "Uses", the amount ("9 g", fix order 1 L4: shown left-to-right) and the name. */
 function readonlyParts(line: ConsumptionLinePayload): { direction: string; amount: string; name: string } {
     const direction = line.direction === 'remove' ? t('catalogue.consumption.removes') : t('catalogue.consumption.uses');
@@ -156,7 +162,7 @@ function productLabel(option: ComponentOption): string {
     <!-- LAUNCH-P3 P3-3 — read-only without "Edit recipes". -->
     <div v-if="readonly" class="space-y-1" data-test="consumption-readonly">
         <p v-if="modelValue.length === 0" class="text-xs italic text-slate-500">{{ t('catalogue.consumption.none') }}</p>
-        <p v-for="(line, idx) in modelValue" :key="idx" class="text-xs text-slate-700">{{ readonlyParts(line).direction }} <bdi dir="ltr" class="tabular-nums">{{ readonlyParts(line).amount }}</bdi> {{ readonlyParts(line).name }}</p>
+        <p v-for="(line, idx) in modelValue" :key="idx" class="text-xs text-slate-700">{{ readonlyParts(line).direction }} <bdi dir="ltr" class="tabular-nums">{{ readonlyParts(line).amount }}</bdi> {{ readonlyParts(line).name }} <OrderTypeTicks :model-value="line.order_types ?? ALL_ORDER_TYPES" readonly /></p>
         <p class="text-[11px] text-amber-700">{{ t('recipe_permission.readonly_hint') }}</p>
     </div>
     <div v-else class="space-y-2">
@@ -257,6 +263,11 @@ function productLabel(option: ComponentOption): string {
             >
                 <Trash2 class="size-3.5" />
             </button>
+            <!-- LAUNCH packaging add-on — "Used for": at sale only the lines ticked for the order's type are taken. -->
+            <div class="col-span-full">
+                <OrderTypeTicks :model-value="line.order_types ?? ALL_ORDER_TYPES" :disabled="disabled" @update:model-value="patch(idx, { order_types: $event })" />
+                <p v-if="overlaps.includes(idx)" class="mt-0.5 text-[11px] font-semibold text-rose-700" data-test="consumption-overlap">{{ t('order_types.overlap') }}</p>
+            </div>
             <p v-if="lineProblem(line)" class="col-span-full text-[11px] font-semibold text-rose-700" data-test="consumption-line-problem">{{ lineProblem(line) }}</p>
             <!-- Step 11 — E1 the translation, E2 the warning (never blocks). -->
             <p v-if="lineTranslation(line)" class="col-span-full text-[11px] font-medium text-teal-700" data-test="consumption-translation"><bdi dir="ltr">{{ lineTranslation(line) }}</bdi></p>
