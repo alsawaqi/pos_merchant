@@ -75,8 +75,10 @@ it('refuses overlapping ticks on the same ingredient and a line with no tick', f
     $overlap = $this->putJson("/api/products/{$latte->uuid}/recipe", ['lines' => [
         ['ingredient_uuid' => $napkin->uuid, 'quantity' => '1', 'order_types' => 3],
         ['ingredient_uuid' => $napkin->uuid, 'quantity' => '3', 'order_types' => 6],
-    ]])->assertStatus(422);
-    expect($overlap->json('message'))->toContain('Napkin')->toContain('Quick order');
+    ]])->assertStatus(422)->assertJsonPath('code', 'order_types_overlap');
+    // A clean message in English and Arabic (the DB's per-bit partial uniques are the backstop).
+    expect($overlap->json('message'))->toContain('Napkin')->toContain('Quick order')
+        ->and($overlap->json('message_ar'))->toContain('Napkin')->toContain('طلب سريع');
 
     $this->putJson("/api/products/{$latte->uuid}/recipe", ['lines' => [
         ['ingredient_uuid' => $milk->uuid, 'quantity' => '200', 'order_types' => 0],
@@ -129,6 +131,17 @@ it('makes a tick change a real change: a version, the "Edit recipes" gate and a 
     $version = json_decode((string) DB::table('pos_product_recipe_versions')->where('product_id', $latte->id)->value('recipe_json'), true);
     // The snapshot of an untagged line stays as before (no order_types key).
     expect($version[0])->not->toHaveKey('order_types');
+
+    // The next edit's version row (the recipe in force before it) carries each
+    // line's ticks, as pos_api's RecipeInForce reads them for an offline sale.
+    $this->travel(1)->minutes();
+    $this->putJson("/api/products/{$latte->uuid}/recipe", ['lines' => [
+        ['ingredient_uuid' => $milk->uuid, 'quantity' => '250', 'order_types' => 6],
+    ]])->assertOk();
+    $second = json_decode((string) DB::table('pos_product_recipe_versions')->where('product_id', $latte->id)->orderByDesc('id')->value('recipe_json'), true);
+    expect($second)->toHaveCount(1)
+        ->and($second[0])->toMatchArray(['ingredient_id' => $milk->id, 'order_types' => 6])
+        ->and((float) $second[0]['quantity'])->toBe(200.0);
 
     // A catalogue manager without "Edit recipes" cannot change the ticks.
     $other = pkActorWith([MerchantPermission::CatalogueView->value, MerchantPermission::CatalogueManage->value]);

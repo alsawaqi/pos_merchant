@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Catalogue;
 
+use App\Exceptions\OrderTypesOverlapException;
 use RuntimeException;
 
 /**
@@ -101,13 +102,30 @@ final class OrderTypes
         return implode(', ', $out);
     }
 
+    /** The same in Arabic ("داخل المحل، سفري"). */
+    public static function labelAr(int $mask): string
+    {
+        if ($mask === self::ALL) {
+            return 'الكل';
+        }
+        $names = ['dine_in' => 'داخل المحل', 'quick' => 'طلب سريع', 'to_go' => 'سفري', 'delivery' => 'توصيل'];
+        $out = [];
+        foreach (self::BUCKETS as $bucket => $bit) {
+            if (($mask & $bit) !== 0) {
+                $out[] = $names[$bucket];
+            }
+        }
+
+        return implode('، ', $out);
+    }
+
     /**
      * The no-overlap rule (tester call 3): lines sharing a key (the item, and
      * for add-on lines the direction) must have disjoint ticks.
      *
      * @param  list<array{key: string, mask: int, name: string}>  $lines
      *
-     * @throws RuntimeException naming the item
+     * @throws OrderTypesOverlapException naming the item (a 422 in English and Arabic)
      */
     public static function assertNoOverlap(array $lines): void
     {
@@ -115,11 +133,11 @@ final class OrderTypes
         foreach ($lines as $line) {
             $used = $seen[$line['key']] ?? 0;
             if (($used & $line['mask']) !== 0) {
-                throw new RuntimeException(sprintf(
-                    'Duplicate line: "%s" is on more than one line for the same order type (%s). Lines of the same item must be used for different order types — or put the whole amount on one line.',
+                throw new OrderTypesOverlapException(
                     $line['name'],
                     self::label($used & $line['mask']),
-                ));
+                    self::labelAr($used & $line['mask']),
+                );
             }
             $seen[$line['key']] = $used | $line['mask'];
         }
