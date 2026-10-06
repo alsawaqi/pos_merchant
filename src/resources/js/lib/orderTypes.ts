@@ -71,13 +71,14 @@ export function overlappingLines<T>(lines: T[], keyOf: (line: T) => string, mask
 }
 
 /**
- * The server's 422 for overlapping ticks (code "order_types_overlap") in the
- * page's language; null for any other error payload.
+ * The server's 422 for overlapping ticks (code "order_types_overlap") or for
+ * a cooked product with an ingredient on several lines ("cooked_split_lines")
+ * in the page's language; null for any other error payload.
  */
 export function overlapMessage(payload: unknown, locale: string): string | null {
     if (!payload || typeof payload !== 'object') return null;
     const p = payload as { code?: unknown; message?: unknown; message_ar?: unknown };
-    if (p.code !== 'order_types_overlap') return null;
+    if (p.code !== 'order_types_overlap' && p.code !== 'cooked_split_lines') return null;
     if (locale === 'ar' && typeof p.message_ar === 'string' && p.message_ar !== '') return p.message_ar;
     return typeof p.message === 'string' ? p.message : null;
 }

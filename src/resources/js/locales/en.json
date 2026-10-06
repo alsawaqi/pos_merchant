@@ -4203,7 +4203,8 @@
         },
         "pick_one": "Tick at least one order type.",
         "overlap": "This item is already on another line for one of these order types. Untick the type there or here.",
-        "cooked_note": "Cooked products use their recipe when they are made, before any order: their recipe lines are used for every order type. Physical items can still be ticked."
+        "cooked_note": "Cooked products use their recipe when they are made, before any order: their recipe lines are used for every order type. Physical items can still be ticked.",
+        "cooked_split": "Cooked products are made before orders exist, so each ingredient can have only one line. Merge the lines first."
     },
     "order_packaging": {
         "tab": "Order packaging",

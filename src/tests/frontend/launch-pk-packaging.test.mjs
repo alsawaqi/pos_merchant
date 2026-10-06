@@ -57,6 +57,9 @@ test('order types: the server overlap 422 reads in the page language', () => {
     assert.equal(overlapMessage(payload, 'ar'), 'سطر مكرر: "Napkin"');
     assert.equal(overlapMessage(payload, 'en'), 'Duplicate line: "Napkin"');
     assert.equal(overlapMessage({ message: 'Other' }, 'ar'), null);
+    // Server review M1 — a cooked product with an ingredient on several lines.
+    assert.equal(overlapMessage({ code: 'cooked_split_lines', message: 'Cooked…', message_ar: 'المطبوخة…' }, 'ar'), 'المطبوخة…');
+    assert.match(sfc('resources/js/Pages/Merchant/Catalogue/ProductWizard.vue').template, /recipeTicksShown \? t\('order_types\.overlap'\) : t\('order_types\.cooked_split'\)/);
     assert.equal(overlapMessage(null, 'en'), null);
 });
 

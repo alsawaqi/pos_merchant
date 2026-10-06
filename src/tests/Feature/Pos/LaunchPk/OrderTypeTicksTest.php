@@ -168,6 +168,39 @@ it('keeps a cooked product\'s recipe lines for every order type', function (): v
     expect(pkRecipeMasks($patty))->toBe([$beef->id => [15]]);
 });
 
+it('refuses switching to cooked while an ingredient is on several lines, and such lines on a cooked product (server review M1)', function (): void {
+    $ctx = makeMerchantActor();
+    $burger = pkProduct($ctx['company'], 'Burger');
+    $beef = pkIngredient($ctx['company'], 'Beef', 'g');
+    $napkin = pkIngredient($ctx['company'], 'Napkin', 'piece');
+    pkRecipeLine($burger, $beef, '150', null, 0);
+    pkRecipeLine($burger, $napkin, '1', 1, 1);
+    pkRecipeLine($burger, $napkin, '3', 12, 2);
+
+    $refused = $this->patchJson("/api/products/{$burger->uuid}", ['stock_mode' => 'cooked'])
+        ->assertStatus(422)
+        ->assertJsonPath('code', 'cooked_split_lines')
+        ->assertJsonPath('ingredients', ['Napkin']);
+    expect($refused->json('message'))->toStartWith('Cooked products are made before orders exist, so each ingredient can have only one line. Merge the lines first.')
+        ->and($refused->json('message_ar'))->toStartWith('المنتجات المطبوخة تُحضَّر قبل وجود الطلبات')
+        ->and(DB::table('pos_products')->where('id', $burger->id)->value('stock_mode'))->toBe('ingredient');
+
+    // Merged: the switch goes through.
+    $this->putJson("/api/products/{$burger->uuid}/recipe", ['lines' => [
+        ['ingredient_uuid' => $beef->uuid, 'quantity' => '150'],
+        ['ingredient_uuid' => $napkin->uuid, 'quantity' => '2'],
+    ]])->assertOk();
+    $this->patchJson("/api/products/{$burger->uuid}", ['stock_mode' => 'cooked'])->assertOk();
+
+    // On a cooked product, two lines of one ingredient are refused whatever the ticks.
+    $this->putJson("/api/products/{$burger->uuid}/recipe", ['lines' => [
+        ['ingredient_uuid' => $beef->uuid, 'quantity' => '150'],
+        ['ingredient_uuid' => $napkin->uuid, 'quantity' => '1'],
+        ['ingredient_uuid' => $napkin->uuid, 'quantity' => '3'],
+    ]])->assertStatus(422)->assertJsonPath('code', 'cooked_split_lines')->assertJsonPath('ingredients', ['Napkin']);
+    expect(pkRecipeMasks($burger))->toBe([$beef->id => [15], $napkin->id => [15]]);
+});
+
 it('ticks physical-item rows: same item on non-overlapping rows, overlap refused, catalogue.manage, audited, touched', function (): void {
     $ctx = makeMerchantActor();
     $latte = pkProduct($ctx['company'], 'Latte');

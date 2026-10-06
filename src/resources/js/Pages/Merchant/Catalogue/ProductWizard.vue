@@ -2002,7 +2002,7 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                     {{ t('catalogue.recipe.add_line') }}
                                 </button>
                                 <p v-if="recipeHasDuplicates" class="mt-2 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700">
-                                    {{ recipeTicksShown ? t('order_types.overlap') : t('catalogue.recipe.duplicate_ingredient') }}
+                                    {{ recipeTicksShown ? t('order_types.overlap') : t('order_types.cooked_split') }}
                                 </p>
                                 <div v-if="form.recipe_lines.length > 0" class="mt-3 grid gap-2 sm:grid-cols-2">
                                     <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">

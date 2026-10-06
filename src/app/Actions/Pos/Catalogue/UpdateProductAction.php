@@ -131,6 +131,22 @@ final readonly class UpdateProductAction
             RecipeEditGate::ensure($actor);
         }
 
+        // LAUNCH packaging add-on (server review M1) — a cooked product is made
+        // before any order exists: its recipe has one line per ingredient. A
+        // recipe with an ingredient on several lines (for different order
+        // types) must be merged before the switch.
+        if ($hasRecipe && $newMode === 'cooked') {
+            $split = $product->recipeLines()->with('ingredient')->get()
+                ->groupBy('ingredient_id')
+                ->filter(static fn ($lines): bool => $lines->count() > 1)
+                ->map(static fn ($lines): string => (string) ($lines->first()->ingredient?->name ?? ''))
+                ->values()
+                ->all();
+            if ($split !== []) {
+                throw new \App\Exceptions\CookedRecipeSplitLinesException($split);
+            }
+        }
+
         return DB::transaction(function () use ($product, $attributes, $actor, $companyId, $oldMode, $newMode, $hasRecipe): Product {
             // LAUNCH review fix order B-1 (L5) — a changed SKU / barcode is
             // claimed under the per-company locks and checked again here.

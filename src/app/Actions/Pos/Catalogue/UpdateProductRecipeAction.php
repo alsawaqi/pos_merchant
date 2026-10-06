@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Pos\Catalogue;
 
 use App\Actions\Security\WriteAuditLogAction;
+use App\Exceptions\CookedRecipeSplitLinesException;
 use App\Data\Security\AuditLogData;
 use App\Models\Ingredient;
 use App\Models\Product;
@@ -132,6 +133,21 @@ final readonly class UpdateProductRecipeAction
                 $stored[(string) $line->ingredient_id][] = OrderTypes::read($line->order_types);
             }
             $cooked = $product->stock_mode === 'cooked';
+            // Server review M1 — on a cooked product each ingredient has one line.
+            if ($cooked) {
+                $names = [];
+                $seen = [];
+                foreach ($resolved as $line) {
+                    $id = (int) $line['ingredient']->id;
+                    if (isset($seen[$id]) && ! in_array((string) $line['ingredient']->name, $names, true)) {
+                        $names[] = (string) $line['ingredient']->name;
+                    }
+                    $seen[$id] = true;
+                }
+                if ($names !== []) {
+                    throw new CookedRecipeSplitLinesException($names);
+                }
+            }
             foreach ($resolved as $i => $line) {
                 $sent = $line['sent_order_types'];
                 if ($cooked && $sent !== null && (int) $sent !== OrderTypes::ALL) {
