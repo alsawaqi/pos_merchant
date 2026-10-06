@@ -125,7 +125,9 @@ final readonly class SalesReportAction
         // pipeline (pos_api, Phase 8) froze onto each line — immune to later
         // recipe/price edits. gross_profit = net_sales − COGS. (net_profit
         // additionally subtracts expenses; that feed is a separate stub.)
-        $cogs = $this->cogs($paidQuery);
+        // LAUNCH packaging add-on — including the per-order packaging, once
+        // per order (cogs_packaging says how much of it that is).
+        ['total' => $cogs, 'packaging' => $cogsPackaging] = $this->cogs($paidQuery);
         $grossProfit = $netSales - $cogs;
 
         // PD5 — CASH model. Every non-rejected expense counts the day it was
@@ -193,6 +195,8 @@ final readonly class SalesReportAction
                 // ingredient margin); net_profit uses the cash expenses, not
                 // these, so recipe users still see a margin without double-count.
                 'cogs' => self::fmt($cogs),
+                // LAUNCH packaging add-on — of which per-order packaging.
+                'cogs_packaging' => self::fmt($cogsPackaging),
                 'gross_profit' => self::fmt($grossProfit),
                 'operating_expenses' => self::fmt($operatingExpenses),
                 // PT — total tax PAID on purchases in the window (always shown),
@@ -564,12 +568,18 @@ final readonly class SalesReportAction
      * ({@see OrderLineCost}). Read raw via the query builder + summed in PHP
      * (the snapshots are JSON, not SQL-summable).
      *
+     * LAUNCH packaging add-on — each line with only the lines ticked for the
+     * order's type (the type stamped when its stock was taken), PLUS the
+     * per-order packaging the order took, ONCE per order, from the copy frozen
+     * on the order ({@see OrderLineCost::packaging()}).
+     *
      * @param  Builder  $paidQuery
+     * @return array{total: float, packaging: float}
      */
-    private function cogs($paidQuery): float
+    private function cogs($paidQuery): array
     {
         $itemRows = DB::table('pos_order_items')
-            ->joinSub((clone $paidQuery)->select('id', 'branch_id', 'opened_at', 'closed_at'), 'scoped_orders', 'scoped_orders.id', '=', 'pos_order_items.order_id')
+            ->joinSub((clone $paidQuery)->select('id', 'branch_id', 'opened_at', 'closed_at', 'order_type', 'stock_order_type'), 'scoped_orders', 'scoped_orders.id', '=', 'pos_order_items.order_id')
             ->select(
                 'pos_order_items.id',
                 'pos_order_items.product_id',
@@ -577,16 +587,26 @@ final readonly class SalesReportAction
                 'pos_order_items.recipe_snapshot_json',
                 'pos_order_items.component_snapshot_json',
                 'scoped_orders.branch_id',
+                'scoped_orders.order_type',
+                'scoped_orders.stock_order_type',
             )
             ->selectRaw('COALESCE(scoped_orders.closed_at, scoped_orders.opened_at) AS sold_at')
             ->get();
 
+        $costs = new OrderLineCost($this->tenant->requiredId());
         $baisas = 0;
-        foreach ((new OrderLineCost($this->tenant->requiredId()))->costs($itemRows) as $cost) {
+        foreach ($costs->costs($itemRows) as $cost) {
             $baisas += $cost['total'];
         }
 
-        return $baisas / 1000;
+        $orders = (clone $paidQuery)
+            ->whereNotNull('packaging_snapshot_json')
+            ->select('id', 'branch_id', 'packaging_snapshot_json')
+            ->selectRaw('COALESCE(closed_at, opened_at) AS sold_at')
+            ->get();
+        $packaging = array_sum($costs->packaging($orders));
+
+        return ['total' => ($baisas + $packaging) / 1000, 'packaging' => $packaging / 1000];
     }
 
     /**

@@ -6,8 +6,10 @@ namespace App\Models;
 
 use App\Enums\ProductStatus;
 use App\Models\Concerns\BelongsToCompany;
+use App\Support\Catalogue\OrderTypes;
 use App\Support\Recipes\PrepGraph;
 use App\Support\StockDecimal;
+use Brick\Math\BigDecimal;
 use Brick\Math\BigRational;
 use Brick\Math\RoundingMode;
 use Database\Factories\ProductFactory;
@@ -414,7 +416,7 @@ class Product extends Model
      * Returns a string with 3 decimals to keep precision
      * parity with base_price / cost_price.
      */
-    public function theoreticalCost(bool $perUnitPrecision = false): string
+    public function theoreticalCost(bool $perUnitPrecision = false, ?int $orderTypeBit = null): string
     {
         $lines = $this->relationLoaded('recipeLines')
             ? $this->recipeLines
@@ -423,11 +425,17 @@ class Product extends Model
         // LAUNCH-P3 P3-4 — a line using a PREP ITEM costs what the prep
         // recipe costs (PrepGraph: Σ component × cost ÷ yield, recursively);
         // exact arithmetic, rounded once at the end.
+        // LAUNCH packaging add-on — with an order type bit, only the lines
+        // ticked "Used for" that type (null = every line).
         $total = BigRational::zero();
         $prepLines = [];
         foreach ($lines as $line) {
+            if (! OrderTypes::includes($line->order_types ?? null, $orderTypeBit)) {
+                continue;
+            }
             if ($line->ingredient?->is_prep) {
-                $prepLines[(int) $line->ingredient_id] = (string) $line->quantity;
+                // Lines of one prep item with different ticks add up.
+                $prepLines[(int) $line->ingredient_id] = (string) BigDecimal::of($prepLines[(int) $line->ingredient_id] ?? '0')->plus((string) $line->quantity);
 
                 continue;
             }

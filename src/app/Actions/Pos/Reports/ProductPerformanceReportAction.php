@@ -215,6 +215,10 @@ final readonly class ProductPerformanceReportAction
      * bought-in pieces, attributed to the line's product (its revenue —
      * line_total — includes the add-ons too).
      *
+     * LAUNCH packaging add-on — each line with only the lines ticked for its
+     * order's type. The per-order packaging is NOT attributed to any product
+     * (it belongs to the whole order): it is in the Sales report's COGS only.
+     *
      * @param  Builder  $itemsBase
      * @return array<int, int> product_id => cogs_baisas
      */
@@ -232,6 +236,9 @@ final readonly class ProductPerformanceReportAction
                 'pos_order_items.recipe_snapshot_json',
                 'pos_order_items.component_snapshot_json',
                 'pos_orders.branch_id',
+                // LAUNCH packaging add-on — the "Used for" filter.
+                'pos_orders.order_type',
+                'pos_orders.stock_order_type',
             )
             ->selectRaw('COALESCE(combo_parent.product_id, pos_order_items.product_id) AS cost_product_id')
             ->selectRaw('COALESCE(pos_orders.closed_at, pos_orders.opened_at) AS sold_at')

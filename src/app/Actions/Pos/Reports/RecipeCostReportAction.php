@@ -9,6 +9,7 @@ use App\Actions\Pos\Reports\Support\RevenueSql;
 use App\Data\Reports\ReportFilter;
 use App\Enums\OrderStatus;
 use App\Models\Product;
+use App\Support\Catalogue\OrderTypes;
 use App\Support\MerchantTenantContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
@@ -40,6 +41,19 @@ use Illuminate\Support\Facades\DB;
  * Options, packaging and add-ons are deliberately left out of the actual
  * column so it compares like-for-like with the recipe; the Sales and Product
  * performance reports carry the complete line cost.
+ *
+ * LAUNCH packaging add-on — once a recipe line is ticked for some order
+ * types only, the recipe costs differently per type:
+ *
+ *   theoretical_by_type   {dine_in, quick, to_go, delivery} => cost, or NULL
+ *                         when every line is for every type;
+ *   theoretical_cost      then the dearest type (a conservative margin);
+ *   cost_change_per_unit  actual − the theoretical cost weighted by the
+ *                         units sold per type (each sold line was costed with
+ *                         its own type's lines), so a dine-in-heavy product
+ *                         does not show a phantom saving.
+ *
+ * The per-order packaging is never part of a recipe (Sales report only).
  */
 final readonly class RecipeCostReportAction
 {
@@ -64,7 +78,16 @@ final readonly class RecipeCostReportAction
         $sold = $this->sold($companyId, $filter, $branchScope, $products->modelKeys());
 
         $rows = $products->map(static function (Product $p) use ($sold): array {
-            $theoretical = BigDecimal::of($p->theoreticalCost());
+            $byType = null;
+            if ($p->recipeLines->contains(static fn ($line): bool => OrderTypes::read($line->order_types) !== OrderTypes::ALL)) {
+                $byType = [];
+                foreach (OrderTypes::BUCKETS as $bucket => $bit) {
+                    $byType[$bucket] = $p->theoreticalCost(orderTypeBit: $bit);
+                }
+            }
+            $theoretical = $byType === null
+                ? BigDecimal::of($p->theoreticalCost())
+                : array_reduce($byType, static fn (BigDecimal $max, string $cost): BigDecimal => BigDecimal::of($cost)->isGreaterThan($max) ? BigDecimal::of($cost) : $max, BigDecimal::zero());
             $price = BigDecimal::of((string) $p->base_price);
             $profit = $price->minus($theoretical);
             $marginPct = $price->isPositive()
@@ -76,6 +99,15 @@ final readonly class RecipeCostReportAction
             $actual = $units->isPositive()
                 ? BigDecimal::of($line['recipe_baisas'])->dividedBy(1000, 3)->dividedBy($units, 3, RoundingMode::HALF_UP)
                 : null;
+            // What today's recipe would cost for the same mix of order types.
+            $compareWith = $theoretical;
+            if ($byType !== null && $units->isPositive()) {
+                $weighted = BigDecimal::zero();
+                foreach ($line['units_by_type'] as $bucket => $typeUnits) {
+                    $weighted = $weighted->plus(BigDecimal::of($typeUnits)->multipliedBy($byType[$bucket] ?? (string) $theoretical));
+                }
+                $compareWith = $weighted->dividedBy($units, 3, RoundingMode::HALF_UP);
+            }
 
             return [
                 'product_id' => $p->id,
@@ -83,13 +115,14 @@ final readonly class RecipeCostReportAction
                 'stock_mode' => $p->stock_mode,
                 'base_price' => (string) $price->toScale(3, RoundingMode::HALF_UP),
                 'theoretical_cost' => (string) $theoretical->toScale(3, RoundingMode::HALF_UP),
+                'theoretical_by_type' => $byType,
                 'profit_per_unit' => (string) $profit->toScale(3, RoundingMode::HALF_UP),
                 'margin_pct' => $marginPct,
                 'recipe_line_count' => $p->recipeLines->count(),
                 'units_sold' => (string) $units->toScale(3, RoundingMode::HALF_UP),
                 'revenue' => $line !== null ? (string) BigDecimal::of($line['revenue'])->toScale(3, RoundingMode::HALF_UP) : '0.000',
                 'actual_cost_per_unit' => $actual !== null ? (string) $actual : null,
-                'cost_change_per_unit' => $actual !== null ? (string) $actual->minus($theoretical)->toScale(3, RoundingMode::HALF_UP) : null,
+                'cost_change_per_unit' => $actual !== null ? (string) $actual->minus($compareWith)->toScale(3, RoundingMode::HALF_UP) : null,
             ];
         })->sortByDesc(static fn (array $r): float => $r['margin_pct'])
             ->values()
@@ -111,7 +144,7 @@ final readonly class RecipeCostReportAction
      *
      * @param  list<int>|null  $branchScope
      * @param  list<int|string>  $productIds
-     * @return array<int, array{units: string, revenue: string, recipe_baisas: int}>
+     * @return array<int, array{units: string, revenue: string, recipe_baisas: int, units_by_type: array<string, string>}>
      */
     private function sold(int $companyId, ReportFilter $filter, ?array $branchScope, array $productIds): array
     {
@@ -138,6 +171,9 @@ final readonly class RecipeCostReportAction
                 'pos_order_items.recipe_snapshot_json',
                 'pos_order_items.component_snapshot_json',
                 'pos_orders.branch_id',
+                // LAUNCH packaging add-on — the "Used for" filter.
+                'pos_orders.order_type',
+                'pos_orders.stock_order_type',
             )
             ->selectRaw('COALESCE(pos_orders.closed_at, pos_orders.opened_at) AS sold_at')
             // LAUNCH-P4 B8 — revenue excluding VAT.
@@ -149,8 +185,10 @@ final readonly class RecipeCostReportAction
         $out = [];
         foreach ($rows as $row) {
             $pid = (int) $row->product_id;
-            $out[$pid] ??= ['units' => '0', 'revenue' => '0', 'recipe_baisas' => 0];
+            $out[$pid] ??= ['units' => '0', 'revenue' => '0', 'recipe_baisas' => 0, 'units_by_type' => []];
             $out[$pid]['units'] = (string) BigDecimal::of($out[$pid]['units'])->plus((string) $row->qty);
+            $bucket = OrderTypes::bucket(($row->stock_order_type ?? null) ?: ($row->order_type ?? null)) ?? 'unknown';
+            $out[$pid]['units_by_type'][$bucket] = (string) BigDecimal::of($out[$pid]['units_by_type'][$bucket] ?? '0')->plus((string) $row->qty);
             $out[$pid]['revenue'] = (string) BigDecimal::of($out[$pid]['revenue'])->plus(BigDecimal::of((string) $row->revenue_ex_vat)->toScale(3, RoundingMode::HALF_UP));
             $out[$pid]['recipe_baisas'] += $costs[(int) $row->id]['recipe'] ?? 0;
         }

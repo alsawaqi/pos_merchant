@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Pos\Reports\Support;
 
 use App\Models\Product;
+use App\Support\Catalogue\OrderTypes;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Illuminate\Support\Collection;
@@ -52,6 +53,15 @@ use Illuminate\Support\Facades\DB;
  * A line written before the component copy existed (NULL) uses the product's
  * live components, like the stock deduction does for it.
  *
+ * LAUNCH packaging add-on — the copies carry each line's "Used for" ticks
+ * (`order_types`, absent = every type). A line is costed with only the lines
+ * ticked for the order's type — the type stamped when its stock was taken
+ * (`stock_order_type`), else its order type (car = to go) — exactly like the
+ * stock deduction. Legacy lines costed from LIVE components are never
+ * filtered (old code took every component). The per-order packaging is NOT
+ * a line cost: {@see self::packaging()} costs it once per order, for the
+ * Sales report only.
+ *
  * Amounts are exact decimals, multiplied by the line quantity and rounded
  * ONCE per line to baisas (1 OMR = 1000), like {@see RecipeSnapshotCost}.
  * `recipe` is the line's own recipe / batch part (no options, packaging or
@@ -74,7 +84,7 @@ final class OrderLineCost
     public function __construct(private readonly int $companyId) {}
 
     /**
-     * @param  Collection<int, object>  $items  rows with id, product_id, qty, recipe_snapshot_json, component_snapshot_json, branch_id, sold_at
+     * @param  Collection<int, object>  $items  rows with id, product_id, qty, recipe_snapshot_json, component_snapshot_json, branch_id, sold_at (+ stock_order_type, order_type: the ticks filter)
      * @return array<int, array{total: int, recipe: int}> item id => baisas
      */
     public function costs(Collection $items): array
@@ -110,6 +120,8 @@ final class OrderLineCost
         $qty = self::dec($item->qty);
         $branchId = $item->branch_id !== null ? (int) $item->branch_id : null;
         $soldAt = (string) $item->sold_at;
+        // LAUNCH packaging add-on — the order type the stock was taken for.
+        $bit = self::typeBit($item);
 
         $recipe = self::json($item->recipe_snapshot_json);
         $components = self::json($item->component_snapshot_json);
@@ -117,7 +129,7 @@ final class OrderLineCost
         // ---- per ONE unit: ingredient plan (recipe + option deltas) ----
         $ingredients = [];
         foreach (is_array($recipe) ? $recipe : [] as $line) {
-            if (! is_array($line) || ! isset($line['ingredient_id'])) {
+            if (! is_array($line) || ! isset($line['ingredient_id']) || ! OrderTypes::includes($line['order_types'] ?? null, $bit)) {
                 continue;
             }
             $id = (int) $line['ingredient_id'];
@@ -127,12 +139,18 @@ final class OrderLineCost
         // A line written before the component copy existed (NULL) is costed
         // with the product's live components — the same fallback the stock
         // deduction (pos_api ConsumeInventoryAction) uses for it.
+        // Never filtered by the ticks: old code took every live component.
+        $live = false;
         if (! is_array($components) && $item->product_id !== null) {
             $components = $this->liveComponents[(int) $item->product_id] ?? [];
+            $live = true;
         }
         $products = [];
         foreach (is_array($components) ? $components : [] as $component) {
             if (! is_array($component) || ! isset($component['product_id'])) {
+                continue;
+            }
+            if (! $live && ! OrderTypes::includes($component['order_types'] ?? null, $bit)) {
                 continue;
             }
             $id = (int) $component['product_id'];
@@ -143,7 +161,7 @@ final class OrderLineCost
         foreach ($addons as $addon) {
             $consumption = self::json($addon->consumption_snapshot_json);
             foreach (is_array($consumption) ? $consumption : [] as $line) {
-                if (! is_array($line)) {
+                if (! is_array($line) || ! OrderTypes::includes($line['order_types'] ?? null, $bit)) {
                     continue;
                 }
                 $delta = self::dec($line['qty'] ?? 0);
@@ -162,7 +180,7 @@ final class OrderLineCost
 
             // Legacy single-ingredient option (only when no consumption lines).
             $legacy = self::json($addon->ingredient_snapshot_json);
-            if (! is_array($consumption) && is_array($legacy) && isset($legacy['ingredient_id'])) {
+            if (! is_array($consumption) && is_array($legacy) && isset($legacy['ingredient_id']) && OrderTypes::includes($legacy['order_types'] ?? null, $bit)) {
                 $extra = $extra->plus(self::dec($legacy['qty'] ?? 0)->multipliedBy(self::dec($legacy['unit_cost'] ?? 0)));
             }
 
@@ -170,7 +188,10 @@ final class OrderLineCost
             $linked = self::json($addon->product_snapshot_json);
             if (is_array($linked) && isset($linked['product_id'])) {
                 $mode = (string) ($linked['stock_mode'] ?? '');
-                $linkedRecipe = array_values(array_filter((array) ($linked['recipe'] ?? []), 'is_array'));
+                $linkedRecipe = array_values(array_filter(
+                    (array) ($linked['recipe'] ?? []),
+                    static fn ($line): bool => is_array($line) && OrderTypes::includes($line['order_types'] ?? null, $bit),
+                ));
                 if ($mode === 'ingredient' && $linkedRecipe !== []) {
                     foreach ($linkedRecipe as $line) {
                         $extra = $extra->plus(self::dec($line['qty'] ?? 0)->multipliedBy(self::dec($line['unit_cost'] ?? 0)));
@@ -184,7 +205,7 @@ final class OrderLineCost
                     $extra = $extra->plus($this->costPrice((int) $linked['product_id']));
                 }
                 foreach ((array) ($linked['components'] ?? []) as $component) {
-                    if (is_array($component) && isset($component['product_id'])) {
+                    if (is_array($component) && isset($component['product_id']) && OrderTypes::includes($component['order_types'] ?? null, $bit)) {
                         $extra = $extra->plus(self::dec($component['qty'] ?? 0)->multipliedBy(
                             $this->pieceCost((int) $component['product_id'], $branchId, $soldAt),
                         ));
@@ -225,6 +246,74 @@ final class OrderLineCost
             'total' => self::baisas($perUnit->multipliedBy($qty)),
             'recipe' => self::baisas($recipePerUnit->multipliedBy($qty)),
         ];
+    }
+
+    /**
+     * LAUNCH packaging add-on — the per-order packaging each order took, from
+     * the copy pos_api froze on the order when it took the stock
+     * (packaging_snapshot_json: {order_type, lines: [{type: ingredient,
+     * ingredient_id, qty, unit, unit_cost} | {type: product, product_id,
+     * qty}]}): ingredients at their frozen cost, pieces like any other piece
+     * a line consumed. Counted ONCE per order — never on a line, so product
+     * performance and recipe cost leave it out. An order with no copy (paid
+     * before the release, or no list) took none.
+     *
+     * @param  Collection<int, object>  $orders  rows with id, branch_id, sold_at, packaging_snapshot_json
+     * @return array<int, int> order id => baisas
+     */
+    public function packaging(Collection $orders): array
+    {
+        $snapshots = [];
+        $ids = [];
+        foreach ($orders as $order) {
+            $snapshot = self::json($order->packaging_snapshot_json ?? null);
+            $lines = is_array($snapshot) && is_array($snapshot['lines'] ?? null) ? $snapshot['lines'] : [];
+            if ($lines === []) {
+                continue;
+            }
+            $snapshots[(int) $order->id] = [$order, $lines];
+            foreach ($lines as $line) {
+                if (is_array($line) && ($line['type'] ?? '') === 'product' && isset($line['product_id'])) {
+                    $ids[] = (int) $line['product_id'];
+                }
+            }
+        }
+        $this->loadProducts($ids);
+
+        $out = [];
+        foreach ($snapshots as $orderId => [$order, $lines]) {
+            $branchId = $order->branch_id !== null ? (int) $order->branch_id : null;
+            $soldAt = (string) $order->sold_at;
+            $cost = BigDecimal::zero();
+            foreach ($lines as $line) {
+                if (! is_array($line)) {
+                    continue;
+                }
+                $qty = self::dec($line['qty'] ?? 0);
+                if (! $qty->isPositive()) {
+                    continue;
+                }
+                if (($line['type'] ?? '') === 'ingredient') {
+                    $cost = $cost->plus($qty->multipliedBy(self::dec($line['unit_cost'] ?? 0)));
+                } elseif (($line['type'] ?? '') === 'product' && isset($line['product_id'])) {
+                    $cost = $cost->plus($qty->multipliedBy($this->pieceCost((int) $line['product_id'], $branchId, $soldAt)));
+                }
+            }
+            $out[$orderId] = self::baisas($cost);
+        }
+
+        return $out;
+    }
+
+    /** The bit of the type the line's stock was taken for (null = no filter). */
+    private static function typeBit(object $item): ?int
+    {
+        $stamped = property_exists($item, 'stock_order_type') ? $item->stock_order_type : null;
+        if ($stamped !== null && $stamped !== '') {
+            return OrderTypes::bit((string) $stamped);
+        }
+
+        return OrderTypes::bit(property_exists($item, 'order_type') ? $item->order_type : null);
     }
 
     /** A standalone line's own piece: cooked → batch cost; else the cost price (when set). */
@@ -354,15 +443,30 @@ final class OrderLineCost
                 $ids[] = (int) $row->component_product_id;
             }
         }
-        $ids = array_values(array_unique($ids));
+        $this->loadProducts($ids);
+    }
+
+    /**
+     * Products (and the batches of cooked ones) not loaded yet.
+     *
+     * @param  list<int>  $ids
+     */
+    private function loadProducts(array $ids): void
+    {
+        $ids = array_values(array_diff(array_unique($ids), array_keys($this->products)));
+        if ($ids === []) {
+            return;
+        }
+        $loaded = [];
 
         foreach (array_chunk($ids, 1000) as $chunk) {
             foreach (DB::table('pos_products')->where('company_id', $this->companyId)->whereIn('id', $chunk)->get(['id', 'stock_mode', 'cost_price', 'product_type']) as $row) {
                 $this->products[(int) $row->id] = $row;
+                $loaded[(int) $row->id] = $row;
             }
         }
 
-        $cooked = array_keys(array_filter($this->products, static fn ($p): bool => $p->stock_mode === 'cooked'));
+        $cooked = array_keys(array_filter($loaded, static fn ($p): bool => $p->stock_mode === 'cooked'));
         foreach (array_chunk($cooked, 1000) as $chunk) {
             $rows = DB::table('pos_product_stock_movements')
                 ->where('company_id', $this->companyId)
