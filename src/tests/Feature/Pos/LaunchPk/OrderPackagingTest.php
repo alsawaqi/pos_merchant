@@ -160,6 +160,25 @@ it('lets catalogue or inventory viewers read, and only "Edit recipes" write', fu
     $this->getJson('/api/inventory/order-packaging')->assertForbidden();
 });
 
+it('refuses to delete an ingredient or a physical item still on a packaging list', function (): void {
+    $ctx = makeMerchantActor();
+    $sugar = pkIngredient($ctx['company'], 'Sugar', 'g');
+    $bag = pkItem($ctx['company'], 'Bag');
+    $this->putJson('/api/inventory/order-packaging/to_go', ['lines' => [
+        ['type' => 'ingredient', 'ingredient_uuid' => $sugar->uuid, 'quantity' => '10'],
+        ['type' => 'product', 'product_uuid' => $bag->uuid, 'quantity' => '1'],
+    ]])->assertOk();
+
+    $this->deleteJson("/api/ingredients/{$sugar->uuid}")->assertStatus(422)->assertJsonPath('message', fn ($m) => str_contains($m, 'Order packaging'));
+    $this->deleteJson("/api/physical-items/{$bag->uuid}")->assertStatus(422)->assertJsonPath('message', fn ($m) => str_contains($m, 'Order packaging'));
+    expect(DB::table('pos_ingredients')->where('id', $sugar->id)->value('deleted_at'))->toBeNull()
+        ->and(DB::table('pos_products')->where('id', $bag->id)->value('deleted_at'))->toBeNull();
+
+    // Off the list: deletable again.
+    $this->putJson('/api/inventory/order-packaging/to_go', ['lines' => []])->assertOk();
+    $this->deleteJson("/api/physical-items/{$bag->uuid}")->assertSuccessful();
+});
+
 it('shows only this company\'s lists', function (): void {
     $other = makeMerchantActor();
     $theirBag = pkItem($other['company'], 'Their bag');

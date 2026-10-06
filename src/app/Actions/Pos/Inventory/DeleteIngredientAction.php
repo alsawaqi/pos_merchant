@@ -117,6 +117,18 @@ final readonly class DeleteIngredientAction
             ));
         }
 
+        // LAUNCH packaging add-on — a live per-order packaging line would
+        // keep taking the trashed ingredient at every sale of its type.
+        $packagingCount = \App\Models\OrderPackagingLine::query()
+            ->where('ingredient_id', $ingredient->id)
+            ->count();
+        if ($packagingCount > 0) {
+            throw new RuntimeException(sprintf(
+                'Cannot delete ingredient — %d order packaging list(s) still use it. Remove it from Inventory → Order packaging first.',
+                $packagingCount,
+            ));
+        }
+
         // LAUNCH-P3 P3-4 — a live prep item's recipe that lists this
         // ingredient explodes into it at every sale of a dish using the prep.
         $prepLineCount = PrepUsage::livePrepRecipeLines((int) $ingredient->id);

@@ -216,6 +216,21 @@ class PhysicalItemsController extends Controller
             ], 422);
         }
 
+        // LAUNCH packaging add-on — on a per-order packaging list = still
+        // taken with every order of that type.
+        $packagingLists = DB::table('pos_order_packaging_lines')
+            ->where('product_id', $product->id)
+            ->whereNull('deleted_at')
+            ->count();
+        if ($packagingLists > 0) {
+            return response()->json([
+                'message' => sprintf(
+                    'This item is on %d order packaging list(s) — remove it from Inventory → Order packaging first.',
+                    $packagingLists,
+                ),
+            ], 422);
+        }
+
         $this->delete->handle($product, $request->user());
 
         return response()->json(['data' => null], 204);
