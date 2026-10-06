@@ -408,6 +408,10 @@ return new class extends Migration
             // (table-create order); the live column is an FK to
             // pos_ingredients, nullOnDelete.
             $table->unsignedBigInteger('removes_ingredient_id')->nullable();
+            // LAUNCH packaging add-on (pos_admin 2026_10_06_110001): "Used for"
+            // of the legacy single-ingredient trio — bits 1 dine in, 2 quick,
+            // 4 to go, 8 delivery; 15 = every order type (live: CHECK 1..15).
+            $table->unsignedSmallInteger('order_types')->default(15);
             $table->unsignedSmallInteger('display_order')->default(0);
             $table->string('status', 32)->default('active');
             $table->timestamps();
@@ -922,8 +926,16 @@ return new class extends Migration
             // pos_admin 2026_10_02_100003 (LAUNCH-P3): how the line was typed.
             $table->string('entered_unit', 32)->nullable();
             $table->decimal('entered_quantity', 14, 4)->nullable();
-            $table->unique(['product_id', 'ingredient_id'], 'pos_product_recipes_product_ingredient_unique');
+            // LAUNCH packaging add-on (pos_admin 2026_10_06_110001/110002):
+            // "Used for" bit mask (1 dine in, 2 quick, 4 to go, 8 delivery;
+            // live CHECK 1..15). Tester call 3 — the same ingredient may sit
+            // on several lines whose ticks do not overlap: the (product,
+            // ingredient) unique became one partial unique per bit.
+            $table->unsignedSmallInteger('order_types')->default(15);
         });
+        foreach ([1, 2, 4, 8] as $bit) {
+            DB::statement("CREATE UNIQUE INDEX pos_product_recipes_ingredient_type{$bit}_unique ON pos_product_recipes (product_id, ingredient_id) WHERE (order_types & {$bit}) <> 0");
+        }
 
         Schema::create('pos_branch_product', function (Blueprint $table): void {
             $table->id();
@@ -945,8 +957,13 @@ return new class extends Migration
             $table->foreignId('component_product_id')->constrained('pos_products')->cascadeOnDelete();
             $table->decimal('quantity', 12, 3);
             $table->timestamps();
-            $table->unique(['product_id', 'component_product_id'], 'pos_product_components_pair_unique');
+            // LAUNCH packaging add-on — "Used for" mask; the pair unique became
+            // one partial unique per bit (tester call 3).
+            $table->unsignedSmallInteger('order_types')->default(15);
         });
+        foreach ([1, 2, 4, 8] as $bit) {
+            DB::statement("CREATE UNIQUE INDEX pos_product_components_pair_type{$bit}_unique ON pos_product_components (product_id, component_product_id) WHERE (order_types & {$bit}) <> 0");
+        }
 
         // ---- pos_addon_consumptions (PD3b per-option consumption) ---
         // Stock-usage lines on an add-on option: ingredient XOR
@@ -966,9 +983,39 @@ return new class extends Migration
             // pos_admin 2026_10_02_100003 (LAUNCH-P3): how the line was typed.
             $table->string('entered_unit', 32)->nullable();
             $table->decimal('entered_quantity', 14, 4)->nullable();
-            $table->unique(['add_on_id', 'ingredient_id', 'direction'], 'pos_addon_consumptions_ing_dir_unique');
-            $table->unique(['add_on_id', 'component_product_id', 'direction'], 'pos_addon_consumptions_prod_dir_unique');
+            // LAUNCH packaging add-on — "Used for" mask; the per (option, ref,
+            // direction) uniques became one partial unique per bit.
+            $table->unsignedSmallInteger('order_types')->default(15);
         });
+        foreach ([1, 2, 4, 8] as $bit) {
+            DB::statement("CREATE UNIQUE INDEX pos_addon_consumptions_ing_dir_type{$bit}_unique ON pos_addon_consumptions (add_on_id, ingredient_id, direction) WHERE (order_types & {$bit}) <> 0");
+            DB::statement("CREATE UNIQUE INDEX pos_addon_consumptions_prod_dir_type{$bit}_unique ON pos_addon_consumptions (add_on_id, component_product_id, direction) WHERE (order_types & {$bit}) <> 0");
+        }
+
+        // ---- pos_order_packaging_lines (LAUNCH packaging add-on) ---
+        // Per-order packaging: one list per merchant per order type, taken
+        // ONCE per whole order by pos_api. Ingredient XOR physical item (live:
+        // CHECK), quantity > 0 in the ingredient's BASE unit or in pieces,
+        // plus how it was typed (P3-1). Live: order_type CHECK in the four
+        // types; partial uniques per (company, type, item) WHERE deleted_at
+        // IS NULL. Mirrors pos_admin 2026_10_06_110003.
+        Schema::create('pos_order_packaging_lines', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->string('order_type', 16);
+            $table->foreignId('ingredient_id')->nullable()->constrained('pos_ingredients')->cascadeOnDelete();
+            $table->foreignId('product_id')->nullable()->constrained('pos_products')->cascadeOnDelete();
+            $table->decimal('quantity', 14, 4);
+            $table->string('unit', 16)->nullable();
+            $table->string('entered_unit', 32)->nullable();
+            $table->decimal('entered_quantity', 14, 4)->nullable();
+            $table->unsignedSmallInteger('sort_order')->default(0);
+            $table->timestamps();
+            $table->softDeletes();
+            $table->index(['company_id', 'order_type', 'sort_order'], 'pos_order_packaging_lines_list_idx');
+        });
+        DB::statement('CREATE UNIQUE INDEX pos_order_packaging_lines_ingredient_unique ON pos_order_packaging_lines (company_id, order_type, ingredient_id) WHERE deleted_at IS NULL AND ingredient_id IS NOT NULL');
+        DB::statement('CREATE UNIQUE INDEX pos_order_packaging_lines_product_unique ON pos_order_packaging_lines (company_id, order_type, product_id) WHERE deleted_at IS NULL AND product_id IS NOT NULL');
 
         // ---- pos_product_stock + pos_product_stock_movements (Phase 7) ---
         // Central company unit-product pool + the product-units ledger.
@@ -1575,6 +1622,12 @@ return new class extends Migration
             // LAUNCH-P4 — stamped from the order: true = grand_total already
             // contains tax_total (menu prices include VAT).
             $table->boolean('prices_include_tax')->default(false);
+            // LAUNCH packaging add-on (pos_admin 2026_10_06_110004): stamped
+            // once by pos_api when stock is taken — the order-type bucket used
+            // (dine_in / quick / to_go / delivery; car → to_go) and the
+            // per-order packaging it took ({order_type, lines: [...]}).
+            $table->string('stock_order_type', 16)->nullable();
+            $table->text('packaging_snapshot_json')->nullable();
             $table->timestamps();
             $table->index(['company_id', 'receipt_number'], 'pos_orders_company_receipt_idx');
             $table->index(['company_id', 'delivery_provider_id'], 'pos_orders_company_provider_idx');
