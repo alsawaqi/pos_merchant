@@ -158,7 +158,11 @@ final class OrderTypes
                 $sent = (int) $sent;
             }
             if (! self::valid($sent)) {
-                throw new RuntimeException('Tick at least one order type (Dine in, Quick order, To go or Delivery) for every line.');
+                throw new \App\Exceptions\LocalizedException(
+                    'order_types_none',
+                    'Tick at least one order type (Dine in, Quick order, To go or Delivery) for every line.',
+                    'اختر نوع طلب واحداً على الأقل (داخل المحل، طلب سريع، سفري أو توصيل) لكل سطر.',
+                );
             }
 
             return $sent;

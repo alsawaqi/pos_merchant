@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace App\Exceptions;
 
-use DomainException;
-use Illuminate\Http\JsonResponse;
-
 /**
  * LAUNCH packaging add-on (server review M1) — a cooked product is made in
  * batches before any order exists, so its recipe ignores "Used for" ticks and
@@ -15,7 +12,7 @@ use Illuminate\Http\JsonResponse;
  * cooked, and when such lines are saved on a cooked product. A 422 in English
  * and Arabic with a code the portal maps to its own wording.
  */
-final class CookedRecipeSplitLinesException extends DomainException
+final class CookedRecipeSplitLinesException extends LocalizedException
 {
     public const CODE = 'cooked_split_lines';
 
@@ -26,16 +23,11 @@ final class CookedRecipeSplitLinesException extends DomainException
     /** @param  list<string>  $ingredients  the names on several lines */
     public function __construct(public readonly array $ingredients = [])
     {
-        parent::__construct(self::MESSAGE.($ingredients === [] ? '' : ' ('.implode(', ', $ingredients).')'));
-    }
-
-    public function render(): JsonResponse
-    {
-        return response()->json([
-            'message' => $this->getMessage(),
-            'message_ar' => self::MESSAGE_AR.($this->ingredients === [] ? '' : ' ('.implode('، ', $this->ingredients).')'),
-            'code' => self::CODE,
-            'ingredients' => $this->ingredients,
-        ], 422);
+        parent::__construct(
+            self::CODE,
+            self::MESSAGE.($ingredients === [] ? '' : ' ('.implode(', ', $ingredients).')'),
+            self::MESSAGE_AR.($ingredients === [] ? '' : ' ('.implode('، ', $ingredients).')'),
+            ['ingredients' => $ingredients],
+        );
     }
 }

@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Actions\Pos\Inventory;
 
 use App\Actions\Security\WriteAuditLogAction;
+use App\Exceptions\LocalizedException;
+use App\Support\Inventory\OrderPackagingLock;
+use App\Support\Inventory\PackagingUsage;
 use App\Data\Security\AuditLogData;
 use App\Models\Company;
 use App\Models\Ingredient;
@@ -52,6 +55,7 @@ final readonly class SaveOrderPackagingAction
         private WriteAuditLogAction $writeAuditLog,
         private MerchantTenantContext $tenant,
         private RecipeQuantity $quantities,
+        private OrderPackagingLock $lock,
     ) {}
 
     /**
@@ -64,11 +68,30 @@ final readonly class SaveOrderPackagingAction
             abort(404);
         }
         if (count($lines) > self::MAX_LINES) {
-            throw new RuntimeException('A packaging list can hold at most '.self::MAX_LINES.' items.');
+            throw new LocalizedException(
+                'packaging_too_many',
+                'A packaging list can hold at most '.self::MAX_LINES.' items.',
+                'قائمة التغليف تتسع لـ '.self::MAX_LINES.' صنفاً على الأكثر.',
+            );
         }
 
         $resolved = $this->resolve($lines, $companyId);
 
+        // Fix order PK-B1 (L2) — one save of a list at a time (per company and
+        // order type): the list this save replaces is read under the lock, so
+        // two managers saving together end with the last save, never a union
+        // of both, and never a unique-index 500.
+        DB::transaction(function () use ($orderType, $resolved, $companyId, $actor): void {
+            $this->lock->acquire($companyId, $orderType);
+            $this->replace($orderType, $resolved, $companyId, $actor);
+        });
+    }
+
+    /**
+     * @param  list<array{ingredient_id: ?int, product_id: ?int, quantity: string, unit: ?string, entered_unit: ?string, entered_quantity: ?string, name: string}>  $resolved
+     */
+    private function replace(string $orderType, array $resolved, int $companyId, User $actor): void
+    {
         $current = OrderPackagingLine::query()
             ->where('company_id', $companyId)
             ->where('order_type', $orderType)
@@ -86,6 +109,12 @@ final readonly class SaveOrderPackagingAction
                 [$enteredUnit, $enteredQuantity] = [$shown['unit'], $shown['quantity']];
             }
 
+            if ($l->ingredient === null) {
+                // Fix order PK-B1 (M1) — a pack form that no longer adds up to the
+                // stored pieces compares (and reopens) as pieces.
+                [$enteredUnit, $enteredQuantity] = PackagingUsage::packForm($l->product_id, (string) $l->quantity, $l->entered_unit, $l->entered_quantity);
+            }
+
             return $this->shape($l->ingredient_id, $l->product_id, (string) $l->quantity, $enteredUnit, $enteredQuantity, $l->ingredient?->name ?? $l->product?->name ?? '', $l->unit);
         }, $current->all());
         $after = array_map(fn (array $l): array => $this->shape($l['ingredient_id'], $l['product_id'], $l['quantity'], $l['entered_unit'], $l['entered_quantity'], $l['name'], $l['unit']), $resolved);
@@ -96,7 +125,7 @@ final readonly class SaveOrderPackagingAction
 
         RecipeEditGate::ensure($actor);
 
-        DB::transaction(function () use ($orderType, $resolved, $companyId, $actor, $before, $after): void {
+        (function () use ($orderType, $resolved, $companyId, $actor, $before, $after): void {
             OrderPackagingLine::query()
                 ->where('company_id', $companyId)
                 ->where('order_type', $orderType)
@@ -139,7 +168,7 @@ final readonly class SaveOrderPackagingAction
                 oldValues: ['order_type' => $orderType, 'lines' => array_column($before, 'readable')],
                 newValues: ['order_type' => $orderType, 'lines' => array_column($after, 'readable')],
             ));
-        });
+        })();
     }
 
     /**
@@ -164,18 +193,33 @@ final readonly class SaveOrderPackagingAction
         $seen = [];
         foreach ($lines as $line) {
             if ((float) ($line['quantity'] ?? 0) <= 0) {
-                throw new RuntimeException('Packaging amounts must be more than 0.');
+                throw new LocalizedException('packaging_amount', 'Packaging amounts must be more than 0.', 'كميات التغليف يجب أن تكون أكبر من 0.');
             }
             if (($line['type'] ?? '') === 'ingredient') {
                 /** @var Ingredient|null $ingredient */
                 $ingredient = $ingredients[(string) ($line['ingredient_uuid'] ?? '')] ?? null;
                 if ($ingredient === null) {
-                    throw new RuntimeException('One or more packaging items do not belong to your company.');
+                    throw self::notYours();
                 }
                 if ($ingredient->isPrep()) {
-                    throw new RuntimeException(sprintf('"%s" is a prep item — packaging is never cooked: pick an ingredient or a physical item.', $ingredient->name));
+                    throw new LocalizedException(
+                        'packaging_prep',
+                        sprintf('"%s" is a prep item — packaging is never cooked: pick an ingredient or a physical item.', $ingredient->name),
+                        sprintf('"%s" صنف مُحضَّر — التغليف لا يُطبخ أبداً: اختر مكوّناً أو صنفاً مادياً.', $ingredient->name),
+                    );
                 }
-                $amount = $this->quantities->resolve($ingredient, $line['quantity'], $line['unit'] ?? null);
+                if (! self::active($ingredient->status)) {
+                    throw self::inactive((string) $ingredient->name);
+                }
+                try {
+                    $amount = $this->quantities->resolve($ingredient, $line['quantity'], $line['unit'] ?? null);
+                } catch (RuntimeException $e) {
+                    throw new LocalizedException(
+                        'packaging_unit',
+                        $e->getMessage(),
+                        sprintf('%s: لا يمكن تسجيل هذه الكمية بهذه الوحدة. اختر وحدة أخرى أو كمية أكبر.', $ingredient->name),
+                    );
+                }
                 $key = 'i:'.$ingredient->id;
                 $entry = [
                     'ingredient_id' => (int) $ingredient->id,
@@ -190,13 +234,24 @@ final readonly class SaveOrderPackagingAction
                 /** @var Product|null $product */
                 $product = $products[(string) ($line['product_uuid'] ?? '')] ?? null;
                 if ($product === null) {
-                    throw new RuntimeException('One or more packaging items do not belong to your company.');
+                    throw self::notYours();
                 }
                 if ($product->stock_mode !== 'unit' || $product->isCombo()) {
-                    throw new RuntimeException(sprintf('"%s" is not counted in pieces — packaging is a physical item or a bought-in product.', $product->name));
+                    throw new LocalizedException(
+                        'packaging_not_pieces',
+                        sprintf('"%s" is not counted in pieces — packaging is a physical item or a bought-in product.', $product->name),
+                        sprintf('"%s" لا يُعد بالقطع — التغليف صنف مادي أو منتج جاهز مُشترى.', $product->name),
+                    );
                 }
                 if ($product->internal_purpose === 'general') {
-                    throw new RuntimeException(sprintf('"%s" is a branch-use physical item — it is never packed with an order.', $product->name));
+                    throw new LocalizedException(
+                        'packaging_branch_use',
+                        sprintf('"%s" is a branch-use physical item — it is never packed with an order.', $product->name),
+                        sprintf('"%s" صنف مادي لاستخدام الفرع — لا يُغلَّف مع الطلب أبداً.', $product->name),
+                    );
+                }
+                if (! self::active($product->status)) {
+                    throw self::inactive((string) $product->name);
                 }
                 [$pieces, $enteredUnit, $enteredQuantity] = $this->pieces($product, (string) $line['quantity'], $line['unit'] ?? null);
                 $key = 'p:'.$product->id;
@@ -211,7 +266,11 @@ final readonly class SaveOrderPackagingAction
                 ];
             }
             if (isset($seen[$key])) {
-                throw new RuntimeException(sprintf('"%s" is on the list twice — put the whole amount on one line.', $entry['name']));
+                throw new LocalizedException(
+                    'packaging_duplicate',
+                    sprintf('"%s" is on the list twice — put the whole amount on one line.', $entry['name']),
+                    sprintf('"%s" موجود في القائمة مرتين — ضع الكمية كلها في سطر واحد.', $entry['name']),
+                );
             }
             $seen[$key] = true;
             $out[] = $entry;
@@ -231,7 +290,11 @@ final readonly class SaveOrderPackagingAction
         $unit = $unit === null ? '' : trim($unit);
         if ($unit === '' || $unit === 'piece') {
             if (round((float) $quantity, 3) != (float) $quantity) {
-                throw new RuntimeException(sprintf('"%s": pieces keep at most 3 decimal places.', $product->name));
+                throw new LocalizedException(
+                    'packaging_piece_decimals',
+                    sprintf('"%s": pieces keep at most 3 decimal places.', $product->name),
+                    sprintf('"%s": القطع تقبل 3 خانات عشرية على الأكثر.', $product->name),
+                );
             }
 
             return [number_format((float) $quantity, 3, '.', ''), null, null];
@@ -244,15 +307,48 @@ final readonly class SaveOrderPackagingAction
             ->where('uuid', $uuid)
             ->first();
         if ($pack === null) {
-            throw new RuntimeException(sprintf('"%s": that pack does not belong to this item.', $product->name));
+            throw new LocalizedException(
+                'packaging_pack',
+                sprintf('"%s": that pack does not belong to this item.', $product->name),
+                sprintf('"%s": هذه العبوة لا تخص هذا الصنف.', $product->name),
+            );
         }
         $count = BigDecimal::of(trim($quantity));
         if (! $count->isEqualTo($count->toScale(0, RoundingMode::DOWN))) {
-            throw new RuntimeException(sprintf('"%s": count whole packs.', $product->name));
+            throw new LocalizedException(
+                'packaging_whole_packs',
+                sprintf('"%s": count whole packs.', $product->name),
+                sprintf('"%s": اكتب عدد عبوات كاملة.', $product->name),
+            );
         }
         $pieces = $count->multipliedBy((string) $pack->pieces)->toScale(3, RoundingMode::HALF_UP);
 
         return [(string) $pieces, ContainerToken::encode((string) $pack->uuid), (string) StockDecimal::format((string) $count, 0, 4)];
+    }
+
+    private static function notYours(): LocalizedException
+    {
+        return new LocalizedException(
+            'packaging_not_yours',
+            'One or more packaging items do not belong to your company, or were deleted.',
+            'صنف أو أكثر من أصناف التغليف لا يخص شركتك أو تم حذفه.',
+        );
+    }
+
+    private static function inactive(string $name): LocalizedException
+    {
+        return new LocalizedException(
+            'packaging_inactive',
+            sprintf('"%s" is inactive — an inactive item is never packed with an order.', $name),
+            sprintf('"%s" غير نشط — الصنف غير النشط لا يُغلَّف مع الطلب أبداً.', $name),
+        );
+    }
+
+    private static function active(mixed $status): bool
+    {
+        $value = $status instanceof \BackedEnum ? $status->value : (string) ($status ?? 'active');
+
+        return $value === 'active';
     }
 
     /**

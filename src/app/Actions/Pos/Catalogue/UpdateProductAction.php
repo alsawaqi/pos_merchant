@@ -10,8 +10,11 @@ use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\User;
 use App\Support\Catalogue\MenuExtras;
+use App\Support\Catalogue\OrderTypes;
+use App\Support\Inventory\PackagingUsage;
 use App\Support\MerchantTenantContext;
 use App\Support\Recipes\RecipeEditGate;
+use App\Support\Recipes\RecipeQuantity;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -131,21 +134,10 @@ final readonly class UpdateProductAction
             RecipeEditGate::ensure($actor);
         }
 
-        // LAUNCH packaging add-on (server review M1) — a cooked product is made
-        // before any order exists: its recipe has one line per ingredient. A
-        // recipe with an ingredient on several lines (for different order
-        // types) must be merged before the switch.
-        if ($hasRecipe && $newMode === 'cooked') {
-            $split = $product->recipeLines()->with('ingredient')->get()
-                ->groupBy('ingredient_id')
-                ->filter(static fn ($lines): bool => $lines->count() > 1)
-                ->map(static fn ($lines): string => (string) ($lines->first()->ingredient?->name ?? ''))
-                ->values()
-                ->all();
-            if ($split !== []) {
-                throw new \App\Exceptions\CookedRecipeSplitLinesException($split);
-            }
-        }
+        // LAUNCH packaging add-on (fix order PK-B1, M3) — an item on a per-order
+        // packaging list must stay something pos_api takes: active, used with
+        // food (not branch-use) and counted in pieces.
+        $this->refuseIfPackagingBreaks($product, $attributes, $oldMode, $newMode);
 
         return DB::transaction(function () use ($product, $attributes, $actor, $companyId, $oldMode, $newMode, $hasRecipe): Product {
             // LAUNCH review fix order B-1 (L5) — a changed SKU / barcode is
@@ -219,8 +211,58 @@ final readonly class UpdateProductAction
                 );
             }
 
+            // LAUNCH packaging add-on (server review M1 + fix order PK-B1) — a
+            // cooked product is made before any order exists: each ingredient
+            // has ONE line and every line is for every order type. The recipe
+            // action re-saves the lines with all four ticks under the product
+            // lock: it refuses an ingredient on several lines (rolling this
+            // switch back: "merge the lines first") and otherwise writes a
+            // version row when a tick changes (a no-op when none does).
+            if ($hasRecipe && $newMode === 'cooked' && $oldMode !== 'cooked') {
+                $quantities = app(RecipeQuantity::class);
+                $lines = $product->recipeLines()->with('ingredient.altUnits')->orderBy('sort_order')->orderBy('id')->get()
+                    ->map(static function ($line) use ($quantities): array {
+                        $shown = $line->ingredient === null
+                            ? ['unit' => null, 'quantity' => (string) $line->quantity]
+                            : $quantities->display($line->ingredient, (string) $line->quantity, $line->entered_unit, $line->entered_quantity);
+
+                        return [
+                            'ingredient_uuid' => (string) $line->ingredient?->uuid,
+                            'quantity' => $shown['quantity'],
+                            'unit' => $shown['unit'],
+                            'order_types' => OrderTypes::ALL,
+                        ];
+                    })->all();
+                $this->updateRecipe->handle($product->fresh(), $lines, $actor, 'Cooked: every recipe line is used for every order type.');
+            }
+
             return $product->fresh();
         });
+    }
+
+    /**
+     * Fix order PK-B1 (M3) — refuse turning an item on a packaging list into
+     * something pos_api would skip or take wrongly.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    private function refuseIfPackagingBreaks(Product $product, array $attributes, string $oldMode, string $newMode): void
+    {
+        $oldStatus = $product->status instanceof \BackedEnum ? $product->status->value : (string) ($product->status ?? 'active');
+        $checks = [];
+        if ($newMode !== $oldMode && $newMode !== 'unit') {
+            $checks[] = ['stop being counted in pieces', 'جعله لا يُعد بالقطع'];
+        }
+        if (array_key_exists('status', $attributes) && $attributes['status'] !== null && (string) ($attributes['status'] instanceof \BackedEnum ? $attributes['status']->value : $attributes['status']) !== 'active' && $oldStatus === 'active') {
+            $checks[] = ['be made inactive', 'إيقافه'];
+        }
+        if (array_key_exists('internal_purpose', $attributes) && $attributes['internal_purpose'] === 'general' && $product->internal_purpose !== 'general') {
+            $checks[] = ['become a branch-use item', 'جعله صنفاً لاستخدام الفرع'];
+        }
+        if ($checks === []) {
+            return;
+        }
+        PackagingUsage::refuse(PackagingUsage::productLists((int) $product->id), (string) $product->name, $checks[0][0], $checks[0][1]);
     }
 
     private static function modeLabel(string $mode): string

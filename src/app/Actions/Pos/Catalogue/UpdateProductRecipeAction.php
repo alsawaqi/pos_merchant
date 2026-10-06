@@ -6,6 +6,7 @@ namespace App\Actions\Pos\Catalogue;
 
 use App\Actions\Security\WriteAuditLogAction;
 use App\Exceptions\CookedRecipeSplitLinesException;
+use App\Exceptions\LocalizedException;
 use App\Data\Security\AuditLogData;
 use App\Models\Ingredient;
 use App\Models\Product;
@@ -151,7 +152,11 @@ final readonly class UpdateProductRecipeAction
             foreach ($resolved as $i => $line) {
                 $sent = $line['sent_order_types'];
                 if ($cooked && $sent !== null && (int) $sent !== OrderTypes::ALL) {
-                    throw new RuntimeException('A cooked product\'s recipe is used when it is made, before any order: its lines are used for every order type.');
+                    throw new LocalizedException(
+                        'cooked_ticks',
+                        'A cooked product\'s recipe is used when it is made, before any order: its lines are used for every order type.',
+                        'وصفة المنتج المطبوخ تُستخدم عند تحضيره، قبل أي طلب: أسطرها تُستخدم لكل أنواع الطلب.',
+                    );
                 }
                 $resolved[$i]['order_types'] = $cooked ? OrderTypes::ALL : OrderTypes::resolve($sent, (string) $line['ingredient']->id, $stored);
             }

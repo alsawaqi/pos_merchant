@@ -244,6 +244,18 @@ it('ticks physical-item rows: same item on non-overlapping rows, overlap refused
         ['component_uuid' => $cup2->uuid, 'quantity' => '1', 'order_types' => 4],
     ]])->assertForbidden();
     expect((int) DB::table('pos_product_components')->where('product_id', $tea->id)->value('order_types'))->toBe(15);
+
+    // Fix order PK-B1 (L7) — the ticks of physical items are a catalogue.manage
+    // matter, not "Edit recipes": a catalogue manager without "Edit recipes"
+    // changes them (before the add-on the ticks were ignored: 15 stayed).
+    $manager = pkActorWith([MerchantPermission::CatalogueView->value, MerchantPermission::CatalogueManage->value]);
+    $coffee = pkProduct($manager['company'], 'Coffee');
+    $cup3 = pkItem($manager['company'], 'Cup');
+    pkComponent($coffee, $cup3, '1');
+    $this->putJson("/api/products/{$coffee->uuid}/components", ['lines' => [
+        ['component_uuid' => $cup3->uuid, 'quantity' => '1', 'order_types' => 12],
+    ]])->assertOk();
+    expect((int) DB::table('pos_product_components')->where('product_id', $coffee->id)->value('order_types'))->toBe(12);
 });
 
 it('ticks add-on stock lines: per direction, overlap refused, kept on an old tab, "Edit recipes", owner product touched', function (): void {

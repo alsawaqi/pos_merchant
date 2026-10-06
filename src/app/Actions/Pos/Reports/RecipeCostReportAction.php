@@ -79,7 +79,9 @@ final readonly class RecipeCostReportAction
 
         $rows = $products->map(static function (Product $p) use ($sold): array {
             $byType = null;
-            if ($p->recipeLines->contains(static fn ($line): bool => OrderTypes::read($line->order_types) !== OrderTypes::ALL)) {
+            // Fix order PK-B1 — a cooked batch uses every line whatever the
+            // ticks: only a made-to-order recipe costs per order type.
+            if ($p->stock_mode === 'ingredient' && $p->recipeLines->contains(static fn ($line): bool => OrderTypes::read($line->order_types) !== OrderTypes::ALL)) {
                 $byType = [];
                 foreach (OrderTypes::BUCKETS as $bucket => $bit) {
                     $byType[$bucket] = $p->theoreticalCost(orderTypeBit: $bit);

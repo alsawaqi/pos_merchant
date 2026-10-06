@@ -425,6 +425,10 @@ class Product extends Model
         // LAUNCH-P3 P3-4 — a line using a PREP ITEM costs what the prep
         // recipe costs (PrepGraph: Σ component × cost ÷ yield, recursively);
         // exact arithmetic, rounded once at the end.
+        // Fix order PK-B1 — a cooked batch uses every line (ticks never apply).
+        if ($this->stock_mode === 'cooked') {
+            $orderTypeBit = null;
+        }
         // LAUNCH packaging add-on — with an order type bit, only the lines
         // ticked "Used for" that type (null = every line).
         $total = BigRational::zero();
