@@ -1,8 +1,8 @@
 /**
  * LAUNCH-P4 B3 — channels (owner decision 8): a product or combo is sold
  *   - in store (till + handheld order types), at its branches;
- *   - on the QR menu (show_on_customer_tablet; the QR price is the in-store
- *     price);
+ *   - to customers: on the QR menu and the customer tablet (LAUNCH-P6: one
+ *     tick, show_on_customer_tablet; the customer price is the in-store price);
  *   - on delivery, per provider: listed or not, at the provider's own price,
  *     else the product's delivery price, else its base price.
  * Pure helpers shared by the product wizard and the combo editor (no imports,
@@ -88,4 +88,20 @@ export function branchScopePayload(scope: 'all' | 'selected', ids: number[]): { 
 /** The selected branch ids of a stored product (rows with is_available). */
 export function selectedBranchIds(rows: { branch_id: number; is_available: boolean }[] | undefined): number[] {
     return (rows ?? []).filter((r) => r.is_available).map((r) => r.branch_id);
+}
+
+/**
+ * LAUNCH-P6 (owner decision 9) — the one tick `show_on_customer_tablet` shows a
+ * product to customers on the QR menu AND the customer tablet. The locale keys
+ * channels.qr / channels.badge.qr / product_form.show_on_tablet carry exactly
+ * this label (pinned by tests/frontend/launch-p6-customer-label.test.mjs).
+ */
+export const CUSTOMER_CHANNEL_LABEL = {
+    en: 'Show to customers (QR and tablet)',
+    ar: 'إظهار للعملاء (QR والجهاز اللوحي)',
+} as const;
+
+/** The locale key of a channel badge's label. */
+export function channelLabelKey(key: ChannelKey): string {
+    return `channels.badge.${key}`;
 }

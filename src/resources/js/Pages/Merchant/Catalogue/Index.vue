@@ -13,7 +13,7 @@
  */
 
 import { Beaker, Building2, Boxes, CalendarRange, Clock3, FileSpreadsheet, Globe2, Image, Layers, ListChecks, Package, Pencil, Plus, QrCode, Sparkles, Store, Trash2, Truck } from 'lucide-vue-next';
-import { channelBadges, type ChannelKey } from '@/lib/channels';
+import { channelBadges, channelLabelKey, type ChannelKey } from '@/lib/channels';
 import { belowZeroBranchIds } from '@/lib/stockFlags';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -1219,8 +1219,8 @@ async function performProviderDelete(): Promise<void> {
                                             :key="badge.key"
                                             class="grid size-6 place-items-center rounded-full"
                                             :class="badge.on ? 'bg-teal-50 text-teal-700' : 'bg-slate-100 text-slate-300'"
-                                            :title="t(`channels.badge.${badge.key}`) + ' — ' + (badge.on ? t('channels.on') : t('channels.off'))"
-                                            :aria-label="t(`channels.badge.${badge.key}`) + ' — ' + (badge.on ? t('channels.on') : t('channels.off'))"
+                                            :title="t(channelLabelKey(badge.key)) + ' — ' + (badge.on ? t('channels.on') : t('channels.off'))"
+                                            :aria-label="t(channelLabelKey(badge.key)) + ' — ' + (badge.on ? t('channels.on') : t('channels.off'))"
                                         >
                                             <component :is="CHANNEL_ICONS[badge.key]" class="size-3.5" />
                                         </span>

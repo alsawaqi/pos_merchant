@@ -1372,8 +1372,8 @@
             "tax_rate_hint": "Leave blank to inherit the company default (5%).",
             "tax_inclusive": "Price includes tax",
             "tax_inclusive_hint": "Display label only for now — order totals still add company taxes on top.",
-            "show_on_tablet": "Show on QR menu",
-            "show_on_tablet_hint": "Customers see and order it on the QR menu, at the in-store price.",
+            "show_on_tablet": "Show to customers (QR and tablet)",
+            "show_on_tablet_hint": "Customers see and order it on the QR menu and the customer tablet, at the in-store price.",
             "low_stock_threshold": "Low-stock threshold",
             "low_stock_threshold_placeholder": "e.g. 5",
             "low_stock_threshold_hint": "Show a LOW STOCK badge on the POS card when branch units fall to or below this. Leave blank for no badge.",
@@ -3976,8 +3976,8 @@
         "column": "Channels",
         "in_store": "In store",
         "in_store_hint": "Sold on the till and the handheld for in-store orders (quick, dine-in, to go, car).",
-        "qr": "QR menu",
-        "qr_hint": "Customers see it on the QR menu and order it at the in-store price.",
+        "qr": "Show to customers (QR and tablet)",
+        "qr_hint": "Customers see it on the QR menu and the customer tablet and order it at the in-store price.",
         "delivery": "Delivery",
         "delivery_hint": "Sold on delivery orders. Delivery-app orders carry no VAT.",
         "providers": "Delivery providers",
@@ -3993,7 +3993,7 @@
         "off": "off",
         "badge": {
             "in_store": "In store",
-            "qr": "QR menu",
+            "qr": "Show to customers (QR and tablet)",
             "delivery": "Delivery"
         }
     },
