@@ -52,6 +52,8 @@ import BaseModal from '@/Components/BaseModal.vue';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import IngredientStockDialog from './IngredientStockDialog.vue';
 import PrepItemsTab from './PrepItemsTab.vue';
+// LAUNCH packaging add-on — the per-order packaging lists.
+import OrderPackagingTab from './OrderPackagingTab.vue';
 import AmountDisplaySwitch from './AmountDisplaySwitch.vue';
 // LAUNCH review add-on (part B) — containers, scan box, unit safety, breakdown.
 import AmountConfirmDialog from './components/AmountConfirmDialog.vue';
@@ -172,7 +174,7 @@ const canManage = computed(() => can(MerchantPermission.InventoryManage));
 const canCreateRestock = computed(() => can(MerchantPermission.RestockRequestCreate));
 const canReviewRestock = computed(() => can(MerchantPermission.RestockRequestReview));
 
-type TabKey = 'ingredients' | 'physical_items' | 'prep_items' | 'suppliers' | 'stock' | 'movements' | 'waste' | 'stock_counts' | 'restock_requests' | 'transfers';
+type TabKey = 'ingredients' | 'physical_items' | 'prep_items' | 'order_packaging' | 'suppliers' | 'stock' | 'movements' | 'waste' | 'stock_counts' | 'restock_requests' | 'transfers';
 const activeTab = ref<TabKey>('ingredients');
 
 // =================== Shared data =================================
@@ -1033,7 +1035,7 @@ async function fetchInventorySettings(): Promise<void> {
 /** LAUNCH-P2 — deep links (the dashboard's Low stock card): ?tab=stock&filter=low&branch=uuid. */
 function applyRouteQuery(): void {
     const tab = String(route.query.tab ?? '');
-    if (tab === 'stock' || tab === 'stock_counts' || tab === 'movements' || tab === 'prep_items') {
+    if (tab === 'stock' || tab === 'stock_counts' || tab === 'movements' || tab === 'prep_items' || tab === 'order_packaging') {
         activeTab.value = tab;
     }
     if (route.query.filter === 'low') {
@@ -2657,6 +2659,17 @@ async function submitSuggestions(): Promise<void> {
                     {{ t('inventory.tabs.prep_items') }}
                     <span class="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">{{ prepIngredients.length }}</span>
                 </button>
+                <!-- LAUNCH packaging add-on — per-order packaging per order type. -->
+                <button
+                    type="button"
+                    data-test="order-packaging-tab-button"
+                    class="flex-1 min-w-max inline-flex items-center justify-center gap-2 rounded px-3 py-2 text-sm font-semibold transition"
+                    :class="activeTab === 'order_packaging' ? 'bg-slate-950 text-white shadow' : 'text-slate-700 hover:bg-slate-50'"
+                    @click="activeTab = 'order_packaging'"
+                >
+                    <Package class="size-4" />
+                    {{ t('order_packaging.tab') }}
+                </button>
                 <button
                     type="button"
                     class="flex-1 min-w-max inline-flex items-center justify-center gap-2 rounded px-3 py-2 text-sm font-semibold transition"
@@ -2837,6 +2850,7 @@ async function submitSuggestions(): Promise<void> {
 
             <!-- ============ LAUNCH-P3 P3-4 — PREP ITEMS TAB ============ -->
             <PrepItemsTab v-if="activeTab === 'prep_items'" />
+            <OrderPackagingTab v-if="activeTab === 'order_packaging'" :ingredients="ingredients" :physical-items="physicalItems" :can-link="canManage" />
 
             <!-- ============ PD3a — PHYSICAL ITEMS TAB ============ -->
             <section v-if="activeTab === 'physical_items'" class="space-y-4">
