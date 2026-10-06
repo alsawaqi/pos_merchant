@@ -69,7 +69,14 @@ final class Packs
     public static function isUsed(ProductPack $pack): bool
     {
         return DB::table('pos_purchase_receipt_lines')->where('pack_id', $pack->id)->exists()
-            || ProductPack::query()->where('contains_pack_id', $pack->id)->exists();
+            || ProductPack::query()->where('contains_pack_id', $pack->id)->exists()
+            // LAUNCH packaging add-on (fix order PK-B1, M1) — a live per-order
+            // packaging line typed in this pack ("1 × pack of 50").
+            || DB::table('pos_order_packaging_lines')
+                ->where('product_id', $pack->product_id)
+                ->whereNull('deleted_at')
+                ->whereIn('entered_unit', [ContainerToken::encode((string) $pack->uuid), ContainerToken::PREFIX.$pack->uuid])
+                ->exists();
     }
 
     /**

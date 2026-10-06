@@ -108,7 +108,7 @@ class PhysicalItemPacksController extends Controller
                         ProductPack::query()->whereKey($row->id)->lockForUpdate()->first();
                     }
                     if ($changed && Packs::isUsed($row)) {
-                        throw new RuntimeException('This pack is already used (purchases, or another pack holds it), so its size cannot change. Add a new pack instead.');
+                        throw new RuntimeException('This pack is already used (purchases, an Order packaging list, or another pack holds it), so its size cannot change. Add a new pack instead.');
                     }
                     $row->pieces = $pieces;
                     $row->contains_pack_id = $containsId;

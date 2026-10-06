@@ -8,7 +8,10 @@ use App\Actions\Pos\Inventory\SaveOrderPackagingAction;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
 use App\Models\OrderPackagingLine;
+use App\Models\Product;
 use App\Models\ProductPack;
+use App\Support\Inventory\PackagingUsage;
+use App\Support\Inventory\Packs;
 use App\Support\Catalogue\OrderTypes;
 use App\Support\Inventory\ContainerToken;
 use App\Support\MerchantTenantContext;
@@ -116,7 +119,45 @@ final class OrderPackagingController extends Controller
         return [
             'can_edit' => RecipeEditGate::allows($request->user()),
             'lists' => $lists,
+            // Fix order PK-B1 (L4) — the item picker comes with the lists, so a
+            // user who may edit them (catalogue.view + "Edit recipes", no
+            // inventory.view) gets working pickers: physical items used with
+            // food and bought-in products, active, with their packs.
+            'items' => $this->items($companyId),
         ];
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function items(int $companyId): array
+    {
+        $products = Product::query()
+            ->where('company_id', $companyId)
+            ->where('stock_mode', 'unit')
+            ->where('status', 'active')
+            ->where(static fn ($q) => $q->whereNull('internal_purpose')->orWhere('internal_purpose', '!=', 'general'))
+            ->where(static fn ($q) => $q->whereNull('product_type')->orWhere('product_type', '!=', 'combo'))
+            ->orderBy('name')
+            ->get();
+        $packs = ProductPack::query()->whereIn('product_id', $products->pluck('id')->all() ?: [0])->orderBy('sort_order')->orderBy('id')->get()->groupBy('product_id');
+
+        return $products->map(static function (Product $p) use ($packs): array {
+            $all = $packs->get($p->id, collect());
+
+            return [
+                'uuid' => $p->uuid,
+                'name' => $p->name,
+                'name_ar' => $p->name_ar,
+                'kind' => $p->is_internal ? 'physical' : 'bought_in',
+                'cost_price' => $p->cost_price !== null ? (string) $p->cost_price : null,
+                'packs' => $all->map(static fn (ProductPack $pack): array => [
+                    'uuid' => $pack->uuid,
+                    'token' => ContainerToken::encode((string) $pack->uuid),
+                    'pieces' => (string) $pack->pieces,
+                    'display_name' => Packs::displayName($pack, $all, 'en'),
+                    'display_name_ar' => Packs::displayName($pack, $all, 'ar'),
+                ])->values()->all(),
+            ];
+        })->values()->all();
     }
 
     /** @return array<string, mixed> */
@@ -139,13 +180,15 @@ final class OrderPackagingController extends Controller
                 'entered_unit' => $shown['entered'] ? $shown['unit'] : null,
                 'entered_quantity' => $shown['entered'] ? $shown['quantity'] : null,
                 'pack_uuid' => null,
+                // Fix order PK-B1 (M2/M3) — false when pos_api would skip it.
+                'available' => ! $ingredient->trashed() && self::active($ingredient->status),
                 'cost' => $unitCost->isPositive() ? (string) BigDecimal::of($quantity)->multipliedBy($unitCost)->toScale(3, RoundingMode::HALF_UP) : null,
             ];
         }
 
         $product = $row->product;
-        $packUuid = ContainerToken::decode($row->entered_unit);
-        $pack = $packUuid === null ? null : ProductPack::query()->where('uuid', $packUuid)->first();
+        // Fix order PK-B1 (M1) — the pack form only while it adds up to the stored pieces.
+        [$packUnit, $packCount] = PackagingUsage::packForm($row->product_id, $quantity, $row->entered_unit, $row->entered_quantity);
         $costPrice = BigDecimal::of((string) ($product?->cost_price ?? '0'));
 
         return [
@@ -156,11 +199,17 @@ final class OrderPackagingController extends Controller
             'name_ar' => $product?->name_ar,
             'quantity' => $quantity,
             'unit' => null,
-            'entered_unit' => $pack !== null ? $row->entered_unit : null,
-            'entered_quantity' => $pack !== null ? (string) $row->entered_quantity : null,
-            'pack_uuid' => $pack?->uuid,
+            'entered_unit' => $packUnit,
+            'entered_quantity' => $packCount,
+            'pack_uuid' => ContainerToken::decode($packUnit),
+            'available' => $product !== null && ! $product->trashed() && self::active($product->status),
             'cost' => $costPrice->isPositive() ? (string) BigDecimal::of($quantity)->multipliedBy($costPrice)->toScale(3, RoundingMode::HALF_UP) : null,
         ];
+    }
+
+    private static function active(mixed $status): bool
+    {
+        return ($status instanceof \BackedEnum ? $status->value : (string) ($status ?? 'active')) === 'active';
     }
 
     private function ensureCanRead(Request $request): void

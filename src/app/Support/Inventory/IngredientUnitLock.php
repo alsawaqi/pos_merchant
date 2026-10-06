@@ -56,6 +56,10 @@ final class IngredientUnitLock
             AddOn::query()->whereIn('ingredient_id', $ids),
             // LAUNCH-P3 P3-4 — a prep recipe line is per batch in this unit too.
             IngredientRecipe::query()->whereIn('ingredient_id', $ids),
+            // LAUNCH packaging add-on (fix order PK-B1, H1) — a live per-order
+            // packaging line stores its quantity in this unit too (soft-
+            // deleted lines are out through the model's scope).
+            \App\Models\OrderPackagingLine::query()->whereIn('ingredient_id', $ids),
         ];
         foreach ($sources as $query) {
             foreach ($query->distinct()->pluck('ingredient_id') as $id) {

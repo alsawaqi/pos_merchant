@@ -79,6 +79,18 @@ final readonly class UpdateIngredientAction
             }
         }
 
+        // LAUNCH packaging add-on (fix order PK-B1, M3) — pos_api skips an
+        // inactive ingredient: it would silently stop being packed.
+        if (array_key_exists('status', $attributes) && (string) ($attributes['status'] ?? 'active') !== 'active'
+            && ($ingredient->status instanceof \BackedEnum ? $ingredient->status->value : (string) $ingredient->status) === 'active') {
+            \App\Support\Inventory\PackagingUsage::refuse(
+                \App\Support\Inventory\PackagingUsage::ingredientLists((int) $ingredient->id),
+                (string) $ingredient->name,
+                'be made inactive',
+                'إيقافه',
+            );
+        }
+
         // Unit-change guard — explained in the class docblock. Flipping the
         // unit without rescaling recipe / add-on lines would silently
         // mis-deduct them at sale (0.250 authored as kg, then read as grams,

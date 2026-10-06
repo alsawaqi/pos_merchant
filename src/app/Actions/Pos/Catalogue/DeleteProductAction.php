@@ -10,6 +10,7 @@ use App\Models\ComboSlot;
 use App\Models\ComboSlotOption;
 use App\Models\Product;
 use App\Models\User;
+use App\Support\Inventory\PackagingUsage;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -51,6 +52,11 @@ final readonly class DeleteProductAction
         if ($combos !== []) {
             throw new RuntimeException('This item is offered in a combo: remove it from '.implode(', ', $combos).' first.');
         }
+
+        // LAUNCH packaging add-on (fix order PK-B1, M2) — an item on a
+        // per-order packaging list is taken with every order of that type:
+        // refused from every delete path (catalogue and physical items).
+        PackagingUsage::refuse(PackagingUsage::productLists((int) $product->id), (string) $product->name, 'be deleted', 'حذفه');
 
         DB::transaction(function () use ($product, $actor, $companyId): void {
             $snapshot = [
