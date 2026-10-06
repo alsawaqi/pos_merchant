@@ -1,35 +1,52 @@
 <script setup lang="ts">
 /**
- * LAUNCH packaging add-on — the Order packaging tab of the Inventory page
- * (owner decision 3). One list per order type — Dine in, Quick order, To go,
+ * LAUNCH packaging add-on — the Order packaging lists (owner decision 3), on
+ * the Inventory page and on their own page for a recipe editor without
+ * inventory access. One list per order type — Dine in, Quick order, To go,
  * Delivery — set once for the whole merchant. Each line is an ingredient (a
  * unit of its kind, with the live translation and "Is this right?") or a
- * physical item in pieces or packs. When an order is paid (or a delivery is
- * handed over), the list of its final type is taken from stock ONCE for the
- * whole order. Reading needs catalogue or inventory view; changing a list
- * needs "Edit recipes". The scan box adds the scanned item to the chosen list.
+ * physical item / bought-in product in pieces or packs. When an order is paid
+ * (or a delivery is handed over), the list of its final type is taken from
+ * stock ONCE for the whole order. Reading needs catalogue or inventory view;
+ * changing a list needs "Edit recipes".
+ *
+ * Fix order PK-B1 — the item picker comes with the lists (L4), ingredients
+ * from the ingredient list (catalogue or inventory view), the scan box only
+ * for inventory viewers (its endpoint); server refusals in the page's
+ * language (L3); a deleted or inactive item shows "not taken" (M2/M3); only
+ * the amount is isolated left-to-right (L6).
  */
 import { Package, Plus, Trash2 } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
-import type { Ingredient } from '@/lib/api/inventory';
-import type { PhysicalItem } from '@/lib/api/physicalItems';
-import { getOrderPackaging, saveOrderPackaging, type OrderPackagingState } from '@/lib/api/orderPackaging';
+import { listIngredients, type Ingredient } from '@/lib/api/inventory';
+import { getOrderPackaging, saveOrderPackaging, type OrderPackagingItem, type OrderPackagingState } from '@/lib/api/orderPackaging';
 import type { ScanResult } from '@/lib/api/inventoryCodes';
 import { recipeLineWarning, type AmountWarning } from '@/lib/amountSafety';
-import { containerToken } from '@/lib/containers';
-import { ORDER_TYPE_BUCKETS, type OrderTypeBucket } from '@/lib/orderTypes';
-import { amountMissing, applyPackagingScan, blankDraft, draftOf, duplicateLines, payloadOf, type PackagingDraft } from '@/lib/orderPackaging';
+import { localizedMessage, ORDER_TYPE_BUCKETS, type OrderTypeBucket } from '@/lib/orderTypes';
+import {
+    amountMissing,
+    applyPackagingScan,
+    blankDraft,
+    draftOf,
+    duplicateLines,
+    orderWarning,
+    packOptions,
+    payloadOf,
+    piecesOf,
+    readonlyParts,
+    type PackagingDraft,
+} from '@/lib/orderPackaging';
 import { lineAmountText, money, recipeUnitFactor, recipeUnitOptions } from '@/lib/recipeUnits';
+import { MerchantPermission } from '@/lib/permissions';
 import { useAmountConfirm } from '@/composables/useAmountConfirm';
 import AmountConfirmDialog from './components/AmountConfirmDialog.vue';
 import AmountInput from './components/AmountInput.vue';
 import ScanBox from './components/ScanBox.vue';
 
 const props = withDefaults(defineProps<{
-    ingredients: Ingredient[];
-    physicalItems: PhysicalItem[];
     /** inventory.manage — the scan box may link an unknown barcode. */
     canLink?: boolean;
 }>(), {
@@ -37,9 +54,10 @@ const props = withDefaults(defineProps<{
 });
 
 const { t, locale } = useI18n();
-const isArabic = computed(() => locale.value === 'ar');
+const { can } = usePermissions();
 
 const state = ref<OrderPackagingState | null>(null);
+const ingredients = ref<Ingredient[]>([]);
 const loading = ref(true);
 const failed = ref(false);
 const drafts = reactive<Record<OrderTypeBucket, PackagingDraft[]>>({ dine_in: [], quick: [], to_go: [], delivery: [] });
@@ -50,9 +68,11 @@ const scanTarget = ref<OrderTypeBucket>('to_go');
 const scanMessage = ref<string | null>(null);
 
 const canEdit = computed(() => state.value?.can_edit === true);
-// Packaging is never cooked: raw ingredients only; physical items used with food only.
-const rawIngredients = computed(() => props.ingredients.filter((i) => !i.is_prep));
-const packagingItems = computed(() => props.physicalItems.filter((p) => p.purpose !== 'general'));
+// The scan endpoint needs inventory.view.
+const canScan = computed(() => canEdit.value && can(MerchantPermission.InventoryView));
+// Packaging is never cooked: raw, active ingredients only.
+const rawIngredients = computed(() => ingredients.value.filter((i) => !i.is_prep && i.status === 'active'));
+const items = computed<OrderPackagingItem[]>(() => state.value?.items ?? []);
 
 const { warnings: amountWarnings, confirm: confirmAmounts, answer: answerAmounts } = useAmountConfirm();
 
@@ -65,7 +85,9 @@ function load(next: OrderPackagingState): void {
 
 onMounted(async () => {
     try {
-        load((await getOrderPackaging()).data);
+        const [packaging, list] = await Promise.all([getOrderPackaging(), listIngredients().catch(() => ({ data: [] as Ingredient[] }))]);
+        ingredients.value = list.data;
+        load(packaging.data);
     } catch {
         failed.value = true;
     } finally {
@@ -74,32 +96,15 @@ onMounted(async () => {
 });
 
 function ingredientOf(uuid: string): Ingredient | undefined {
-    return rawIngredients.value.find((i) => i.uuid === uuid) ?? props.ingredients.find((i) => i.uuid === uuid);
+    return ingredients.value.find((i) => i.uuid === uuid);
 }
 
-function itemOf(uuid: string): PhysicalItem | undefined {
-    return props.physicalItems.find((p) => p.uuid === uuid);
+function itemOf(uuid: string): OrderPackagingItem | undefined {
+    return items.value.find((p) => p.uuid === uuid);
 }
 
 function itemName(name: string, nameAr: string | null | undefined): string {
-    return isArabic.value && nameAr ? nameAr : name;
-}
-
-/** A physical item's units: pieces, or one of its packs (by the pack's token). */
-function packOptions(uuid: string): { value: string; label: string }[] {
-    const item = itemOf(uuid);
-    return [
-        { value: '', label: t('order_packaging.pieces') },
-        ...(item?.packs ?? []).map((p) => ({ value: containerToken(p.uuid), label: isArabic.value ? p.display_name_ar : p.display_name })),
-    ];
-}
-
-/** Pieces a product line takes (a pack × its pieces). */
-function piecesOf(draft: PackagingDraft): number {
-    const n = Number(draft.quantity);
-    if (draft.unit === '') return n;
-    const pack = (itemOf(draft.product_uuid)?.packs ?? []).find((p) => containerToken(p.uuid) === draft.unit);
-    return pack ? n * Number(pack.pieces) : n;
+    return locale.value === 'ar' && nameAr ? nameAr : name;
 }
 
 function setType(bucket: OrderTypeBucket, idx: number, type: 'ingredient' | 'product'): void {
@@ -124,30 +129,27 @@ function blocked(bucket: OrderTypeBucket): boolean {
     return duplicates(bucket).length > 0 || drafts[bucket].some(amountMissing);
 }
 
-/** Read-only line: "10 g Sugar", "1 × pack 50 Napkin". */
-function readonlyText(bucket: OrderTypeBucket, idx: number): string {
+/** Read-only line: the amount (isolated left-to-right) and the name. */
+function readonlyLine(bucket: OrderTypeBucket, idx: number): { amount: string; name: string } {
     const line = state.value?.lists[bucket].lines[idx];
-    if (!line) return '';
-    if (line.type === 'ingredient') {
-        const ingredient = ingredientOf(line.ingredient_uuid ?? '');
-        const draft = draftOf(line);
-        return `${lineAmountText(ingredient, draft.unit, draft.quantity, locale.value)} ${itemName(line.name ?? '', line.name_ar)}`;
-    }
-    return `${Number(line.quantity)} × ${itemName(line.name ?? '', line.name_ar)}`;
+    if (!line) return { amount: '', name: '' };
+    return readonlyParts(line, locale.value, (d) => lineAmountText(ingredientOf(d.ingredient_uuid), d.unit, d.quantity, locale.value));
+}
+
+/** M2/M3 — a line pos_api would skip (the item was deleted or made inactive before the guards). */
+function notTaken(bucket: OrderTypeBucket, idx: number): boolean {
+    return state.value?.lists[bucket].lines[idx]?.available === false;
 }
 
 /** E2 — "One order would use 200 l. Did you mean 200 ml?" (warns, never blocks). */
 function warningsOf(bucket: OrderTypeBucket): (AmountWarning | null)[] {
     return drafts[bucket].map((d) => {
-        let warning: AmountWarning | null = null;
         if (d.type === 'ingredient') {
             const ingredient = ingredientOf(d.ingredient_uuid);
             if (!ingredient) return null;
-            warning = recipeLineWarning({ amount: d.quantity, unit: d.unit, storedUnit: ingredient.unit, factor: recipeUnitFactor(ingredient, d.unit) });
-        } else if (d.product_uuid !== '') {
-            warning = recipeLineWarning({ amount: piecesOf(d), unit: '', storedUnit: 'piece' });
+            return orderWarning(recipeLineWarning({ amount: d.quantity, unit: d.unit, storedUnit: ingredient.unit, factor: recipeUnitFactor(ingredient, d.unit) }));
         }
-        return warning === null ? null : { key: warning.key.replace('amount_safety.warnings.', 'order_packaging.warnings.'), params: warning.params };
+        return d.product_uuid === '' ? null : orderWarning(recipeLineWarning({ amount: piecesOf(d, itemOf(d.product_uuid)), unit: '', storedUnit: 'piece' }));
     });
 }
 
@@ -167,10 +169,9 @@ async function save(bucket: OrderTypeBucket): Promise<void> {
         }
         saved[bucket] = true;
     } catch (err) {
-        const message = err instanceof ApiError && err.payload && typeof err.payload === 'object' && 'message' in err.payload
-            ? String((err.payload as { message?: unknown }).message ?? '')
-            : '';
-        errors[bucket] = message !== '' ? message : t('order_packaging.save_failed');
+        const payload = err instanceof ApiError ? err.payload : null;
+        const plain = payload && typeof payload === 'object' && 'message' in payload ? String((payload as { message?: unknown }).message ?? '') : '';
+        errors[bucket] = localizedMessage(payload, locale.value) ?? (plain !== '' ? plain : t('order_packaging.save_failed'));
     } finally {
         busy[bucket] = false;
     }
@@ -199,15 +200,15 @@ function onScan(result: ScanResult): void {
         <template v-else-if="state">
             <p v-if="!canEdit" class="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800" data-test="order-packaging-readonly">{{ t('order_packaging.readonly_hint') }}</p>
 
-            <!-- F — the scan box adds to the chosen list. -->
-            <div v-if="canEdit" class="flex flex-wrap items-end gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+            <!-- F — the scan box adds to the chosen list (inventory viewers: the scan endpoint). -->
+            <div v-if="canScan" class="flex flex-wrap items-end gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
                 <label class="block">
                     <span class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{{ t('order_packaging.scan_into') }}</span>
                     <select v-model="scanTarget" class="mt-1 block rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs" data-test="order-packaging-scan-target">
                         <option v-for="bucket in ORDER_TYPE_BUCKETS" :key="bucket" :value="bucket">{{ t(`order_types.long.${bucket}`) }}</option>
                     </select>
                 </label>
-                <ScanBox class="min-w-64 flex-1" :can-link="canLink" :ingredients="rawIngredients" :physical-items="packagingItems" data-test="order-packaging-scan" @found="onScan" />
+                <ScanBox class="min-w-64 flex-1" :can-link="props.canLink" :ingredients="rawIngredients" data-test="order-packaging-scan" @found="onScan" />
                 <p v-if="scanMessage" class="basis-full text-xs font-semibold text-rose-700" data-test="order-packaging-scan-message">{{ scanMessage }}</p>
             </div>
 
@@ -228,7 +229,10 @@ function onScan(result: ScanResult): void {
                     <template v-if="!canEdit">
                         <p v-if="state.lists[bucket].lines.length === 0" class="mt-2 text-xs italic text-slate-500">{{ t('order_packaging.empty') }}</p>
                         <ul v-else class="mt-2 space-y-1">
-                            <li v-for="(line, idx) in state.lists[bucket].lines" :key="idx" class="text-sm text-slate-700"><bdi dir="ltr" class="tabular-nums">{{ readonlyText(bucket, idx) }}</bdi></li>
+                            <li v-for="(line, idx) in state.lists[bucket].lines" :key="idx" class="text-sm text-slate-700">
+                                <bdi dir="ltr" class="tabular-nums">{{ readonlyLine(bucket, idx).amount }}</bdi> {{ readonlyLine(bucket, idx).name }}
+                                <span v-if="notTaken(bucket, idx)" class="ms-1 rounded bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700" data-test="order-packaging-not-taken">{{ t('order_packaging.not_taken') }}</span>
+                            </li>
                         </ul>
                     </template>
 
@@ -247,7 +251,7 @@ function onScan(result: ScanResult): void {
                                 </select>
                                 <select v-else v-model="line.product_uuid" class="min-w-40 flex-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs" :aria-label="t('order_packaging.kind_item')" @change="line.unit = ''">
                                     <option value="">—</option>
-                                    <option v-for="item in packagingItems" :key="item.uuid" :value="item.uuid">{{ itemName(item.name, item.name_ar) }}</option>
+                                    <option v-for="item in items" :key="item.uuid" :value="item.uuid">{{ itemName(item.name, item.name_ar) }}<template v-if="item.kind === 'bought_in'"> ({{ t('order_packaging.bought_in') }})</template></option>
                                 </select>
                                 <div class="w-56">
                                     <AmountInput
@@ -266,7 +270,7 @@ function onScan(result: ScanResult): void {
                                         v-else
                                         v-model="line.quantity"
                                         v-model:unit="line.unit"
-                                        :options="packOptions(line.product_uuid)"
+                                        :options="packOptions(itemOf(line.product_uuid), locale, t('order_packaging.pieces'))"
                                         stored-unit="piece"
                                         step="1"
                                         input-class="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-xs tabular-nums"
@@ -277,9 +281,10 @@ function onScan(result: ScanResult): void {
                                 <button type="button" class="grid size-8 place-items-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50" :title="t('common.delete')" @click="removeLine(bucket, idx)">
                                     <Trash2 class="size-3.5" />
                                 </button>
-                                <p v-if="line.type === 'product' && line.unit !== '' && line.product_uuid" class="basis-full text-[11px] text-teal-700">{{ t('order_packaging.pieces_total', { n: piecesOf(line) }) }}</p>
+                                <p v-if="line.type === 'product' && line.unit !== '' && line.product_uuid" class="basis-full text-[11px] text-teal-700">{{ t('order_packaging.pieces_total', { n: piecesOf(line, itemOf(line.product_uuid)) }) }}</p>
                                 <p v-if="duplicates(bucket).includes(idx)" class="basis-full text-[11px] font-semibold text-rose-700" data-test="order-packaging-duplicate">{{ t('order_packaging.duplicate') }}</p>
                                 <p v-else-if="amountMissing(line)" class="basis-full text-[11px] font-semibold text-rose-700">{{ t('recipe_units.amount_required') }}</p>
+                                <p v-if="notTaken(bucket, idx)" class="basis-full text-[11px] font-semibold text-rose-700" data-test="order-packaging-not-taken">{{ t('order_packaging.not_taken_hint') }}</p>
                             </li>
                         </ul>
                         <div class="mt-3 flex flex-wrap items-center gap-2">
@@ -291,7 +296,7 @@ function onScan(result: ScanResult): void {
                             </button>
                         </div>
                         <p v-if="saved[bucket]" class="mt-1 text-[11px] font-semibold text-emerald-700">{{ t('order_packaging.saved') }}</p>
-                        <p v-if="errors[bucket]" class="mt-1 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700">{{ errors[bucket] }}</p>
+                        <p v-if="errors[bucket]" class="mt-1 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700" data-test="order-packaging-error">{{ errors[bucket] }}</p>
                     </template>
                 </article>
             </div>

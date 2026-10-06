@@ -8,7 +8,7 @@
  */
 
 import { containerToken, plusOne } from '@/lib/containers';
-import type { OrderPackagingLine, OrderPackagingLinePayload } from '@/lib/api/orderPackaging';
+import type { OrderPackagingItem, OrderPackagingLine, OrderPackagingLinePayload } from '@/lib/api/orderPackaging';
 
 /** One line as the editor holds it. */
 export interface PackagingDraft {
@@ -125,6 +125,42 @@ export function applyPackagingScan(
     }
     next.push(line);
     return { ok: true, drafts: next, index: next.length - 1 };
+}
+
+/** A physical item's units: pieces, or one of its packs (by the pack's token). */
+export function packOptions(item: OrderPackagingItem | undefined, locale: string, piecesLabel: string): { value: string; label: string }[] {
+    return [
+        { value: '', label: piecesLabel },
+        ...(item?.packs ?? []).map((p) => ({ value: p.token, label: locale === 'ar' ? p.display_name_ar : p.display_name })),
+    ];
+}
+
+/** Pieces a physical-item line takes (N packs × the pack's pieces, or the pieces typed). */
+export function piecesOf(draft: PackagingDraft, item: OrderPackagingItem | undefined): number {
+    const n = Number(draft.quantity);
+    if (draft.unit === '') return n;
+    const pack = (item?.packs ?? []).find((p) => p.token === draft.unit);
+    return pack ? n * Number(pack.pieces) : n;
+}
+
+/** E2 — a portion warning reworded for one order ("One order would use 200 l…"). */
+export function orderWarning<T extends { key: string; params: Record<string, string> }>(warning: T | null): T | null {
+    return warning === null ? null : { ...warning, key: warning.key.replace('amount_safety.warnings.', 'order_packaging.warnings.') };
+}
+
+/**
+ * A read-only line as two parts, so only the amount is isolated left-to-right
+ * (review B, L6): ingredient lines in the unit they were typed in, physical
+ * items as "N ×".
+ */
+export function readonlyParts(
+    line: OrderPackagingLine,
+    locale: string,
+    ingredientAmount: (draft: PackagingDraft) => string,
+): { amount: string; name: string } {
+    const name = locale === 'ar' && line.name_ar ? line.name_ar : (line.name ?? '');
+    if (line.type === 'ingredient') return { amount: ingredientAmount(draftOf(line)), name };
+    return { amount: `${trimNumber(line.quantity)} ×`, name };
 }
 
 function trimNumber(value: string | number | null | undefined): string {

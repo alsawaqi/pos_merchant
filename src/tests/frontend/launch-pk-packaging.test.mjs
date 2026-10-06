@@ -1,10 +1,11 @@
-// LAUNCH packaging add-on, Part B — the "Used for" ticks (lib/orderTypes.ts,
-// the wizard, the add-on stock editor), the Order packaging tab
-// (lib/orderPackaging.ts) and the report notes. Before (81a59b4): none of
-// these files, keys or bindings existed.
+// LAUNCH packaging add-on, Part B — the pure helpers behind the "Used for"
+// ticks (lib/orderTypes.ts, lib/recipeUnits.ts), the Order packaging editor
+// (lib/orderPackaging.ts) and the texts. Fix order PK-B1 (L7) — behaviour is
+// tested through the helpers the screens call, not regexes over .vue source.
+// Before (81a59b4): none of these helpers or keys existed.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { assertBilingual, assertKeysExist, exists, lib, read, sfc } from './launch-p4-support.mjs';
+import { assertBilingual, assertKeysExist, lib, sfc } from './launch-p4-support.mjs';
 
 const plain = (value) => JSON.parse(JSON.stringify(value));
 const tok = (uuid) => `#${Buffer.from(uuid.replace(/-/g, ''), 'hex').toString('base64url')}`;
@@ -40,6 +41,28 @@ test('order types: the same item on non-overlapping lines is fine; overlapping l
     assert.deepEqual(plain(overlappingLines(lines, (l) => l.uuid, (l) => l.mask)), [5]);
 });
 
+test('order types: ingredient ticks only on made-to-order; a cooked recipe saves every type', () => {
+    const { recipeTicksShown, recipeLineMask, overlappingLines } = lib('orderTypes');
+    assert.equal(recipeTicksShown('ingredient'), true);
+    assert.equal(recipeTicksShown('cooked'), false);
+    assert.equal(recipeLineMask('ingredient', 4), 4);
+    assert.equal(recipeLineMask('cooked', 4), 15);
+    // On a cooked product two lines of one ingredient always overlap (merge them).
+    const lines = [{ uuid: 'napkin', mask: 1 }, { uuid: 'napkin', mask: 12 }];
+    assert.deepEqual(plain(overlappingLines(lines, (l) => l.uuid, (l) => recipeLineMask('cooked', l.mask))), [1]);
+    assert.deepEqual(plain(overlappingLines(lines, (l) => l.uuid, (l) => recipeLineMask('ingredient', l.mask))), []);
+});
+
+test('PK-B1 M4: made to order → cooked saves the recipe before the type; every other change the type first', () => {
+    const { recipeSavedFirst } = lib('orderTypes');
+    assert.equal(recipeSavedFirst('ingredient', 'cooked'), true);
+    assert.equal(recipeSavedFirst('cooked', 'cooked'), false);
+    assert.equal(recipeSavedFirst('cooked', 'ingredient'), false);
+    // Untracked → cooked has no recipe until the type allows one.
+    assert.equal(recipeSavedFirst('untracked', 'cooked'), false);
+    assert.equal(recipeSavedFirst(undefined, 'cooked'), false);
+});
+
 test('order types: the cost per type once a line is ticked, null when every line is for every type', () => {
     const { costByType } = lib('orderTypes');
     const lines = [{ cost: 0.2, mask: 15 }, { cost: 0.01, mask: 1 }, { cost: 0.03, mask: 12 }];
@@ -51,16 +74,15 @@ test('order types: the cost per type once a line is ticked, null when every line
     assert.equal(costByType([{ cost: 1, mask: 15 }], (l) => l.mask, (l) => l.cost), null);
 });
 
-test('order types: the server overlap 422 reads in the page language', () => {
-    const { overlapMessage } = lib('orderTypes');
-    const payload = { code: 'order_types_overlap', message: 'Duplicate line: "Napkin"', message_ar: 'سطر مكرر: "Napkin"' };
-    assert.equal(overlapMessage(payload, 'ar'), 'سطر مكرر: "Napkin"');
-    assert.equal(overlapMessage(payload, 'en'), 'Duplicate line: "Napkin"');
-    assert.equal(overlapMessage({ message: 'Other' }, 'ar'), null);
-    // Server review M1 — a cooked product with an ingredient on several lines.
-    assert.equal(overlapMessage({ code: 'cooked_split_lines', message: 'Cooked…', message_ar: 'المطبوخة…' }, 'ar'), 'المطبوخة…');
-    assert.match(sfc('resources/js/Pages/Merchant/Catalogue/ProductWizard.vue').template, /recipeTicksShown \? t\('order_types\.overlap'\) : t\('order_types\.cooked_split'\)/);
-    assert.equal(overlapMessage(null, 'en'), null);
+test('PK-B1 L3: a server refusal reads in the page language', () => {
+    const { localizedMessage } = lib('orderTypes');
+    for (const code of ['order_types_overlap', 'cooked_split_lines', 'on_packaging_list', 'packaging_prep']) {
+        const payload = { code, message: `EN ${code}`, message_ar: `AR ${code}` };
+        assert.equal(localizedMessage(payload, 'ar'), `AR ${code}`);
+        assert.equal(localizedMessage(payload, 'en'), `EN ${code}`);
+    }
+    assert.equal(localizedMessage({ message: 'Only English' }, 'ar'), null);
+    assert.equal(localizedMessage(null, 'en'), null);
 });
 
 test('add-on stock lines: ticks travel to the save, no tick and overlap block it', () => {
@@ -111,62 +133,35 @@ test('order packaging: a scan adds the item, again makes it 2, a pack counts pac
     assert.deepEqual(plain(sugar.drafts), [{ type: 'ingredient', ingredient_uuid: 'sugar', product_uuid: '', quantity: '1', unit: '' }]);
 });
 
-test('the "Used for" toggles: four small labelled toggles, all on by default, a no-tick warning', () => {
-    assert.ok(exists('resources/js/Pages/Merchant/Catalogue/OrderTypeTicks.vue'));
-    const ticks = sfc('resources/js/Pages/Merchant/Catalogue/OrderTypeTicks.vue');
-    assert.match(ticks.template, /v-for="bucket in ORDER_TYPE_BUCKETS"/);
-    assert.match(ticks.template, /:aria-pressed="hasType\(modelValue, bucket\)"/);
-    assert.match(ticks.template, /order_types\.pick_one/);
-    assertKeysExist(ticks.script + ticks.template.replace(/`order_types\.short\.\$\{b(ucket)?\}`/g, "'order_types.short.dine_in'"), 'OrderTypeTicks');
+test('PK-B1 L4: the item picker and packs come from the list endpoint; pieces = packs × pieces', () => {
+    const { packOptions, piecesOf, blankDraft } = lib('orderPackaging');
+    const napkin = { uuid: 'n', name: 'Napkin', name_ar: 'منديل', kind: 'physical', cost_price: '0.002', packs: [{ uuid: 'p', token: '#tok', pieces: '50', display_name: 'pack 50', display_name_ar: 'علبة 50' }] };
+    assert.deepEqual(plain(packOptions(napkin, 'en', 'pieces')), [{ value: '', label: 'pieces' }, { value: '#tok', label: 'pack 50' }]);
+    assert.deepEqual(plain(packOptions(napkin, 'ar', 'قطع'))[1], { value: '#tok', label: 'علبة 50' });
+    assert.deepEqual(plain(packOptions(undefined, 'en', 'pieces')), [{ value: '', label: 'pieces' }]);
+    assert.equal(piecesOf({ ...blankDraft('product'), product_uuid: 'n', quantity: '2', unit: '#tok' }, napkin), 100);
+    assert.equal(piecesOf({ ...blankDraft('product'), product_uuid: 'n', quantity: '3', unit: '' }, napkin), 3);
 });
 
-test('the wizard ticks made-to-order recipe lines and every physical-item row, and sends them', () => {
-    const wizard = sfc('resources/js/Pages/Merchant/Catalogue/ProductWizard.vue');
-    assert.match(wizard.script, /const recipeTicksShown = computed<boolean>\(\(\) => form\.stock_mode === 'ingredient'\)/);
-    assert.match(wizard.template, /<div v-if="recipeTicksShown" class="basis-full">\s*<OrderTypeTicks v-model="line\.order_types" \/>/);
-    assert.match(wizard.template, /<OrderTypeTicks v-model="row\.order_types" :readonly="readOnly" \/>/);
-    assert.match(wizard.template, /order_types\.cooked_note/);
-    assert.match(wizard.script, /order_types: recipeLineTypes\(l\) \}/);
-    assert.match(wizard.script, /\{ component_uuid: l\.component_uuid, quantity: l\.quantity, order_types: l\.order_types \}/);
-    assert.match(wizard.script, /order_types: readMask\(line\.order_types\)/);
-    assert.match(wizard.script, /form\.recipe_lines\.push\(\{ ingredient_uuid: '', quantity: '', unit: '', order_types: ALL_ORDER_TYPES \}\)/);
-    assert.match(wizard.template, /:disabled="submitting \|\| recipeHasDuplicates \|\| ticksBlocked"/);
-    assert.match(wizard.template, /data-test="recipe-cost-by-type"/);
+test('PK-B1 L6 + E2: a read-only line isolates only its amount; warnings are worded for one order', () => {
+    const { readonlyParts, orderWarning } = lib('orderPackaging');
+    const bag = { type: 'product', ingredient_uuid: null, product_uuid: 'b', name: 'Bag', name_ar: 'كيس', quantity: '2.000', unit: null, entered_unit: null, entered_quantity: null, pack_uuid: null };
+    assert.deepEqual(plain(readonlyParts(bag, 'ar', () => '')), { amount: '2 ×', name: 'كيس' });
+    const sugar = { type: 'ingredient', ingredient_uuid: 's', product_uuid: null, name: 'Sugar', name_ar: null, quantity: '10.0000', unit: 'g', entered_unit: 'kg', entered_quantity: '0.01', pack_uuid: null };
+    assert.deepEqual(plain(readonlyParts(sugar, 'ar', (d) => `${d.quantity} ${d.unit}`)), { amount: '0.01 kg', name: 'Sugar' });
+    assert.deepEqual(plain(orderWarning({ key: 'amount_safety.warnings.recipe_suggest', params: { amount: '200 l' } })), { key: 'order_packaging.warnings.recipe_suggest', params: { amount: '200 l' } });
+    assert.equal(orderWarning(null), null);
 });
 
-test('the add-on stock editor ticks each line and flags overlaps', () => {
-    const editor = sfc('resources/js/Pages/Merchant/Catalogue/AddonConsumptionEditor.vue');
-    assert.match(editor.template, /<OrderTypeTicks :model-value="line\.order_types \?\? ALL_ORDER_TYPES" :disabled="disabled" @update:model-value="patch\(idx, \{ order_types: \$event \}\)" \/>/);
-    assert.match(editor.template, /data-test="consumption-overlap"/);
-    assert.match(editor.script, /order_types: ALL_ORDER_TYPES \}/);
-    for (const page of ['ProductWizard', 'Index']) {
-        assert.match(sfc(`resources/js/Pages/Merchant/Catalogue/${page}.vue`).script, /order_types: readMask\(l\.order_types\)/, page);
-    }
-});
-
-test('Inventory has an Order packaging tab with four lists, the scan box and the unit-safe amount box', () => {
-    const index = sfc('resources/js/Pages/Merchant/Inventory/Index.vue');
-    assert.match(index.template, /data-test="order-packaging-tab-button"/);
-    assert.match(index.template, /<OrderPackagingTab v-if="activeTab === 'order_packaging'"/);
-    const tab = sfc('resources/js/Pages/Merchant/Inventory/OrderPackagingTab.vue');
-    assert.match(tab.template, /v-for="bucket in ORDER_TYPE_BUCKETS"/);
-    assert.match(tab.template, /<ScanBox /);
-    assert.match(tab.template, /<AmountInput/);
-    assert.match(tab.template, /<AmountConfirmDialog/);
-    assert.match(tab.script, /saveOrderPackaging\(bucket, payloadOf\(drafts\[bucket\]\)\)/);
-    assert.match(read('resources/js/lib/api/orderPackaging.ts'), /\/api\/inventory\/order-packaging\/\$\{orderType\}/);
-    assertKeysExist(tab.script + tab.template, 'OrderPackagingTab');
-});
-
-test('the reports say where the per-order packaging is counted', () => {
-    assert.match(sfc('resources/js/Pages/Merchant/Reports/Sales.vue').template, /order_packaging\.reports\.sales_packaging/);
-    assert.match(sfc('resources/js/Pages/Merchant/Reports/ProductPerformance.vue').template, /order_packaging\.reports\.performance_note/);
-    const recipe = sfc('resources/js/Pages/Merchant/Reports/RecipeCost.vue');
-    assert.match(recipe.template, /r\.theoretical_by_type/);
-    assert.match(recipe.template, /order_packaging\.reports\.recipe_cost_note/);
-});
-
-test('every new text is in English and Arabic', () => {
+test('every new text is in English and Arabic, and every key the new screens use exists', () => {
     assertBilingual('order_types');
     assertBilingual('order_packaging');
+    for (const path of [
+        'resources/js/Pages/Merchant/Catalogue/OrderTypeTicks.vue',
+        'resources/js/Pages/Merchant/Inventory/OrderPackagingTab.vue',
+        'resources/js/Pages/Merchant/Inventory/OrderPackagingPage.vue',
+    ]) {
+        const file = sfc(path);
+        assertKeysExist(file.script + file.template, path);
+    }
 });

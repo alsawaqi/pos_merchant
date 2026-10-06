@@ -26,8 +26,20 @@ export interface OrderPackagingLine {
     entered_unit: string | null;
     entered_quantity: string | null;
     pack_uuid: string | null;
+    /** Fix order PK-B1 — false when pos_api would skip the item (deleted or inactive). */
+    available?: boolean;
     /** Today's cost of the line (OMR), null while it has no cost. */
     cost: string | null;
+}
+
+/** Fix order PK-B1 (L4) — an item the list may hold, with its packs. */
+export interface OrderPackagingItem {
+    uuid: string;
+    name: string;
+    name_ar: string | null;
+    kind: 'physical' | 'bought_in';
+    cost_price: string | null;
+    packs: { uuid: string; token: string; pieces: string; display_name: string; display_name_ar: string }[];
 }
 
 export interface OrderPackagingList {
@@ -40,6 +52,8 @@ export interface OrderPackagingList {
 export interface OrderPackagingState {
     can_edit: boolean;
     lists: Record<OrderTypeBucket, OrderPackagingList>;
+    /** The physical items and bought-in products the lists may hold (active, used with food). */
+    items: OrderPackagingItem[];
 }
 
 export interface OrderPackagingLinePayload {

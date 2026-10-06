@@ -17,7 +17,7 @@
 import { computed, onMounted, ref, type Component } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { RouterLink } from 'vue-router';
-import { Armchair, BadgeCheck, BadgePercent, Bike, Book, Boxes, Building2, ChefHat, ChevronDown, ClipboardList, Contact, FolderTree, Gauge, Gift, Globe, Hash, KeyRound, LayoutGrid, LineChart, LogOut, Mail, Menu, Percent, Receipt, Settings, ShieldAlert, ShoppingBag, Tags, Target, Users, X } from 'lucide-vue-next';
+import { Armchair, BadgeCheck, BadgePercent, Bike, Book, Boxes, Package, Building2, ChefHat, ChevronDown, ClipboardList, Contact, FolderTree, Gauge, Gift, Globe, Hash, KeyRound, LayoutGrid, LineChart, LogOut, Mail, Menu, Percent, Receipt, Settings, ShieldAlert, ShoppingBag, Tags, Target, Users, X } from 'lucide-vue-next';
 import { authState } from '@/stores/auth';
 import { messagesState, refreshUnreadCount } from '@/stores/messages';
 import { setLocale, type SupportedLocale } from '@/lib/i18n';
@@ -34,6 +34,8 @@ interface NavItem {
      * of them. Server-side is still the real enforcement.
      */
     permission: MerchantPermissionValue | MerchantPermissionValue[] | null;
+    /** Hidden when the user holds this permission (an entry for those without another way in). */
+    hideIf?: MerchantPermissionValue;
 }
 
 const { t, locale } = useI18n();
@@ -63,6 +65,10 @@ const navigationCatalog: readonly NavItem[] = [
     { key: 'catalogue', to: '/catalogue', icon: Book, permission: MerchantPermission.CatalogueView },
     { key: 'taxes', to: '/taxes', icon: Percent, permission: MerchantPermission.CatalogueView },
     { key: 'inventory', to: '/inventory', icon: Boxes, permission: MerchantPermission.InventoryView },
+    // LAUNCH packaging add-on (fix order PK-B1, L4) — the Order packaging
+    // lists on their own page, for catalogue users without inventory access
+    // (a recipe editor edits them); inventory users use the Inventory tab.
+    { key: 'order_packaging', to: '/inventory/order-packaging', icon: Package, permission: MerchantPermission.CatalogueView, hideIf: MerchantPermission.InventoryView },
     // PD6 — Goods Received Notes (Saved Purchase Receipts).
     { key: 'purchase_receipts', to: '/inventory/receipts', icon: ClipboardList, permission: MerchantPermission.InventoryView },
     { key: 'production', to: '/production', icon: ChefHat, permission: MerchantPermission.ProductionView },
@@ -89,8 +95,8 @@ const navigationCatalog: readonly NavItem[] = [
 ];
 
 const visibleNavigation = computed(() =>
-    navigationCatalog.filter((item) => item.permission === null
-        || (Array.isArray(item.permission) ? item.permission.some((p) => can(p)) : can(item.permission))),
+    navigationCatalog.filter((item) => (item.hideIf === undefined || !can(item.hideIf)) && (item.permission === null
+        || (Array.isArray(item.permission) ? item.permission.some((p) => can(p)) : can(item.permission)))),
 );
 
 const userInitials = computed(() => {

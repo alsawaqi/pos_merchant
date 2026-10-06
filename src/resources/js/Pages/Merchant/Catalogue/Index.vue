@@ -55,7 +55,7 @@ import {
 import AddonConsumptionEditor from '@/Pages/Merchant/Catalogue/AddonConsumptionEditor.vue';
 import { listIngredients, type Ingredient } from '@/lib/api/inventory';
 import { completeConsumptionLines, consumptionLinesHaveProblems, lineEntry } from '@/lib/recipeUnits';
-import { overlapMessage, readMask } from '@/lib/orderTypes';
+import { localizedMessage, readMask } from '@/lib/orderTypes';
 import { listBranches, type Branch as BranchLite } from '@/lib/api/branches';
 import {
     createDeliveryProvider,
@@ -505,7 +505,9 @@ async function confirmDeleteProduct(): Promise<void> {
         prodDeleteTarget.value = null;
         await fetchProducts();
     } catch (err) {
-        error.value = err instanceof Error ? err.message : 'Failed';
+        // Fix order PK-B1 — a refusal in the page's language (an item on a packaging list).
+        error.value = (err instanceof ApiError ? localizedMessage(err.payload, locale.value) : null)
+            ?? (err instanceof Error ? err.message : 'Failed');
     } finally {
         deleting.value = false;
     }
@@ -761,7 +763,7 @@ async function submitAddOn(): Promise<void> {
             aoModalError.value = t('catalogue.validation_summary');
         } else {
             // LAUNCH packaging add-on — overlapping ticks: the server's message in the page's language.
-            aoModalError.value = (err instanceof ApiError ? overlapMessage(err.payload, locale.value) : null)
+            aoModalError.value = (err instanceof ApiError ? localizedMessage(err.payload, locale.value) : null)
                 ?? (err instanceof Error ? err.message : 'Failed');
         }
     } finally {

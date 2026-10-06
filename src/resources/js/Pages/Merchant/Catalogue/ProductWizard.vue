@@ -128,7 +128,7 @@ import AmountConfirmDialog from '@/Pages/Merchant/Inventory/components/AmountCon
 import AmountInput from '@/Pages/Merchant/Inventory/components/AmountInput.vue';
 // LAUNCH packaging add-on — "Used for" ticks per stock line.
 import OrderTypeTicks from '@/Pages/Merchant/Catalogue/OrderTypeTicks.vue';
-import { ALL_ORDER_TYPES, costByType, noTicks, ORDER_TYPE_BUCKETS, overlapMessage, overlappingLines, readMask } from '@/lib/orderTypes';
+import { ALL_ORDER_TYPES, costByType, localizedMessage, noTicks, ORDER_TYPE_BUCKETS, overlappingLines, readMask, recipeLineMask, recipeSavedFirst, recipeTicksShown as ticksShownFor } from '@/lib/orderTypes';
 
 const route = useRoute();
 const router = useRouter();
@@ -681,11 +681,11 @@ function addRecipeLine(): void {
  * recipe when it is made, before any order exists (tester call 4), so its
  * lines are for every type. Physical items work for every product.
  */
-const recipeTicksShown = computed<boolean>(() => form.stock_mode === 'ingredient');
+const recipeTicksShown = computed<boolean>(() => ticksShownFor(form.stock_mode));
 
 /** The ticks a recipe line is saved with. */
 function recipeLineTypes(line: { order_types: number }): number {
-    return recipeTicksShown.value ? line.order_types : ALL_ORDER_TYPES;
+    return recipeLineMask(form.stock_mode, line.order_types);
 }
 
 /** Recipe lines repeating an ingredient with overlapping ticks (the server refuses them). */
@@ -856,7 +856,7 @@ function branchName(branchId: number): string {
 // ---- Misc helpers ----------------------------------------------------
 function apiMessage(err: unknown, fallback: string): string {
     // LAUNCH packaging add-on — overlapping ticks: the server's message in the page's language.
-    const overlap = err instanceof ApiError ? overlapMessage(err.payload, locale.value) : null;
+    const overlap = err instanceof ApiError ? localizedMessage(err.payload, locale.value) : null;
     if (overlap !== null) return overlap;
     if (err instanceof ApiError && err.payload && typeof err.payload === 'object' && 'message' in err.payload) {
         const message = (err.payload as { message?: unknown }).message;
@@ -1112,7 +1112,12 @@ async function submit(): Promise<void> {
                 .catch((e) => remapSectionErrors(e, 'lines', 'recipe_lines'));
         } else {
             const uuid = editUuid!;
-            await updateProduct(uuid, { ...productPayload(), status: form.status });
+            // Fix order PK-B1 (M4) — made to order → cooked: the merged recipe
+            // first (the product is still made to order), then the type.
+            const recipeFirst = recipeSavedFirst(editTarget.value?.stock_mode, form.stock_mode);
+            if (!recipeFirst) {
+                await updateProduct(uuid, { ...productPayload(), status: form.status });
+            }
             await syncProductAddOnGroups(uuid, form.addon_group_uuids)
                 .catch((e) => remapSectionErrors(e, 'group_uuids', 'addon_group_uuids'));
             // LAUNCH-P3 P3-3 — the recipe is only sent by a user who may edit
@@ -1120,6 +1125,9 @@ async function submit(): Promise<void> {
             if (canEditRecipes.value) {
                 await updateProductRecipe(uuid, { lines: recipePayload(), note: recipeNote })
                     .catch((e) => remapSectionErrors(e, 'lines', 'recipe_lines'));
+            }
+            if (recipeFirst) {
+                await updateProduct(uuid, { ...productPayload(), status: form.status });
             }
             // LAUNCH review add-on — "Can be removed" (catalogue permission,
             // saved after the recipe so every ticked line exists). Fix order

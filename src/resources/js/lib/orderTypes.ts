@@ -71,16 +71,36 @@ export function overlappingLines<T>(lines: T[], keyOf: (line: T) => string, mask
 }
 
 /**
- * The server's 422 for overlapping ticks (code "order_types_overlap") or for
- * a cooked product with an ingredient on several lines ("cooked_split_lines")
- * in the page's language; null for any other error payload.
+ * A server refusal in the page's language (fix order PK-B1, L3): the
+ * packaging add-on's 422s carry message + message_ar + a code (overlapping
+ * ticks, a split cooked recipe, an item on a packaging list, a packaging
+ * refusal). Null for a payload without both messages.
  */
-export function overlapMessage(payload: unknown, locale: string): string | null {
+export function localizedMessage(payload: unknown, locale: string): string | null {
     if (!payload || typeof payload !== 'object') return null;
-    const p = payload as { code?: unknown; message?: unknown; message_ar?: unknown };
-    if (p.code !== 'order_types_overlap' && p.code !== 'cooked_split_lines') return null;
-    if (locale === 'ar' && typeof p.message_ar === 'string' && p.message_ar !== '') return p.message_ar;
-    return typeof p.message === 'string' ? p.message : null;
+    const p = payload as { message?: unknown; message_ar?: unknown };
+    if (typeof p.message_ar !== 'string' || p.message_ar === '' || typeof p.message !== 'string') return null;
+    return locale === 'ar' ? p.message_ar : p.message;
+}
+
+/** Ingredient ticks show only on made-to-order products (a cooked batch is made before any order). */
+export function recipeTicksShown(stockMode: string): boolean {
+    return stockMode === 'ingredient';
+}
+
+/** The ticks a recipe line is saved with: as ticked on made-to-order, else every type. */
+export function recipeLineMask(stockMode: string, mask: number): number {
+    return recipeTicksShown(stockMode) ? mask : ALL_ORDER_TYPES;
+}
+
+/**
+ * Fix order PK-B1 (M4) — a made-to-order product switched to cooked in the
+ * wizard: its recipe (merged, every type) is saved BEFORE the type, while the
+ * product is still made to order, so one save can merge split lines and
+ * switch. Any other change keeps the order type first, then recipe.
+ */
+export function recipeSavedFirst(savedMode: string | null | undefined, newMode: string): boolean {
+    return savedMode === 'ingredient' && newMode === 'cooked';
 }
 
 /** Whether any line is for some order types only (the recipe then costs per type). */

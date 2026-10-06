@@ -28,6 +28,7 @@ import TablesIndex from '@/Pages/Merchant/Tables/Index.vue';
 import TablesShow from '@/Pages/Merchant/Tables/Show.vue';
 import InventoryIndex from '@/Pages/Merchant/Inventory/Index.vue';
 import PrepItemEditor from '@/Pages/Merchant/Inventory/PrepItemEditor.vue';
+import OrderPackagingPage from '@/Pages/Merchant/Inventory/OrderPackagingPage.vue';
 import PurchaseReceiptsIndex from '@/Pages/Merchant/Inventory/PurchaseReceipts/Index.vue';
 import PurchaseReceiptsCreate from '@/Pages/Merchant/Inventory/PurchaseReceipts/Create.vue';
 import PurchaseReceiptsShow from '@/Pages/Merchant/Inventory/PurchaseReceipts/Show.vue';
@@ -300,6 +301,15 @@ const routes: RouteRecordRaw[] = [
         path: '/inventory/prep-items/new',
         name: 'merchant.prep-items.create',
         component: PrepItemEditor,
+        meta: { requiresAuth: true },
+    },
+    {
+        // LAUNCH packaging add-on (fix order PK-B1, L4) — the Order packaging
+        // lists on their own page. Server gates: read catalogue.view or
+        // inventory.view, write "Edit recipes".
+        path: '/inventory/order-packaging',
+        name: 'merchant.order-packaging',
+        component: OrderPackagingPage,
         meta: { requiresAuth: true },
     },
     {

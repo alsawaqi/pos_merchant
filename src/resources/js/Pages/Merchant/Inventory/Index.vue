@@ -54,6 +54,7 @@ import IngredientStockDialog from './IngredientStockDialog.vue';
 import PrepItemsTab from './PrepItemsTab.vue';
 // LAUNCH packaging add-on — the per-order packaging lists.
 import OrderPackagingTab from './OrderPackagingTab.vue';
+import { localizedMessage } from '@/lib/orderTypes';
 import AmountDisplaySwitch from './AmountDisplaySwitch.vue';
 // LAUNCH review add-on (part B) — containers, scan box, unit safety, breakdown.
 import AmountConfirmDialog from './components/AmountConfirmDialog.vue';
@@ -850,7 +851,9 @@ async function submitPhysicalItem(): Promise<void> {
             physicalItemModalError.value = t('inventory.physical_items.validation');
         } else if (err instanceof ApiError && err.payload && typeof err.payload === 'object' && 'message' in err.payload) {
             const message = (err.payload as { message?: unknown }).message;
-            physicalItemModalError.value = (typeof message === 'string' && message !== '') ? message : t('inventory.physical_items.save_failed');
+            // Fix order PK-B1 — a refusal in the page's language (an item on a packaging list).
+            physicalItemModalError.value = localizedMessage(err.payload, locale.value)
+                ?? ((typeof message === 'string' && message !== '') ? message : t('inventory.physical_items.save_failed'));
         } else {
             physicalItemModalError.value = t('inventory.physical_items.save_failed');
         }
@@ -922,7 +925,8 @@ async function confirmDeletePhysicalItem(): Promise<void> {
     } catch (err) {
         if (err instanceof ApiError && err.payload && typeof err.payload === 'object' && 'message' in err.payload) {
             const message = (err.payload as { message?: unknown }).message;
-            error.value = (typeof message === 'string' && message !== '') ? message : t('inventory.physical_items.save_failed');
+            error.value = localizedMessage(err.payload, locale.value)
+                ?? ((typeof message === 'string' && message !== '') ? message : t('inventory.physical_items.save_failed'));
         } else {
             error.value = t('inventory.physical_items.save_failed');
         }
@@ -1212,7 +1216,7 @@ async function submitIngredient(): Promise<void> {
             ingModalErrors.value = err.payload.errors;
             ingModalError.value = t('inventory.validation_summary');
         } else if (err instanceof ApiError && err.payload && typeof err.payload === 'object' && 'message' in err.payload) {
-            ingModalError.value = String((err.payload as { message?: unknown }).message ?? 'Failed');
+            ingModalError.value = localizedMessage(err.payload, locale.value) ?? String((err.payload as { message?: unknown }).message ?? 'Failed');
         } else {
             ingModalError.value = err instanceof Error ? err.message : 'Failed';
         }
@@ -1230,7 +1234,7 @@ async function confirmDeleteIngredient(): Promise<void> {
         await fetchIngredients();
     } catch (err) {
         if (err instanceof ApiError && err.payload && typeof err.payload === 'object' && 'message' in err.payload) {
-            error.value = String((err.payload as { message?: unknown }).message ?? 'Failed');
+            error.value = localizedMessage(err.payload, locale.value) ?? String((err.payload as { message?: unknown }).message ?? 'Failed');
         } else {
             error.value = err instanceof Error ? err.message : 'Failed';
         }
@@ -2850,7 +2854,7 @@ async function submitSuggestions(): Promise<void> {
 
             <!-- ============ LAUNCH-P3 P3-4 — PREP ITEMS TAB ============ -->
             <PrepItemsTab v-if="activeTab === 'prep_items'" />
-            <OrderPackagingTab v-if="activeTab === 'order_packaging'" :ingredients="ingredients" :physical-items="physicalItems" :can-link="canManage" />
+            <OrderPackagingTab v-if="activeTab === 'order_packaging'" :can-link="canManage" />
 
             <!-- ============ PD3a — PHYSICAL ITEMS TAB ============ -->
             <section v-if="activeTab === 'physical_items'" class="space-y-4">

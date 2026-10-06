@@ -461,6 +461,7 @@
         "tables": "Tables",
         "catalogue": "Catalogue",
         "inventory": "Inventory",
+        "order_packaging": "Order packaging",
         "purchase_receipts": "Purchases",
         "production": "Kitchen Production",
         "messages": "Messages",
@@ -4207,6 +4208,10 @@
         "cooked_split": "Cooked products are made before orders exist, so each ingredient can have only one line. Merge the lines first."
     },
     "order_packaging": {
+        "not_taken": "Not taken",
+        "not_taken_hint": "This item was deleted or made inactive: it is not taken with orders. Remove it from the list.",
+        "bought_in": "bought-in",
+        "page_title": "Order packaging",
         "tab": "Order packaging",
         "subtitle": "What every order takes once, whatever is in it: bags, napkins, cutlery, a sticker. One list per order type; the list of the order's final type is taken from stock once when the order is paid (or handed to delivery). QR table orders count as Dine in, QR quick orders as Quick order.",
         "load_failed": "Could not load the packaging lists.",
