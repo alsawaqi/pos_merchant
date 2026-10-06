@@ -45,6 +45,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'sort_order',
     'entered_unit',
     'entered_quantity',
+    // LAUNCH packaging add-on — "Used for" ticks (OrderTypes bit mask).
+    'order_types',
 ])]
 class ProductRecipe extends Model
 {
@@ -63,6 +65,7 @@ class ProductRecipe extends Model
             'unit_at_set' => IngredientUnit::class,
             'sort_order' => 'integer',
             'entered_quantity' => ScaledDecimal::class.':0,4',
+            'order_types' => 'integer',
         ];
     }
 

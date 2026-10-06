@@ -36,6 +36,8 @@ class ProductRecipeResource extends JsonResource
             'sort_order' => $this->sort_order,
             'entered_unit' => $entered['entered'] ? $entered['unit'] : null,
             'entered_quantity' => $entered['entered'] ? $entered['quantity'] : null,
+            // LAUNCH packaging add-on — "Used for" ticks (15 = every order type).
+            'order_types' => \App\Support\Catalogue\OrderTypes::read($this->order_types),
             // Ingredient summary inlined when eager-loaded so
             // the UI doesn't need a second round-trip per row.
             'ingredient' => $this->whenLoaded('ingredient', fn (): ?array => $this->ingredient === null ? null : [

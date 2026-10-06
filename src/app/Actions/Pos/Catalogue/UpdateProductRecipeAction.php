@@ -11,6 +11,7 @@ use App\Models\Product;
 use App\Models\ProductRecipe;
 use App\Models\ProductRecipeVersion;
 use App\Models\User;
+use App\Support\Catalogue\OrderTypes;
 use App\Support\MerchantTenantContext;
 use App\Support\Recipes\ExplodedPrecision;
 use App\Support\Recipes\PrepGraph;
@@ -56,8 +57,12 @@ use RuntimeException;
  * pipeline checks hasRecipe() before writing sale-consumption
  * movements, so empty is a valid terminal state.
  *
- * Duplicate ingredients in the payload → 422 (the caller
- * should sum them client-side; we don't silently merge).
+ * Duplicate ingredients in the payload → 422 unless their "Used for"
+ * ticks do not overlap (LAUNCH packaging add-on, tester call 3: napkin ×1
+ * dine in, napkin ×3 to go + delivery). A line without ticks is refused; a
+ * payload line without `order_types` keeps the stored ticks of that
+ * ingredient's only line (an old tab never re-ticks silently); a tick change
+ * is a real change (version row, "Edit recipes", audit diff, touch).
  *
  * LAUNCH-P3 P3-3 — changing a recipe needs the "Edit recipes"
  * permission ({@see RecipeEditGate}); a no-op never does.
@@ -74,7 +79,7 @@ final readonly class UpdateProductRecipeAction
     ) {}
 
     /**
-     * @param  array<int, array{ingredient_uuid: string, quantity: numeric-string|float|int, unit?: ?string}>  $lines
+     * @param  array<int, array{ingredient_uuid: string, quantity: numeric-string|float|int, unit?: ?string, order_types?: ?int}>  $lines
      */
     public function handle(Product $product, array $lines, User $actor, ?string $note = null): Product
     {
@@ -83,12 +88,10 @@ final readonly class UpdateProductRecipeAction
             abort(404);
         }
 
-        // De-dupe check — caller's responsibility to merge
-        // identical ingredient_uuids upstream.
-        $uuids = array_map(static fn (array $l): string => (string) $l['ingredient_uuid'], $lines);
-        if (count($uuids) !== count(array_unique($uuids))) {
-            throw new RuntimeException('Duplicate ingredient in recipe payload — merge them client-side first.');
-        }
+        // LAUNCH packaging add-on (tester call 3) — the same ingredient may
+        // sit on several lines when their "Used for" ticks do not overlap;
+        // overlapping lines are refused below, once the ticks are known.
+        $uuids = array_values(array_unique(array_map(static fn (array $l): string => (string) $l['ingredient_uuid'], $lines)));
 
         // Resolve UUIDs → models in one query. Any bogus or
         // cross-tenant uuid breaks the count and we abort.
@@ -106,13 +109,11 @@ final readonly class UpdateProductRecipeAction
         foreach ($lines as $idx => $l) {
             /** @var Ingredient $ing */
             $ing = $ingredients[$l['ingredient_uuid']];
-            $resolved[] = ['ingredient' => $ing, 'sort_order' => $idx]
+            $resolved[] = ['ingredient' => $ing, 'sort_order' => $idx, 'sent_order_types' => $l['order_types'] ?? null]
                 + $this->quantities->resolve($ing, $l['quantity'], $l['unit'] ?? null);
         }
 
-        $after = RecipeLineChanges::fromResolved($resolved, $this->quantities);
-
-        return DB::transaction(function () use ($product, $resolved, $after, $actor, $note, $companyId): Product {
+        return DB::transaction(function () use ($product, $resolved, $actor, $note, $companyId): Product {
             // LAUNCH-P3 K5 — lock the product, THEN read the recipe this save
             // replaces: two saves of one product run one after the other, so
             // the version row always holds the state the edit really replaced
@@ -121,6 +122,29 @@ final readonly class UpdateProductRecipeAction
             Product::query()->whereKey($product->id)->lockForUpdate()->first(['id']);
             $current = $product->recipeLines()->with('ingredient')->get();
             $before = RecipeLineChanges::fromProductLines($current, $this->quantities);
+
+            // LAUNCH packaging add-on — each line's "Used for" ticks: as sent,
+            // or (an old portal tab sends none) the stored ticks of that
+            // ingredient's only line. A cooked product uses its recipe when it
+            // is made, before any order exists: its lines are for every type.
+            $stored = [];
+            foreach ($current as $line) {
+                $stored[(string) $line->ingredient_id][] = OrderTypes::read($line->order_types);
+            }
+            $cooked = $product->stock_mode === 'cooked';
+            foreach ($resolved as $i => $line) {
+                $sent = $line['sent_order_types'];
+                if ($cooked && $sent !== null && (int) $sent !== OrderTypes::ALL) {
+                    throw new RuntimeException('A cooked product\'s recipe is used when it is made, before any order: its lines are used for every order type.');
+                }
+                $resolved[$i]['order_types'] = $cooked ? OrderTypes::ALL : OrderTypes::resolve($sent, (string) $line['ingredient']->id, $stored);
+            }
+            OrderTypes::assertNoOverlap(array_map(static fn (array $l): array => [
+                'key' => (string) $l['ingredient']->id,
+                'mask' => $l['order_types'],
+                'name' => (string) $l['ingredient']->name,
+            ], $resolved));
+            $after = RecipeLineChanges::fromResolved($resolved, $this->quantities);
 
             // No-op skip — identical recipe = no version, no audit,
             // no DB churn (a pre-P3 line re-saved in its base unit is identical).
@@ -132,11 +156,14 @@ final readonly class UpdateProductRecipeAction
 
             // LAUNCH-P3 M1-a — a prep line must still record accurately once it is
             // exploded per ONE unit sold (the copy pos_api freezes at sale).
+            // LAUNCH packaging add-on — per tick set (pos_api's merge group).
             $perUnit = [];
             foreach ($resolved as $line) {
-                $perUnit[(int) $line['ingredient']->id] = $line['quantity'];
+                $perUnit[$line['order_types']][(int) $line['ingredient']->id] = $line['quantity'];
             }
-            ExplodedPrecision::assertRecordable(PrepGraph::forCompany($companyId), $perUnit, '"'.$product->name.'"');
+            foreach ($perUnit as $group) {
+                ExplodedPrecision::assertRecordable(PrepGraph::forCompany($companyId), $group, '"'.$product->name.'"');
+            }
 
             // Step 1: snapshot the PRE-edit recipe as a version.
             // Empty array is a valid snapshot (means "previous
@@ -167,6 +194,8 @@ final readonly class UpdateProductRecipeAction
                     // LAUNCH-P3 P3-1 — how it was typed.
                     'entered_unit' => $line['entered_unit'],
                     'entered_quantity' => $line['entered_quantity'],
+                    // LAUNCH packaging add-on — "Used for" (15 = every type).
+                    'order_types' => $line['order_types'],
                 ]);
             }
 
@@ -182,7 +211,7 @@ final readonly class UpdateProductRecipeAction
             // removed: retire its "NO …" option (the others stay).
             $this->removable->retireDroppedLines(
                 $product,
-                array_map(static fn (array $line): int => (int) $line['ingredient']->id, $resolved),
+                array_values(array_unique(array_map(static fn (array $line): int => (int) $line['ingredient']->id, $resolved))),
                 $actor,
             );
 
@@ -196,12 +225,12 @@ final readonly class UpdateProductRecipeAction
                 auditableId: $product->id,
                 oldValues: [
                     'line_count' => count($before),
-                    'ingredient_ids' => array_keys($before),
+                    'ingredient_ids' => RecipeLineChanges::ingredientIds($before),
                     'lines' => RecipeLineChanges::readable($before),
                 ],
                 newValues: [
                     'line_count' => count($after),
-                    'ingredient_ids' => array_keys($after),
+                    'ingredient_ids' => RecipeLineChanges::ingredientIds($after),
                     'lines' => RecipeLineChanges::readable($after),
                     'changes' => RecipeLineChanges::diff($before, $after),
                     'note' => $note !== null && trim($note) !== '' ? trim($note) : null,

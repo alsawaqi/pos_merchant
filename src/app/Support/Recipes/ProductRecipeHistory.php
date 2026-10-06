@@ -6,6 +6,7 @@ namespace App\Support\Recipes;
 
 use App\Models\Product;
 use App\Models\ProductRecipeVersion;
+use App\Support\Catalogue\OrderTypes;
 use Illuminate\Support\Collection;
 
 /**
@@ -85,6 +86,9 @@ final readonly class ProductRecipeHistory
             'is_prep' => $l['is_prep'],
             'amount' => RecipeLineChanges::amount($l),
             'base' => RecipeLineChanges::baseAmount($l),
-        ], $lines));
+        ] + (($l['order_types'] ?? OrderTypes::ALL) !== OrderTypes::ALL
+            // LAUNCH packaging add-on — "Used for", only when not every type.
+            ? ['order_types' => $l['order_types']]
+            : []), $lines));
     }
 }

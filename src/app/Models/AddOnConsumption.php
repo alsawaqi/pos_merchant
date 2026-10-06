@@ -38,6 +38,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'display_order',
     'entered_unit',
     'entered_quantity',
+    // LAUNCH packaging add-on — "Used for" ticks (OrderTypes bit mask).
+    'order_types',
 ])]
 class AddOnConsumption extends Model
 {
@@ -56,6 +58,7 @@ class AddOnConsumption extends Model
             'quantity' => ScaledDecimal::class.':3,4',
             'display_order' => 'integer',
             'entered_quantity' => ScaledDecimal::class.':0,4',
+            'order_types' => 'integer',
         ];
     }
 

@@ -22,6 +22,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'product_id',
     'component_product_id',
     'quantity',
+    // LAUNCH packaging add-on — "Used for" ticks (OrderTypes bit mask).
+    'order_types',
 ])]
 class ProductComponent extends Model
 {
@@ -34,6 +36,7 @@ class ProductComponent extends Model
     {
         return [
             'quantity' => 'decimal:3',
+            'order_types' => 'integer',
         ];
     }
 

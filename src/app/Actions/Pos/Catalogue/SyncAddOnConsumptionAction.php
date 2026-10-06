@@ -11,6 +11,7 @@ use App\Models\AddOnConsumption;
 use App\Models\Ingredient;
 use App\Models\Product;
 use App\Models\User;
+use App\Support\Catalogue\OrderTypes;
 use App\Support\MerchantTenantContext;
 use App\Support\Recipes\ExplodedPrecision;
 use App\Support\Recipes\PrepGraph;
@@ -36,8 +37,10 @@ use RuntimeException;
  *     Branch-use ('general') items and recipe-only/untracked products
  *     are refused — they have no per-branch piece stock to consume.
  *
- * direction add|remove, at most one of each per ref per option (the DB
- * uniques back this up). Removals are validated shallowly here — whether
+ * direction add|remove. LAUNCH packaging add-on — each line has "Used
+ * for" ticks (pos_api takes it only for those order types); one ref may
+ * sit on several lines of one direction only when their ticks do not
+ * overlap (the DB uniques gave way to this app rule). Removals are validated shallowly here — whether
  * they exceed the parent recipe is unknowable at write time (a shared
  * group attaches to many products); the pay-time engine clamps at zero.
  *
@@ -78,12 +81,20 @@ final readonly class SyncAddOnConsumptionAction
             throw new RuntimeException('An option can carry at most '.self::MAX_LINES.' stock-usage lines.');
         }
 
-        [$resolved, $products] = $this->resolveLines($lines, $companyId);
+        // LAUNCH packaging add-on — the stored "Used for" ticks per
+        // kind:ref:direction (a line sent without ticks keeps them).
+        $stored = [];
+        foreach ($addon->consumptionLines()->get(['ingredient_id', 'component_product_id', 'direction', 'order_types']) as $row) {
+            $stored[self::refKey($row->ingredient_id, $row->component_product_id, (string) $row->direction)][] = OrderTypes::read($row->order_types);
+        }
 
-        // Normalised shape for the no-op diff: key = kind:ref:direction; value
-        // = the base quantity + (ingredient lines, LAUNCH-P3) the entered form.
+        [$resolved, $products] = $this->resolveLines($lines, $companyId, $stored);
+
+        // Normalised shape for the no-op diff: key = kind:ref:direction (and
+        // the ticks when not every order type); value = the base quantity +
+        // (ingredient lines, LAUNCH-P3) the entered form.
         $newShape = collect($resolved)->mapWithKeys(static fn (array $l): array => [
-            ($l['ingredient_id'] !== null ? 'i:'.$l['ingredient_id'] : 'p:'.$l['component_product_id']).':'.$l['direction'] => self::shapeValue(
+            self::shapeKey($l['ingredient_id'], $l['component_product_id'], $l['direction'], $l['order_types']) => self::shapeValue(
                 $l['quantity'],
                 $l['unit'],
                 $l['entered_unit'],
@@ -103,7 +114,7 @@ final readonly class SyncAddOnConsumptionAction
                     : [$c->entered_unit, $c->entered_quantity];
 
                 return [
-                    ($c->ingredient_id !== null ? 'i:'.$c->ingredient_id : 'p:'.$c->component_product_id).':'.$c->direction => self::shapeValue(
+                    self::shapeKey($c->ingredient_id, $c->component_product_id, (string) $c->direction, OrderTypes::read($c->order_types)) => self::shapeValue(
                         (string) $c->quantity,
                         $c->ingredient_id !== null ? $c->unit : null,
                         $enteredUnit,
@@ -133,6 +144,7 @@ final readonly class SyncAddOnConsumptionAction
                 'ingredient_id' => (int) $l['ingredient_id'],
                 'direction' => $l['direction'],
                 'quantity' => $l['quantity'],
+                'order_types' => $l['order_types'],
             ], array_values(array_filter($resolved, static fn (array $l): bool => $l['ingredient_id'] !== null))),
             (string) $addon->name,
         );
@@ -150,13 +162,21 @@ final readonly class SyncAddOnConsumptionAction
                     'display_order' => $idx,
                     'entered_unit' => $line['entered_unit'],
                     'entered_quantity' => $line['entered_quantity'],
+                    // LAUNCH packaging add-on — "Used for" (15 = every type).
+                    'order_types' => $line['order_types'],
                 ]);
             }
 
             // Delta visibility: the device config delta keys on the
             // GROUP's updated_at; the addon's own bump feeds full syncs.
             $addon->touch();
-            $addon->group()->withTrashed()->first()?->touch();
+            $group = $addon->group()->withTrashed()->first();
+            $group?->touch();
+            // LAUNCH packaging add-on — an option of a product's own group:
+            // that product is touched too.
+            if ($group !== null && $group->owner_product_id !== null) {
+                Product::query()->whereKey($group->owner_product_id)->first()?->touch();
+            }
 
             $this->writeAuditLog->handle(new AuditLogData(
                 event: 'catalogue.addon.consumption_updated',
@@ -170,6 +190,20 @@ final readonly class SyncAddOnConsumptionAction
 
             return $addon->fresh();
         });
+    }
+
+    /** kind:ref:direction — one item in one direction. */
+    private static function refKey(int|string|null $ingredientId, int|string|null $productId, string $direction): string
+    {
+        return ($ingredientId !== null ? 'i:'.$ingredientId : 'p:'.$productId).':'.$direction;
+    }
+
+    /** The shape key: refKey, plus ":mask" when the line is not for every order type. */
+    private static function shapeKey(int|string|null $ingredientId, int|string|null $productId, string $direction, int $orderTypes): string
+    {
+        $key = self::refKey($ingredientId, $productId, $direction);
+
+        return $orderTypes === OrderTypes::ALL ? $key : $key.':'.$orderTypes;
     }
 
     /**
@@ -236,10 +270,16 @@ final readonly class SyncAddOnConsumptionAction
      * Resolves refs (tenant + existence + unit conversion + dedupe) WITHOUT
      * the kind guards — those run in assertLineKinds after the no-op diff.
      *
+     * LAUNCH packaging add-on — with each line's "Used for" ticks (as sent, or
+     * the stored ticks of that item's only line in that direction). The same
+     * item in one direction may sit on several lines only when their ticks do
+     * not overlap (tester call 3).
+     *
      * @param  array<int, array<string, mixed>>  $lines
-     * @return array{0: array<int, array{ingredient_id: ?int, component_product_id: ?int, direction: string, quantity: string, unit: ?string, entered_unit: ?string, entered_quantity: ?string}>, 1: Collection<string, Product>}
+     * @param  array<string, list<int>>  $stored  kind:ref:direction => stored masks
+     * @return array{0: array<int, array{ingredient_id: ?int, component_product_id: ?int, direction: string, quantity: string, unit: ?string, entered_unit: ?string, entered_quantity: ?string, order_types: int}>, 1: Collection<string, Product>}
      */
-    private function resolveLines(array $lines, int $companyId): array
+    private function resolveLines(array $lines, int $companyId, array $stored = []): array
     {
         // Bulk-resolve both ref kinds in one query each.
         $ingredientUuids = [];
@@ -264,7 +304,7 @@ final readonly class SyncAddOnConsumptionAction
             ->keyBy('uuid');
 
         $resolved = [];
-        $seen = [];
+        $ticks = [];
         foreach ($lines as $line) {
             $type = (string) ($line['type'] ?? '');
             $direction = (string) ($line['direction'] ?? AddOnConsumption::DIRECTION_ADD);
@@ -282,7 +322,8 @@ final readonly class SyncAddOnConsumptionAction
                 // throws on an unknown unit, and (LAUNCH-P3 P3-1) on an
                 // amount that would round to 0 in the base unit.
                 $amount = $this->quantities->resolve($ingredient, $line['quantity'], $line['unit'] ?? null);
-                $key = 'i:'.$ingredient->id.':'.$direction;
+                $key = self::refKey($ingredient->id, null, $direction);
+                $name = (string) $ingredient->name;
                 $entry = [
                     'ingredient_id' => (int) $ingredient->id,
                     'component_product_id' => null,
@@ -307,7 +348,8 @@ final readonly class SyncAddOnConsumptionAction
                 if (round((float) $line['quantity'], 3) != (float) $line['quantity']) {
                     throw new RuntimeException(sprintf('"%s": pieces keep at most 3 decimal places.', $product->name));
                 }
-                $key = 'p:'.$product->id.':'.$direction;
+                $key = self::refKey(null, $product->id, $direction);
+                $name = (string) $product->name;
                 $entry = [
                     'ingredient_id' => null,
                     'component_product_id' => (int) $product->id,
@@ -319,12 +361,11 @@ final readonly class SyncAddOnConsumptionAction
                 ];
             }
 
-            if (isset($seen[$key])) {
-                throw new RuntimeException('Duplicate stock-usage line — merge same-item lines of the same direction client-side first.');
-            }
-            $seen[$key] = true;
+            $entry['order_types'] = OrderTypes::resolve($line['order_types'] ?? null, $key, $stored);
+            $ticks[] = ['key' => $key, 'mask' => $entry['order_types'], 'name' => $name];
             $resolved[] = $entry;
         }
+        OrderTypes::assertNoOverlap($ticks);
 
         return [$resolved, $products];
     }

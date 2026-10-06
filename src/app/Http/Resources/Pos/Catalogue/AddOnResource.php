@@ -57,6 +57,8 @@ class AddOnResource extends JsonResource
                     'unit' => $line->unit,
                     'entered_unit' => $entered['entered'] ? $entered['unit'] : null,
                     'entered_quantity' => $entered['entered'] ? $entered['quantity'] : null,
+                    // LAUNCH packaging add-on — "Used for" ticks (15 = every order type).
+                    'order_types' => \App\Support\Catalogue\OrderTypes::read($line->order_types),
                     'ingredient' => $line->ingredient === null ? null : [
                         'uuid' => $line->ingredient->uuid,
                         'name' => $line->ingredient->name,

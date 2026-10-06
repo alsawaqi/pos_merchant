@@ -133,6 +133,8 @@ class ProductResource extends JsonResource
                 'component_uuid' => (string) $line->component?->uuid,
                 'component_name' => $line->component?->name,
                 'quantity' => (string) $line->quantity,
+                // LAUNCH packaging add-on — "Used for" ticks (15 = every order type).
+                'order_types' => \App\Support\Catalogue\OrderTypes::read($line->order_types),
             ])->values()->all()),
             // Per-branch availability + unit stock (which branches sell this
             // product + how many units each holds). Empty/absent = available

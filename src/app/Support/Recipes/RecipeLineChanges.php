@@ -7,13 +7,14 @@ namespace App\Support\Recipes;
 use App\Models\Ingredient;
 use App\Models\IngredientRecipe;
 use App\Models\ProductRecipe;
+use App\Support\Catalogue\OrderTypes;
 use App\Support\StockDecimal;
 use Brick\Math\BigDecimal;
 use Illuminate\Support\Collection;
 
 /**
  * LAUNCH-P3 P3-1 / P3-2 — one recipe (product or prep item) as a map of
- * normalised lines, keyed by ingredient id, for:
+ * normalised lines, for:
  *
  *   - change detection (base quantity AND the entered form; a pre-P3 line
  *     with NULL entered columns equals the same amount typed in its base);
@@ -22,20 +23,29 @@ use Illuminate\Support\Collection;
  *     meaning: BASE quantity and base unit; the entered keys are additions);
  *   - the readable before → after list in the audit row and the history.
  *
- * @phpstan-type Line array{ingredient_id: int, ingredient_name: string, is_prep: bool, quantity: string, unit: string, entered_unit: string, entered_quantity: string, entered_unit_label: string, unit_cost_at_time: string}
+ * LAUNCH packaging add-on — a product recipe line also carries its "Used for"
+ * ticks (`order_types`, {@see OrderTypes}). The same ingredient may sit on
+ * several lines whose ticks do not overlap, so the map is keyed by
+ * "ingredient id:mask" ({@see self::key()}). A tick change is a real change
+ * (a version row, the gate, the audit diff). The mask is written into the
+ * version snapshot only when it is not 15, so untagged recipes snapshot
+ * exactly as before; prep-item lines are always 15.
+ *
+ * @phpstan-type Line array{ingredient_id: int, ingredient_name: string, is_prep: bool, quantity: string, unit: string, entered_unit: string, entered_quantity: string, entered_unit_label: string, unit_cost_at_time: string, order_types: int}
  */
 final class RecipeLineChanges
 {
     /**
      * @param  Collection<int, ProductRecipe>  $lines  with ingredient loaded
-     * @return array<int, Line>
+     * @return array<string, Line>
      */
     public static function fromProductLines(Collection $lines, RecipeQuantity $quantities): array
     {
         $out = [];
         foreach ($lines as $line) {
             [$enteredUnit, $enteredQuantity] = self::storedEntered($line->ingredient, (string) $line->quantity, $line->entered_unit, $line->entered_quantity, $quantities);
-            $out[(int) $line->ingredient_id] = self::line(
+            $mask = OrderTypes::read($line->order_types ?? null);
+            $out[self::key((int) $line->ingredient_id, $mask)] = self::line(
                 $line->ingredient,
                 (int) $line->ingredient_id,
                 (string) $line->quantity,
@@ -43,10 +53,28 @@ final class RecipeLineChanges
                 $enteredUnit,
                 $enteredQuantity,
                 $quantities,
+                $mask,
             );
         }
 
         return $out;
+    }
+
+    /** LAUNCH packaging add-on — the map key of a line: "ingredient id:mask". */
+    public static function key(int $ingredientId, int $orderTypes = OrderTypes::ALL): string
+    {
+        return $ingredientId.':'.$orderTypes;
+    }
+
+    /**
+     * The distinct ingredient ids of a set of lines (the audit's ingredient_ids).
+     *
+     * @param  array<string, Line>  $lines
+     * @return list<int>
+     */
+    public static function ingredientIds(array $lines): array
+    {
+        return array_values(array_unique(array_map(static fn (array $l): int => $l['ingredient_id'], array_values($lines))));
     }
 
     /**
@@ -77,14 +105,14 @@ final class RecipeLineChanges
 
     /**
      * @param  Collection<int, IngredientRecipe>  $lines  with ingredient loaded
-     * @return array<int, Line>
+     * @return array<string, Line>
      */
     public static function fromPrepLines(Collection $lines, RecipeQuantity $quantities): array
     {
         $out = [];
         foreach ($lines as $line) {
             [$enteredUnit, $enteredQuantity] = self::storedEntered($line->ingredient, (string) $line->quantity, $line->entered_unit, $line->entered_quantity, $quantities);
-            $out[(int) $line->ingredient_id] = self::line(
+            $out[self::key((int) $line->ingredient_id)] = self::line(
                 $line->ingredient,
                 (int) $line->ingredient_id,
                 (string) $line->quantity,
@@ -99,15 +127,16 @@ final class RecipeLineChanges
     }
 
     /**
-     * @param  list<array{ingredient: Ingredient, quantity: string, entered_unit: string, entered_quantity: string}>  $resolved
-     * @return array<int, Line>
+     * @param  list<array{ingredient: Ingredient, quantity: string, entered_unit: string, entered_quantity: string, order_types?: int}>  $resolved
+     * @return array<string, Line>
      */
     public static function fromResolved(array $resolved, RecipeQuantity $quantities): array
     {
         $out = [];
         foreach ($resolved as $line) {
             $ingredient = $line['ingredient'];
-            $out[(int) $ingredient->id] = self::line(
+            $mask = OrderTypes::read($line['order_types'] ?? null);
+            $out[self::key((int) $ingredient->id, $mask)] = self::line(
                 $ingredient,
                 (int) $ingredient->id,
                 $line['quantity'],
@@ -115,6 +144,7 @@ final class RecipeLineChanges
                 $line['entered_unit'],
                 $line['entered_quantity'],
                 $quantities,
+                $mask,
             );
         }
 
@@ -122,8 +152,8 @@ final class RecipeLineChanges
     }
 
     /**
-     * @param  array<int, Line>  $a
-     * @param  array<int, Line>  $b
+     * @param  array<string, Line>  $a
+     * @param  array<string, Line>  $b
      */
     public static function same(array $a, array $b): bool
     {
@@ -142,7 +172,7 @@ final class RecipeLineChanges
     /**
      * The pre-edit snapshot for pos_product_recipe_versions.recipe_json.
      *
-     * @param  array<int, Line>  $lines
+     * @param  array<string, Line>  $lines
      * @return list<array<string, mixed>>
      */
     public static function snapshot(array $lines): array
@@ -159,15 +189,20 @@ final class RecipeLineChanges
             'entered_quantity' => $l['entered_quantity'],
             'entered_unit_label' => $l['entered_unit_label'],
             'is_prep' => $l['is_prep'],
-        ], $lines));
+        ] + (($l['order_types'] ?? OrderTypes::ALL) !== OrderTypes::ALL
+            // LAUNCH packaging add-on — pos_api's RecipeInForce reads it
+            // (absent = every type), so it is written only when not 15.
+            ? ['order_types' => $l['order_types']]
+            : []), $lines));
     }
 
     /**
      * Lines from a stored snapshot (pre-P3 snapshots have no entered keys:
-     * they read as entered in the base unit).
+     * they read as entered in the base unit; snapshots without order_types
+     * read as every order type).
      *
      * @param  array<int, array<string, mixed>>|null  $snapshot
-     * @return array<int, Line>
+     * @return array<string, Line>
      */
     public static function fromSnapshot(?array $snapshot): array
     {
@@ -182,7 +217,8 @@ final class RecipeLineChanges
             $enteredQuantity = isset($row['entered_quantity']) && $row['entered_quantity'] !== ''
                 ? self::short((string) $row['entered_quantity'])
                 : self::short($quantity);
-            $out[(int) $row['ingredient_id']] = [
+            $mask = OrderTypes::read($row['order_types'] ?? null);
+            $out[self::key((int) $row['ingredient_id'], $mask)] = [
                 'ingredient_id' => (int) $row['ingredient_id'],
                 'ingredient_name' => (string) ($row['ingredient_name'] ?? ''),
                 'is_prep' => (bool) ($row['is_prep'] ?? false),
@@ -192,6 +228,7 @@ final class RecipeLineChanges
                 'entered_quantity' => $enteredQuantity,
                 'entered_unit_label' => (string) ($row['entered_unit_label'] ?? ($enteredUnit === '@piece' ? 'piece' : $enteredUnit)),
                 'unit_cost_at_time' => (string) ($row['unit_cost_at_time'] ?? '0.000'),
+                'order_types' => $mask,
             ];
         }
 
@@ -201,23 +238,41 @@ final class RecipeLineChanges
     /**
      * Every line added, removed or changed, before → after in the entered unit.
      *
-     * @param  array<int, Line>  $before
-     * @param  array<int, Line>  $after
-     * @return list<array{ingredient_id: int, ingredient: string, change: string, before: ?string, after: ?string, before_base: ?string, after_base: ?string}>
+     * LAUNCH packaging add-on — an ingredient on ONE line before and after
+     * whose amount or ticks moved is "changed"; with several lines of one
+     * ingredient, lines are matched by their ticks. A change row carries
+     * before_order_types / after_order_types only when a side is not 15.
+     *
+     * @param  array<string, Line>  $before
+     * @param  array<string, Line>  $after
+     * @return list<array<string, mixed>>
      */
     public static function diff(array $before, array $after): array
     {
+        $countBefore = [];
+        $firstBefore = [];
+        foreach ($before as $line) {
+            $id = $line['ingredient_id'];
+            $countBefore[$id] = ($countBefore[$id] ?? 0) + 1;
+            $firstBefore[$id] ??= $line;
+        }
+        $countAfter = [];
+        foreach ($after as $line) {
+            $countAfter[$line['ingredient_id']] = ($countAfter[$line['ingredient_id']] ?? 0) + 1;
+        }
+        $single = static fn (int $id): bool => ($countBefore[$id] ?? 0) === 1 && ($countAfter[$id] ?? 0) === 1;
+
         $changes = [];
-        foreach ($after as $id => $line) {
-            $old = $before[$id] ?? null;
+        foreach ($after as $key => $line) {
+            $old = $single($line['ingredient_id']) ? $firstBefore[$line['ingredient_id']] : ($before[$key] ?? null);
             if ($old === null) {
                 $changes[] = self::change($line, 'added', null, $line);
             } elseif (! self::sameLine($old, $line)) {
                 $changes[] = self::change($line, 'changed', $old, $line);
             }
         }
-        foreach ($before as $id => $line) {
-            if (! isset($after[$id])) {
+        foreach ($before as $key => $line) {
+            if (! isset($after[$key]) && ! $single($line['ingredient_id'])) {
                 $changes[] = self::change($line, 'removed', $line, null);
             }
         }
@@ -226,12 +281,13 @@ final class RecipeLineChanges
     }
 
     /**
-     * @param  array<int, Line>  $lines
-     * @return list<string> "Milk: 150 ml"
+     * @param  array<string, Line>  $lines
+     * @return list<string> "Milk: 150 ml" ("Napkin: 3 piece [To go, Delivery]" when not every type)
      */
     public static function readable(array $lines): array
     {
-        return array_values(array_map(static fn (array $l): string => $l['ingredient_name'].': '.self::amount($l), $lines));
+        return array_values(array_map(static fn (array $l): string => $l['ingredient_name'].': '.self::amount($l)
+            .(($l['order_types'] ?? OrderTypes::ALL) !== OrderTypes::ALL ? ' ['.OrderTypes::label($l['order_types']).']' : ''), $lines));
     }
 
     /** @param Line $line */
@@ -257,6 +313,7 @@ final class RecipeLineChanges
         ?string $enteredUnit,
         string|int|float|null $enteredQuantity,
         RecipeQuantity $quantities,
+        int $orderTypes = OrderTypes::ALL,
     ): array {
         $quantity = (string) StockDecimal::quantity($quantity);
         $hasEntered = $enteredUnit !== null && $enteredUnit !== '' && $enteredQuantity !== null && $enteredQuantity !== '';
@@ -280,6 +337,7 @@ final class RecipeLineChanges
                 : ($isPrep
                     ? PrepGraph::forCompany((int) $ingredient->company_id)->unitCost($ingredientId)
                     : (string) ($ingredient->default_unit_cost ?? '0.000')),
+            'order_types' => $orderTypes,
         ];
     }
 
@@ -291,18 +349,19 @@ final class RecipeLineChanges
     {
         return BigDecimal::of($a['quantity'])->isEqualTo($b['quantity'])
             && $a['entered_unit'] === $b['entered_unit']
-            && BigDecimal::of($a['entered_quantity'])->isEqualTo($b['entered_quantity']);
+            && BigDecimal::of($a['entered_quantity'])->isEqualTo($b['entered_quantity'])
+            && ($a['order_types'] ?? OrderTypes::ALL) === ($b['order_types'] ?? OrderTypes::ALL);
     }
 
     /**
      * @param  Line  $line
      * @param  Line|null  $old
      * @param  Line|null  $new
-     * @return array{ingredient_id: int, ingredient: string, change: string, before: ?string, after: ?string, before_base: ?string, after_base: ?string}
+     * @return array<string, mixed>
      */
     private static function change(array $line, string $change, ?array $old, ?array $new): array
     {
-        return [
+        $row = [
             'ingredient_id' => $line['ingredient_id'],
             'ingredient' => $line['ingredient_name'],
             'change' => $change,
@@ -311,6 +370,15 @@ final class RecipeLineChanges
             'before_base' => $old !== null ? self::baseAmount($old) : null,
             'after_base' => $new !== null ? self::baseAmount($new) : null,
         ];
+        // LAUNCH packaging add-on — the ticks, only when a side is not every type.
+        $beforeTypes = $old !== null ? ($old['order_types'] ?? OrderTypes::ALL) : null;
+        $afterTypes = $new !== null ? ($new['order_types'] ?? OrderTypes::ALL) : null;
+        if (($beforeTypes !== null && $beforeTypes !== OrderTypes::ALL) || ($afterTypes !== null && $afterTypes !== OrderTypes::ALL)) {
+            $row['before_order_types'] = $beforeTypes;
+            $row['after_order_types'] = $afterTypes;
+        }
+
+        return $row;
     }
 
     private static function short(string $value): string

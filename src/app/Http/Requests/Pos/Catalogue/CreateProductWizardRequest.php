@@ -91,6 +91,8 @@ class CreateProductWizardRequest extends FormRequest
             'recipe_lines.*.ingredient_uuid' => ['required', 'string', 'uuid'],
             'recipe_lines.*.quantity' => ['required', 'numeric', 'gt:0', 'decimal:0,4', 'max:999999.999'],
             'recipe_lines.*.unit' => ['nullable', 'string', 'max:32'],
+            // LAUNCH packaging add-on — "Used for" ticks (1..15, 0 refused).
+            'recipe_lines.*.order_types' => ['sometimes', 'nullable', 'integer', 'between:1,15'],
             'recipe_note' => ['nullable', 'string', 'max:1000'],
             // LAUNCH review add-on — the recipe lines ticked "Can be
             // removed" (the product's own Remove list), each with an
@@ -101,6 +103,7 @@ class CreateProductWizardRequest extends FormRequest
             'component_lines' => ['present', 'array', 'max:50'],
             'component_lines.*.component_uuid' => ['required', 'string', 'uuid'],
             'component_lines.*.quantity' => ['required', 'numeric', 'gt:0', 'max:999.999'],
+            'component_lines.*.order_types' => ['sometimes', 'nullable', 'integer', 'between:1,15'],
 
             // Branches (LAUNCH-P4 H6). NULL (or omitted) = skip the sync —
             // every branch, and the only legal value for branch-restricted

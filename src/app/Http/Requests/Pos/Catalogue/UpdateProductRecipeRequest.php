@@ -39,6 +39,10 @@ class UpdateProductRecipeRequest extends FormRequest
             // #13 — per-line entered unit (alt-unit name, or null = base); the
             // quantity is converted to base before storage (kept base on device).
             'lines.*.unit' => ['nullable', 'string', 'max:32'],
+            // LAUNCH packaging add-on — "Used for" ticks: 1 dine in, 2 quick,
+            // 4 to go, 8 delivery (at least one: 0 is refused). Absent = the
+            // stored ticks of that ingredient's only line (old tabs).
+            'lines.*.order_types' => ['sometimes', 'nullable', 'integer', 'between:1,15'],
             // Optional free-text the merchant can attach to
             // significant edits (e.g. "switched to organic
             // milk supplier"). Stored on the version row.

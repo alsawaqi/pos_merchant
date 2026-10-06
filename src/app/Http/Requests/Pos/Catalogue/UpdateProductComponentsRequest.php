@@ -29,6 +29,8 @@ class UpdateProductComponentsRequest extends FormRequest
             'lines' => ['present', 'array', 'max:50'],
             'lines.*.component_uuid' => ['required', 'string', 'uuid'],
             'lines.*.quantity' => ['required', 'numeric', 'gt:0', 'max:999.999'],
+            // LAUNCH packaging add-on — "Used for" ticks (1..15, 0 refused).
+            'lines.*.order_types' => ['sometimes', 'nullable', 'integer', 'between:1,15'],
         ];
     }
 }

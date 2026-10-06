@@ -8,6 +8,7 @@ use App\Models\AddOn;
 use App\Models\AddOnConsumption;
 use App\Models\Product;
 use App\Models\ProductRecipe;
+use App\Support\Catalogue\OrderTypes;
 use App\Support\StockDecimal;
 use Brick\Math\BigRational;
 use Brick\Math\RoundingMode;
@@ -106,24 +107,29 @@ final class ExplodedPrecision
 
         $productIds = ProductRecipe::query()->whereIn('ingredient_id', $affected)->pluck('product_id')->unique()->all();
         $products = Product::query()->whereIn('id', $productIds ?: [0])->orderBy('name')->get(['id', 'name']);
-        $recipes = ProductRecipe::query()->whereIn('product_id', $products->pluck('id')->all() ?: [0])->get(['product_id', 'ingredient_id', 'quantity'])->groupBy('product_id');
+        $recipes = ProductRecipe::query()->whereIn('product_id', $products->pluck('id')->all() ?: [0])->get(['product_id', 'ingredient_id', 'quantity', 'order_types'])->groupBy('product_id');
         foreach ($products as $product) {
-            $lines = [];
+            // LAUNCH packaging add-on — lines of one ingredient differ by
+            // their ticks; pos_api explodes each tick set as its own group.
+            $byTypes = [];
             foreach ($recipes->get($product->id, collect()) as $line) {
-                $lines[(int) $line->ingredient_id] = (string) $line->quantity;
+                $byTypes[OrderTypes::read($line->order_types)][(int) $line->ingredient_id] = (string) $line->quantity;
             }
-            self::assertRecordable($graph, $lines, '"'.$product->name.'"');
+            foreach ($byTypes as $lines) {
+                self::assertRecordable($graph, $lines, '"'.$product->name.'"');
+            }
         }
 
         $addonIds = AddOnConsumption::query()->whereIn('ingredient_id', $affected)->pluck('add_on_id')->unique()->all();
         $addons = AddOn::query()->whereIn('id', $addonIds ?: [0])->orderBy('name')->get(['id', 'name']);
         $consumption = AddOnConsumption::query()->whereIn('add_on_id', $addons->pluck('id')->all() ?: [0])->whereNotNull('ingredient_id')
-            ->get(['add_on_id', 'ingredient_id', 'direction', 'quantity'])->groupBy('add_on_id');
+            ->get(['add_on_id', 'ingredient_id', 'direction', 'quantity', 'order_types'])->groupBy('add_on_id');
         foreach ($addons as $addon) {
             self::assertOptionRecordable($graph, $consumption->get($addon->id, collect())->map(static fn (AddOnConsumption $l): array => [
                 'ingredient_id' => (int) $l->ingredient_id,
                 'direction' => (string) $l->direction,
                 'quantity' => (string) $l->quantity,
+                'order_types' => OrderTypes::read($l->order_types),
             ])->all(), (string) $addon->name);
         }
     }
@@ -132,13 +138,15 @@ final class ExplodedPrecision
      * An option's ingredient lines merge per direction (pos_api keeps "add"
      * and "remove" apart), so each direction is checked on its own.
      *
-     * @param  iterable<array{ingredient_id: int, direction: string, quantity: string}>  $lines
+     * LAUNCH packaging add-on — and each tick set on its own (the merge group).
+     *
+     * @param  iterable<array{ingredient_id: int, direction: string, quantity: string, order_types?: int}>  $lines
      */
     public static function assertOptionRecordable(PrepGraph $graph, iterable $lines, string $optionName): void
     {
         $byDirection = [];
         foreach ($lines as $line) {
-            $byDirection[$line['direction']][(int) $line['ingredient_id']] = $line['quantity'];
+            $byDirection[$line['direction'].'|'.OrderTypes::read($line['order_types'] ?? null)][(int) $line['ingredient_id']] = $line['quantity'];
         }
         foreach ($byDirection as $directionLines) {
             self::assertRecordable($graph, $directionLines, '"'.$optionName.'" option');

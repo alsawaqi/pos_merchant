@@ -72,6 +72,8 @@ class CreateAddOnRequest extends FormRequest
             $prefix.'.*.direction' => ['nullable', 'string', 'in:add,remove'],
             $prefix.'.*.quantity' => ['required', 'numeric', 'gt:0', 'decimal:0,4', 'max:999999.999'],
             $prefix.'.*.unit' => ['nullable', 'string', 'max:32'],
+            // LAUNCH packaging add-on — "Used for" ticks (1..15, 0 refused).
+            $prefix.'.*.order_types' => ['sometimes', 'nullable', 'integer', 'between:1,15'],
         ];
     }
 }
