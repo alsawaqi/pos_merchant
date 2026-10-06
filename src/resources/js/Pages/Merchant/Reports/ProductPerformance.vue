@@ -43,6 +43,8 @@ type ApexSeries = { name: string; data: number[] }[];
         <div v-if="payload" class="space-y-6">
             <!-- LAUNCH-P3 P3-5 — what the cost of goods (recipe_cost, in the export) covers. -->
             <p class="text-xs text-slate-500" data-test="cogs-scope-hint">{{ t('reports.shared.cogs_scope_hint') }}</p>
+            <!-- LAUNCH packaging add-on — per-order packaging belongs to the whole order, not a product. -->
+            <p class="text-xs text-slate-500" data-test="cogs-packaging-excluded">{{ t('order_packaging.reports.performance_note') }}</p>
             <!-- v2 charts: lead with the visuals, exact-figure tables follow below -->
             <div class="grid gap-6 lg:grid-cols-2">
                 <ReportChart

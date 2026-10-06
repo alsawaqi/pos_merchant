@@ -10,6 +10,7 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { fetchRecipeCostReport, type RecipeCostReportPayload } from '@/lib/api/reports';
+import { ORDER_TYPE_BUCKETS, type OrderTypeBucket } from '@/lib/orderTypes';
 import ReportShell from './components/ReportShell.vue';
 import ReportChart from './components/ReportChart.vue';
 import { useReportRunner } from './components/useReportRunner';
@@ -21,6 +22,11 @@ const { filter, payload, loading, error, run } = useReportRunner<RecipeCostRepor
 function num(v: string | number | undefined | null): number {
     const n = typeof v === 'number' ? v : Number.parseFloat(String(v ?? '0'));
     return Number.isFinite(n) ? n : 0;
+}
+
+/** LAUNCH packaging add-on — "Dine in 0.210 · Quick 0.200 · To go 0.230 · Delivery 0.230". */
+function byTypeText(costs: Record<OrderTypeBucket, string>): string {
+    return ORDER_TYPE_BUCKETS.map((b) => `${t(`order_types.short.${b}`)} ${costs[b]}`).join(' · ');
 }
 
 /** + = the sales cost more than today's recipe would. */
@@ -51,6 +57,8 @@ type ApexSeries = { name: string; data: number[] }[];
             <p class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600" data-test="recipe-cost-filters-hint">
                 {{ t('reports.recipe_cost.filters_hint') }}
             </p>
+            <!-- LAUNCH packaging add-on — how a recipe ticked by order type is costed. -->
+            <p v-if="payload.rows.some((r) => r.theoretical_by_type)" class="text-xs text-slate-500" data-test="recipe-cost-by-type-hint">{{ t('order_packaging.reports.recipe_cost_note') }}</p>
 
             <ReportChart
                 v-if="payload.rows.length"
@@ -84,7 +92,11 @@ type ApexSeries = { name: string; data: number[] }[];
                         <tr v-for="r in payload.rows" :key="r.product_id" class="border-b border-slate-100 last:border-0">
                             <td class="px-5 py-2 font-medium text-slate-900">{{ r.product_name }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.base_price }}</td>
-                            <td class="px-5 py-2 text-end tabular-nums">{{ r.theoretical_cost }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums">
+                                {{ r.theoretical_cost }}
+                                <!-- LAUNCH packaging add-on — the recipe's cost per order type ("Dine in 0.420 · To go 0.505"). -->
+                                <span v-if="r.theoretical_by_type" class="block text-[10px] text-slate-500" data-test="recipe-cost-by-type">{{ byTypeText(r.theoretical_by_type) }}</span>
+                            </td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.profit_per_unit }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.margin_pct }}%</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.units_sold }}</td>

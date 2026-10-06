@@ -124,6 +124,8 @@ export interface SalesReportPayload {
         tax_total: string;
         refunds_total: string;
         cogs: string;
+        /** LAUNCH packaging add-on — of which per-order packaging (once per order). */
+        cogs_packaging?: string;
         gross_profit: string;
         operating_expenses: string;
         /** PT — total tax PAID on purchases in the window. */
@@ -262,6 +264,8 @@ export interface RecipeCostReportPayload {
         stock_mode?: string;
         base_price: string;
         theoretical_cost: string;
+        /** LAUNCH packaging add-on — per order type once a line is ticked for some types only; null otherwise. */
+        theoretical_by_type?: Record<'dine_in' | 'quick' | 'to_go' | 'delivery', string> | null;
         profit_per_unit: string;
         margin_pct: number;
         recipe_line_count: number;

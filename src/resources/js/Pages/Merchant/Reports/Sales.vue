@@ -143,6 +143,8 @@ type ApexSeries = { name: string; data: number[] }[];
             </p>
             <!-- LAUNCH-P3 P3-5 — what the cost of goods covers. -->
             <p class="text-xs text-slate-500" data-test="cogs-scope-hint">{{ t('reports.shared.cogs_scope_hint') }}</p>
+            <!-- LAUNCH packaging add-on — the per-order packaging inside the cost of goods (once per order). -->
+            <p v-if="Number(payload.headline.cogs_packaging ?? 0) > 0" class="text-xs text-slate-500" data-test="cogs-packaging-hint">{{ t('order_packaging.reports.sales_packaging', { amount: payload.headline.cogs_packaging }) }}</p>
 
             <!-- v2 charts: lead with the visuals, exact-figure tables follow below -->
             <ReportChart
