@@ -587,6 +587,16 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         Route::get('prep-items/{prepItem:uuid}/history', [PrepItemsController::class, 'history'])
             ->name('prep-items.history');
 
+        // LAUNCH packaging add-on — the merchant's per-order packaging, one
+        // list per order type (dine_in / quick / to_go / delivery), taken
+        // once per whole order by pos_api. Read: catalogue.view or
+        // inventory.view; write: "Edit recipes". Gated in the controller.
+        Route::get('inventory/order-packaging', [\App\Http\Controllers\Pos\OrderPackagingController::class, 'index'])
+            ->name('inventory.order-packaging.index');
+        Route::put('inventory/order-packaging/{orderType}', [\App\Http\Controllers\Pos\OrderPackagingController::class, 'update'])
+            ->where('orderType', 'dine_in|quick|to_go|delivery')
+            ->name('inventory.order-packaging.update');
+
         // P-G4 — central ingredient warehouse: company pool + Receive &
         // Distribute to branches + transfer + adjust + ledger (the ingredient
         // twin of the product-stock routes below).
