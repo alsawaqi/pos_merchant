@@ -43,6 +43,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'parent_order_item_id',
     'combo_slot_id',
     'combo_extra_price',
+    // LAUNCH combo add-on — a meal parent's meal; a child's line, kind and revenue share.
+    'meal_id',
+    'combo_line_id',
+    'combo_child_kind',
+    'allocated_revenue_baisas',
 ])]
 class OrderItem extends Model
 {

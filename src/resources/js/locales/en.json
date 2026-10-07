@@ -4045,6 +4045,8 @@
             "extra_price": "Extra price (OMR)",
             "joins_hint": "Products added to this category later join this choice automatically.",
             "add_choice": "Add a choice",
+            "unavailable": "unavailable",
+            "unavailable_hint": "This item cannot be sold now (deleted or switched off): the combo shows as unavailable until you change it.",
             "issues": {
                 "no_item": "Pick the included item.",
                 "quantity_range": "How many must be 1 to 99.",
@@ -4291,6 +4293,7 @@
         "not_found": "This meal was not found.",
         "delete": "Delete meal",
         "delete_confirm": "Delete this meal? Past orders keep it.",
+        "clash": "\"{product}\" is also a main of the active meal \"{meal}\": untick it in one of them.",
         "issues": {
             "name": "Enter the meal name.",
             "price": "Enter the meal price.",

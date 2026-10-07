@@ -9,8 +9,10 @@ use App\Data\Security\AuditLogData;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\User;
+use App\Support\Catalogue\MealMains;
 use App\Support\Catalogue\MenuExtras;
 use App\Support\Catalogue\OrderTypes;
+use App\Support\Inventory\ItemCodes;
 use App\Support\Inventory\PackagingUsage;
 use App\Support\MerchantTenantContext;
 use App\Support\Recipes\RecipeEditGate;
@@ -120,6 +122,17 @@ final readonly class UpdateProductAction
             }
         }
 
+        // LAUNCH combo add-on, fix order 1 (C-4) — a category move never puts
+        // a main in two active meals at once.
+        if (array_key_exists('category_id', $attributes) && ! empty($attributes['category_id'])
+            && (int) $attributes['category_id'] !== (int) $product->category_id
+            && ! $product->isCombo() && ! (bool) $product->is_internal) {
+            $clash = MealMains::productClash($companyId, (int) $product->id, (string) ($attributes['name'] ?? $product->name), (int) $attributes['category_id']);
+            if ($clash !== null) {
+                throw new RuntimeException($clash);
+            }
+        }
+
         // Fix order 1, L3 — a stock-mode change into or out of a recipe type
         // (made-to-order / cooked) on a product WITH recipe lines switches
         // recipe deduction on, off or between sale and production: it needs
@@ -145,7 +158,7 @@ final readonly class UpdateProductAction
             $newSku = array_key_exists('sku', $attributes) && (string) ($attributes['sku'] ?? '') !== (string) ($product->sku ?? '') ? $attributes['sku'] : null;
             $newBarcode = array_key_exists('barcode', $attributes) && (string) ($attributes['barcode'] ?? '') !== (string) ($product->barcode ?? '') ? $attributes['barcode'] : null;
             if ($newSku !== null || $newBarcode !== null) {
-                \App\Support\Inventory\ItemCodes::claimProductCodes($companyId, $newSku, $newBarcode, (int) $product->id);
+                ItemCodes::claimProductCodes($companyId, $newSku, $newBarcode, (int) $product->id);
             }
 
             $changes = [];

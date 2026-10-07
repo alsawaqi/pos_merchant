@@ -14,7 +14,7 @@
 import { ArrowUpCircle, ListChecks, Package, Plus, Trash2 } from 'lucide-vue-next';
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { choiceItems, lineIssues, type ChoiceLineDraft, type FixedLineDraft, type LineDraft, type PickableItem } from '@/lib/combo';
+import { cannotBeSold, choiceItems, lineIssues, type ChoiceLineDraft, type FixedLineDraft, type LineDraft, type PickableItem } from '@/lib/combo';
 
 const props = defineProps<{
     modelValue: LineDraft[];
@@ -96,8 +96,10 @@ function error(line: LineDraft, field: string): string | null {
                         <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('combos.lines.item') }} *</span>
                         <select v-model="line.product_uuid" :disabled="disabled" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" data-test="fixed-item">
                             <option value="">{{ t('combos.lines.pick_item') }}</option>
+                            <option v-if="line.product_uuid !== '' && !pickable.some((i) => i.uuid === line.product_uuid)" :value="line.product_uuid">{{ line.label ?? '—' }} ({{ t('combos.lines.unavailable') }})</option>
                             <option v-for="item in pickable" :key="item.uuid" :value="item.uuid">{{ itemName(item) }}<template v-if="item.base_price"> — {{ item.base_price }}</template></option>
                         </select>
+                        <span v-if="cannotBeSold(line.product_uuid, line.unavailable, items)" class="mt-1 block text-xs font-semibold text-rose-700" data-test="fixed-unavailable">{{ t('combos.lines.unavailable_hint') }}</span>
                         <span v-if="error(line, 'product_uuid')" class="mt-1 block text-xs text-rose-600">{{ error(line, 'product_uuid') }}</span>
                     </label>
                     <label class="block">
@@ -117,6 +119,7 @@ function error(line: LineDraft, field: string): string | null {
                     <div v-for="(upgrade, ui) in line.upgrades" :key="ui" class="mt-1.5 grid gap-2 sm:grid-cols-[1fr_8rem_auto]" data-test="upgrade-row">
                         <select v-model="upgrade.product_uuid" :disabled="disabled" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" data-test="upgrade-item">
                             <option value="">{{ t('combos.lines.pick_item') }}</option>
+                            <option v-if="upgrade.product_uuid !== '' && !pickable.some((i) => i.uuid === upgrade.product_uuid)" :value="upgrade.product_uuid">{{ upgrade.label ?? '—' }} ({{ t('combos.lines.unavailable') }})</option>
                             <option v-for="item in pickable" :key="item.uuid" :value="item.uuid">{{ itemName(item) }}<template v-if="item.base_price"> — {{ item.base_price }}</template></option>
                         </select>
                         <label class="flex items-center gap-1 text-xs text-slate-600">
@@ -126,6 +129,7 @@ function error(line: LineDraft, field: string): string | null {
                         <button type="button" :disabled="disabled" class="rounded p-1 text-rose-500 hover:bg-rose-100" :title="t('combos.lines.remove_upgrade')" @click="line.upgrades.splice(ui, 1)">
                             <Trash2 class="size-3.5" />
                         </button>
+                        <span v-if="cannotBeSold(upgrade.product_uuid, upgrade.unavailable, items)" class="text-xs font-semibold text-rose-700 sm:col-span-3" data-test="upgrade-unavailable">{{ t('combos.lines.unavailable_hint') }}</span>
                         <span v-if="error(line, `upgrades.${ui}.product_uuid`)" class="text-xs text-rose-600 sm:col-span-3">{{ error(line, `upgrades.${ui}.product_uuid`) }}</span>
                     </div>
                     <button type="button" :disabled="disabled" class="mt-1.5 inline-flex items-center gap-1 rounded border border-teal-200 bg-white px-2 py-1 text-[11px] font-semibold text-teal-700 hover:bg-teal-50" data-test="add-upgrade" @click="line.upgrades.push({ product_uuid: '', upgrade_price: '0' })">

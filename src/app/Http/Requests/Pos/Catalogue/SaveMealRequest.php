@@ -89,7 +89,8 @@ class SaveMealRequest extends FormRequest
 
             $status = $this->input('status', $meal?->status ?? Meal::STATUS_ACTIVE);
             if ($status === Meal::STATUS_ACTIVE) {
-                foreach (MealMains::clashes($companyId, $meal?->id !== null ? (int) $meal->id : null, $categoryIds, $excluded) as $clash) {
+                foreach (MealMains::clashes($companyId, $meal?->id !== null ? (int) $meal->id : null, $categoryIds, $excluded,
+                    $this->input('on_sale_from'), $this->input('on_sale_until')) as $clash) {
                     $v->errors()->add('category_ids', MealMains::message($clash));
                 }
             }

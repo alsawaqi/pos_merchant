@@ -75,6 +75,7 @@ onMounted(async () => {
                             <span v-if="meal.status !== 'active'" class="ms-1 rounded bg-slate-100 px-1.5 py-0.5 text-xs font-semibold text-slate-600">{{ t('meals.inactive') }}</span>
                         </p>
                         <p class="mt-0.5 text-xs text-slate-500">{{ t('meals.row_summary', { categories: categoryNames(meal), mains: meal.mains_count, lines: meal.lines.length }) }}</p>
+                        <p v-for="clash in meal.clashes ?? []" :key="`${clash.product_id}-${clash.meal_uuid}`" class="mt-1 rounded bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700" data-test="meal-row-clash">{{ t('meals.clash', { product: clash.product, meal: clash.meal }) }}</p>
                     </div>
                     <button type="button" class="rounded border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-50" data-test="meal-open" @click="router.push(`/catalogue/meals/${meal.uuid}/edit`)">{{ canManage ? t('meals.edit') : t('meals.view') }}</button>
                 </li>

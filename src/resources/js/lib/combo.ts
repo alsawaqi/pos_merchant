@@ -43,6 +43,9 @@ export interface PickableItem {
 export interface UpgradeDraft {
     product_uuid: string;
     upgrade_price: string;
+    /** Fix order 1 (C-12) — the saved product's name and whether it can still be sold. */
+    label?: string | null;
+    unavailable?: boolean;
 }
 
 export interface ItemOverrideDraft {
@@ -57,6 +60,9 @@ export interface FixedLineDraft {
     product_uuid: string;
     quantity: number | string;
     upgrades: UpgradeDraft[];
+    /** Fix order 1 (C-12) — the saved product's name and whether it can still be sold. */
+    label?: string | null;
+    unavailable?: boolean;
 }
 
 export interface ChoiceLineDraft {
@@ -175,8 +181,10 @@ export function draftsFrom(
         id: number;
         kind: 'fixed' | 'choice';
         product_uuid: string | null;
+        product_name?: string | null;
+        product_available?: boolean;
         quantity: number | null;
-        upgrades: { product_uuid: string | null; upgrade_price: string }[];
+        upgrades: { product_uuid: string | null; upgrade_price: string; product_name?: string | null; product_available?: boolean }[];
         name: string | null;
         name_ar: string | null;
         category_id: number | null;
@@ -193,7 +201,14 @@ export function draftsFrom(
                 kind: 'fixed' as const,
                 product_uuid: line.product_uuid ?? '',
                 quantity: line.quantity ?? 1,
-                upgrades: line.upgrades.map((u) => ({ product_uuid: u.product_uuid ?? '', upgrade_price: u.upgrade_price })),
+                upgrades: line.upgrades.map((u) => ({
+                    product_uuid: u.product_uuid ?? '',
+                    upgrade_price: u.upgrade_price,
+                    label: u.product_name ?? null,
+                    unavailable: u.product_available === false,
+                })),
+                label: line.product_name ?? null,
+                unavailable: line.product_available === false,
             };
         }
         const overrides: Record<string, ItemOverrideDraft> = {};
@@ -211,6 +226,17 @@ export function draftsFrom(
             overrides,
         };
     });
+}
+
+/**
+ * Fix order 1 (C-12) — an included item or upgrade that can no longer be
+ * sold: saved as unavailable (deleted / switched off), or missing from the
+ * pickable products, or not active there.
+ */
+export function cannotBeSold(uuid: string, unavailable: boolean | undefined, items: PickableItem[]): boolean {
+    if (uuid === '') return false;
+    const item = items.find((i) => i.uuid === uuid);
+    return unavailable === true || item === undefined || (item.status != null && item.status !== 'active');
 }
 
 /**

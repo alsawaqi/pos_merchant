@@ -215,7 +215,10 @@ export function fetchDiscountReport(filter: ReportFilter): Promise<{ data: Disco
 
 /** One product row — the REAL server shape (qty_sold, not qty). */
 export interface ProductPerformanceRow {
-    product_id: number;
+    /** LAUNCH combo add-on — null on a meal row (a meal has no product of its own). */
+    product_id: number | null;
+    /** LAUNCH combo add-on, fix order 1 (C-6) — 'meal:<name>' on a meal row. */
+    row_key?: string;
     product_name: string;
     qty_sold: string;
     revenue: string;

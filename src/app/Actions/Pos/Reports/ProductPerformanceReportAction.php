@@ -125,10 +125,45 @@ final readonly class ProductPerformanceReportAction
                 ];
             });
 
+        // LAUNCH combo add-on, fix order 1 (C-6) — a meal line has no product
+        // (its main is a child): its revenue (the paid line total, like any
+        // top-level line) shows under the meal's name ("Beef burger meal");
+        // its cost is its children's cost.
+        $mealRows = RevenueSql::topLevel((clone $itemsBase))
+            ->whereNotNull('pos_order_items.meal_id')
+            ->whereNull('pos_order_items.product_id')
+            ->selectRaw('
+                pos_order_items.product_name_snapshot AS meal_name,
+                COALESCE(SUM(pos_order_items.qty), 0) AS qty_sold,
+                COALESCE(SUM('.RevenueSql::lineRevenue().'), 0) AS revenue
+            ')
+            ->groupBy('pos_order_items.product_name_snapshot')
+            ->get();
+        foreach ($mealRows as $r) {
+            $revenue = (float) $r->revenue;
+            $cost = ($costByProduct['meal:'.$r->meal_name] ?? 0) / 1000;
+            $profit = $revenue - $cost;
+            $perProduct->push([
+                'product_id' => null,
+                'row_key' => 'meal:'.$r->meal_name,
+                'product_name' => (string) $r->meal_name,
+                'product_type' => 'meal',
+                'qty_sold' => number_format((float) $r->qty_sold, 3, '.', ''),
+                'inside_combos_qty' => '0.000',
+                'revenue' => number_format($revenue, 3, '.', ''),
+                'recipe_cost' => number_format($cost, 3, '.', ''),
+                'profit' => number_format($profit, 3, '.', ''),
+                'margin_pct' => $revenue > 0 ? round(($profit / $revenue) * 100, 2) : 0.0,
+                'addon_units' => '0.000',
+                'addon_revenue' => '0.000',
+            ]);
+        }
+        $perProduct = $perProduct->sortByDesc(static fn (array $r): float => (float) $r['revenue'])->values();
+
         // P-G3 — products sold ONLY as add-ons in the window still earn a
         // row (qty_sold 0, the add-on columns carry the story). LAUNCH-P4 —
         // and products that went out ONLY inside combos.
-        $standaloneIds = $perProduct->pluck('product_id')->all();
+        $standaloneIds = $perProduct->pluck('product_id')->filter()->all();
         $otherIds = collect($addonSales->keys())->merge($insideCombos->keys())
             ->map(fn ($id): int => (int) $id)
             ->unique()
@@ -220,7 +255,7 @@ final readonly class ProductPerformanceReportAction
      * (it belongs to the whole order): it is in the Sales report's COGS only.
      *
      * @param  Builder  $itemsBase
-     * @return array<int, int> product_id => cogs_baisas
+     * @return array<int|string, int> product_id (or 'meal:<name>') => cogs_baisas
      */
     private function costByProduct($itemsBase, int $companyId): array
     {
@@ -241,6 +276,8 @@ final readonly class ProductPerformanceReportAction
                 'pos_orders.stock_order_type',
             )
             ->selectRaw('COALESCE(combo_parent.product_id, pos_order_items.product_id) AS cost_product_id')
+            // Fix order 1 (C-6) — a meal's children cost go to the meal row.
+            ->selectRaw('combo_parent.meal_id AS parent_meal_id, combo_parent.product_name_snapshot AS parent_name')
             ->selectRaw('COALESCE(pos_orders.closed_at, pos_orders.opened_at) AS sold_at')
             ->get();
 
@@ -248,6 +285,12 @@ final readonly class ProductPerformanceReportAction
 
         $cost = [];
         foreach ($rows as $row) {
+            if ($row->parent_meal_id !== null) {
+                $key = 'meal:'.$row->parent_name;
+                $cost[$key] = ($cost[$key] ?? 0) + ($costs[(int) $row->id]['total'] ?? 0);
+
+                continue;
+            }
             if ($row->cost_product_id === null) {
                 continue;
             }

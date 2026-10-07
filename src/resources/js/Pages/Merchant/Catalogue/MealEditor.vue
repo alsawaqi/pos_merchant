@@ -117,7 +117,7 @@ onMounted(async () => {
     try {
         await Promise.all([
             listCategories().then((r) => { categories.value = r.data; }),
-            listAddonLinkOptions().then((r) => { items.value = r.data; }),
+            listAddonLinkOptions({ all: true }).then((r) => { items.value = r.data; }),
         ]);
         if (isEdit) {
             prefill((await getMeal(editUuid!)).data);

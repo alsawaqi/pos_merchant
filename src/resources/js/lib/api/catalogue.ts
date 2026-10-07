@@ -927,6 +927,8 @@ export interface Meal {
     excluded_product_uuids: string[];
     mains_count: number;
     lines: ComboLine[];
+    /** Fix order 1 (C-4) — mains this active meal shares with another active meal. */
+    clashes?: { product: string; product_id: number; meal: string; meal_uuid: string }[];
 }
 
 export interface SaveMealPayload {
@@ -962,8 +964,9 @@ export function deleteMeal(uuid: string): Promise<unknown> {
 }
 
 /** P-G3 — the slim picker source: every sellable (non-internal) product. */
-export function listAddonLinkOptions(): Promise<{ data: AddonLinkOption[] }> {
-    return apiGet<{ data: AddonLinkOption[] }>('/api/products/addon-link-options');
+export function listAddonLinkOptions(options: { all?: boolean } = {}): Promise<{ data: AddonLinkOption[] }> {
+    // Fix order 1 (C-5) — the combo and meal editors load every product.
+    return apiGet<{ data: AddonLinkOption[] }>(options.all ? '/api/products/addon-link-options?all=1' : '/api/products/addon-link-options');
 }
 
 // ---- Phase B - product per-branch availability + stock ---------

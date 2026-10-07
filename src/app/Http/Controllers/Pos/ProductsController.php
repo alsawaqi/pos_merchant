@@ -429,7 +429,10 @@ class ProductsController extends Controller
             ->where('is_internal', false)
             ->where('product_type', Product::TYPE_STANDARD)
             ->orderBy('name')
-            ->limit(500)
+            // Fix order 1 (C-5) — the combo and meal editors ask for every
+            // product (?all=1): a choice override or an unticked main past the
+            // 500th product must never be dropped by a save.
+            ->when(! $request->boolean('all'), static fn ($q) => $q->limit(500))
             ->get(['uuid', 'name', 'name_ar', 'stock_mode', 'base_price', 'status', 'on_sale_from', 'on_sale_until', 'cooking_minutes', 'category_id'])
             ->map(static fn (Product $p): array => [
                 'uuid' => $p->uuid,

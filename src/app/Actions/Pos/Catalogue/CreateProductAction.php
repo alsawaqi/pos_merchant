@@ -10,7 +10,9 @@ use App\Enums\ProductStatus;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\User;
+use App\Support\Catalogue\MealMains;
 use App\Support\Catalogue\MenuExtras;
+use App\Support\Inventory\ItemCodes;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -54,11 +56,21 @@ final readonly class CreateProductAction
             }
         }
 
+        // LAUNCH combo add-on, fix order 1 (C-4) — a new main never lands in
+        // two active meals at once.
+        if (($attributes['product_type'] ?? Product::TYPE_STANDARD) === Product::TYPE_STANDARD && empty($attributes['is_internal'])
+            && ! empty($attributes['category_id'])) {
+            $clash = MealMains::productClash($companyId, null, (string) ($attributes['name'] ?? ''), (int) $attributes['category_id']);
+            if ($clash !== null) {
+                throw new RuntimeException($clash);
+            }
+        }
+
         return DB::transaction(function () use ($attributes, $actor, $companyId): Product {
             // LAUNCH review fix order B-1 (L5) — the SKU / barcode are claimed
             // under the same per-company locks ingredients take, and checked
             // again across tables inside this transaction.
-            \App\Support\Inventory\ItemCodes::claimProductCodes($companyId, $attributes['sku'] ?? null, $attributes['barcode'] ?? null);
+            ItemCodes::claimProductCodes($companyId, $attributes['sku'] ?? null, $attributes['barcode'] ?? null);
 
             /** @var Product $product */
             $product = Product::query()->create([

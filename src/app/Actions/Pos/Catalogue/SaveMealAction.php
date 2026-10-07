@@ -69,7 +69,7 @@ final readonly class SaveMealAction
             ComboLinesInput::save(['meal_id' => (int) $meal->id], (array) $data['lines'], $companyId);
 
             if ($meal->status === Meal::STATUS_ACTIVE) {
-                $clashes = MealMains::clashes($companyId, (int) $meal->id, $categoryIds, $excluded);
+                $clashes = MealMains::clashes($companyId, (int) $meal->id, $categoryIds, $excluded, $meal->on_sale_from, $meal->on_sale_until);
                 if ($clashes !== []) {
                     throw new RuntimeException(MealMains::message($clashes[0]));
                 }

@@ -86,6 +86,7 @@ import {
     datesProblem,
     groupKind,
     removablePayload,
+    removePriceProblem,
     removableSaveDecision,
     saleDay,
     ticksFromState,
@@ -924,6 +925,10 @@ function validateStepOne(): boolean {
     }
     // LAUNCH review add-on — "Until" on or after "From"; 0..240 minutes.
     if (datesError.value) missing.push(datesError.value);
+    // LAUNCH combo add-on, fix order 1 (C-11) — a "Can be removed" price may only lower the price.
+    if (Object.values(removableTicks.value).some((tick) => tick?.ticked && removePriceProblem(tick.price) !== null)) {
+        missing.push(t('menu_extras.removable.price_above_zero'));
+    }
     if (cookingError.value) missing.push(cookingError.value);
     stepOneErrors.value = missing;
     return missing.length === 0;

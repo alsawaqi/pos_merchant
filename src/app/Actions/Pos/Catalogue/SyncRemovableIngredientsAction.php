@@ -300,7 +300,7 @@ final readonly class SyncRemovableIngredientsAction
     }
 
     /**
-     * @return list<array{ingredient_id: int, name: string, name_ar: string|null, takes_stock: bool}>
+     * @return list<array{ingredient_id: int, name: string, name_ar: string|null, price_delta: string, takes_stock: bool}>
      */
     private function snapshot(Product $product): array
     {
@@ -318,6 +318,9 @@ final readonly class SyncRemovableIngredientsAction
                 'ingredient_id' => (int) $o->removes_ingredient_id,
                 'name' => (string) $o->name,
                 'name_ar' => $o->name_ar,
+                // Fix order 1 (C-1) — a price change alone moves the group and
+                // the product (devices re-read them) and is audited.
+                'price_delta' => number_format((float) $o->price_delta, 3, '.', ''),
                 'takes_stock' => AddOnKindRules::anyTakesStock([$o]),
             ])
             ->values()

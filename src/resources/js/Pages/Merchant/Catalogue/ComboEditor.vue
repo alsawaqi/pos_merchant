@@ -178,7 +178,7 @@ onMounted(async () => {
     try {
         await Promise.all([
             listCategories().then((r) => { categories.value = r.data; }).catch(() => { categories.value = []; }),
-            listAddonLinkOptions().then((r) => { items.value = r.data; }).catch(() => { items.value = []; }),
+            listAddonLinkOptions({ all: true }).then((r) => { items.value = r.data; }).catch(() => { items.value = []; }),
             listDeliveryProviders().then((r) => { providers.value = r.data; }).catch(() => { providers.value = []; }),
             listBranches().then((r) => { branches.value = r.data; }).catch(() => { branches.value = []; }),
         ]);

@@ -82,7 +82,7 @@ type ApexSeries = { name: string; data: number[] }[];
                         <tr><th class="px-5 py-2 text-start">Product</th><th class="px-5 py-2 text-end">Revenue</th><th class="px-5 py-2 text-end">Qty</th><th class="px-5 py-2 text-end">{{ t('report_combos.inside_combos') }}</th><th class="px-5 py-2 text-end">As add-on</th></tr>
                     </thead>
                     <tbody>
-                        <tr v-for="r in payload.top_by_revenue" :key="r.product_id" class="border-b border-slate-100 last:border-0">
+                        <tr v-for="r in payload.top_by_revenue" :key="r.row_key ?? r.product_id ?? r.product_name" class="border-b border-slate-100 last:border-0">
                             <td class="px-5 py-2 font-medium text-slate-900">
                                 {{ r.product_name }}
                                 <span v-if="r.product_type === 'combo'" class="ms-1 rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-indigo-700" data-test="report-combo-badge">{{ t('combos.badge') }}</span>
@@ -105,7 +105,7 @@ type ApexSeries = { name: string; data: number[] }[];
                         <tr><th class="px-5 py-2 text-start">Product</th><th class="px-5 py-2 text-end">Qty</th><th class="px-5 py-2 text-end">{{ t('report_combos.inside_combos') }}</th><th class="px-5 py-2 text-end">Revenue</th></tr>
                     </thead>
                     <tbody>
-                        <tr v-for="r in payload.top_by_qty" :key="r.product_id" class="border-b border-slate-100 last:border-0">
+                        <tr v-for="r in payload.top_by_qty" :key="r.row_key ?? r.product_id ?? r.product_name" class="border-b border-slate-100 last:border-0">
                             <td class="px-5 py-2 font-medium text-slate-900">{{ r.product_name }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.qty_sold }}</td>
                             <td class="px-5 py-2 text-end tabular-nums text-slate-500">{{ num(r.inside_combos_qty) > 0 ? r.inside_combos_qty : '—' }}</td>
@@ -122,7 +122,7 @@ type ApexSeries = { name: string; data: number[] }[];
                         <tr><th class="px-5 py-2 text-start">Product</th><th class="px-5 py-2 text-end">Qty</th></tr>
                     </thead>
                     <tbody>
-                        <tr v-for="r in payload.slow_movers" :key="r.product_id" class="border-b border-slate-100 last:border-0">
+                        <tr v-for="r in payload.slow_movers" :key="r.row_key ?? r.product_id ?? r.product_name" class="border-b border-slate-100 last:border-0">
                             <td class="px-5 py-2 font-medium text-slate-900">{{ r.product_name }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.qty_sold }}</td>
                         </tr>

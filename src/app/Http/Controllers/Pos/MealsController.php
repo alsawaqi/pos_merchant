@@ -126,6 +126,12 @@ class MealsController extends Controller
             'mains_count' => count(MealMains::of((int) $meal->company_id, $categoryIds,
                 $excluded->pluck('id')->map(static fn ($id): int => (int) $id)->all())),
             'lines' => ComboLinesInput::present(['meal_id' => (int) $meal->id]),
+            // Fix order 1 (C-4) — a clash that arose outside a meal save (a
+            // product moved, an older save), shown on the Meals page.
+            'clashes' => $meal->status === Meal::STATUS_ACTIVE
+                ? MealMains::clashes((int) $meal->company_id, (int) $meal->id, $categoryIds,
+                    $excluded->pluck('id')->map(static fn ($id): int => (int) $id)->all(), $meal->on_sale_from, $meal->on_sale_until)
+                : [],
         ];
     }
 
