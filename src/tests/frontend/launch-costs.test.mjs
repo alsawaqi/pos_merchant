@@ -87,7 +87,7 @@ test('the ingredient page: allergen ticks and a "Price history" tab; physical it
     }
     assert.match(inventory.template, /<IngredientPriceHistory v-if="ingTab === 'history' && ingModalTarget" :ingredient-uuid="ingModalTarget\.uuid" \/>/);
     assert.match(inventory.script, /saveIngredientAllergens\(saved\.uuid, ingAllergens\.value\)/);
-    assert.match(inventory.script, /saveProductAllergens\(physicalItemModalTarget\.value\.uuid, \{ contains: physicalAllergens\.value, may_contain: \[\] \}\)/);
+    assert.match(inventory.script, /saveProductAllergens\(physicalItemModalTarget\.value\.uuid, \{ contains: physicalAllergens\.value \}\)/);
     assertKeysExist(inventory.template, 'Inventory');
 
     const history = sfc('resources/js/Pages/Merchant/Inventory/IngredientPriceHistory.vue');
