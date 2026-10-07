@@ -17,10 +17,7 @@ test('C-5 the combo and meal editors ask for every product', () => {
     }
 });
 
-test('C-11 the wizard blocks a "Can be removed" price above 0 before any write', () => {
-    const { script } = sfc('resources/js/Pages/Merchant/Catalogue/ProductWizard.vue');
-    assert.match(script, /removePriceProblem\(tick\.price\) !== null\)\) \{\s*missing\.push\(t\('menu_extras\.removable\.price_above_zero'\)\);/);
-});
+// C-11 moved to step 2 in fix order 2 (C-14); the mounted wizard is tested in launch-combo-fix2.test.mjs.
 
 test('C-12 an included item or upgrade that can no longer be sold shows "(unavailable)"', () => {
     const { cannotBeSold, draftsFrom } = lib('combo');

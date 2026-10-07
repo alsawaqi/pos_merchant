@@ -925,17 +925,27 @@ function validateStepOne(): boolean {
     }
     // LAUNCH review add-on — "Until" on or after "From"; 0..240 minutes.
     if (datesError.value) missing.push(datesError.value);
-    // LAUNCH combo add-on, fix order 1 (C-11) — a "Can be removed" price may only lower the price.
-    if (Object.values(removableTicks.value).some((tick) => tick?.ticked && removePriceProblem(tick.price) !== null)) {
-        missing.push(t('menu_extras.removable.price_above_zero'));
-    }
     if (cookingError.value) missing.push(cookingError.value);
     stepOneErrors.value = missing;
     return missing.length === 0;
 }
 
+/**
+ * Combo fix order 2 (C-14) — a "Can be removed" price may only lower the
+ * price. The ticks are on step 2, so step 2 checks them: its Next, the review
+ * tab and Save. Only the ticks of the recipe's own lines count (only those are
+ * sent), and not while the ticks are locked (they are never sent then).
+ */
+const removablePriceBlocked = computed<boolean>(() => hasRecipeStep.value && !removableLocked.value
+    && form.recipe_lines.some((l) => {
+        const tick = l.ingredient_uuid !== '' ? removableTicks.value[l.ingredient_uuid] : undefined;
+        return tick?.ticked === true && removePriceProblem(tick.price) !== null;
+    }));
+const stepTwoErrors = computed<string[]>(() => (removablePriceBlocked.value ? [t('menu_extras.removable.price_above_zero')] : []));
+
 function goNext(): void {
     if (step.value === 1 && !validateStepOne()) return;
+    if (step.value === 2 && removablePriceBlocked.value) return;
     if (step.value < 3) {
         step.value += 1;
         maxVisitedStep.value = Math.max(maxVisitedStep.value, step.value);
@@ -955,6 +965,10 @@ function goToStep(n: number): void {
     if (n > maxVisitedStep.value) return; // forward jumps go through Next (validated)
     if (n > 1 && !validateStepOne()) {
         step.value = 1;
+        return;
+    }
+    if (n > 2 && removablePriceBlocked.value) {
+        step.value = 2;
         return;
     }
     step.value = n;
@@ -1065,6 +1079,11 @@ function confirmNoRecipe(): void {
 
 async function submit(): Promise<void> {
     if (!canSubmit.value) return;
+    // Combo fix order 2 (C-14) — before any write.
+    if (removablePriceBlocked.value) {
+        step.value = 2;
+        return;
+    }
     // LAUNCH-P3 P3-1 — an amount that rounds to 0 is refused before it is
     // sent; fix order 1, L5 — so is a picked ingredient with no amount.
     if (recipeHasProblems.value || ticksBlocked.value) {
@@ -1448,6 +1467,9 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                 </div>
                 <div v-if="stepOneErrors.length > 0 && step === 1" class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
                     <p v-for="msg in stepOneErrors" :key="msg">{{ msg }}</p>
+                </div>
+                <div v-if="stepTwoErrors.length > 0 && step === 2" class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700" data-test="step-two-errors">
+                    <p v-for="msg in stepTwoErrors" :key="msg">{{ msg }}</p>
                 </div>
                 <!-- Fix order 1, L8 — read-only for a catalogue viewer; a recipe
                      editor changes the recipe and option stock usage only. -->
@@ -2239,7 +2261,7 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                         <button
                             v-if="step < 3"
                             type="button"
-                            :disabled="step === 2 && (recipeHasDuplicates || ticksBlocked)"
+                            :disabled="step === 2 && (recipeHasDuplicates || ticksBlocked || removablePriceBlocked)"
                             class="rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                             @click="goNext"
                         >
@@ -2248,7 +2270,7 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                         <button
                             v-else-if="canSubmit"
                             type="button"
-                            :disabled="submitting || recipeHasDuplicates || ticksBlocked"
+                            :disabled="submitting || recipeHasDuplicates || ticksBlocked || removablePriceBlocked"
                             class="rounded-lg bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
                             @click="submit"
                         >
