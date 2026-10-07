@@ -23,10 +23,9 @@ test('the 14 allergens in the server order; ticks keep that order and never drop
     assert.deepEqual([...toggleAllergen(['gluten', 'milk'], 'milk')], ['gluten']);
     // A locked (worked-out) allergen cannot be unticked.
     assert.deepEqual([...toggleAllergen(['gluten'], 'gluten', ['gluten'])], ['gluten']);
-    // The product page sends its own ticks only: never a worked-out one,
-    // never a "may contain" it contains.
-    const payload = productAllergenPayload(['gluten', 'eggs'], ['soy', 'gluten'], ['gluten', 'soy', 'sesame']);
-    assert.deepEqual(JSON.parse(JSON.stringify(payload)), { contains: ['soy'], may_contain: ['sesame'] });
+    // Fix order 1 (K-1) — the product page sends its own ticks exactly as they are.
+    const payload = productAllergenPayload(['soy', 'gluten'], ['gluten', 'soy', 'sesame']);
+    assert.deepEqual(JSON.parse(JSON.stringify(payload)), { contains: ['gluten', 'soy'], may_contain: ['gluten', 'soy', 'sesame'] });
     assert.ok(sameAllergens(['milk', 'gluten'], ['gluten', 'milk']));
     assert.ok(!sameAllergens(['milk'], ['milk', 'soy']));
 });
@@ -112,7 +111,7 @@ test('the product page: its target, its food cost and its allergens (worked out 
     assert.match(wizard.template, /<AllergenTicks v-model="ownContains" :locked="derivedAllergens"/);
     assert.match(wizard.template, /<AllergenTicks v-model="ownMayContain" :hidden="\[\.\.\.derivedAllergens, \.\.\.ownContains\]"/);
     assert.match(wizard.script, /target_food_cost_percent: targetPayload\(form\.target_food_cost_percent\)/);
-    assert.match(wizard.script, /saveProductAllergens\(uuid, productAllergenPayload\(derivedAllergens\.value, ownContains\.value, ownMayContain\.value\)\)/);
+    assert.match(wizard.script, /saveProductAllergens\(uuid, productAllergenPayload\(ownContains\.value, ownMayContain\.value\)\)/);
     assert.match(wizard.script, /saveProductAllergens\(created\.data\.uuid/);
     assertKeysExist(wizard.template + wizard.script, 'ProductWizard');
     const combo = sfc('resources/js/Pages/Merchant/Catalogue/ComboEditor.vue');

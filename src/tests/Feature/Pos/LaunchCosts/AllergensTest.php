@@ -119,7 +119,8 @@ it('adds "may contain" by hand, never removes a worked-out allergen, and shows i
         'may_contain' => ['sesame'],
         'derived' => ['gluten', 'eggs', 'mustard'],
         'own_contains' => ['soy'],
-        'own_may_contain' => ['sesame'],
+        // Fix order 1 (K-1) — the hand ticks are kept as given (gluten is shown as contained).
+        'own_may_contain' => ['gluten', 'sesame'],
     ]);
     // Unticking everything by hand leaves what the recipe brings.
     $data = $this->putJson('/api/products/'.$k['burger']->uuid.'/allergens', ['contains' => [], 'may_contain' => []])->assertOk()->json('data');
