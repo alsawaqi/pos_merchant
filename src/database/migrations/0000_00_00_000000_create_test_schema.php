@@ -313,6 +313,10 @@ return new class extends Migration
             $table->date('on_sale_from')->nullable();
             $table->date('on_sale_until')->nullable();
             $table->smallInteger('cooking_minutes')->nullable();
+            // LAUNCH costs & allergens add-on (pos_admin 2026_10_07_110001):
+            // the dish's own target food cost % (NULL = the company target);
+            // CHECK > 0 and <= 100 (trigger below).
+            $table->decimal('target_food_cost_percent', 5, 2)->nullable();
             $table->timestamps();
             $table->softDeletes();
             // Sqlite UNIQUE accepts multiple NULLs natively, so
@@ -341,6 +345,16 @@ return new class extends Migration
                 'WHEN (NEW.on_sale_from IS NOT NULL AND NEW.on_sale_until IS NOT NULL AND NEW.on_sale_until < NEW.on_sale_from) '.
                 'OR (NEW.cooking_minutes IS NOT NULL AND (NEW.cooking_minutes < 0 OR NEW.cooking_minutes > 240)) '.
                 "BEGIN SELECT RAISE(ABORT, 'CHECK constraint failed: pos_products on_sale dates / cooking_minutes'); END"
+            );
+        }
+        // LAUNCH costs & allergens add-on: CHECK target_food_cost_percent
+        // NULL or > 0 and <= 100, as triggers (see above).
+        foreach (['INSERT', 'UPDATE'] as $event) {
+            $name = strtolower($event);
+            DB::statement(
+                "CREATE TRIGGER pos_products_target_food_cost_check_{$name} BEFORE {$event} ON pos_products ".
+                'WHEN NEW.target_food_cost_percent IS NOT NULL AND (NEW.target_food_cost_percent <= 0 OR NEW.target_food_cost_percent > 100) '.
+                "BEGIN SELECT RAISE(ABORT, 'CHECK constraint failed: pos_products target_food_cost_percent'); END"
             );
         }
 
@@ -2274,6 +2288,47 @@ return new class extends Migration
             $table->index(['purchase_receipt_id'], 'pos_purchase_receipt_charges_receipt_idx');
         });
 
+        // LAUNCH costs & allergens add-on (pos_admin 2026_10_07_110001): the
+        // allergen ticks on an ingredient / prep item and on a product (kind
+        // 'contains' | 'may_contain'), with the CHECKs of the 14 codes and the
+        // kind; a price alert marked seen (one per receipt line); the
+        // price-history index on the receipt lines.
+        $codes = "'gluten', 'crustaceans', 'eggs', 'fish', 'peanuts', 'soy', 'milk', 'tree_nuts', 'celery', 'mustard', 'sesame', 'sulphites', 'lupin', 'molluscs'";
+        DB::statement('CREATE TABLE pos_ingredient_allergens (
+            id integer primary key autoincrement not null,
+            company_id integer not null references pos_companies(id) on delete cascade,
+            ingredient_id integer not null references pos_ingredients(id) on delete cascade,
+            allergen varchar not null,
+            created_at datetime null,
+            updated_at datetime null,
+            CONSTRAINT pos_ingredient_allergens_allergen_check CHECK (allergen IN ('.$codes.'))
+        )');
+        DB::statement('CREATE UNIQUE INDEX pos_ingredient_allergens_ingredient_allergen_unique ON pos_ingredient_allergens (ingredient_id, allergen)');
+        DB::statement('CREATE TABLE pos_product_allergens (
+            id integer primary key autoincrement not null,
+            company_id integer not null references pos_companies(id) on delete cascade,
+            product_id integer not null references pos_products(id) on delete cascade,
+            allergen varchar not null,
+            kind varchar not null,
+            created_at datetime null,
+            updated_at datetime null,
+            CONSTRAINT pos_product_allergens_allergen_check CHECK (allergen IN ('.$codes.')),
+            CONSTRAINT pos_product_allergens_kind_check CHECK (kind IN (\'contains\', \'may_contain\'))
+        )');
+        DB::statement('CREATE UNIQUE INDEX pos_product_allergens_product_allergen_kind_unique ON pos_product_allergens (product_id, allergen, kind)');
+        Schema::create('pos_price_alert_reviews', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('company_id')->constrained('pos_companies')->cascadeOnDelete();
+            $table->foreignId('purchase_receipt_line_id')->constrained('pos_purchase_receipt_lines')->cascadeOnDelete();
+            $table->foreignId('seen_by_user_id')->nullable()->constrained('pos_users')->nullOnDelete();
+            $table->timestamp('seen_at');
+            $table->timestamps();
+            $table->unique(['purchase_receipt_line_id'], 'pos_price_alert_reviews_line_unique');
+        });
+        Schema::table('pos_purchase_receipt_lines', function (Blueprint $table): void {
+            $table->index(['ingredient_id'], 'pos_purchase_receipt_lines_ingredient_idx');
+        });
+
         // AP — supplier-credit payment history (mirrors 2026_07_26_010000).
         // Append-only ledger: one row per payment against a credit receipt.
         Schema::create('pos_purchase_receipt_payments', function (Blueprint $table): void {
@@ -2498,6 +2553,9 @@ return new class extends Migration
 
         // Drop in reverse dependency order. Tests use :memory: so
         // this is essentially never called, but symmetry is cheap.
+        Schema::dropIfExists('pos_price_alert_reviews');
+        Schema::dropIfExists('pos_product_allergens');
+        Schema::dropIfExists('pos_ingredient_allergens');
         Schema::dropIfExists('pos_approvals');
         Schema::dropIfExists('pos_staff_attendance');
         Schema::dropIfExists('pos_staff_branches');
