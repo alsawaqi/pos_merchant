@@ -12,6 +12,8 @@ import BranchesShow from '@/Pages/Merchant/Branches/Show.vue';
 import CatalogueIndex from '@/Pages/Merchant/Catalogue/Index.vue';
 import ProductWizard from '@/Pages/Merchant/Catalogue/ProductWizard.vue';
 import ComboEditor from '@/Pages/Merchant/Catalogue/ComboEditor.vue';
+import MealEditor from '@/Pages/Merchant/Catalogue/MealEditor.vue';
+import Meals from '@/Pages/Merchant/Catalogue/Meals.vue';
 import MenuImport from '@/Pages/Merchant/Catalogue/MenuImport.vue';
 import TaxesIndex from '@/Pages/Merchant/Taxes/Index.vue';
 import ExpenseCategoriesIndex from '@/Pages/Merchant/ExpenseCategories/Index.vue';
@@ -213,7 +215,7 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true },
     },
     {
-        // LAUNCH-P4 B2 — the combos editor (a set price + choice slots).
+        // LAUNCH-P4 B2 — the combos editor (a set price + included items and choices).
         // Server-side gates by catalogue.manage.
         path: '/catalogue/combos/new',
         name: 'merchant.catalogue.combo-create',
@@ -224,6 +226,26 @@ const routes: RouteRecordRaw[] = [
         path: '/catalogue/combos/:uuid/edit',
         name: 'merchant.catalogue.combo-edit',
         component: ComboEditor,
+        meta: { requiresAuth: true },
+    },
+    {
+        // LAUNCH combo add-on — the meal setups ("Make it a meal?").
+        // Server-side: catalogue.view to read, catalogue.manage to save.
+        path: '/catalogue/meals',
+        name: 'merchant.catalogue.meals',
+        component: Meals,
+        meta: { requiresAuth: true },
+    },
+    {
+        path: '/catalogue/meals/new',
+        name: 'merchant.catalogue.meal-create',
+        component: MealEditor,
+        meta: { requiresAuth: true },
+    },
+    {
+        path: '/catalogue/meals/:uuid/edit',
+        name: 'merchant.catalogue.meal-edit',
+        component: MealEditor,
         meta: { requiresAuth: true },
     },
     {

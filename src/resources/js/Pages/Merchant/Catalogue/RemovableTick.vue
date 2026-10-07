@@ -5,10 +5,14 @@
  * The wizard saves the ticks to the product's own Remove list; the customer
  * taps "NO Ketchup", the kitchen ticket prints it, and for a made-to-order
  * product the ingredient is not taken from stock.
+ *
+ * LAUNCH combo add-on (owner decision 7) — an optional minus price ("No
+ * cheese −0.100"); blank / 0 = no change, never above 0; a warning says it
+ * lowers the price.
  */
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { removeOptionName, removeOptionNameAr, type RemovableDraft } from '@/lib/menuExtras';
+import { lowersPrice, removeOptionName, removeOptionNameAr, removePriceProblem, type RemovableDraft } from '@/lib/menuExtras';
 
 const props = defineProps<{
     modelValue: RemovableDraft | undefined;
@@ -19,7 +23,8 @@ const props = defineProps<{
 const emit = defineEmits<{ 'update:modelValue': [value: RemovableDraft] }>();
 const { t } = useI18n();
 
-const current = computed<RemovableDraft>(() => props.modelValue ?? { ticked: false, label: '', label_ar: '' });
+const current = computed<RemovableDraft>(() => props.modelValue ?? { ticked: false, label: '', label_ar: '', price: '0' });
+const priceProblem = computed(() => removePriceProblem(current.value.price));
 
 function patch(change: Partial<RemovableDraft>): void {
     emit('update:modelValue', { ...current.value, ...change });
@@ -35,6 +40,10 @@ function onLabel(event: Event): void {
 
 function onLabelAr(event: Event): void {
     patch({ label_ar: (event.target as HTMLInputElement).value });
+}
+
+function onPrice(event: Event): void {
+    patch({ price: (event.target as HTMLInputElement).value });
 }
 </script>
 
@@ -52,6 +61,13 @@ function onLabelAr(event: Event): void {
             <label class="block">
                 <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('menu_extras.removable.label_ar') }}</span>
                 <input :value="current.label_ar" type="text" dir="rtl" maxlength="60" :placeholder="ingredientNameAr ?? ''" :disabled="disabled" class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" data-test="removable-label-ar" @input="onLabelAr">
+            </label>
+            <label class="block sm:col-span-2">
+                <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('menu_extras.removable.price') }}</span>
+                <input :value="current.price ?? '0'" type="number" step="0.001" max="0" :disabled="disabled" class="mt-1 w-40 rounded-lg border border-slate-200 px-2.5 py-1.5 text-end text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" data-test="removable-price" @input="onPrice">
+                <span class="mt-0.5 block text-[11px] text-slate-500">{{ t('menu_extras.removable.price_hint') }}</span>
+                <span v-if="priceProblem" class="mt-0.5 block text-[11px] font-semibold text-rose-600" data-test="removable-price-problem">{{ t(`menu_extras.removable.price_${priceProblem}`) }}</span>
+                <span v-else-if="lowersPrice(current.price)" class="mt-0.5 block text-[11px] font-semibold text-amber-700" data-test="removable-lowers-price">{{ t('menu_extras.removable.lowers_price', { amount: String(current.price).replace('-', '') }) }}</span>
             </label>
             <p class="text-[11px] text-slate-500 sm:col-span-2" data-test="removable-preview">
                 {{ t('menu_extras.removable.preview') }}

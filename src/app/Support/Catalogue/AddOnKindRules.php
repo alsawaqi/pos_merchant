@@ -28,6 +28,11 @@ final class AddOnKindRules
 
     public const NOT_FREE = 'A quick instruction has no price: leave it at 0.';
 
+    /** LAUNCH combo add-on (owner decision 7) — the price sign by kind. */
+    public const MINUS_ONLY_REMOVE = 'Only a Remove option can lower the price: an extra costs 0 or more.';
+
+    public const REMOVE_NOT_ABOVE_ZERO = 'A Remove option can lower the price or leave it: enter 0 or a minus price.';
+
     public const NO_LINK = 'A quick instruction sells no product: remove the linked product.';
 
     public const NO_STOCK = 'A quick instruction uses no stock: remove its stock lines.';
@@ -85,6 +90,19 @@ final class AddOnKindRules
      */
     public static function checkOption(Validator $v, ?AddOnGroup $group, array $input): void
     {
+        $price = array_key_exists('price_delta', $input) && is_numeric($input['price_delta']) ? (float) $input['price_delta'] : null;
+        // LAUNCH combo add-on (owner decision 7) — a Remove option may have a
+        // minus price ("No cheese −0.100"), never above 0; Extras never below 0.
+        if ($price !== null && $group !== null && ! $group->isInstructionsGroup()) {
+            if ((string) $group->kind === AddOnGroup::KIND_REMOVE && $price > 0) {
+                $v->errors()->add('price_delta', self::REMOVE_NOT_ABOVE_ZERO);
+            } elseif ((string) $group->kind !== AddOnGroup::KIND_REMOVE && $price < 0) {
+                $v->errors()->add('price_delta', self::MINUS_ONLY_REMOVE);
+            }
+        }
+        if ($group === null && $price !== null && $price < 0) {
+            $v->errors()->add('price_delta', self::MINUS_ONLY_REMOVE);
+        }
         if ($group === null || ! $group->isInstructionsGroup()) {
             return;
         }

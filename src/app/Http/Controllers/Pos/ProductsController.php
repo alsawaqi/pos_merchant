@@ -430,7 +430,7 @@ class ProductsController extends Controller
             ->where('product_type', Product::TYPE_STANDARD)
             ->orderBy('name')
             ->limit(500)
-            ->get(['uuid', 'name', 'name_ar', 'stock_mode', 'base_price', 'status', 'on_sale_from', 'on_sale_until', 'cooking_minutes'])
+            ->get(['uuid', 'name', 'name_ar', 'stock_mode', 'base_price', 'status', 'on_sale_from', 'on_sale_until', 'cooking_minutes', 'category_id'])
             ->map(static fn (Product $p): array => [
                 'uuid' => $p->uuid,
                 'name' => $p->name,
@@ -443,6 +443,9 @@ class ProductsController extends Controller
                 'on_sale_from' => $p->on_sale_from,
                 'on_sale_until' => $p->on_sale_until,
                 'cooking_minutes' => $p->cooking_minutes,
+                // LAUNCH combo add-on — the combo and meal editors list a
+                // choice's category items and a meal's mains from it.
+                'category_id' => $p->category_id !== null ? (int) $p->category_id : null,
             ]);
 
         return response()->json(['data' => $options]);

@@ -335,13 +335,13 @@ class Product extends Model
     }
 
     /**
-     * LAUNCH-P4 — a combo's choice slots (empty for a standard product).
+     * LAUNCH combo add-on — a combo's lines (empty for a standard product).
      *
-     * @return HasMany<ComboSlot, $this>
+     * @return HasMany<ComboLine, $this>
      */
-    public function comboSlots(): HasMany
+    public function comboLines(): HasMany
     {
-        return $this->hasMany(ComboSlot::class, 'combo_product_id')->orderBy('sort_order')->orderBy('id');
+        return $this->hasMany(ComboLine::class, 'combo_product_id')->orderBy('sort_order')->orderBy('id');
     }
 
     /**

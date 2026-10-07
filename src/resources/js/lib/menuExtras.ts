@@ -1,8 +1,9 @@
 /**
  * LAUNCH review add-on (owner decisions D9–D12) — pure helpers for the menu
- * screens: limited-time dates, cooking time, the combo's main slot ("Make it
- * a meal?") and the recipe lines ticked "Can be removed". No imports, so the
- * node tests load this file as is.
+ * screens: limited-time dates, cooking time and the recipe lines ticked "Can
+ * be removed" (LAUNCH combo add-on: with an optional minus price; the old
+ * "main slot" helpers retired with the slots). No imports, so the node tests
+ * load this file as is.
  *
  * Dates are calendar days 'YYYY-MM-DD' in Asia/Muscat, both bounds inclusive;
  * null = no bound. They are not the daily hours ('HH:MM').
@@ -93,58 +94,36 @@ export function comboCookingFigure(own: string | number | null | undefined, item
     return known.length === 0 ? null : Math.max(...known);
 }
 
-export interface MainSlotDraft {
-    min_choices: number | string;
-    max_choices: number | string;
-    is_main?: boolean;
-}
-
-/** Only a slot where exactly one item is picked can be the main (tester call 15). */
-export function canBeMain(slot: MainSlotDraft): boolean {
-    return Math.trunc(Number(slot.min_choices)) === 1 && Math.trunc(Number(slot.max_choices)) === 1;
-}
-
-export type MainIssue = 'main_not_single' | 'two_mains';
-
-/** Per slot index, what is wrong with its main flag (the server checks the same). */
-export function mainIssues(slots: MainSlotDraft[]): { index: number; issue: MainIssue }[] {
-    const issues: { index: number; issue: MainIssue }[] = [];
-    let mains = 0;
-    slots.forEach((slot, index) => {
-        if (!slot.is_main) return;
-        mains += 1;
-        if (mains > 1) issues.push({ index, issue: 'two_mains' });
-        if (!canBeMain(slot)) issues.push({ index, issue: 'main_not_single' });
-    });
-    return issues;
-}
-
-export interface LimitedSlotDraft {
-    min_choices: number | string;
-    options: { product_uuid: string }[];
-}
-
-/**
- * The required slots (least ≥ 1) whose every item has sale dates: once those
- * end, the combo can no longer be completed. A warning, never a block.
- */
-export function limitedSlotIndexes(
-    slots: LimitedSlotDraft[],
-    itemOf: (uuid: string) => { on_sale_from?: string | null; on_sale_until?: string | null } | null | undefined,
-): number[] {
-    const out: number[] = [];
-    slots.forEach((slot, index) => {
-        const picked = slot.options.filter((o) => o.product_uuid !== '');
-        if (Math.trunc(Number(slot.min_choices) || 0) < 1 || picked.length === 0) return;
-        if (picked.every((o) => isLimited(itemOf(o.product_uuid)))) out.push(index);
-    });
-    return out;
-}
-
 export interface RemovableDraft {
     ticked: boolean;
     label: string;
     label_ar: string;
+    /** LAUNCH combo add-on — '0' (no change) or a minus price ('-0.100'). */
+    price?: string;
+}
+
+/**
+ * LAUNCH combo add-on (owner decision 7) — a Remove option's price: blank or
+ * 0 = no change, a minus price lowers the item ("No cheese −0.100"); above 0
+ * is refused (an extra, not a removal).
+ */
+export function removePriceProblem(value: string | number | null | undefined): 'above_zero' | 'invalid' | null {
+    const text = String(value ?? '').trim();
+    if (text === '' || text === '-') return text === '' ? null : 'invalid';
+    if (!/^-?\d+(\.\d{1,3})?$/.test(text)) return 'invalid';
+    return Number(text) > 0 ? 'above_zero' : null;
+}
+
+/** The wire value: '0.000' for blank, else the price with 3 decimals ('-0.100'). */
+export function removePricePayload(value: string | number | null | undefined): string {
+    const text = String(value ?? '').trim();
+    if (text === '' || Number.isNaN(Number(text))) return '0.000';
+    return (Math.round(Number(text) * 1000) / 1000).toFixed(3).replace(/^-0\.000$/, '0.000');
+}
+
+/** Does this price lower the item (the "lowers the price" warning)? */
+export function lowersPrice(value: string | number | null | undefined): boolean {
+    return removePriceProblem(value) === null && Number(String(value ?? '').trim() || '0') < 0;
 }
 
 /** The server names each option "NO {label}" / "بدون {label_ar}" (printed as is on today's tickets). */
@@ -162,10 +141,10 @@ export function removeOptionNameAr(labelAr: string, ingredientNameAr: string | n
 }
 
 /** The loaded state → the editable ticks, keyed by ingredient uuid. */
-export function ticksFromState(lines: { ingredient_uuid: string; label: string | null; label_ar: string | null }[]): Record<string, RemovableDraft> {
+export function ticksFromState(lines: { ingredient_uuid: string; label: string | null; label_ar: string | null; price?: string | null }[]): Record<string, RemovableDraft> {
     const out: Record<string, RemovableDraft> = {};
     for (const line of lines) {
-        out[line.ingredient_uuid] = { ticked: true, label: line.label ?? '', label_ar: line.label_ar ?? '' };
+        out[line.ingredient_uuid] = { ticked: true, label: line.label ?? '', label_ar: line.label_ar ?? '', price: removePricePayload(line.price ?? '0') };
     }
     return out;
 }
@@ -174,6 +153,8 @@ export interface RemovableLinePayload {
     ingredient_uuid: string;
     label: string | null;
     label_ar: string | null;
+    /** LAUNCH combo add-on — '0.000' or a minus price. */
+    price: string;
 }
 
 /**
@@ -195,6 +176,7 @@ export function removablePayload(
             ingredient_uuid: uuid,
             label: tick.label.trim() === '' ? null : tick.label.trim(),
             label_ar: tick.label_ar.trim() === '' ? null : tick.label_ar.trim(),
+            price: removePricePayload(tick.price ?? '0'),
         });
     }
     return out;
@@ -207,6 +189,8 @@ export interface RemovableSavedLine {
     ingredient_uuid: string;
     label: string | null;
     label_ar: string | null;
+    /** LAUNCH combo add-on — the saved price ('0.000' or a minus price). */
+    price?: string | null;
 }
 
 /**
@@ -231,7 +215,7 @@ export function removableSaveDecision(
     return {
         send: true,
         lines,
-        expected: baseline.map((l) => ({ ingredient_uuid: l.ingredient_uuid, label: l.label ?? null, label_ar: l.label_ar ?? null })),
+        expected: baseline.map((l) => ({ ingredient_uuid: l.ingredient_uuid, label: l.label ?? null, label_ar: l.label_ar ?? null, ...(l.price != null ? { price: removePricePayload(l.price) } : {}) })),
     };
 }
 

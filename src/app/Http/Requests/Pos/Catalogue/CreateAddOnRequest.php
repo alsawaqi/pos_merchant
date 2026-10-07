@@ -26,10 +26,11 @@ class CreateAddOnRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:100'],
             'name_ar' => ['nullable', 'string', 'max:100'],
-            // 0..999.999 OMR. Negative deltas not allowed (an
-            // add-on that lowers the price is a discount, not
-            // an add-on — separate concept in §5.9).
-            'price_delta' => ['nullable', 'numeric', 'min:0', 'max:999.999'],
+            // −999.999..999.999 OMR. LAUNCH combo add-on (owner decision
+            // 7): only a Remove option may lower the price (a minus price);
+            // Extras never go below 0, quick instructions stay at 0
+            // ({@see AddOnKindRules::checkOption()}).
+            'price_delta' => ['nullable', 'numeric', 'min:-999.999', 'max:999.999'],
             'is_default' => ['nullable', 'boolean'],
             // P-G3 — the add-on IS this product (cake inside a coffee):
             // selling it consumes the product's real stock by its type.

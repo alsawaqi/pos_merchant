@@ -26,7 +26,7 @@ export function uploadCatalogueImage(photo: Blob, kind: 'product' | 'category'):
 
 export type CategoryStatus = 'active' | 'inactive';
 export type ProductStatus = 'active' | 'inactive';
-/** LAUNCH-P4 — a combo is a product with choice slots (B2). */
+/** LAUNCH-P4 — a combo is a product with lines (LAUNCH combo add-on). */
 export type ProductType = 'standard' | 'combo';
 /** LAUNCH-P4 H6 — where a product is sold. */
 export type BranchScope = 'all' | 'selected';
@@ -816,40 +816,62 @@ export interface AddonLinkOption {
     on_sale_from?: string | null;
     on_sale_until?: string | null;
     cooking_minutes?: number | null;
+    /** LAUNCH combo add-on — a choice lists its category's items; a meal its mains. */
+    category_id?: number | null;
 }
 
-// ---- LAUNCH-P4 B2 — combos ---------------------------------------
+// ---- LAUNCH combo add-on — combos and meals as lists of lines -----
 
-export interface ComboSlotOption {
-    product_uuid: string;
+/** An upgrade of an included item, as the server shows it. */
+export interface ComboLineUpgrade {
+    product_uuid: string | null;
     product_name: string | null;
     product_name_ar: string | null;
     product_base_price: string | null;
     /** false = the item is deleted or switched off (still shown so it can be removed). */
     product_available: boolean;
+    upgrade_price: string;
+    sort_order: number;
+}
+
+/** A choice line's override: unticked and / or an extra price. */
+export interface ComboLineItemOverride {
+    product_uuid: string | null;
+    product_name: string | null;
+    excluded: boolean;
     extra_price: string;
-    is_default: boolean;
-    sort_order: number;
 }
 
-export interface ComboSlot {
+/** One line of a combo or meal (GET /api/combos/{uuid}, /api/meals). */
+export interface ComboLine {
     id: number;
-    uuid: string;
-    name: string;
-    name_ar: string | null;
-    min_choices: number;
-    max_choices: number;
+    kind: 'fixed' | 'choice';
     sort_order: number;
-    /** LAUNCH review add-on — offered as "Make it a meal?". */
-    is_main?: boolean;
-    options: ComboSlotOption[];
+    product_uuid: string | null;
+    product_name: string | null;
+    product_name_ar: string | null;
+    product_base_price: string | null;
+    product_available: boolean;
+    quantity: number | null;
+    upgrades: ComboLineUpgrade[];
+    name: string | null;
+    name_ar: string | null;
+    category_id: number | null;
+    category_name: string | null;
+    pick_count: number | null;
+    items: ComboLineItemOverride[];
 }
 
-/** A combo as GET /api/combos/{uuid} returns it (a product + its slots). */
+/** A combo as GET /api/combos/{uuid} returns it (a product + its lines). */
 export type Combo = Product & {
-    combo?: { slots: ComboSlot[] };
+    combo?: { lines: ComboLine[] };
     delivery_provider_prices?: { price: string | null; listed: boolean; delivery_provider?: { uuid: string } | null }[];
 };
+
+/** The lines as the portal saves them (combos and meals alike). */
+export type ComboLinePayload =
+    | { id?: number | null; kind: 'fixed'; product_uuid: string; quantity: number; upgrades: { product_uuid: string; upgrade_price: string }[] }
+    | { id?: number | null; kind: 'choice'; name: string; name_ar: string | null; category_id: number; pick_count: number; items: { product_uuid: string; excluded: boolean; extra_price: string }[] };
 
 export interface SaveComboPayload {
     name: string;
@@ -873,15 +895,7 @@ export interface SaveComboPayload {
     cooking_minutes?: number | null;
     display_order?: number;
     status?: ProductStatus;
-    slots: {
-        id?: number | null;
-        name: string;
-        name_ar: string | null;
-        min_choices: number;
-        max_choices: number;
-        is_main?: boolean;
-        options: { product_uuid: string; extra_price: string; is_default: boolean }[];
-    }[];
+    lines: ComboLinePayload[];
     delivery_prices: ProviderChannelPayload[];
     branches: BranchScopePayload | null;
 }
@@ -896,6 +910,55 @@ export function createCombo(payload: SaveComboPayload): Promise<{ data: Combo }>
 
 export function updateCombo(uuid: string, payload: SaveComboPayload): Promise<{ data: Combo }> {
     return apiPut<{ data: Combo }>(`/api/combos/${uuid}`, payload as unknown as JsonValue);
+}
+
+/** A meal setup ("Make it a meal? +meal_price") as GET /api/meals returns it. */
+export interface Meal {
+    id: number;
+    uuid: string;
+    name: string;
+    name_ar: string | null;
+    meal_price: string;
+    status: 'active' | 'inactive';
+    on_sale_from: string | null;
+    on_sale_until: string | null;
+    sort_order: number;
+    category_ids: number[];
+    excluded_product_uuids: string[];
+    mains_count: number;
+    lines: ComboLine[];
+}
+
+export interface SaveMealPayload {
+    name: string;
+    name_ar: string | null;
+    meal_price: string;
+    status?: 'active' | 'inactive';
+    on_sale_from: string | null;
+    on_sale_until: string | null;
+    category_ids: number[];
+    excluded_product_uuids: string[];
+    lines: ComboLinePayload[];
+}
+
+export function listMeals(): Promise<{ data: Meal[] }> {
+    return apiGet<{ data: Meal[] }>('/api/meals');
+}
+
+export function getMeal(uuid: string): Promise<{ data: Meal }> {
+    return apiGet<{ data: Meal }>(`/api/meals/${uuid}`);
+}
+
+export function createMeal(payload: SaveMealPayload): Promise<{ data: Meal }> {
+    return apiPost<{ data: Meal }>('/api/meals', payload as unknown as JsonValue);
+}
+
+export function updateMeal(uuid: string, payload: SaveMealPayload): Promise<{ data: Meal }> {
+    return apiPut<{ data: Meal }>(`/api/meals/${uuid}`, payload as unknown as JsonValue);
+}
+
+export function deleteMeal(uuid: string): Promise<unknown> {
+    return apiDelete(`/api/meals/${uuid}`);
 }
 
 /** P-G3 — the slim picker source: every sellable (non-internal) product. */

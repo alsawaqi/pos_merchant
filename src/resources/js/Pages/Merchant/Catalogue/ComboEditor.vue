@@ -1,24 +1,24 @@
 <script setup lang="ts">
 /**
- * LAUNCH-P4 B2 — the combos editor (owner decision 7).
+ * LAUNCH-P4 B2, rebuilt by the LAUNCH combo add-on — the combos editor.
  *
- * A combo is a set price plus choice slots ("Main", "Side", "Drink"). Each
- * slot lets the customer pick between a least and a most number of items;
- * each item may cost extra (the same on every channel) and may be
- * pre-selected. Items keep their own add-ons at their own prices, use their
- * own stock and go to the kitchen. The combo's own price follows the channel
- * rules like any product (in store / QR / delivery / per provider), and it
- * is sold only where its channels say.
+ * A combo is a fixed set under one name and one price: "Included items"
+ * (a product × quantity, served every time, with optional upgrades at an
+ * upgrade price) and "Choices" (a question, a category, pick N; the merchant
+ * unticks items and may set an extra price on any). Items keep their own
+ * add-ons at their own prices, use their own stock and go to the kitchen.
+ * The combo's own price follows the channel rules like any product.
  *
- * Create: POST /api/combos. Edit: PUT /api/combos/{uuid} (slots keep their
- * ids). The preview shows the price range before the items' add-ons.
+ * Create: POST /api/combos. Edit: PUT /api/combos/{uuid} (lines keep their
+ * ids). The preview shows the combo price and the range with extras.
  */
-import { ArrowLeft, CalendarRange, Layers, Plus, Star, Timer, Trash2 } from 'lucide-vue-next';
+import { ArrowLeft, CalendarRange, Layers, Timer } from 'lucide-vue-next';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { RouterLink, useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import MerchantLayout from '@/Layouts/MerchantLayout.vue';
 import ChannelsEditor from '@/Pages/Merchant/Catalogue/ChannelsEditor.vue';
+import ComboLinesEditor from '@/Pages/Merchant/Catalogue/ComboLinesEditor.vue';
 import ImageUploadField from '@/Pages/Merchant/Catalogue/ImageUploadField.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { ApiError } from '@/lib/api';
@@ -37,17 +37,9 @@ import {
 import { listDeliveryProviders, type DeliveryProvider } from '@/lib/api/deliveryProviders';
 import { listBranches, type Branch as BranchLite } from '@/lib/api/branches';
 import { branchScopePayload, providerPayload, providerRowsFrom, selectedBranchIds, type ProviderChannelRow } from '@/lib/channels';
-import { comboPriceRange, slotIssues } from '@/lib/combo';
-// LAUNCH review add-on — main slot, dates, cooking time.
-import {
-    canBeMain,
-    comboCookingFigure,
-    comboMenuFields,
-    cookingProblem,
-    datesProblem,
-    limitedSlotIndexes,
-    mainIssues,
-} from '@/lib/menuExtras';
+import { comboPriceRange, draftsFrom, lineIssues, linesPayload, type LineDraft } from '@/lib/combo';
+// LAUNCH review add-on — dates, cooking time.
+import { comboCookingFigure, comboMenuFields, cookingProblem, datesProblem } from '@/lib/menuExtras';
 import { MerchantPermission } from '@/lib/permissions';
 import { authState } from '@/stores/auth';
 
@@ -69,8 +61,6 @@ const branches = ref<BranchLite[]>([]);
 const activeProviders = computed(() => providers.value.filter((p) => p.is_active));
 
 // ---- Form ----------------------------------------------------------
-interface SlotOptionForm { key: string; product_uuid: string; extra_price: string; is_default: boolean; label: string | null }
-interface SlotForm { key: string; id: number | null; name: string; name_ar: string; min_choices: number; max_choices: number; is_main: boolean; options: SlotOptionForm[] }
 
 let seq = 0;
 const nextKey = (p: string): string => `${p}-${++seq}`;
@@ -92,7 +82,8 @@ const form = reactive<{
     status: ProductStatus;
     branch_scope: 'all' | 'selected';
     branch_ids: number[];
-    slots: SlotForm[];
+    /** LAUNCH combo add-on — included items and choices. */
+    lines: LineDraft[];
     /** LAUNCH review add-on — daily hours ('HH:MM'), dates, cooking time. */
     available_from: string;
     available_until: string;
@@ -116,7 +107,7 @@ const form = reactive<{
     status: 'active',
     branch_scope: 'all',
     branch_ids: [],
-    slots: [],
+    lines: [],
     available_from: '',
     available_until: '',
     on_sale_from: '',
@@ -125,57 +116,18 @@ const form = reactive<{
 });
 const providerRows = ref<Record<string, ProviderChannelRow>>({});
 
-function blankOption(): SlotOptionForm {
-    return { key: nextKey('opt'), product_uuid: '', extra_price: '0', is_default: false, label: null };
-}
-
-function addSlot(): void {
-    form.slots.push({ key: nextKey('slot'), id: null, name: '', name_ar: '', min_choices: 1, max_choices: 1, is_main: false, options: [blankOption()] });
-}
-
-function removeSlot(index: number): void {
-    form.slots.splice(index, 1);
-}
-
-function addOption(slot: SlotForm): void {
-    slot.options.push(blankOption());
-}
-
-function removeOption(slot: SlotForm, index: number): void {
-    slot.options.splice(index, 1);
-}
-
-function itemName(option: SlotOptionForm): string {
-    const item = items.value.find((i) => i.uuid === option.product_uuid);
-    if (!item) return option.label ?? '—';
-    return locale.value === 'ar' && item.name_ar ? item.name_ar : item.name;
-}
-
 // ---- Preview ---------------------------------------------------------
-const rangeInStore = computed(() => comboPriceRange(form.base_price || '0', form.slots));
-const rangeDelivery = computed(() => comboPriceRange(form.delivery_price || form.base_price || '0', form.slots));
+const rangeInStore = computed(() => comboPriceRange(form.base_price || '0', form.lines, items.value));
+const rangeDelivery = computed(() => comboPriceRange(form.delivery_price || form.base_price || '0', form.lines, items.value));
 
-function issueText(slot: SlotForm): string[] {
-    return slotIssues(slot).map((issue) => t(`combos.issues.${issue}`));
-}
-
-// ---- LAUNCH review add-on: main slot, dates, cooking time ------------
-/** "Make it a meal?" — at most one main, on a slot with least = most = 1. */
-function setMain(index: number | null): void {
-    form.slots.forEach((slot, i) => { slot.is_main = i === index; });
-}
-const mainProblems = computed(() => mainIssues(form.slots));
-function mainProblem(index: number): string | null {
-    const found = mainProblems.value.find((p) => p.index === index);
-    return found ? t(`meals.issues.${found.issue}`, { n: index + 1 }) : null;
-}
-/** Required slots whose every item has sale dates (a warning, never a block). */
-const limitedSlots = computed(() => limitedSlotIndexes(form.slots, (uuid) => items.value.find((i) => i.uuid === uuid)));
+// ---- LAUNCH review add-on: dates, cooking time ------------------------
 const datesError = computed(() => (datesProblem(form.on_sale_from, form.on_sale_until) ? t('menu_extras.until_before_from') : null));
 const cookingError = computed(() => (cookingProblem(form.cooking_minutes) ? t('menu_extras.cooking_range') : null));
 /** What customers see when the combo has no time of its own: its longest item. */
-const itemsCookingFigure = computed(() => comboCookingFigure('', form.slots.flatMap((slot) => slot.options
-    .map((o) => items.value.find((i) => i.uuid === o.product_uuid)?.cooking_minutes ?? null))));
+const itemsCookingFigure = computed(() => comboCookingFigure('', form.lines.flatMap((line) => (line.kind === 'fixed'
+    ? [line.product_uuid, ...line.upgrades.map((u) => u.product_uuid)]
+    : items.value.filter((i) => i.category_id === line.category_id).map((i) => i.uuid)))
+    .map((uuid) => items.value.find((i) => i.uuid === uuid)?.cooking_minutes ?? null)));
 
 // ---- Load ----------------------------------------------------------
 const loading = ref(true);
@@ -217,22 +169,7 @@ function prefill(combo: Combo): void {
     form.on_sale_from = combo.on_sale_from ?? '';
     form.on_sale_until = combo.on_sale_until ?? '';
     form.cooking_minutes = combo.cooking_minutes != null ? String(combo.cooking_minutes) : '';
-    form.slots = (combo.combo?.slots ?? []).map((slot) => ({
-        key: nextKey('slot'),
-        id: slot.id,
-        name: slot.name,
-        name_ar: slot.name_ar ?? '',
-        min_choices: slot.min_choices,
-        max_choices: slot.max_choices,
-        is_main: slot.is_main ?? false,
-        options: slot.options.map((o) => ({
-            key: nextKey('opt'),
-            product_uuid: o.product_uuid,
-            extra_price: o.extra_price,
-            is_default: o.is_default,
-            label: o.product_available ? o.product_name : `${o.product_name ?? '—'} (${t('combos.unavailable_item')})`,
-        })),
-    }));
+    form.lines = draftsFrom(combo.combo?.lines ?? [], nextKey);
     providerRows.value = providerRowsFrom(activeProviders.value, combo.delivery_provider_prices ?? []);
 }
 
@@ -248,7 +185,7 @@ onMounted(async () => {
         if (isEdit) {
             prefill((await getCombo(editUuid!)).data);
         } else {
-            addSlot();
+            form.lines = [{ key: nextKey('line'), id: null, kind: 'fixed', product_uuid: '', quantity: 1, upgrades: [] }];
             providerRows.value = providerRowsFrom(activeProviders.value, []);
         }
     } catch (err) {
@@ -279,19 +216,7 @@ function payload(): SaveComboPayload {
         // C-1, L7: one pure, node-tested helper).
         ...comboMenuFields(form),
         ...(isEdit ? { status: form.status } : {}),
-        slots: form.slots.map((slot) => ({
-            id: slot.id,
-            name: slot.name.trim(),
-            name_ar: slot.name_ar.trim() || null,
-            min_choices: Number(slot.min_choices),
-            max_choices: Number(slot.max_choices),
-            is_main: slot.is_main,
-            options: slot.options.map((o) => ({
-                product_uuid: o.product_uuid,
-                extra_price: String(o.extra_price ?? '').trim() === '' ? '0' : String(o.extra_price).trim(),
-                is_default: o.is_default,
-            })),
-        })),
+        lines: linesPayload(form.lines, items.value),
         // Edit: every active provider is sent (listed at the default price
         // removes its row); create: only the rows that differ.
         delivery_prices: isEdit
@@ -309,13 +234,11 @@ const blockingProblems = computed<string[]>(() => {
     const problems: string[] = [];
     if (form.name.trim() === '') problems.push(t('combos.name_required'));
     if (String(form.base_price).trim() === '') problems.push(t('combos.price_required'));
-    if (form.slots.length === 0) problems.push(t('combos.issues.no_slots'));
-    form.slots.forEach((slot, i) => {
-        if (slot.name.trim() === '') problems.push(t('combos.issues.slot_name', { n: i + 1 }));
-        if (slotIssues(slot).length > 0) problems.push(t('combos.issues.slot', { n: i + 1 }));
+    if (form.lines.length === 0) problems.push(t('combos.lines.issues.no_lines'));
+    form.lines.forEach((line, i) => {
+        if (lineIssues(line, items.value).length > 0) problems.push(t('combos.lines.issues.line', { n: i + 1 }));
     });
     if (isUnrestricted.value && form.branch_scope === 'selected' && form.branch_ids.length === 0) problems.push(t('channels.pick_a_branch'));
-    mainProblems.value.forEach((p) => problems.push(t(`meals.issues.${p.issue}`, { n: p.index + 1 })));
     if (datesError.value) problems.push(datesError.value);
     if (cookingError.value) problems.push(cookingError.value);
     return problems;
@@ -502,107 +425,9 @@ async function save(): Promise<void> {
                     :branches-error="fieldError('branches')"
                 />
 
-                <!-- Slots -->
-                <section class="space-y-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-test="combo-slots">
-                    <div>
-                        <h2 class="text-sm font-semibold text-slate-900">{{ t('combos.slots_title') }}</h2>
-                        <p class="mt-0.5 text-xs text-slate-500">{{ t('combos.slots_hint') }}</p>
-                    </div>
-                    <!-- LAUNCH review add-on — "Make it a meal?": one slot may be the main item. -->
-                    <div class="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2" data-test="combo-main">
-                        <p class="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-900"><Star class="size-3.5" /> {{ t('meals.main_title') }}</p>
-                        <p class="mt-0.5 text-xs text-amber-800">{{ t('meals.main_hint') }}</p>
-                        <label class="mt-1.5 inline-flex items-center gap-1.5 text-xs font-medium text-slate-700">
-                            <input type="radio" name="combo-main" :checked="!form.slots.some((s) => s.is_main)" class="border-slate-300 text-amber-600 focus:ring-amber-200" data-test="combo-main-none" @change="setMain(null)">
-                            {{ t('meals.no_main') }}
-                        </label>
-                    </div>
-
-                    <article v-for="(slot, si) in form.slots" :key="slot.key" class="rounded-xl border border-slate-200 p-3" data-test="combo-slot">
-                        <div class="grid gap-2 sm:grid-cols-[1fr_1fr_6rem_6rem_auto]">
-                            <label class="block">
-                                <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('combos.slot_name') }} *</span>
-                                <input v-model="slot.name" type="text" maxlength="64" :placeholder="t('combos.slot_name_placeholder')" class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
-                            </label>
-                            <label class="block">
-                                <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.fields.name_ar') }}</span>
-                                <input v-model="slot.name_ar" type="text" dir="rtl" maxlength="64" class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
-                            </label>
-                            <label class="block">
-                                <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('combos.min') }}</span>
-                                <input v-model.number="slot.min_choices" type="number" min="0" max="20" class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" data-test="slot-min">
-                            </label>
-                            <label class="block">
-                                <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('combos.max') }}</span>
-                                <input v-model.number="slot.max_choices" type="number" min="1" max="20" class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" data-test="slot-max">
-                            </label>
-                            <div class="flex items-end">
-                                <button type="button" class="inline-flex items-center gap-1 rounded border border-rose-200 px-2 py-1.5 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-50" @click="removeSlot(si)">
-                                    <Trash2 class="size-3" /> {{ t('combos.remove_slot') }}
-                                </button>
-                            </div>
-                        </div>
-                        <p class="mt-1 text-xs text-slate-500">{{ t('combos.choose_between', { min: slot.min_choices, max: slot.max_choices }) }}</p>
-                        <label class="mt-1.5 inline-flex items-center gap-1.5 text-xs font-medium" :class="canBeMain(slot) || slot.is_main ? 'text-slate-700' : 'text-slate-400'">
-                            <input type="radio" name="combo-main" :checked="slot.is_main" :disabled="!canBeMain(slot) && !slot.is_main" class="border-slate-300 text-amber-600 focus:ring-amber-200" data-test="slot-main" @change="setMain(si)">
-                            {{ t('meals.main_label') }}
-                            <span v-if="!canBeMain(slot)" class="text-[11px] font-normal">— {{ t('meals.main_needs_single') }}</span>
-                        </label>
-                        <p v-if="mainProblem(si)" class="mt-1 text-xs font-semibold text-rose-700" data-test="slot-main-problem">{{ mainProblem(si) }}</p>
-                        <p v-if="fieldError(`slots.${si}.is_main`)" class="mt-1 text-xs text-rose-600">{{ fieldError(`slots.${si}.is_main`) }}</p>
-
-                        <table class="mt-2 w-full text-sm">
-                            <thead class="text-[11px] uppercase tracking-wide text-slate-500">
-                                <tr>
-                                    <th class="py-1 text-start font-semibold">{{ t('combos.item') }}</th>
-                                    <th class="py-1 text-end font-semibold">{{ t('combos.extra_price') }}</th>
-                                    <th class="py-1 text-center font-semibold">{{ t('combos.default') }}</th>
-                                    <th class="py-1"></th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-slate-100">
-                                <tr v-for="(option, oi) in slot.options" :key="option.key" data-test="combo-option">
-                                    <td class="py-1.5 pe-2">
-                                        <select v-model="option.product_uuid" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" data-test="option-item">
-                                            <option value="">{{ t('combos.pick_item') }}</option>
-                                            <option v-if="option.product_uuid !== '' && !items.some((i) => i.uuid === option.product_uuid)" :value="option.product_uuid">{{ itemName(option) }}</option>
-                                            <option v-for="item in items" :key="item.uuid" :value="item.uuid">
-                                                {{ locale === 'ar' && item.name_ar ? item.name_ar : item.name }}<template v-if="item.base_price"> — {{ item.base_price }}</template>
-                                            </option>
-                                        </select>
-                                        <span v-if="fieldError(`slots.${si}.options.${oi}.product_uuid`)" class="mt-1 block text-xs text-rose-600">{{ fieldError(`slots.${si}.options.${oi}.product_uuid`) }}</span>
-                                    </td>
-                                    <td class="w-32 py-1.5 pe-2">
-                                        <input v-model="option.extra_price" type="number" step="0.001" min="0" class="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-end text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" data-test="option-extra">
-                                    </td>
-                                    <td class="w-20 py-1.5 text-center">
-                                        <input v-model="option.is_default" type="checkbox" class="rounded border-slate-300 text-teal-600 focus:ring-2 focus:ring-teal-200" data-test="option-default">
-                                    </td>
-                                    <td class="w-10 py-1.5 text-end">
-                                        <button type="button" class="rounded p-1 text-rose-500 hover:bg-rose-100" :title="t('combos.remove_item')" @click="removeOption(slot, oi)">
-                                            <Trash2 class="size-3.5" />
-                                        </button>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        <div class="mt-2">
-                            <button type="button" class="inline-flex items-center gap-1 rounded border border-teal-200 bg-teal-50 px-2.5 py-1 text-[11px] font-semibold text-teal-700 transition hover:bg-teal-100" @click="addOption(slot)">
-                                <Plus class="size-3" /> {{ t('combos.add_item') }}
-                            </button>
-                        </div>
-                        <p v-if="limitedSlots.includes(si)" class="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800" data-test="slot-limited-warning">{{ t('meals.limited_warning') }}</p>
-                        <ul v-if="issueText(slot).length > 0" class="mt-2 space-y-0.5 text-xs font-semibold text-rose-700" data-test="slot-issues">
-                            <li v-for="msg in issueText(slot)" :key="msg">{{ msg }}</li>
-                        </ul>
-                        <p v-if="fieldError(`slots.${si}`)" class="mt-1 text-xs text-rose-600">{{ fieldError(`slots.${si}`) }}</p>
-                    </article>
-
-                    <button type="button" class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100" data-test="add-slot" @click="addSlot">
-                        <Plus class="size-3.5" /> {{ t('combos.add_slot') }}
-                    </button>
-                    <p v-if="fieldError('slots')" class="text-xs text-rose-600">{{ fieldError('slots') }}</p>
-                </section>
+                <!-- LAUNCH combo add-on — included items and choices. -->
+                <ComboLinesEditor v-model="form.lines" :items="items" :categories="categories" :disabled="!canManage" :field-error="fieldError" :self-uuid="editUuid" />
+                <p v-if="fieldError('lines')" class="text-xs text-rose-600">{{ fieldError('lines') }}</p>
 
                 <!-- Price range preview -->
                 <section class="rounded-2xl border border-indigo-200 bg-indigo-50/50 p-5 shadow-sm" data-test="combo-preview">

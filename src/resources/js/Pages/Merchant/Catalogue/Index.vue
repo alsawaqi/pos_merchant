@@ -12,7 +12,7 @@
  *   - Create / edit / delete buttons only when CatalogueManage
  */
 
-import { Beaker, Building2, Boxes, CalendarRange, Clock3, FileSpreadsheet, Globe2, Image, Layers, ListChecks, Package, Pencil, Plus, QrCode, Sparkles, Store, Trash2, Truck } from 'lucide-vue-next';
+import { Beaker, Boxes, Building2, CalendarRange, Clock3, FileSpreadsheet, Globe2, Image, Layers, ListChecks, Package, Pencil, Plus, QrCode, Sparkles, Store, Trash2, Truck, UtensilsCrossed } from 'lucide-vue-next';
 import { channelBadges, channelLabelKey, type ChannelKey } from '@/lib/channels';
 import { belowZeroBranchIds } from '@/lib/stockFlags';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
@@ -1082,6 +1082,16 @@ async function performProviderDelete(): Promise<void> {
                         >
                             <Layers class="size-4" />
                             {{ t('combos.add') }}
+                        </button>
+                        <!-- LAUNCH combo add-on — the meal setups ("Make it a meal?"). -->
+                        <button
+                            type="button"
+                            class="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 transition hover:bg-amber-100"
+                            data-test="open-meals"
+                            @click="router.push('/catalogue/meals')"
+                        >
+                            <UtensilsCrossed class="size-4" />
+                            {{ t('meals.open') }}
                         </button>
                         <button
                             v-if="canManage"

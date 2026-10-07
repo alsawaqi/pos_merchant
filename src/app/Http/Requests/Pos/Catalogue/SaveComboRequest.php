@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace App\Http\Requests\Pos\Catalogue;
 
 use App\Enums\ProductStatus;
-use App\Models\ComboSlot;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Support\BranchScope;
+use App\Support\Catalogue\ComboLinesInput;
 use App\Support\Catalogue\MenuExtras;
+use App\Support\Inventory\ItemCodes;
 use App\Support\MerchantTenantContext;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -18,11 +19,13 @@ use Illuminate\Validation\Validator;
 /**
  * LAUNCH-P4 B2 — validates POST /api/combos and PUT /api/combos/{uuid}.
  *
- * A combo (owner decision 7) is a product with a set price plus choice slots;
- * each slot offers items (standard products of the same company), each with
- * an extra price (same on every channel) and an optional default. The combo's
- * own price follows the channel rules like any product (base / delivery /
- * per provider). It keeps no stock, recipe or components of its own.
+ * LAUNCH combo add-on (owner decisions 1-3, 2026-10-07) — a combo is a
+ * product with its own price and a list of LINES ({@see ComboLinesInput}):
+ * included items (a product × quantity, with optional upgrades at an upgrade
+ * price) and choices ("pick N from a category", unticked items, extra prices).
+ * The combo's own price follows the channel rules like any product (base /
+ * delivery / per provider). It keeps no stock, recipe or components of its
+ * own; its items keep theirs.
  */
 class SaveComboRequest extends FormRequest
 {
@@ -68,18 +71,8 @@ class SaveComboRequest extends FormRequest
             // cooking time (else the menu shows its longest item's).
             ...MenuExtras::productRules(),
 
-            'slots' => ['required', 'array', 'min:1', 'max:10'],
-            'slots.*.id' => ['nullable', 'integer'],
-            'slots.*.name' => ['required', 'string', 'max:64'],
-            'slots.*.name_ar' => ['nullable', 'string', 'max:64'],
-            'slots.*.min_choices' => ['required', 'integer', 'between:0,20'],
-            'slots.*.max_choices' => ['required', 'integer', 'between:1,20'],
-            'slots.*.options' => ['required', 'array', 'min:1', 'max:50'],
-            'slots.*.options.*.product_uuid' => ['required', 'string', 'uuid'],
-            'slots.*.options.*.extra_price' => ['nullable', 'numeric', 'min:0', 'max:999.999', 'decimal:0,3'],
-            'slots.*.options.*.is_default' => ['nullable', 'boolean'],
-            // LAUNCH review add-on — the slot offered as "Make it a meal?".
-            'slots.*.is_main' => ['nullable', 'boolean'],
+            // LAUNCH combo add-on — the combo's lines.
+            ...ComboLinesInput::rules('lines'),
 
             // Channels per provider (B3) and the branch rule (H6).
             'delivery_prices' => ['present', 'array', 'max:50'],
@@ -104,7 +97,8 @@ class SaveComboRequest extends FormRequest
             $combo = $this->route('product');
 
             $this->checkBasics($v, $companyId, $combo);
-            $this->checkSlots($v, $companyId, $combo);
+            ComboLinesInput::check($v, $companyId, $combo === null ? [] : ['combo_product_id' => (int) $combo->id],
+                $this->input('lines'), $combo?->id !== null ? (int) $combo->id : null);
 
             if ($this->input('branches.branch_scope') === Product::SCOPE_SELECTED && empty($this->input('branches.branch_ids'))) {
                 $v->errors()->add('branches.branch_ids', 'Pick at least one branch, or choose all branches.');
@@ -124,85 +118,17 @@ class SaveComboRequest extends FormRequest
         // LAUNCH review add-on (A4, A5) — unique across ingredients and
         // products (SKU, case-insensitive) and the item barcodes (barcode).
         $sku = $this->input('sku');
-        if (is_string($sku) && trim($sku) !== '' && ($owner = \App\Support\Inventory\ItemCodes::skuOwner($companyId, $sku, null, $combo?->id !== null ? (int) $combo->id : null)) !== null) {
-            $v->errors()->add('sku', \App\Support\Inventory\ItemCodes::skuMessage($owner));
+        if (is_string($sku) && trim($sku) !== '' && ($owner = ItemCodes::skuOwner($companyId, $sku, null, $combo?->id !== null ? (int) $combo->id : null)) !== null) {
+            $v->errors()->add('sku', ItemCodes::skuMessage($owner));
         }
         $barcode = $this->input('barcode');
-        if (is_string($barcode) && trim($barcode) !== '' && ($owner = \App\Support\Inventory\ItemCodes::barcodeOwner($companyId, $barcode, null, $combo?->id !== null ? (int) $combo->id : null)) !== null) {
-            $v->errors()->add('barcode', \App\Support\Inventory\ItemCodes::barcodeMessage($owner));
+        if (is_string($barcode) && trim($barcode) !== '' && ($owner = ItemCodes::barcodeOwner($companyId, $barcode, null, $combo?->id !== null ? (int) $combo->id : null)) !== null) {
+            $v->errors()->add('barcode', ItemCodes::barcodeMessage($owner));
         }
     }
 
     /**
-     * Each slot: max >= min; its options are standard, sellable products of
-     * this company, each at most once, with no more defaults than the slot
-     * allows; a slot id (update) must belong to this combo.
-     */
-    private function checkSlots(Validator $v, int $companyId, ?Product $combo): void
-    {
-        $slots = (array) $this->input('slots', []);
-        $uuids = [];
-        foreach ($slots as $slot) {
-            foreach ((array) ($slot['options'] ?? []) as $option) {
-                $uuids[] = (string) ($option['product_uuid'] ?? '');
-            }
-        }
-        $products = Product::query()
-            ->where('company_id', $companyId)
-            ->whereIn('uuid', array_values(array_unique($uuids)))
-            ->get(['id', 'uuid', 'product_type', 'is_internal'])
-            ->keyBy('uuid');
-        $ownSlotIds = $combo === null ? [] : ComboSlot::query()
-            ->where('combo_product_id', $combo->id)
-            ->pluck('id')
-            ->map(fn ($id): int => (int) $id)
-            ->all();
-
-        foreach ($slots as $i => $slot) {
-            $min = (int) ($slot['min_choices'] ?? 0);
-            $max = (int) ($slot['max_choices'] ?? 1);
-            if ($max < $min) {
-                $v->errors()->add("slots.$i.max_choices", 'The most an item can be chosen must not be below the least.');
-            }
-            if (isset($slot['id']) && $slot['id'] !== null && ! in_array((int) $slot['id'], $ownSlotIds, true)) {
-                $v->errors()->add("slots.$i.id", 'This slot does not belong to this combo.');
-            }
-
-            $seen = [];
-            $defaults = 0;
-            foreach ((array) ($slot['options'] ?? []) as $j => $option) {
-                $uuid = (string) ($option['product_uuid'] ?? '');
-                $product = $products->get($uuid);
-                if ($product === null) {
-                    $v->errors()->add("slots.$i.options.$j.product_uuid", 'This item does not belong to your company.');
-
-                    continue;
-                }
-                if ($product->is_internal || $product->product_type !== Product::TYPE_STANDARD) {
-                    $v->errors()->add("slots.$i.options.$j.product_uuid", 'A combo item must be a product on the menu (not a combo or a physical item).');
-                }
-                if ($combo !== null && (int) $product->id === (int) $combo->id) {
-                    $v->errors()->add("slots.$i.options.$j.product_uuid", 'A combo cannot contain itself.');
-                }
-                if (isset($seen[$uuid])) {
-                    $v->errors()->add("slots.$i.options.$j.product_uuid", 'This item is already in the slot.');
-                }
-                $seen[$uuid] = true;
-                if (! empty($option['is_default'])) {
-                    $defaults++;
-                }
-            }
-            if ($defaults > $max) {
-                $v->errors()->add("slots.$i.options", 'More items are marked as default than the slot allows.');
-            }
-        }
-    }
-
-    /**
-     * LAUNCH review add-on — the dates ("Until" on or after "From") and the
-     * main slot (tester call 15): at most one per combo, and only a slot
-     * where exactly one item is picked (min = max = 1), so "Make it a meal?"
-     * can pre-pick the tapped item. "Burgers, pick 4" is never a main.
+     * LAUNCH review add-on — the dates ("Until" on or after "From").
      *
      * @return list<callable>
      */
@@ -220,40 +146,6 @@ class SaveComboRequest extends FormRequest
             $until = $this->has('on_sale_until') ? $this->input('on_sale_until') : $combo?->on_sale_until;
             MenuExtras::checkDates($v, $from, $until, $this->has('on_sale_until') ? 'on_sale_until' : 'on_sale_from');
 
-            // Fix order C-1, M3 — the main after this save: the flags sent,
-            // or, when no slot sends one (an older tab or API client), the
-            // saved main slot, which SaveComboAction keeps.
-            $slots = (array) $this->input('slots', []);
-            $sendsMain = false;
-            foreach ($slots as $slot) {
-                $sendsMain = $sendsMain || (is_array($slot) && array_key_exists('is_main', $slot));
-            }
-            $savedMainId = ! $sendsMain && $combo !== null
-                ? ComboSlot::query()->where('combo_product_id', $combo->id)->where('is_main', true)->value('id')
-                : null;
-
-            $mains = 0;
-            foreach ($slots as $i => $slot) {
-                if (! is_array($slot)) {
-                    continue;
-                }
-                $isMain = $sendsMain
-                    ? filter_var($slot['is_main'] ?? false, FILTER_VALIDATE_BOOLEAN)
-                    : ($savedMainId !== null && isset($slot['id']) && (int) $slot['id'] === (int) $savedMainId);
-                if (! $isMain) {
-                    continue;
-                }
-                $mains++;
-                if ($mains > 1) {
-                    $v->errors()->add("slots.$i.is_main", 'Only one slot can be the main item.');
-                }
-                if ((int) ($slot['min_choices'] ?? 0) !== 1 || (int) ($slot['max_choices'] ?? 0) !== 1) {
-                    $v->errors()->add("slots.$i.is_main", self::MAIN_MUST_PICK_ONE);
-                }
-            }
         }];
     }
-
-    /** Tester call 15 — "Make it a meal?" pre-picks ONE item. */
-    public const MAIN_MUST_PICK_ONE = 'The main item slot must be pick exactly 1.';
 }

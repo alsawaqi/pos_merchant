@@ -6,6 +6,9 @@ namespace App\Http\Resources\Pos\Catalogue;
 
 use App\Http\Resources\Pos\DeliveryProviders\ProductDeliveryPriceResource;
 use App\Models\Product;
+use App\Support\Catalogue\ComboLinesInput;
+use App\Support\Catalogue\OrderTypes;
+use App\Support\Recipes\RecipeCostComplete;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -121,7 +124,7 @@ class ProductResource extends JsonResource
             'has_recipe' => $this->hasRecipe(),
             'theoretical_cost' => $this->theoreticalCost(),
             // LAUNCH review add-on (A1) — false while a recipe ingredient has "No cost yet".
-            'theoretical_cost_complete' => \App\Support\Recipes\RecipeCostComplete::forProduct($this->resource),
+            'theoretical_cost_complete' => RecipeCostComplete::forProduct($this->resource),
             'recipe_lines' => ProductRecipeResource::collection($this->whenLoaded('recipeLines')),
             // P-G2 — internal item (cups/lids): never on the POS menu or
             // tablet; full stock participation.
@@ -134,7 +137,7 @@ class ProductResource extends JsonResource
                 'component_name' => $line->component?->name,
                 'quantity' => (string) $line->quantity,
                 // LAUNCH packaging add-on — "Used for" ticks (15 = every order type).
-                'order_types' => \App\Support\Catalogue\OrderTypes::read($line->order_types),
+                'order_types' => OrderTypes::read($line->order_types),
             ])->values()->all()),
             // Per-branch availability + unit stock (which branches sell this
             // product + how many units each holds). Empty/absent = available
@@ -149,34 +152,11 @@ class ProductResource extends JsonResource
             // + the provider relation. Product edit modal uses
             // this to pre-populate the provider-price grid.
             'delivery_provider_prices' => ProductDeliveryPriceResource::collection($this->whenLoaded('deliveryPrices')),
-            // LAUNCH-P4 B2 — a combo's slots and the items each one offers
-            // (extra price per item, the same on every channel), inlined when
-            // the controller eager-loaded comboSlots.options.product.
-            'combo' => $this->whenLoaded('comboSlots', fn (): array => [
-                'slots' => $this->comboSlots->map(static fn ($slot): array => [
-                    'id' => (int) $slot->id,
-                    'uuid' => (string) $slot->uuid,
-                    'name' => (string) $slot->name,
-                    'name_ar' => $slot->name_ar,
-                    'min_choices' => (int) $slot->min_choices,
-                    'max_choices' => (int) $slot->max_choices,
-                    'sort_order' => (int) $slot->sort_order,
-                    // LAUNCH review add-on — offered as "Make it a meal?".
-                    'is_main' => (bool) $slot->is_main,
-                    'options' => $slot->options->map(static fn ($option): array => [
-                        'product_uuid' => (string) $option->product?->uuid,
-                        'product_name' => $option->product?->name,
-                        'product_name_ar' => $option->product?->name_ar,
-                        'product_base_price' => $option->product !== null ? (string) $option->product->base_price : null,
-                        // A deleted or switched-off item still shows in the
-                        // editor so the merchant can take it out.
-                        'product_available' => $option->product !== null && ! $option->product->trashed()
-                            && ($option->product->status?->value ?? 'active') === 'active',
-                        'extra_price' => (string) $option->extra_price,
-                        'is_default' => (bool) $option->is_default,
-                        'sort_order' => (int) $option->sort_order,
-                    ])->values()->all(),
-                ])->values()->all(),
+            // LAUNCH combo add-on — a combo's lines (included items with their
+            // upgrades, choices with their overrides), inlined when the
+            // controller loaded comboLines ({@see ComboLinesInput::present()}).
+            'combo' => $this->when($this->resource->relationLoaded('comboLines'), fn (): array => [
+                'lines' => ComboLinesInput::present(['combo_product_id' => (int) $this->id]),
             ]),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),

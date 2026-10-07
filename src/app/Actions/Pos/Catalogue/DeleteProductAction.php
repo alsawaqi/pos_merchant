@@ -6,14 +6,13 @@ namespace App\Actions\Pos\Catalogue;
 
 use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
-use App\Models\ComboSlot;
-use App\Models\ComboSlotOption;
 use App\Models\Product;
 use App\Models\User;
+use App\Support\Catalogue\ComboLinesInput;
+use App\Support\Inventory\ItemCodes;
 use App\Support\Inventory\PackagingUsage;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
-use RuntimeException;
 
 /**
  * Soft-delete a product. Phase 7 orders will reference
@@ -38,20 +37,11 @@ final readonly class DeleteProductAction
             abort(404);
         }
 
-        // LAUNCH-P4 B2 — an item offered inside a combo cannot go while the
-        // combo still offers it (the option row's product FK is RESTRICT,
-        // and a combo slot must never point at a deleted item).
-        $combos = Product::query()
-            ->where('company_id', $companyId)
-            ->whereIn('id', ComboSlot::query()
-                ->whereIn('id', ComboSlotOption::query()->where('product_id', $product->id)->select('slot_id'))
-                ->select('combo_product_id'))
-            ->orderBy('name')
-            ->pluck('name')
-            ->all();
-        if ($combos !== []) {
-            throw new RuntimeException('This item is offered in a combo: remove it from '.implode(', ', $combos).' first.');
-        }
+        // LAUNCH combo add-on — an item included in a combo or meal, or one of
+        // their upgrades, cannot go while they use it (the line's product FK
+        // is RESTRICT). A product inside a choice CATEGORY may go: the choice
+        // simply no longer offers it.
+        ComboLinesInput::refuseProductInUse($product);
 
         // LAUNCH packaging add-on (fix order PK-B1, M2) — an item on a
         // per-order packaging list is taken with every order of that type:
@@ -69,7 +59,7 @@ final readonly class DeleteProductAction
 
             // Fix order B-1 (M2) — its scan barcodes go with it, so the code
             // can be linked to another item.
-            \App\Support\Inventory\ItemCodes::forgetBarcodes($companyId, ['product_id' => (int) $productId]);
+            ItemCodes::forgetBarcodes($companyId, ['product_id' => (int) $productId]);
 
             $product->delete();
 

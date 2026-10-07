@@ -20,9 +20,12 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 /**
  * LAUNCH-P4 B2 — the combos editor (owner decision 7).
  *
- *   POST /api/combos                 → create a combo with its slots
- *   GET  /api/combos/{product:uuid}  → one combo with slots + options
- *   PUT  /api/combos/{product:uuid}  → save the whole combo (slots keep ids)
+ *   POST /api/combos                 → create a combo with its lines
+ *   GET  /api/combos/{product:uuid}  → one combo with its lines
+ *   PUT  /api/combos/{product:uuid}  → save the whole combo (lines keep ids)
+ *
+ * LAUNCH combo add-on — a combo is a price plus lines (included items with
+ * upgrades, choices from a category).
  *
  * A combo is listed, deleted and switched sold out like any product (the
  * catalogue endpoints). Read gated on catalogue.view, writes on
@@ -79,7 +82,7 @@ class CombosController extends Controller
         $allowed = $request->user()?->allowedBranchIds();
         $combo->load([
             'category',
-            'comboSlots.options.product',
+            'comboLines',
             'deliveryPrices.deliveryProvider',
             'branchProducts' => static function ($q) use ($allowed): void {
                 if ($allowed !== null) {

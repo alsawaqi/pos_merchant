@@ -35,13 +35,17 @@ use App\Http\Controllers\Pos\FloorsController;
 use App\Http\Controllers\Pos\IngredientsController;
 use App\Http\Controllers\Pos\IngredientStockController;
 use App\Http\Controllers\Pos\IngredientUnitsController;
+use App\Http\Controllers\Pos\InventoryCodesController;
 use App\Http\Controllers\Pos\InventorySettingsController;
 use App\Http\Controllers\Pos\LoyaltyController;
+use App\Http\Controllers\Pos\MealsController;
 use App\Http\Controllers\Pos\MenuImportController;
 use App\Http\Controllers\Pos\OffersController;
 use App\Http\Controllers\Pos\OrderNumberingSettingController;
+use App\Http\Controllers\Pos\OrderPackagingController;
 use App\Http\Controllers\Pos\OrdersController;
 use App\Http\Controllers\Pos\PayoutsController;
+use App\Http\Controllers\Pos\PhysicalItemPacksController;
 use App\Http\Controllers\Pos\PhysicalItemsController;
 use App\Http\Controllers\Pos\PortalMessagesController;
 use App\Http\Controllers\Pos\PosStaffController;
@@ -376,6 +380,18 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         Route::put('combos/{product:uuid}', [CombosController::class, 'update'])
             ->name('combos.update');
 
+        // LAUNCH combo add-on — the meal setups ("Make it a meal?").
+        Route::get('meals', [MealsController::class, 'index'])
+            ->name('meals.index');
+        Route::post('meals', [MealsController::class, 'store'])
+            ->name('meals.store');
+        Route::get('meals/{meal:uuid}', [MealsController::class, 'show'])
+            ->name('meals.show');
+        Route::put('meals/{meal:uuid}', [MealsController::class, 'update'])
+            ->name('meals.update');
+        Route::delete('meals/{meal:uuid}', [MealsController::class, 'destroy'])
+            ->name('meals.destroy');
+
         // -------- Phase 4.9 — Modifiers / Add-on Groups ----
         // Add-on groups are catalog-tier config (a "Milk Choice"
         // group exists once per company, attaches to many
@@ -591,9 +607,9 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // list per order type (dine_in / quick / to_go / delivery), taken
         // once per whole order by pos_api. Read: catalogue.view or
         // inventory.view; write: "Edit recipes". Gated in the controller.
-        Route::get('inventory/order-packaging', [\App\Http\Controllers\Pos\OrderPackagingController::class, 'index'])
+        Route::get('inventory/order-packaging', [OrderPackagingController::class, 'index'])
             ->name('inventory.order-packaging.index');
-        Route::put('inventory/order-packaging/{orderType}', [\App\Http\Controllers\Pos\OrderPackagingController::class, 'update'])
+        Route::put('inventory/order-packaging/{orderType}', [OrderPackagingController::class, 'update'])
             ->where('orderType', 'dine_in|quick|to_go|delivery')
             ->name('inventory.order-packaging.update');
 
@@ -656,21 +672,21 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // inventory.manage (gated in the controllers).
         Route::post('physical-items/generate-skus', [PhysicalItemsController::class, 'generateSkus'])
             ->name('physical-items.generate-skus');
-        Route::get('physical-items/{product:uuid}/packs', [\App\Http\Controllers\Pos\PhysicalItemPacksController::class, 'index'])
+        Route::get('physical-items/{product:uuid}/packs', [PhysicalItemPacksController::class, 'index'])
             ->name('physical-items.packs.index');
-        Route::post('physical-items/{product:uuid}/packs', [\App\Http\Controllers\Pos\PhysicalItemPacksController::class, 'store'])
+        Route::post('physical-items/{product:uuid}/packs', [PhysicalItemPacksController::class, 'store'])
             ->name('physical-items.packs.store');
-        Route::patch('physical-items/{product:uuid}/packs/{pack}', [\App\Http\Controllers\Pos\PhysicalItemPacksController::class, 'update'])
+        Route::patch('physical-items/{product:uuid}/packs/{pack}', [PhysicalItemPacksController::class, 'update'])
             ->name('physical-items.packs.update');
-        Route::delete('physical-items/{product:uuid}/packs/{pack}', [\App\Http\Controllers\Pos\PhysicalItemPacksController::class, 'destroy'])
+        Route::delete('physical-items/{product:uuid}/packs/{pack}', [PhysicalItemPacksController::class, 'destroy'])
             ->name('physical-items.packs.destroy');
-        Route::post('inventory/barcodes', [\App\Http\Controllers\Pos\InventoryCodesController::class, 'store'])
+        Route::post('inventory/barcodes', [InventoryCodesController::class, 'store'])
             ->name('inventory.barcodes.store');
-        Route::delete('inventory/barcodes/{barcode}', [\App\Http\Controllers\Pos\InventoryCodesController::class, 'destroy'])
+        Route::delete('inventory/barcodes/{barcode}', [InventoryCodesController::class, 'destroy'])
             ->name('inventory.barcodes.destroy');
-        Route::get('inventory/scan', [\App\Http\Controllers\Pos\InventoryCodesController::class, 'scan'])
+        Route::get('inventory/scan', [InventoryCodesController::class, 'scan'])
             ->name('inventory.scan');
-        Route::post('inventory/scan/link', [\App\Http\Controllers\Pos\InventoryCodesController::class, 'link'])
+        Route::post('inventory/scan/link', [InventoryCodesController::class, 'link'])
             ->name('inventory.scan.link');
 
         Route::get('suppliers', [SuppliersController::class, 'index'])

@@ -126,7 +126,11 @@ final readonly class SyncRemovableIngredientsAction
                 $attributes = [
                     'name' => RemovableIngredients::optionName($ingredient, $line['label'] ?? null),
                     'name_ar' => RemovableIngredients::optionNameAr($ingredient, $line['label_ar'] ?? null, $line['label'] ?? null),
-                    'price_delta' => '0.000',
+                    // LAUNCH combo add-on — 0 or a minus price; a line sent
+                    // without one keeps the saved price (0 when new).
+                    'price_delta' => array_key_exists('price', $line) && $line['price'] !== null
+                        ? number_format(min(0.0, (float) $line['price']), 3, '.', '')
+                        : number_format((float) ($existing->get((int) $ingredient->id)?->price_delta ?? 0), 3, '.', ''),
                     'is_default' => false,
                     // Fix order C-1, M4 — a "NO …" option never takes stock:
                     // no linked product and no legacy single ingredient

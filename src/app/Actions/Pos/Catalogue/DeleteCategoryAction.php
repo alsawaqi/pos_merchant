@@ -8,6 +8,7 @@ use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
 use App\Models\ProductCategory;
 use App\Models\User;
+use App\Support\Catalogue\ComboLinesInput;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -64,6 +65,10 @@ final readonly class DeleteCategoryAction
                 ),
             );
         }
+
+        // LAUNCH combo add-on — a category a combo or meal chooses from, or
+        // whose products are a meal's mains, stays while they use it.
+        ComboLinesInput::refuseCategoryInUse($category);
 
         DB::transaction(function () use ($category, $actor, $companyId): void {
             $snapshot = [

@@ -49,6 +49,9 @@ final class RemovableIngredients
             $key.'.*.ingredient_uuid' => ['required', 'string', 'uuid'],
             $key.'.*.label' => ['nullable', 'string', 'max:'.self::LABEL_MAX],
             $key.'.*.label_ar' => ['nullable', 'string', 'max:'.self::LABEL_MAX],
+            // LAUNCH combo add-on (owner decision 7) — a minus price ("No
+            // cheese −0.100"), 0 = no change; absent keeps the saved price.
+            $key.'.*.price' => ['sometimes', 'nullable', 'numeric', 'min:-999.999', 'max:0', 'decimal:0,3'],
         ];
     }
 
@@ -161,6 +164,8 @@ final class RemovableIngredients
                     'name_ar' => $option->name_ar,
                     'label' => self::labelOf((string) $option->name, self::PREFIX),
                     'label_ar' => self::labelOf($option->name_ar, self::PREFIX_AR),
+                    // LAUNCH combo add-on — 0 or a minus price ("-0.100").
+                    'price' => number_format((float) $option->price_delta, 3, '.', ''),
                 ];
             }
         }
@@ -251,14 +256,18 @@ final class RemovableIngredients
             ->map(fn ($uuid): string => (string) $uuid)
             ->all();
 
-        $comparable = static function (iterable $lines) use ($inRecipe): array {
+        // LAUNCH combo add-on — the price joins the comparison when the page
+        // sent it (an older open tab sends none).
+        $withPrice = $expected !== [] && array_filter($expected, static fn ($line): bool => ! is_array($line) || ! array_key_exists('price', $line)) === [];
+        $comparable = static function (iterable $lines) use ($inRecipe, $withPrice): array {
             $out = [];
             foreach ($lines as $line) {
                 $uuid = is_array($line) ? (string) ($line['ingredient_uuid'] ?? '') : '';
                 if ($uuid === '' || ! in_array($uuid, $inRecipe, true)) {
                     continue;
                 }
-                $out[$uuid] = [trim((string) ($line['label'] ?? '')), trim((string) ($line['label_ar'] ?? ''))];
+                $out[$uuid] = [trim((string) ($line['label'] ?? '')), trim((string) ($line['label_ar'] ?? ''))]
+                    + ($withPrice ? [2 => number_format((float) ($line['price'] ?? 0), 3, '.', '')] : []);
             }
             ksort($out);
 

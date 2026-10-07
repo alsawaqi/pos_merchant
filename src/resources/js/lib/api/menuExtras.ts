@@ -19,6 +19,8 @@ export interface RemovableLine {
     /** The label part ("Ketchup"). */
     label: string | null;
     label_ar: string | null;
+    /** LAUNCH combo add-on — '0.000' (no change) or a minus price ('-0.100'). */
+    price?: string;
 }
 
 export interface RemovableState {

@@ -286,7 +286,7 @@ async function loadRemovable(): Promise<void> {
     if (!isEdit) return;
     try {
         const lines = (await getRemovable(editUuid!)).data.lines;
-        removableBaseline.value = lines.map((l) => ({ ingredient_uuid: l.ingredient_uuid, label: l.label, label_ar: l.label_ar }));
+        removableBaseline.value = lines.map((l) => ({ ingredient_uuid: l.ingredient_uuid, label: l.label, label_ar: l.label_ar, price: l.price ?? '0.000' }));
         removableTicks.value = ticksFromState(removableBaseline.value);
         removableLoad.value = 'ok';
     } catch {

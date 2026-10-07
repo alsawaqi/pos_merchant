@@ -7,12 +7,12 @@ namespace App\Actions\Pos\Catalogue;
 use App\Actions\Pos\DeliveryProviders\SetProductDeliveryPriceAction;
 use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
-use App\Models\ComboSlot;
-use App\Models\ComboSlotOption;
 use App\Models\DeliveryProvider;
 use App\Models\Product;
 use App\Models\User;
+use App\Support\Catalogue\ComboLinesInput;
 use App\Support\Catalogue\MenuExtras;
+use App\Support\Inventory\ItemCodes;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -21,15 +21,16 @@ use RuntimeException;
  * LAUNCH-P4 B2 — create or update a combo in ONE transaction (owner decision
  * 7): the combo product (product_type 'combo', stock_mode 'untracked', no
  * recipe, no components) with its channels, branch rule and per-provider
- * rows, plus its choice slots and the items each slot offers.
+ * rows, plus its LINES (LAUNCH combo add-on, {@see ComboLinesInput}):
+ * included items with their upgrades, and choices from a category.
  *
- * Slots keep their ids across edits (a slot sent with its id is updated, a
- * new one created, a missing one deleted with its options): devices and order
- * lines refer to slots by id (pos_order_items.combo_slot_id is a snapshot).
- * Options are matched per slot by product (UNIQUE (slot_id, product_id)).
+ * Lines keep their ids across edits (a line sent with its id is updated, a
+ * new one created, a missing one deleted with its upgrades and overrides):
+ * devices and order lines refer to lines by id (pos_order_items.combo_line_id
+ * is a snapshot).
  *
  * The product rows go through CreateProductAction / UpdateProductAction
- * (their audit rows); the slots are audited as catalogue.combo.slots_saved
+ * (their audit rows); the lines are audited as catalogue.combo.lines_saved
  * with the before/after shape when they change.
  */
 final readonly class SaveComboAction
@@ -56,7 +57,7 @@ final readonly class SaveComboAction
         return DB::transaction(function () use ($combo, $data, $actor, $companyId): Product {
             // LAUNCH review fix order B-1 (L5) — the SKU / barcode are claimed
             // under the per-company locks and checked again across tables.
-            \App\Support\Inventory\ItemCodes::claimProductCodes($companyId, $data['sku'] ?? null, $data['barcode'] ?? null, $combo?->id !== null ? (int) $combo->id : null);
+            ItemCodes::claimProductCodes($companyId, $data['sku'] ?? null, $data['barcode'] ?? null, $combo?->id !== null ? (int) $combo->id : null);
 
             $fields = [
                 'name' => $data['name'],
@@ -99,22 +100,21 @@ final readonly class SaveComboAction
                 $combo = $this->updateProduct->handle($combo, $fields, $actor);
             }
 
-            $before = $this->slotSnapshot($combo);
-            $this->saveSlots($combo, (array) $data['slots'], $companyId);
-            $after = $this->slotSnapshot($combo);
+            $owner = ['combo_product_id' => (int) $combo->id];
+            $before = ComboLinesInput::present($owner);
+            ComboLinesInput::save($owner, (array) $data['lines'], $companyId);
+            $after = ComboLinesInput::present($owner);
             if ($before !== $after) {
-                // The device config delta re-sends a product by its
-                // updated_at: a slot or option change (deletes included)
-                // must move it, or devices only catch up on a full sync.
+                // The combo row moves too (its updated_at shows the change).
                 $combo->touch();
                 $this->writeAuditLog->handle(new AuditLogData(
-                    event: 'catalogue.combo.slots_saved',
+                    event: 'catalogue.combo.lines_saved',
                     actorUserId: $actor->getKey(),
                     companyId: $companyId,
                     auditableType: Product::class,
                     auditableId: $combo->id,
-                    oldValues: ['slots' => $before],
-                    newValues: ['slots' => $after],
+                    oldValues: ['lines' => $before],
+                    newValues: ['lines' => $after],
                 ));
             }
 
@@ -140,129 +140,5 @@ final readonly class SaveComboAction
 
             return $combo->fresh();
         });
-    }
-
-    /**
-     * @param  list<array<string, mixed>>  $slots
-     */
-    private function saveSlots(Product $combo, array $slots, int $companyId): void
-    {
-        $existing = ComboSlot::query()->where('combo_product_id', $combo->id)->get()->keyBy('id');
-        $keep = [];
-
-        // LAUNCH review add-on — one main per combo (a partial unique index):
-        // clear the main flag of every saved slot that is no longer the main
-        // BEFORE another slot takes it.
-        // A payload without any is_main key (an older open tab) keeps the
-        // saved main.
-        $sendsMain = false;
-        $mainIds = [];
-        foreach ($slots as $slotData) {
-            $sendsMain = $sendsMain || array_key_exists('is_main', $slotData);
-            if (! empty($slotData['is_main']) && isset($slotData['id'])) {
-                $mainIds[] = (int) $slotData['id'];
-            }
-        }
-        foreach ($existing as $slot) {
-            if ($sendsMain && $slot->is_main && ! in_array((int) $slot->id, $mainIds, true)) {
-                $slot->forceFill(['is_main' => false])->save();
-            }
-        }
-
-        foreach (array_values($slots) as $sort => $slotData) {
-            $attributes = [
-                'name' => trim((string) $slotData['name']),
-                'name_ar' => isset($slotData['name_ar']) && trim((string) $slotData['name_ar']) !== '' ? trim((string) $slotData['name_ar']) : null,
-                'min_choices' => (int) $slotData['min_choices'],
-                'max_choices' => (int) $slotData['max_choices'],
-                'sort_order' => $sort,
-            ];
-            if ($sendsMain) {
-                $attributes['is_main'] = ! empty($slotData['is_main']);
-            }
-            $id = isset($slotData['id']) ? (int) $slotData['id'] : null;
-            $slot = $id !== null ? $existing->get($id) : null;
-            if ($slot === null) {
-                $slot = ComboSlot::query()->create($attributes + [
-                    'company_id' => $companyId,
-                    'combo_product_id' => $combo->id,
-                ]);
-            } else {
-                $slot->forceFill($attributes)->save();
-            }
-            $keep[] = (int) $slot->id;
-
-            $this->saveOptions($slot, (array) $slotData['options'], $companyId);
-        }
-
-        ComboSlot::query()
-            ->where('combo_product_id', $combo->id)
-            ->whereNotIn('id', $keep === [] ? [0] : $keep)
-            ->delete();
-    }
-
-    /**
-     * @param  list<array<string, mixed>>  $options
-     */
-    private function saveOptions(ComboSlot $slot, array $options, int $companyId): void
-    {
-        $productIds = Product::query()
-            ->where('company_id', $companyId)
-            ->whereIn('uuid', array_map(static fn (array $o): string => (string) $o['product_uuid'], $options))
-            ->pluck('id', 'uuid');
-
-        $keep = [];
-        foreach (array_values($options) as $sort => $option) {
-            $productId = (int) ($productIds[(string) $option['product_uuid']] ?? 0);
-            if ($productId === 0) {
-                throw new RuntimeException('A combo item does not belong to your company.');
-            }
-            $keep[] = $productId;
-            $extra = number_format((float) ($option['extra_price'] ?? 0), 3, '.', '');
-
-            $row = ComboSlotOption::query()->where('slot_id', $slot->id)->where('product_id', $productId)->first();
-            $attributes = ['extra_price' => $extra, 'is_default' => (bool) ($option['is_default'] ?? false), 'sort_order' => $sort];
-            if ($row === null) {
-                ComboSlotOption::query()->create($attributes + [
-                    'company_id' => $companyId,
-                    'slot_id' => $slot->id,
-                    'product_id' => $productId,
-                ]);
-            } else {
-                $row->forceFill($attributes)->save();
-            }
-        }
-
-        ComboSlotOption::query()->where('slot_id', $slot->id)->whereNotIn('product_id', $keep)->delete();
-    }
-
-    /**
-     * @return list<array{id: int, name: string, name_ar: string|null, min: int, max: int, options: list<array{product_id: int, extra_price: string, is_default: bool}>}>
-     */
-    private function slotSnapshot(Product $combo): array
-    {
-        return ComboSlot::query()
-            ->where('combo_product_id', $combo->id)
-            ->with('options')
-            ->orderBy('sort_order')
-            ->orderBy('id')
-            ->get()
-            ->map(static fn (ComboSlot $slot): array => [
-                'id' => (int) $slot->id,
-                'name' => (string) $slot->name,
-                'name_ar' => $slot->name_ar,
-                'min' => (int) $slot->min_choices,
-                'max' => (int) $slot->max_choices,
-                // LAUNCH review add-on — a main change audits and moves the
-                // combo's updated_at (devices re-read it by delta).
-                'is_main' => (bool) $slot->is_main,
-                'options' => $slot->options->map(static fn (ComboSlotOption $o): array => [
-                    'product_id' => (int) $o->product_id,
-                    'extra_price' => (string) $o->extra_price,
-                    'is_default' => (bool) $o->is_default,
-                ])->values()->all(),
-            ])
-            ->values()
-            ->all();
     }
 }
