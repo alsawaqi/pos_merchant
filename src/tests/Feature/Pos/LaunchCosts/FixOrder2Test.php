@@ -97,8 +97,8 @@ it('K-10 never reports a missing cost as a complete food cost', function (): voi
     expect([$rows['Bought sandwich']['status'], $rows['Bought sandwich']['cost_complete'], $rows['Bought sandwich']['cost_baisas']])->toBe(['incomplete', false, 50])
         ->and([$rows['Spiced rice']['status'], $rows['Spiced rice']['cost_baisas']])->toBe(['incomplete', 0])
         ->and($rows['Sauce cup']['status'])->toBe('ok');
-    // The dashboard never counts them as costed.
-    expect($this->getJson('/api/dashboard/summary')->json('data.dishes_over_target.costed'))->toBe(1);
+    // Fix order 3 (K-14): they count as costed, and as missing a cost.
+    expect($this->getJson('/api/dashboard/summary')->json('data.dishes_over_target'))->toMatchArray(['costed' => 3, 'incomplete' => 2]);
 });
 
 it('K-11 shows one cost in a Recipe & Cost row: cost, profit, margin and food cost agree', function (): void {

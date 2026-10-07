@@ -158,7 +158,7 @@ it('K-4 counts only dishes on sale today as over target; the list shows the othe
     }
 
     expect($this->getJson('/api/dashboard/summary')->assertOk()->json('data.dishes_over_target'))
-        ->toEqual(['count' => 1, 'costed' => 1, 'no_recipe' => 0, 'target_percent' => 30]);
+        ->toEqual(['count' => 1, 'costed' => 1, 'incomplete' => 0, 'no_recipe' => 0, 'target_percent' => 30]);
     $rows = collect($this->getJson('/api/food-costs?over=1')->assertOk()->json('data'))->keyBy('name');
     expect($rows->keys()->sort()->values()->all())->toBe(['Ended', 'Inactive', 'Not yet', 'On sale'])
         ->and($rows->map(static fn (array $r): array => [$r['product_status'], $r['on_sale']])->all())->toEqual([

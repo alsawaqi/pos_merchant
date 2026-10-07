@@ -89,7 +89,7 @@ it('works out each dish\'s food cost % against the company target, combos and me
 
     // The dashboard card counts them.
     expect($this->getJson('/api/dashboard/summary')->assertOk()->json('data.dishes_over_target'))
-        ->toEqual(['count' => 3, 'costed' => 7, 'no_recipe' => 1, 'target_percent' => 30]);
+        ->toEqual(['count' => 3, 'costed' => 7, 'incomplete' => 0, 'no_recipe' => 1, 'target_percent' => 30]);
 });
 
 it('divides by the price excluding VAT when the merchant\'s prices include it, and by the price when they do not', function (): void {

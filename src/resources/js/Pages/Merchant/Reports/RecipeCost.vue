@@ -88,6 +88,8 @@ type ApexSeries = { name: string; data: number[] }[];
                             <th class="px-5 py-2 text-end">{{ t('costs.report.target') }}</th>
                             <th class="px-5 py-2 text-end">{{ t('costs.report.over_by') }}</th>
                             <th class="px-5 py-2 text-end">{{ t('reports.recipe_cost.columns.units_sold') }}</th>
+                            <!-- Fix order 3 (K-15) — Actual and Change compare with the recipe part. -->
+                            <th class="px-5 py-2 text-end">{{ t('costs.report.recipe_cost') }}</th>
                             <th class="px-5 py-2 text-end">{{ t('reports.recipe_cost.columns.actual_cost_per_unit') }}</th>
                             <th class="px-5 py-2 text-end">{{ t('reports.recipe_cost.columns.cost_change_per_unit') }}</th>
                             <th class="px-5 py-2 text-end">{{ t('reports.recipe_cost.columns.lines') }}</th>
@@ -111,6 +113,7 @@ type ApexSeries = { name: string; data: number[] }[];
                                 <span v-else class="text-slate-400">—</span>
                             </td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.units_sold }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums text-slate-600" data-test="recipe-cost-recipe-part">{{ r.recipe_cost ?? r.theoretical_cost }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.actual_cost_per_unit ?? '—' }}</td>
                             <td class="px-5 py-2 text-end tabular-nums" :class="changeClass(r.cost_change_per_unit)">{{ r.cost_change_per_unit ?? '—' }}</td>
                             <td class="px-5 py-2 text-end tabular-nums text-slate-500">{{ r.recipe_line_count }}</td>

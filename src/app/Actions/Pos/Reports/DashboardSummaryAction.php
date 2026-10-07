@@ -153,7 +153,7 @@ final readonly class DashboardSummaryAction
      * Dishes whose food cost % is over their target: menu products and
      * combos, and every active meal with each of its mains ({@see FoodCost}).
      *
-     * @return array{count: int, costed: int, no_recipe: int, target_percent: float}
+     * @return array{count: int, costed: int, incomplete: int, no_recipe: int, target_percent: float}
      */
     private function dishesOverTarget(int $companyId): array
     {
@@ -163,7 +163,11 @@ final readonly class DashboardSummaryAction
         return [
             // K-4 — only dishes on sale today (active, inside their dates).
             'count' => count(array_filter($rows, static fn (array $r): bool => $r['over_target'] && $r['on_sale'])),
-            'costed' => count(array_filter($rows, static fn (array $r): bool => $r['status'] === 'ok' && $r['on_sale'])),
+            // Fix order 3 (K-14) — every dish with a %, incomplete ones too (so
+            // "2 over target" never reads with "0 costed"); how many of them
+            // miss a cost is its own count.
+            'costed' => count(array_filter($rows, static fn (array $r): bool => in_array($r['status'], ['ok', 'incomplete'], true) && $r['on_sale'])),
+            'incomplete' => count(array_filter($rows, static fn (array $r): bool => $r['status'] === 'incomplete' && $r['on_sale'])),
             'no_recipe' => count(array_filter($rows, static fn (array $r): bool => $r['status'] === 'no_recipe' && $r['on_sale'])),
             'target_percent' => (float) CostSettings::target($companyId),
         ];

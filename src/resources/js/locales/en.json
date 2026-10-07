@@ -3210,7 +3210,7 @@
             "top_addons": "Top add-ons"
         },
         "recipe_cost": {
-            "filters_hint": "Theoretical cost is today's recipe at today's ingredient costs (company-wide; prep items costed through their recipes). The dates and branches apply to what was sold: the units, and the actual recipe cost per unit when it was sold (cooked products: the batch cost).",
+            "filters_hint": "Theoretical cost is today's cost at today's ingredient costs (company-wide; prep items costed through their recipes; food components such as a cooked patty included; the dearest order type). Recipe cost is the recipe part alone. The dates and branches apply to what was sold: the units, and the actual recipe cost per unit when it was sold (cooked products: the batch cost), compared with the recipe cost.",
             "page_title": "Recipe & Cost Report",
             "columns": {
                 "cost_change_per_unit": "Actual − theoretical",
@@ -4376,6 +4376,7 @@
             "price_alerts_unseen": "{count} not seen yet",
             "dishes_title": "Dishes over target",
             "dishes_hint": "Target {target}%, {costed} dishes costed",
+            "dishes_incomplete": "{count} with a cost missing",
             "open": "Open"
         },
         "history": {
@@ -4394,7 +4395,8 @@
         "report": {
             "food_cost": "Food cost %",
             "target": "Target",
-            "over_by": "Over by"
+            "over_by": "Over by",
+            "recipe_cost": "Recipe cost"
         }
     },
     "meals": {

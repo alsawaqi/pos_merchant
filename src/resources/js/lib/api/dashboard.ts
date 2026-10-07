@@ -57,7 +57,7 @@ export interface DashboardSummaryPayload {
     /** LAUNCH costs & allergens add-on — "Price alerts (last 30 days)". */
     price_alerts?: { count: number; unseen: number; days: number; threshold_percent: number };
     /** LAUNCH costs & allergens add-on — "Dishes over target". */
-    dishes_over_target?: { count: number; costed: number; no_recipe: number; target_percent: number };
+    dishes_over_target?: { count: number; costed: number; incomplete?: number; no_recipe: number; target_percent: number };
     // v2 graphs (§5.2): trailing-14-day trend + MTD top-N breakdowns.
     sales_trend: SalesTrendPoint[];
     top_products: { product_name: string; revenue: string }[];

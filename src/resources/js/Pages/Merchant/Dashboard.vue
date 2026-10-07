@@ -429,6 +429,8 @@ const paymentMixChart = computed(() => {
                     </div>
                     <div class="mt-2 text-3xl font-bold tabular-nums" :class="summary.dishes_over_target.count > 0 ? 'text-rose-700' : 'text-slate-950'">{{ summary.dishes_over_target.count }}</div>
                     <div class="mt-1 text-xs text-slate-500">{{ t('costs.dashboard.dishes_hint', { target: summary.dishes_over_target.target_percent, costed: summary.dishes_over_target.costed }) }}</div>
+                    <!-- K-14 — dishes whose cost misses something are counted, and said so. -->
+                    <div v-if="(summary.dishes_over_target.incomplete ?? 0) > 0" class="text-xs italic text-amber-700" data-test="dishes-incomplete">{{ t('costs.dashboard.dishes_incomplete', { count: summary.dishes_over_target.incomplete }) }}</div>
                 </RouterLink>
 
                 <!-- Round-up donations today (§5.2) -->

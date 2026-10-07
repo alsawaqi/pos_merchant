@@ -260,10 +260,16 @@ final class FoodCost
                     }
                     $main = $this->products[$mainId];
                     $mainCost = $this->cost($mainId);
-                    $cost = $mainCost === null && $lines === null ? null : [
-                        'cost' => ($mainCost['cost'] ?? BigRational::zero())->plus($lines['cost'] ?? BigRational::zero()),
-                        'complete' => $mainCost !== null && $lines !== null && $mainCost['complete'] && $lines['complete'],
-                    ];
+                    // K-16 — the main + the meal lines of ONE order type, the dearest type.
+                    $cost = null;
+                    if ($mainCost !== null || $lines !== null) {
+                        $totals = [];
+                        foreach (array_keys(OrderTypes::BUCKETS) as $bucket) {
+                            $totals[$bucket] = ($mainCost === null ? BigRational::zero() : self::forType($mainCost, $bucket))
+                                ->plus($lines === null ? BigRational::zero() : self::forType($lines, $bucket));
+                        }
+                        $cost = self::dearest($totals) + ['complete' => $mainCost !== null && $lines !== null && $mainCost['complete'] && $lines['complete']];
+                    }
                     $rows[] = [
                         'type' => 'meal',
                         'meal_id' => (int) $meal->id,
@@ -428,9 +434,7 @@ final class FoodCost
             return $this->memo[$productId] = null;
         }
         if ((string) ($p->product_type ?? 'standard') === 'combo') {
-            $lines = $this->linesCost($this->comboLines[$productId] ?? []);
-
-            return $this->memo[$productId] = $lines === null ? null : $lines + ['by_type' => null];
+            return $this->memo[$productId] = $this->linesCost($this->comboLines[$productId] ?? []);
         }
         $components = $this->components[$productId] ?? [];
         $hasOwn = false;
@@ -462,8 +466,12 @@ final class FoodCost
         if (! $hasOwn && $components === []) {
             return $this->memo[$productId] = null;
         }
-        // K-10 — no own cost (a bought item without a cost price) is never complete.
-        $complete = $complete && $hasOwn;
+        // K-10 / fix order 3 (K-13) — a bought or cooked item without its own
+        // cost is never complete; a made-to-order dish built only from costed
+        // components is.
+        if (in_array((string) $p->stock_mode, ['unit', 'cooked'], true)) {
+            $complete = $complete && $hasOwn;
+        }
         $max = array_reduce($totals, static fn (?BigRational $m, BigRational $c): BigRational => $m === null || $c->isGreaterThan($m) ? $c : $m);
         $same = count(array_unique(array_map(static fn (BigRational $c): string => (string) $c->simplified(), $totals))) === 1;
 
@@ -553,34 +561,65 @@ final class FoodCost
      */
     private function linesCost(array $lines): ?array
     {
-        $total = BigRational::zero();
+        // Fix order 3 (K-16) — per ORDER TYPE: each item at its cost for that
+        // type (a choice: the cheapest costed item for that type), then the
+        // dearest single type, like a dish (K-8).
+        $totals = array_fill_keys(array_keys(OrderTypes::BUCKETS), BigRational::zero());
         $known = false;
         $complete = $lines !== [];
         foreach ($lines as $line) {
             if ($line->kind === 'fixed') {
-                $item = $this->cost((int) $line->product_id);
+                $items = [$this->cost((int) $line->product_id)];
                 $times = (int) ($line->quantity ?? 1);
             } else {
-                $item = null;
-                foreach ($this->choiceItems($line) as $productId) {
-                    $c = $this->cost($productId);
-                    if ($c !== null && ($item === null || $c['cost']->isLessThan($item['cost']))) {
-                        $item = $c;
-                    }
-                }
+                $items = array_map(fn (int $productId): ?array => $this->cost($productId), $this->choiceItems($line));
                 $times = (int) ($line->pick_count ?? 1);
             }
-            if ($item === null) {
+            $items = array_values(array_filter($items, static fn (?array $c): bool => $c !== null));
+            if ($items === []) {
                 $complete = false;
 
                 continue;
             }
             $known = true;
-            $complete = $complete && $item['complete'];
-            $total = $total->plus($item['cost']->multipliedBy($times));
+            foreach (array_keys($totals) as $bucket) {
+                $pick = null;
+                foreach ($items as $c) {
+                    if ($pick === null || self::forType($c, $bucket)->isLessThan(self::forType($pick, $bucket))) {
+                        $pick = $c;
+                    }
+                }
+                $complete = $complete && $pick['complete'];
+                $totals[$bucket] = $totals[$bucket]->plus(self::forType($pick, $bucket)->multipliedBy($times));
+            }
         }
 
-        return $known ? ['cost' => $total, 'complete' => $complete] : null;
+        return $known ? self::dearest($totals) + ['complete' => $complete] : null;
+    }
+
+    /**
+     * An item's cost for one order type (its single cost when it does not
+     * differ by type).
+     *
+     * @param  array{cost: BigRational, by_type?: array<string, BigRational>|null}  $cost
+     */
+    private static function forType(array $cost, string $bucket): BigRational
+    {
+        return $cost['by_type'][$bucket] ?? $cost['cost'];
+    }
+
+    /**
+     * The dearest of the per-type totals, and the totals when they differ.
+     *
+     * @param  array<string, BigRational>  $totals
+     * @return array{cost: BigRational, by_type: array<string, BigRational>|null}
+     */
+    private static function dearest(array $totals): array
+    {
+        $max = array_reduce($totals, static fn (?BigRational $m, BigRational $c): BigRational => $m === null || $c->isGreaterThan($m) ? $c : $m);
+        $same = count(array_unique(array_map(static fn (BigRational $c): string => (string) $c->simplified(), $totals))) === 1;
+
+        return ['cost' => $max ?? BigRational::zero(), 'by_type' => $same ? null : $totals];
     }
 
     /** @return list<int> the products a choice line offers (its category's menu products minus the unticked ones) */
