@@ -79,6 +79,8 @@ final class MealMains
             'id' => (int) $m->id,
             'uuid' => (string) $m->uuid,
             'name' => (string) $m->name,
+            'from' => self::day($m->on_sale_from),
+            'until' => self::day($m->on_sale_until),
             'categories' => collect($categories->get($m->id) ?? [])->pluck('category_id')->map(static fn ($id): int => (int) $id)->all(),
             'excluded' => collect($excluded->get($m->id) ?? [])->pluck('product_id')->map(static fn ($id): int => (int) $id)->all(),
         ]);
@@ -122,23 +124,40 @@ final class MealMains
         if ($categoryId === null) {
             return null;
         }
-        $covering = self::rivals($companyId, null, null, null)
-            ->filter(static fn (object $meal): bool => in_array($categoryId, $meal->categories, true)
-                && ($productId === null || ! in_array($productId, $meal->excluded, true)))
-            ->values();
-        $byId = Meal::query()->whereIn('id', $covering->pluck('id')->all() ?: [0])->get()->keyBy('id');
+        $pair = self::clashPair(self::rivals($companyId, null, null, null), $productId, $categoryId);
+
+        return $pair === null ? null : self::productClashMessage($productName, $pair[0], $pair[1]);
+    }
+
+    /**
+     * Fix order 2 (C-15) — the first two of these meals (active, not ended:
+     * {@see rivals()} with no dates) that would both take a standard product
+     * in $categoryId as a main while their dates overlap, or null. The menu
+     * import loads the meals once and asks for every row.
+     *
+     * @param  Collection<int, object>  $meals
+     * @return array{0: string, 1: string}|null the two meal names
+     */
+    public static function clashPair(Collection $meals, ?int $productId, int $categoryId): ?array
+    {
+        $covering = $meals->filter(static fn (object $meal): bool => in_array($categoryId, $meal->categories, true)
+            && ($productId === null || ! in_array($productId, $meal->excluded, true)))->values();
         foreach ($covering as $i => $a) {
             foreach ($covering->slice($i + 1) as $b) {
-                $ma = $byId->get($a->id);
-                $mb = $byId->get($b->id);
-                if ($ma !== null && $mb !== null && self::overlap($ma->on_sale_from, $ma->on_sale_until, $mb->on_sale_from, $mb->on_sale_until)) {
-                    return sprintf('"%1$s" would be in both "%2$s" and "%3$s": untick it in one of the meals first. / "%1$s" سيكون في وجبتين "%2$s" و"%3$s": أزل تحديده من إحداهما أولاً.',
-                        $productName, $a->name, $b->name);
+                if (self::overlap($a->from, $a->until, $b->from, $b->until)) {
+                    return [$a->name, $b->name];
                 }
             }
         }
 
         return null;
+    }
+
+    /** The product-clash message (English / Arabic). */
+    public static function productClashMessage(string $productName, string $meal, string $otherMeal): string
+    {
+        return sprintf('"%1$s" would be in both "%2$s" and "%3$s": untick it in one of the meals first. / "%1$s" سيكون في وجبتين "%2$s" و"%3$s": أزل تحديده من إحداهما أولاً.',
+            $productName, $meal, $otherMeal);
     }
 
     /** The clash message (English / Arabic) for one shared main. */

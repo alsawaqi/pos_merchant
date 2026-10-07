@@ -4175,7 +4175,8 @@
             "category_deleted": "The category {name} was deleted. Use another category.",
             "category_will_be_created": "The category {name} will be created.",
             "category_missing": "The category {name} does not exist. Tick \"Create missing categories\" or fix the name.",
-            "price_required": "A new product needs a price."
+            "price_required": "A new product needs a price.",
+            "meal_clash": "\"{meal}\" and \"{other_meal}\" would both offer this product as a main. Untick it in one of the meals first, or use another category."
         },
         "file_errors": {
             "not_xlsx": "This is not an Excel .xlsx or CSV file.",

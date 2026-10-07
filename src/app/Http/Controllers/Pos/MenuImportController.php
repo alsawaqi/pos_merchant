@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Pos;
 
 use App\Actions\Pos\Catalogue\MenuImport\CommitMenuImportAction;
+use App\Actions\Pos\Catalogue\MenuImport\MenuImportRowRefusedException;
 use App\Actions\Pos\Catalogue\MenuImport\PlanMenuImportAction;
 use App\Enums\MerchantPermission;
 use App\Http\Controllers\Controller;
@@ -93,6 +94,14 @@ class MenuImportController extends Controller
             );
         } catch (XlsxReaderException $e) {
             return $this->unreadable($e);
+        } catch (MenuImportRowRefusedException $e) {
+            // Combo fix order 2 (C-15) — never a 500: the row and why.
+            return response()->json([
+                'message' => $e->getMessage().' Nothing was saved.',
+                'reason' => 'row_refused',
+                'row' => $e->row,
+                'errors' => ['file' => [$e->getMessage()]],
+            ], 422);
         }
 
         $body = [

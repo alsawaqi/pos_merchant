@@ -9,6 +9,7 @@ use App\Actions\Pos\Catalogue\CreateProductAction;
 use App\Actions\Pos\Catalogue\UpdateProductAction;
 use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
+use App\Exceptions\MealClashException;
 use App\Models\Product;
 use App\Models\User;
 use App\Support\Inventory\ItemCodes;
@@ -73,15 +74,21 @@ final readonly class CommitMenuImportAction
                     $attributes['category_id'] = $categoryIds[$row['category_ref']] ?? null;
                 }
 
-                if ($row['action'] === 'new') {
-                    $this->createProduct->handle($attributes + ['stock_mode' => 'untracked'], $actor);
-                    $created++;
-                } elseif ($row['action'] === 'update') {
-                    $product = Product::query()->where('company_id', $companyId)->findOrFail((int) $row['product_id']);
-                    $this->updateProduct->handle($product, $attributes, $actor);
-                    $updated++;
-                } else {
-                    $unchanged++;
+                // Combo fix order 2 (C-15) — a meal clash that appears only
+                // while saving rolls the import back and names the row.
+                try {
+                    if ($row['action'] === 'new') {
+                        $this->createProduct->handle($attributes + ['stock_mode' => 'untracked'], $actor);
+                        $created++;
+                    } elseif ($row['action'] === 'update') {
+                        $product = Product::query()->where('company_id', $companyId)->findOrFail((int) $row['product_id']);
+                        $this->updateProduct->handle($product, $attributes, $actor);
+                        $updated++;
+                    } else {
+                        $unchanged++;
+                    }
+                } catch (MealClashException $e) {
+                    throw new MenuImportRowRefusedException((int) $row['row'], (string) $row['name'], $e->getMessage(), $e);
                 }
             }
 

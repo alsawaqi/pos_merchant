@@ -6,6 +6,7 @@ namespace App\Actions\Pos\Catalogue;
 
 use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
+use App\Exceptions\MealClashException;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\User;
@@ -129,7 +130,7 @@ final readonly class UpdateProductAction
             && ! $product->isCombo() && ! (bool) $product->is_internal) {
             $clash = MealMains::productClash($companyId, (int) $product->id, (string) ($attributes['name'] ?? $product->name), (int) $attributes['category_id']);
             if ($clash !== null) {
-                throw new RuntimeException($clash);
+                throw new MealClashException($clash);
             }
         }
 

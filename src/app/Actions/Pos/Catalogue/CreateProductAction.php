@@ -7,6 +7,7 @@ namespace App\Actions\Pos\Catalogue;
 use App\Actions\Security\WriteAuditLogAction;
 use App\Data\Security\AuditLogData;
 use App\Enums\ProductStatus;
+use App\Exceptions\MealClashException;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\User;
@@ -62,7 +63,7 @@ final readonly class CreateProductAction
             && ! empty($attributes['category_id'])) {
             $clash = MealMains::productClash($companyId, null, (string) ($attributes['name'] ?? ''), (int) $attributes['category_id']);
             if ($clash !== null) {
-                throw new RuntimeException($clash);
+                throw new MealClashException($clash);
             }
         }
 

@@ -6,9 +6,11 @@ namespace App\Actions\Pos\Catalogue\MenuImport;
 
 use App\Models\Product;
 use App\Models\ProductCategory;
+use App\Support\Catalogue\MealMains;
 use App\Support\Catalogue\MenuSheet;
 use App\Support\MerchantTenantContext;
 use App\Support\Spreadsheet\XlsxReaderException;
+use Illuminate\Support\Facades\DB;
 
 /**
  * LAUNCH-P4 B6 — the import preview (owner decision 5): what each row of the
@@ -23,7 +25,9 @@ use App\Support\Spreadsheet\XlsxReaderException;
  *   - categories: by name (or Arabic name); a missing one is an error, or a
  *     note "will be created" when the option is ticked;
  *   - cells: required name (and price for a new product), money with up to 3
- *     decimals, yes/no, active/inactive, display order 0..999, text lengths.
+ *     decimals, yes/no, active/inactive, display order 0..999, text lengths;
+ *   - meals (combo fix order 2, C-15): a new product, or a category move,
+ *     that would put a main in two active, on-sale meals ('meal_clash').
  * On an update a blank cell leaves the field as it is; only the fields that
  * change are listed.
  *
@@ -62,12 +66,13 @@ final readonly class PlanMenuImportAction
         }
 
         $catalogue = $this->catalogue($companyId);
+        $meals = MealMains::rivals($companyId, null, null, null);
         // LAUNCH review add-on (A4, A5) — SKUs are unique across ingredients and
         // products (case-insensitive), barcodes across the item barcodes too.
-        $ingredientSkus = \Illuminate\Support\Facades\DB::table('pos_ingredients')
+        $ingredientSkus = DB::table('pos_ingredients')
             ->where('company_id', $companyId)->whereNull('deleted_at')->whereNotNull('sku')->pluck('sku')
             ->mapWithKeys(static fn ($sku): array => [mb_strtolower((string) $sku) => true])->all();
-        $itemBarcodes = \Illuminate\Support\Facades\DB::table('pos_item_barcodes as b')
+        $itemBarcodes = DB::table('pos_item_barcodes as b')
             ->leftJoin('pos_ingredients as i', 'i.id', '=', 'b.ingredient_id')
             ->leftJoin('pos_products as p', 'p.id', '=', 'b.product_id')
             ->where('b.company_id', $companyId)->whereNull('b.deleted_at')
@@ -263,6 +268,17 @@ final readonly class PlanMenuImportAction
                 $values['name'] = $name;
             }
 
+            // Combo fix order 2 (C-15) — a standard product landing in a
+            // category two overlapping active meals take mains from. A new
+            // category is in no meal yet.
+            $targetCategory = ($isNew || in_array('category_id', $changes, true)) ? ($values['category_id'] ?? null) : null;
+            if ($targetCategory !== null && ($isNew || (! $match['internal'] && ! $match['combo']))) {
+                $pair = MealMains::clashPair($meals, $isNew ? null : $match['id'], (int) $targetCategory);
+                if ($pair !== null) {
+                    $error('meal_clash', 'category', ['meal' => $pair[0], 'other_meal' => $pair[1]]);
+                }
+            }
+
             $hasError = self::hasError($issues);
             $rows[] = [
                 'row' => $number,
@@ -329,6 +345,7 @@ final readonly class PlanMenuImportAction
                 'name' => (string) $p->name,
                 'sku' => $p->sku,
                 'internal' => (bool) $p->is_internal,
+                'combo' => $p->isCombo(),
                 'deleted' => $p->trashed(),
                 'values' => [
                     'name' => (string) $p->name,
