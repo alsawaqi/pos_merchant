@@ -6,7 +6,7 @@ declare(strict_types=1);
  * LAUNCH review add-on, fix order C-1 (review REVIEW_CD.md, part C):
  *   M1  the Remove list is saved only from the ticks the page loaded:
  *       a stale page gets 409 and nothing is written;
- *   M3  the main-slot rule holds when a payload omits is_main;
+ *   M3  retired by the combo add-on (no main slot any more);
  *   M4  Quick instructions (and Remove lists) never take stock in any form,
  *       the legacy single-ingredient fields included;
  *   L1  a lone date against the saved one is a 422, not a database error;
@@ -18,7 +18,6 @@ declare(strict_types=1);
 
 use App\Models\AddOn;
 use App\Models\AddOnGroup;
-use App\Models\ComboSlot;
 use App\Models\Product;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -76,32 +75,6 @@ it('M1: needs the loaded ticks, and a recipe line dropped in the same save is no
 });
 
 // ---- M3 -----------------------------------------------------------------
-
-it('M3: refuses a save without is_main that leaves the saved main on a slot not picking exactly 1', function (): void {
-    $ctx = makeMerchantActor();
-    $items = rvmComboItems($ctx['company']);
-    $uuid = $this->postJson('/api/combos', rvmComboPayload($items))->assertCreated()->json('data.uuid');
-    $combo = Product::query()->where('uuid', $uuid)->sole();
-    $slots = ComboSlot::query()->where('combo_product_id', $combo->id)->orderBy('sort_order')->get();
-
-    $payload = rvmComboPayload($items);
-    foreach ($payload['slots'] as $i => $slot) {
-        unset($payload['slots'][$i]['is_main']);
-        $payload['slots'][$i]['id'] = $slots[$i]->id;
-    }
-    $payload['slots'][0]['max_choices'] = 2;
-    $res = $this->putJson("/api/combos/{$uuid}", $payload)
-        ->assertStatus(422)
-        ->assertJsonValidationErrors(['slots.0.is_main']);
-    expect($res->json('errors')['slots.0.is_main'][0])->toBe('The main item slot must be pick exactly 1.');
-    $slot = ComboSlot::query()->find($slots[0]->id);
-    expect($slot->is_main)->toBeTrue()->and($slot->max_choices)->toBe(1);
-
-    // The other slot (not the main) may change freely.
-    $payload['slots'][0]['max_choices'] = 1;
-    $payload['slots'][1]['max_choices'] = 2;
-    $this->putJson("/api/combos/{$uuid}", $payload)->assertOk()->assertJsonPath('data.combo.slots.0.is_main', true);
-});
 
 // ---- M4 -----------------------------------------------------------------
 

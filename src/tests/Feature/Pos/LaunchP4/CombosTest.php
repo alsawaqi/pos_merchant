@@ -3,20 +3,23 @@
 declare(strict_types=1);
 
 /**
- * LAUNCH-P4 B2 — the combos editor (owner decision 7): a set price plus choice
- * slots; each slot offers standard items of the same company with an extra
- * price and an optional default. A combo keeps no stock, recipe or components
- * of its own and is listed with the products. Before: no combos existed (the
- * routes 404 and nothing stops a product from being a combo item).
+ * LAUNCH-P4 B2, rebuilt by the LAUNCH combo add-on (LAUNCH-COMBO_WORK_ORDER.md
+ * Part A item 2): a combo is a set price plus LINES — included items (a
+ * product × quantity, with upgrades at an upgrade price) and choices ("pick
+ * N from a category", unticked items, extra prices). A combo keeps no stock,
+ * recipe or components of its own and is listed with the products. Before:
+ * a combo was built from choice slots only.
  */
 
 use App\Enums\MerchantRole;
 use App\Models\AddOnGroup;
-use App\Models\ComboSlot;
-use App\Models\ComboSlotOption;
+use App\Models\ComboLine;
+use App\Models\ComboLineItem;
+use App\Models\ComboLineUpgrade;
 use App\Models\Company;
 use App\Models\DeliveryProvider;
 use App\Models\Product;
+use App\Models\ProductCategory;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -26,37 +29,43 @@ uses(RefreshDatabase::class);
 
 require_once __DIR__.'/helpers.php';
 
-/** @return array{burger: Product, wrap: Product, fries: Product, salad: Product, cola: Product} */
+/** @return array{burger: Product, wrap: Product, fries: Product, loaded: Product, cola: Product, juice: Product, water: Product, drinks: ProductCategory} */
 function p4ComboItems(Company $company): array
 {
+    $drinks = ProductCategory::factory()->for($company, 'company')->create(['name' => 'Drinks']);
+
     return [
         'burger' => p4Product($company, 'Burger', '2.000'),
         'wrap' => p4Product($company, 'Wrap', '1.800'),
         'fries' => p4Product($company, 'Fries', '0.700'),
-        'salad' => p4Product($company, 'Salad', '0.900'),
-        'cola' => p4Product($company, 'Cola', '0.400'),
+        'loaded' => p4Product($company, 'Loaded fries', '1.500'),
+        'cola' => p4Product($company, 'Cola', '0.400', ['category_id' => $drinks->id]),
+        'juice' => p4Product($company, 'Juice', '0.900', ['category_id' => $drinks->id]),
+        'water' => p4Product($company, 'Water', '0.200', ['category_id' => $drinks->id]),
+        'drinks' => $drinks,
     ];
 }
 
-/** @param array<string, Product> $items */
+/** @param array<string, mixed> $items */
 function p4ComboPayload(array $items, array $extra = []): array
 {
     return array_merge([
-        'name' => 'Burger meal',
-        'name_ar' => 'وجبة برجر',
-        'base_price' => '3.500',
-        'delivery_price' => '3.900',
+        'name' => 'Family box',
+        'name_ar' => 'صندوق العائلة',
+        'base_price' => '5.000',
+        'delivery_price' => '5.500',
         'sold_in_store' => true,
         'show_on_customer_tablet' => true,
         'sold_on_delivery' => true,
-        'slots' => [
-            ['name' => 'Main', 'name_ar' => 'الطبق الرئيسي', 'min_choices' => 1, 'max_choices' => 1, 'options' => [
-                ['product_uuid' => $items['burger']->uuid, 'extra_price' => '0', 'is_default' => true],
-                ['product_uuid' => $items['wrap']->uuid, 'extra_price' => '0.300', 'is_default' => false],
+        'lines' => [
+            ['kind' => 'fixed', 'product_uuid' => $items['burger']->uuid, 'quantity' => 2, 'upgrades' => []],
+            ['kind' => 'fixed', 'product_uuid' => $items['fries']->uuid, 'quantity' => 1, 'upgrades' => [
+                ['product_uuid' => $items['loaded']->uuid, 'upgrade_price' => '0.800'],
             ]],
-            ['name' => 'Side', 'min_choices' => 1, 'max_choices' => 2, 'options' => [
-                ['product_uuid' => $items['fries']->uuid, 'extra_price' => '0', 'is_default' => true],
-                ['product_uuid' => $items['salad']->uuid, 'extra_price' => '0.250'],
+            ['kind' => 'choice', 'name' => 'Drink', 'name_ar' => 'المشروب', 'category_id' => $items['drinks']->id, 'pick_count' => 2, 'items' => [
+                ['product_uuid' => $items['juice']->uuid, 'excluded' => false, 'extra_price' => '0.300'],
+                ['product_uuid' => $items['water']->uuid, 'excluded' => true, 'extra_price' => '0'],
+                ['product_uuid' => $items['cola']->uuid, 'excluded' => false, 'extra_price' => '0'],
             ]],
         ],
         'delivery_prices' => [],
@@ -64,7 +73,7 @@ function p4ComboPayload(array $items, array $extra = []): array
     ], $extra);
 }
 
-it('creates a combo with its slots, items, extra prices and defaults', function (): void {
+it('creates a combo with included items, upgrades and a choice from a category', function (): void {
     $ctx = makeMerchantActor();
     $items = p4ComboItems($ctx['company']);
 
@@ -72,18 +81,25 @@ it('creates a combo with its slots, items, extra prices and defaults', function 
         ->assertCreated()
         ->assertJsonPath('data.product_type', 'combo')
         ->assertJsonPath('data.stock_mode', 'untracked')
-        ->assertJsonPath('data.combo.slots.0.name', 'Main')
-        ->assertJsonPath('data.combo.slots.0.name_ar', 'الطبق الرئيسي')
-        ->assertJsonPath('data.combo.slots.1.max_choices', 2)
-        ->assertJsonPath('data.combo.slots.0.options.1.extra_price', '0.300')
-        ->assertJsonPath('data.combo.slots.0.options.0.is_default', true);
+        ->assertJsonPath('data.combo.lines.0.kind', 'fixed')
+        ->assertJsonPath('data.combo.lines.0.product_uuid', $items['burger']->uuid)
+        ->assertJsonPath('data.combo.lines.0.quantity', 2)
+        ->assertJsonPath('data.combo.lines.1.upgrades.0.product_uuid', $items['loaded']->uuid)
+        ->assertJsonPath('data.combo.lines.1.upgrades.0.upgrade_price', '0.800')
+        ->assertJsonPath('data.combo.lines.2.kind', 'choice')
+        ->assertJsonPath('data.combo.lines.2.name_ar', 'المشروب')
+        ->assertJsonPath('data.combo.lines.2.pick_count', 2)
+        ->assertJsonPath('data.combo.lines.2.category_name', 'Drinks');
 
     $combo = Product::query()->where('uuid', $res->json('data.uuid'))->sole();
     expect($combo->product_type)->toBe('combo')
-        ->and((string) $combo->base_price)->toBe('3.500')
-        ->and(ComboSlot::query()->where('combo_product_id', $combo->id)->count())->toBe(2)
-        ->and(ComboSlotOption::query()->whereIn('slot_id', ComboSlot::query()->where('combo_product_id', $combo->id)->select('id'))->count())->toBe(4);
-    $this->assertDatabaseHas('pos_audit_logs', ['event' => 'catalogue.combo.slots_saved', 'auditable_id' => $combo->id]);
+        ->and((string) $combo->base_price)->toBe('5.000')
+        ->and(ComboLine::query()->where('combo_product_id', $combo->id)->orderBy('sort_order')->pluck('kind')->all())->toBe(['fixed', 'fixed', 'choice']);
+    // Only the overrides that change something are stored: Juice +0.300 and the unticked Water (Cola is in, free).
+    $choice = ComboLine::query()->where('combo_product_id', $combo->id)->where('kind', 'choice')->sole();
+    expect(ComboLineItem::query()->where('line_id', $choice->id)->orderBy('id')->get()->map(fn ($i) => [$i->product_id, (bool) $i->excluded, (string) $i->extra_price])->all())
+        ->toBe([[$items['juice']->id, false, '0.300'], [$items['water']->id, true, '0.000']]);
+    $this->assertDatabaseHas('pos_audit_logs', ['event' => 'catalogue.combo.lines_saved', 'auditable_id' => $combo->id]);
     $this->assertDatabaseHas('pos_audit_logs', ['event' => 'catalogue.product.created', 'auditable_id' => $combo->id]);
 
     // Listed with the products, with its type.
@@ -91,50 +107,44 @@ it('creates a combo with its slots, items, extra prices and defaults', function 
     expect($row['product_type'])->toBe('combo');
 });
 
-it('saves a combo keeping slot ids, updating items and dropping removed slots', function (): void {
+it('saves a combo keeping line ids, rewriting upgrades and overrides and dropping removed lines', function (): void {
     $ctx = makeMerchantActor();
     $items = p4ComboItems($ctx['company']);
-    $uuid = $this->postJson('/api/combos', p4ComboPayload($items))->assertCreated()->json('data.uuid');
-    $combo = Product::query()->where('uuid', $uuid)->sole();
-    $main = ComboSlot::query()->where('combo_product_id', $combo->id)->where('name', 'Main')->sole();
-    $side = ComboSlot::query()->where('combo_product_id', $combo->id)->where('name', 'Side')->sole();
+    $data = $this->postJson('/api/combos', p4ComboPayload($items))->assertCreated()->json('data');
+    [$burgerLine, $friesLine, $drinkLine] = array_column($data['combo']['lines'], 'id');
 
-    $this->putJson("/api/combos/{$uuid}", p4ComboPayload($items, [
-        'base_price' => '3.750',
-        'slots' => [
-            ['id' => $main->id, 'name' => 'Burger', 'min_choices' => 1, 'max_choices' => 1, 'options' => [
-                ['product_uuid' => $items['burger']->uuid, 'extra_price' => '0.100', 'is_default' => true],
-            ]],
-            ['name' => 'Drink', 'min_choices' => 0, 'max_choices' => 1, 'options' => [
-                ['product_uuid' => $items['cola']->uuid, 'extra_price' => '0'],
-            ]],
+    $this->putJson("/api/combos/{$data['uuid']}", p4ComboPayload($items, [
+        'base_price' => '5.250',
+        'lines' => [
+            ['id' => $friesLine, 'kind' => 'fixed', 'product_uuid' => $items['fries']->uuid, 'quantity' => 2, 'upgrades' => []],
+            ['id' => $drinkLine, 'kind' => 'choice', 'name' => 'Drinks', 'category_id' => $items['drinks']->id, 'pick_count' => 1, 'items' => []],
+            ['kind' => 'fixed', 'product_uuid' => $items['wrap']->uuid, 'quantity' => 1],
         ],
-    ]))->assertOk()->assertJsonPath('data.base_price', '3.750');
+    ]))->assertOk()->assertJsonPath('data.base_price', '5.250');
 
-    $slots = ComboSlot::query()->where('combo_product_id', $combo->id)->orderBy('sort_order')->get();
-    expect($slots->pluck('name')->all())->toBe(['Burger', 'Drink'])
-        ->and($slots->first()->id)->toBe($main->id)
-        ->and(ComboSlot::query()->find($side->id))->toBeNull();
-    $options = ComboSlotOption::query()->where('slot_id', $main->id)->get();
-    expect($options)->toHaveCount(1)
-        ->and((string) $options->first()->extra_price)->toBe('0.100');
+    $combo = Product::query()->where('uuid', $data['uuid'])->sole();
+    $lines = ComboLine::query()->where('combo_product_id', $combo->id)->orderBy('sort_order')->get();
+    expect($lines->pluck('id')->take(2)->all())->toBe([$friesLine, $drinkLine])
+        ->and($lines->pluck('quantity')->all())->toBe([2, null, 1])
+        ->and(ComboLine::query()->find($burgerLine))->toBeNull()
+        ->and(ComboLineUpgrade::query()->where('line_id', $friesLine)->count())->toBe(0)
+        ->and(ComboLineItem::query()->where('line_id', $drinkLine)->count())->toBe(0);
 });
 
-it('moves the combo updated_at when only its slots or options change, so devices re-read it', function (): void {
+it('moves the combo updated_at when only its lines change, so devices re-read it', function (): void {
     $ctx = makeMerchantActor();
     $items = p4ComboItems($ctx['company']);
     $payload = p4ComboPayload($items);
-    $uuid = $this->postJson('/api/combos', $payload)->assertCreated()->json('data.uuid');
-    DB::table('pos_products')->where('uuid', $uuid)->update(['updated_at' => now()->subDay()]);
-    $sides = Product::query()->where('uuid', $uuid)->sole()->comboSlots()->where('name', 'Side')->sole();
+    $data = $this->postJson('/api/combos', $payload)->assertCreated()->json('data');
+    DB::table('pos_products')->where('uuid', $data['uuid'])->update(['updated_at' => now()->subDay()]);
 
-    // Same product fields; one option deleted from the Side slot.
-    $payload['slots'][1]['id'] = $sides->id;
-    $payload['slots'][1]['options'] = [$payload['slots'][1]['options'][0]];
-    $this->putJson("/api/combos/{$uuid}", $payload)->assertOk();
+    // Same product fields; the upgrade price changes.
+    $payload['lines'][1]['id'] = $data['combo']['lines'][1]['id'];
+    $payload['lines'][1]['upgrades'][0]['upgrade_price'] = '0.900';
+    $this->putJson("/api/combos/{$data['uuid']}", $payload)->assertOk();
 
-    expect(ComboSlotOption::query()->where('slot_id', $sides->id)->count())->toBe(1)
-        ->and(DB::table('pos_products')->where('uuid', $uuid)->value('updated_at'))->toBeGreaterThan(now()->subHour()->toDateTimeString());
+    expect((string) ComboLineUpgrade::query()->sole()->upgrade_price)->toBe('0.900')
+        ->and(DB::table('pos_products')->where('uuid', $data['uuid'])->value('updated_at'))->toBeGreaterThan(now()->subHour()->toDateTimeString());
 });
 
 it('gives a combo no add-ons of its own', function (): void {
@@ -149,56 +159,90 @@ it('gives a combo no add-ons of its own', function (): void {
         ->and(DB::table('pos_addon_group_products')->count())->toBe(0);
 });
 
-it('refuses combo items that are not menu products of this company', function (): void {
+it('refuses items that are not menu products of this company, and another company\'s category', function (): void {
     $ctx = makeMerchantActor();
     $items = p4ComboItems($ctx['company']);
     $combo = Product::query()->where('uuid', $this->postJson('/api/combos', p4ComboPayload($items))->json('data.uuid'))->sole();
     $cup = p4Product($ctx['company'], 'Cup', '0', ['is_internal' => true, 'stock_mode' => 'unit']);
-    $foreign = p4Product(Company::factory()->create(), 'Foreign', '1.000');
+    $other = Company::factory()->create();
+    $foreign = p4Product($other, 'Foreign', '1.000');
+    $foreignCategory = ProductCategory::factory()->for($other, 'company')->create(['name' => 'Theirs']);
 
     foreach ([$combo, $cup, $foreign] as $bad) {
         $payload = p4ComboPayload($items, ['name' => 'Bad '.$bad->id]);
-        $payload['slots'][0]['options'][] = ['product_uuid' => $bad->uuid, 'extra_price' => '0'];
-        $this->postJson('/api/combos', $payload)
-            ->assertStatus(422)
-            ->assertJsonValidationErrors(['slots.0.options.2.product_uuid']);
+        $payload['lines'][0]['product_uuid'] = $bad->uuid;
+        $this->postJson('/api/combos', $payload)->assertStatus(422)->assertJsonValidationErrors(['lines.0.product_uuid']);
+        $payload = p4ComboPayload($items, ['name' => 'Bad upgrade '.$bad->id]);
+        $payload['lines'][1]['upgrades'][] = ['product_uuid' => $bad->uuid, 'upgrade_price' => '0'];
+        $this->postJson('/api/combos', $payload)->assertStatus(422)->assertJsonValidationErrors(['lines.1.upgrades.1.product_uuid']);
     }
+    // A combo never contains itself.
+    $payload = p4ComboPayload($items);
+    $payload['lines'][0]['product_uuid'] = $combo->uuid;
+    $this->putJson("/api/combos/{$combo->uuid}", $payload)->assertStatus(422)->assertJsonValidationErrors(['lines.0.product_uuid']);
+    // Tenancy: another merchant's category, or their product as a choice override.
+    $payload = p4ComboPayload($items, ['name' => 'Bad category']);
+    $payload['lines'][2]['category_id'] = $foreignCategory->id;
+    $this->postJson('/api/combos', $payload)->assertStatus(422)->assertJsonValidationErrors(['lines.2.category_id']);
+    $payload = p4ComboPayload($items, ['name' => 'Bad item']);
+    $payload['lines'][2]['items'][] = ['product_uuid' => $foreign->uuid, 'excluded' => true];
+    $this->postJson('/api/combos', $payload)->assertStatus(422)->assertJsonValidationErrors(['lines.2.items.3.product_uuid']);
+    expect(Product::query()->where('product_type', 'combo')->count())->toBe(1);
 });
 
-it('checks the slot rules: least and most, duplicates, defaults and at least one slot', function (): void {
+it('checks the line rules: quantity, pick N, upgrades, the category\'s items and at least one line', function (): void {
     $ctx = makeMerchantActor();
     $items = p4ComboItems($ctx['company']);
+    $bad = function (callable $change, string $field) use ($items): void {
+        $payload = p4ComboPayload($items);
+        $change($payload);
+        $this->postJson('/api/combos', $payload)->assertStatus(422)->assertJsonValidationErrors([$field]);
+    };
 
-    $payload = p4ComboPayload($items);
-    $payload['slots'][1]['min_choices'] = 3;
-    $this->postJson('/api/combos', $payload)->assertStatus(422)->assertJsonValidationErrors(['slots.1.max_choices']);
-
-    $payload = p4ComboPayload($items);
-    $payload['slots'][0]['options'][1]['product_uuid'] = $items['burger']->uuid;
-    $this->postJson('/api/combos', $payload)->assertStatus(422)->assertJsonValidationErrors(['slots.0.options.1.product_uuid']);
-
-    $payload = p4ComboPayload($items);
-    $payload['slots'][0]['options'][1]['is_default'] = true;
-    $this->postJson('/api/combos', $payload)->assertStatus(422)->assertJsonValidationErrors(['slots.0.options']);
-
-    $this->postJson('/api/combos', p4ComboPayload($items, ['slots' => []]))->assertStatus(422)->assertJsonValidationErrors(['slots']);
-
-    $payload = p4ComboPayload($items);
-    $payload['slots'][0]['options'][0]['extra_price'] = '-0.100';
-    $this->postJson('/api/combos', $payload)->assertStatus(422)->assertJsonValidationErrors(['slots.0.options.0.extra_price']);
+    $bad(function (array &$p): void {
+        $p['lines'][0]['quantity'] = 0;
+    }, 'lines.0.quantity');
+    $bad(function (array &$p): void {
+        $p['lines'][2]['pick_count'] = 21;
+    }, 'lines.2.pick_count');
+    $bad(function (array &$p): void {
+        unset($p['lines'][2]['name']);
+    }, 'lines.2.name');
+    $bad(function (array &$p) use ($items): void {
+        $p['lines'][1]['upgrades'][0]['product_uuid'] = $items['fries']->uuid;
+    }, 'lines.1.upgrades.0.product_uuid');
+    $bad(function (array &$p): void {
+        $p['lines'][1]['upgrades'][] = $p['lines'][1]['upgrades'][0];
+    }, 'lines.1.upgrades.1.product_uuid');
+    $bad(function (array &$p): void {
+        $p['lines'][1]['upgrades'][0]['upgrade_price'] = '-0.100';
+    }, 'lines.1.upgrades.0.upgrade_price');
+    $bad(function (array &$p): void {
+        $p['lines'][2]['items'][0]['extra_price'] = '-0.100';
+    }, 'lines.2.items.0.extra_price');
+    // An override for a product of another category, and a choice with nothing left to pick.
+    $bad(function (array &$p) use ($items): void {
+        $p['lines'][2]['items'][] = ['product_uuid' => $items['burger']->uuid, 'excluded' => true];
+    }, 'lines.2.items.3.product_uuid');
+    $bad(function (array &$p): void {
+        foreach ($p['lines'][2]['items'] as &$row) {
+            $row['excluded'] = true;
+        }
+    }, 'lines.2.items');
+    $this->postJson('/api/combos', p4ComboPayload($items, ['lines' => []]))->assertStatus(422)->assertJsonValidationErrors(['lines']);
 
     expect(Product::query()->where('product_type', 'combo')->count())->toBe(0);
 });
 
-it('refuses a slot id that belongs to another combo', function (): void {
+it('refuses a line id that belongs to another combo', function (): void {
     $ctx = makeMerchantActor();
     $items = p4ComboItems($ctx['company']);
     $first = $this->postJson('/api/combos', p4ComboPayload($items))->json('data');
-    $second = $this->postJson('/api/combos', p4ComboPayload($items, ['name' => 'Wrap meal']))->json('data');
+    $second = $this->postJson('/api/combos', p4ComboPayload($items, ['name' => 'Wrap box']))->json('data');
 
     $payload = p4ComboPayload($items);
-    $payload['slots'][0]['id'] = $first['combo']['slots'][0]['id'];
-    $this->putJson("/api/combos/{$second['uuid']}", $payload)->assertStatus(422)->assertJsonValidationErrors(['slots.0.id']);
+    $payload['lines'][0]['id'] = $first['combo']['lines'][0]['id'];
+    $this->putJson("/api/combos/{$second['uuid']}", $payload)->assertStatus(422)->assertJsonValidationErrors(['lines.0.id']);
 });
 
 it('gives a combo its channels and its own delivery-provider rows', function (): void {
@@ -231,19 +275,22 @@ it('keeps a combo free of stock, recipe and components of its own', function ():
     expect(Product::query()->where('uuid', $uuid)->value('stock_mode'))->toBe('untracked');
 });
 
-it('will not delete an item still offered in a combo', function (): void {
+it('will not delete an included item, an upgrade or a choice category while a combo uses them', function (): void {
     $ctx = makeMerchantActor();
     $items = p4ComboItems($ctx['company']);
     $uuid = $this->postJson('/api/combos', p4ComboPayload($items))->json('data.uuid');
 
-    $this->deleteJson("/api/products/{$items['salad']->uuid}")
-        ->assertStatus(422)
-        ->assertJsonPath('message', 'This item is offered in a combo: remove it from Burger meal first.');
-    expect(Product::query()->find($items['salad']->id))->not->toBeNull();
+    foreach (['burger', 'loaded'] as $key) {
+        $this->deleteJson("/api/products/{$items[$key]->uuid}")->assertStatus(422)
+            ->assertJsonPath('message', 'This item is in a combo or meal: remove it from Family box first. / هذا الصنف داخل كومبو أو وجبة: أزله منها أولاً.');
+    }
+    // A product of a choice category may go: the choice no longer offers it.
+    $this->deleteJson("/api/products/{$items['juice']->uuid}")->assertNoContent();
+    $this->deleteJson("/api/categories/{$items['drinks']->uuid}")->assertStatus(422);
 
-    // Once the combo is gone, the item can go.
+    // Once the combo is gone, the items can go.
     $this->deleteJson("/api/products/{$uuid}")->assertNoContent();
-    $this->deleteJson("/api/products/{$items['salad']->uuid}")->assertNoContent();
+    $this->deleteJson("/api/products/{$items['loaded']->uuid}")->assertNoContent();
 });
 
 it('never offers a combo as an add-on', function (): void {
@@ -254,8 +301,10 @@ it('never offers a combo as an add-on', function (): void {
 
     $this->postJson("/api/addon-groups/{$group->uuid}/addons", ['name' => 'Meal', 'price_delta' => '1.000', 'linked_product_uuid' => $uuid])
         ->assertStatus(422);
-    $links = collect($this->getJson('/api/products/addon-link-options')->json('data'))->pluck('uuid');
-    expect($links)->not->toContain($uuid)->and($links)->toContain($items['burger']->uuid);
+    $links = collect($this->getJson('/api/products/addon-link-options')->json('data'));
+    expect($links->pluck('uuid'))->not->toContain($uuid)->and($links->pluck('uuid'))->toContain($items['burger']->uuid)
+        // LAUNCH combo add-on — the editors read each item's category.
+        ->and($links->firstWhere('uuid', $items['cola']->uuid)['category_id'])->toBe($items['drinks']->id);
 });
 
 it('lets a catalogue viewer read a combo but not save one, and keeps combos per company', function (): void {
@@ -269,7 +318,7 @@ it('lets a catalogue viewer read a combo but not save one, and keeps combos per 
     app(PermissionRegistrar::class)->setPermissionsTeamId($owner['company']->id);
     $viewer->assignRole(MerchantRole::Viewer->value);
     $this->actingAs($viewer);
-    $this->getJson("/api/combos/{$uuid}")->assertOk()->assertJsonPath('data.combo.slots.0.name', 'Main');
+    $this->getJson("/api/combos/{$uuid}")->assertOk()->assertJsonPath('data.combo.lines.2.name', 'Drink');
     $this->putJson("/api/combos/{$uuid}", p4ComboPayload($items))->assertForbidden();
 
     // Another company never sees it.

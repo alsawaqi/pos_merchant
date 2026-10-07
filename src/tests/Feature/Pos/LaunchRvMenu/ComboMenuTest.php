@@ -10,10 +10,11 @@ declare(strict_types=1);
  *     combo's updated_at (devices re-read it by delta);
  *   - the daily hours, the limited-time dates and the cooking time are saved
  *     (the editor used to wipe the hours) and audited.
- * Before: no is_main, no dates and no cooking time were saved or checked.
+ * Before: no dates and no cooking time were saved or checked.
+ * LAUNCH combo add-on: the "main slot" tests retired with the slots; meals
+ * are their own setups (tests/Feature/Pos/LaunchCombo).
  */
 
-use App\Models\ComboSlot;
 use App\Models\Product;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -21,83 +22,6 @@ use Illuminate\Support\Facades\DB;
 uses(RefreshDatabase::class);
 
 require_once __DIR__.'/helpers.php';
-
-it('saves the main slot of a combo and returns it', function (): void {
-    $ctx = makeMerchantActor();
-    $items = rvmComboItems($ctx['company']);
-
-    $res = $this->postJson('/api/combos', rvmComboPayload($items))
-        ->assertCreated()
-        ->assertJsonPath('data.combo.slots.0.is_main', true)
-        ->assertJsonPath('data.combo.slots.1.is_main', false);
-
-    $combo = Product::query()->where('uuid', $res->json('data.uuid'))->sole();
-    expect(ComboSlot::query()->where('combo_product_id', $combo->id)->where('is_main', true)->pluck('name')->all())->toBe(['Burger']);
-    $this->getJson("/api/combos/{$combo->uuid}")->assertOk()->assertJsonPath('data.combo.slots.0.is_main', true);
-    expect(rvmAudit('catalogue.combo.slots_saved', $combo->id)['new']['slots'][0]['is_main'])->toBeTrue();
-});
-
-it('refuses two mains, and a main on a slot where not exactly one item is picked', function (): void {
-    $ctx = makeMerchantActor();
-    $items = rvmComboItems($ctx['company']);
-
-    $payload = rvmComboPayload($items);
-    $payload['slots'][1]['is_main'] = true;
-    $this->postJson('/api/combos', $payload)->assertStatus(422)->assertJsonValidationErrors(['slots.1.is_main']);
-
-    // "Burgers, pick 4" is never a main (tester call 15).
-    $payload = rvmComboPayload($items);
-    $payload['slots'][0]['min_choices'] = 4;
-    $payload['slots'][0]['max_choices'] = 4;
-    $this->postJson('/api/combos', $payload)->assertStatus(422)->assertJsonValidationErrors(['slots.0.is_main']);
-
-    // An optional single slot (least 0) cannot pre-pick either.
-    $payload = rvmComboPayload($items);
-    $payload['slots'][0]['min_choices'] = 0;
-    $this->postJson('/api/combos', $payload)->assertStatus(422)->assertJsonValidationErrors(['slots.0.is_main']);
-
-    expect(Product::query()->where('product_type', 'combo')->count())->toBe(0);
-});
-
-it('moves the main to another slot in one save, audited, and moves the combo updated_at', function (): void {
-    $ctx = makeMerchantActor();
-    $items = rvmComboItems($ctx['company']);
-    $uuid = $this->postJson('/api/combos', rvmComboPayload($items))->assertCreated()->json('data.uuid');
-    $combo = Product::query()->where('uuid', $uuid)->sole();
-    $slots = ComboSlot::query()->where('combo_product_id', $combo->id)->orderBy('sort_order')->get();
-    DB::table('pos_products')->where('id', $combo->id)->update(['updated_at' => now()->subDay()]);
-
-    $payload = rvmComboPayload($items);
-    $payload['slots'][0]['id'] = $slots[0]->id;
-    $payload['slots'][1]['id'] = $slots[1]->id;
-    $payload['slots'][0]['is_main'] = false;
-    $payload['slots'][1]['is_main'] = true;
-    $this->putJson("/api/combos/{$uuid}", $payload)->assertOk()
-        ->assertJsonPath('data.combo.slots.0.is_main', false)
-        ->assertJsonPath('data.combo.slots.1.is_main', true);
-
-    expect(ComboSlot::query()->find($slots[1]->id)->is_main)->toBeTrue()
-        ->and(ComboSlot::query()->find($slots[0]->id)->is_main)->toBeFalse()
-        ->and((string) DB::table('pos_products')->where('id', $combo->id)->value('updated_at'))->toBeGreaterThan(now()->subHour()->toDateTimeString());
-    $audit = rvmAudit('catalogue.combo.slots_saved', $combo->id);
-    expect($audit['old']['slots'][0]['is_main'])->toBeTrue()
-        ->and($audit['new']['slots'][1]['is_main'])->toBeTrue();
-});
-
-it('keeps the saved main when an older open page sends no main flag', function (): void {
-    $ctx = makeMerchantActor();
-    $items = rvmComboItems($ctx['company']);
-    $uuid = $this->postJson('/api/combos', rvmComboPayload($items))->assertCreated()->json('data.uuid');
-    $combo = Product::query()->where('uuid', $uuid)->sole();
-    $slots = ComboSlot::query()->where('combo_product_id', $combo->id)->orderBy('sort_order')->get();
-
-    $payload = rvmComboPayload($items, ['base_price' => '3.750']);
-    foreach ($payload['slots'] as $i => $slot) {
-        unset($payload['slots'][$i]['is_main']);
-        $payload['slots'][$i]['id'] = $slots[$i]->id;
-    }
-    $this->putJson("/api/combos/{$uuid}", $payload)->assertOk()->assertJsonPath('data.combo.slots.0.is_main', true);
-});
 
 it('saves a combo\'s daily hours, dates and cooking time, audited, and keeps the dates when a page leaves them out', function (): void {
     $ctx = makeMerchantActor();

@@ -117,14 +117,14 @@ if (! function_exists('rvmProduct')) {
             'sold_in_store' => true,
             'show_on_customer_tablet' => true,
             'sold_on_delivery' => true,
-            'slots' => [
-                ['name' => 'Burger', 'min_choices' => 1, 'max_choices' => 1, 'is_main' => true, 'options' => [
-                    ['product_uuid' => $items['burger']->uuid, 'extra_price' => '0', 'is_default' => true],
-                    ['product_uuid' => $items['chicken']->uuid, 'extra_price' => '0'],
+            // LAUNCH combo add-on — lines: the burger (upgrade: chicken) and
+            // the fries (upgrade: salad +0.250), both included.
+            'lines' => [
+                ['kind' => 'fixed', 'product_uuid' => $items['burger']->uuid, 'quantity' => 1, 'upgrades' => [
+                    ['product_uuid' => $items['chicken']->uuid, 'upgrade_price' => '0'],
                 ]],
-                ['name' => 'Side', 'min_choices' => 1, 'max_choices' => 1, 'is_main' => false, 'options' => [
-                    ['product_uuid' => $items['fries']->uuid, 'extra_price' => '0', 'is_default' => true],
-                    ['product_uuid' => $items['salad']->uuid, 'extra_price' => '0.250'],
+                ['kind' => 'fixed', 'product_uuid' => $items['fries']->uuid, 'quantity' => 1, 'upgrades' => [
+                    ['product_uuid' => $items['salad']->uuid, 'upgrade_price' => '0.250'],
                 ]],
             ],
             'delivery_prices' => [],

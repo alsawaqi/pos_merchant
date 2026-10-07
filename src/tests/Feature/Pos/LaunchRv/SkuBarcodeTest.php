@@ -16,11 +16,13 @@ declare(strict_types=1);
  *     company across pos_item_barcodes and pos_products.barcode, both ways.
  */
 
+use App\Actions\Pos\Catalogue\MenuImport\PlanMenuImportAction;
 use App\Models\Ingredient;
 use App\Models\ItemBarcode;
 use App\Models\Product;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -68,7 +70,7 @@ it('keeps SKUs unique across ingredients and products in both directions', funct
     $this->postJson('/api/combos', [
         'name' => 'Meal', 'base_price' => '2.000', 'sku' => 'Milk-1',
         'sold_in_store' => true, 'show_on_customer_tablet' => true, 'sold_on_delivery' => true,
-        'slots' => [['name' => 'Main', 'min_choices' => 1, 'max_choices' => 1, 'options' => [['product_uuid' => $burger->uuid, 'extra_price' => '0', 'is_default' => true]]]],
+        'lines' => [['kind' => 'fixed', 'product_uuid' => $burger->uuid, 'quantity' => 1]],
         'delivery_prices' => [], 'branches' => null,
     ])->assertStatus(422)->assertJsonValidationErrors(['sku']);
 
@@ -150,11 +152,11 @@ it('refuses an ingredient SKU or an item barcode in the menu import', function (
     $ctx = makeMerchantActor();
     rvIngredient($ctx['company'], 'Milk', 'ml', '0', ['sku' => 'MILK-1']);
     DB::table('pos_item_barcodes')->insert([
-        'uuid' => (string) \Illuminate\Support\Str::uuid(), 'company_id' => $ctx['company']->id, 'barcode' => '999',
+        'uuid' => (string) Str::uuid(), 'company_id' => $ctx['company']->id, 'barcode' => '999',
         'ingredient_id' => Ingredient::query()->value('id'), 'created_at' => now(), 'updated_at' => now(),
     ]);
 
-    $plan = app(\App\Actions\Pos\Catalogue\MenuImport\PlanMenuImportAction::class)->handle([
+    $plan = app(PlanMenuImportAction::class)->handle([
         1 => ['name', 'price', 'sku', 'barcode'],
         2 => ['Latte', '1.500', 'milk-1', ''],
         3 => ['Mocha', '1.800', '', '999'],

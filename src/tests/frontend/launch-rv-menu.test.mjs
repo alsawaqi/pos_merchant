@@ -49,42 +49,16 @@ test('C1/C2 dates and cooking time: until never before from; 0..240 whole minute
     assert.equal(comboCookingFigure('', [null]), null);
 });
 
-test('C1 the main slot: only least 1 / most 1, at most one per combo', () => {
-    const { canBeMain, mainIssues } = menu();
-    assert.equal(canBeMain({ min_choices: 1, max_choices: 1 }), true);
-    assert.equal(canBeMain({ min_choices: 0, max_choices: 1 }), false);
-    assert.equal(canBeMain({ min_choices: 4, max_choices: 4 }), false);
-    assert.deepEqual([...mainIssues([{ min_choices: 1, max_choices: 1, is_main: true }, { min_choices: 1, max_choices: 2 }])].map((i) => ({ ...i })), []);
-    assert.deepEqual(
-        [...mainIssues([{ min_choices: 1, max_choices: 1, is_main: true }, { min_choices: 1, max_choices: 1, is_main: true }])].map((i) => ({ ...i })),
-        [{ index: 1, issue: 'two_mains' }],
-    );
-    assert.deepEqual([...mainIssues([{ min_choices: 1, max_choices: 4, is_main: true }])].map((i) => ({ ...i })), [{ index: 0, issue: 'main_not_single' }]);
-});
-
-test('C1 warns when every item of a required slot has sale dates', () => {
-    const { limitedSlotIndexes } = menu();
-    const items = { a: { on_sale_until: '2026-11-30' }, b: { on_sale_from: '2026-11-01', on_sale_until: null }, c: {} };
-    const itemOf = (uuid) => items[uuid];
-    const slots = [
-        { min_choices: 1, options: [{ product_uuid: 'a' }, { product_uuid: 'b' }] },
-        { min_choices: 1, options: [{ product_uuid: 'a' }, { product_uuid: 'c' }] },
-        { min_choices: 0, options: [{ product_uuid: 'a' }] },
-        { min_choices: 1, options: [{ product_uuid: '' }] },
-    ];
-    assert.deepEqual([...limitedSlotIndexes(slots, itemOf)], [0]);
-});
-
 test('C3 "Can be removed": the ticked lines of the recipe as it stands, each once, with optional labels', () => {
     const { removablePayload, removeOptionName, removeOptionNameAr, ticksFromState, groupKind } = menu();
     const lines = [{ ingredient_uuid: 'k' }, { ingredient_uuid: 'o' }, { ingredient_uuid: '' }, { ingredient_uuid: 'k' }];
     const ticks = { k: { ticked: true, label: ' Ketchup ', label_ar: '' }, o: { ticked: false, label: '', label_ar: '' }, gone: { ticked: true, label: '', label_ar: '' } };
-    assert.deepEqual([...removablePayload(lines, ticks)].map((r) => ({ ...r })), [{ ingredient_uuid: 'k', label: 'Ketchup', label_ar: null }]);
+    assert.deepEqual([...removablePayload(lines, ticks)].map((r) => ({ ...r })), [{ ingredient_uuid: 'k', label: 'Ketchup', label_ar: null, price: '0.000' }]);
     assert.equal(removeOptionName('', 'Onion'), 'NO Onion');
     assert.equal(removeOptionName('Ketchup', 'Ketchup (Heinz 5 kg)'), 'NO Ketchup');
     assert.equal(removeOptionNameAr('', 'بصل', 'Onion'), 'بدون بصل');
     assert.equal(removeOptionNameAr('', null, 'Onion'), 'بدون Onion');
-    assert.deepEqual({ ...ticksFromState([{ ingredient_uuid: 'k', label: 'Ketchup', label_ar: null }]).k }, { ticked: true, label: 'Ketchup', label_ar: '' });
+    assert.deepEqual({ ...ticksFromState([{ ingredient_uuid: 'k', label: 'Ketchup', label_ar: null }]).k }, { ticked: true, label: 'Ketchup', label_ar: '', price: '0.000' });
     assert.equal(groupKind({ kind: 'instructions' }), 'instructions');
     assert.equal(groupKind({}), 'extras');
     assert.equal(groupKind(null), 'extras');
@@ -112,13 +86,13 @@ test('C1 (fix order C-1, L7) the combo editor saves the daily hours as set, the 
     assert.equal(comboMenuFields({ available_from: '09:45:00', available_until: '', on_sale_from: '', on_sale_until: '', cooking_minutes: '' }).available_from, '09:45:00');
     assert.equal(comboMenuFields({ available_from: '', available_until: '', on_sale_from: '', on_sale_until: '', cooking_minutes: '' }).cooking_minutes, null);
 
-    // Wiring: payload() sends exactly these fields and every slot's main flag.
+    // Wiring: payload() sends exactly these fields (LAUNCH combo add-on: no main slot any more).
     const { script, template } = sfc('resources/js/Pages/Merchant/Catalogue/ComboEditor.vue');
     const body = script.slice(script.indexOf('function payload()'), script.indexOf('const blockingProblems'));
     assert.match(body, /\.\.\.comboMenuFields\(form\),/);
     assert.doesNotMatch(body, /available_from: null/);
-    assert.match(body, /is_main: slot\.is_main,/);
-    for (const hook of ['combo-when', 'combo-hours-from', 'combo-hours-until', 'combo-sale-from', 'combo-sale-until', 'combo-cooking', 'combo-main', 'combo-main-none', 'slot-main', 'slot-limited-warning']) {
+    assert.doesNotMatch(body, /is_main/);
+    for (const hook of ['combo-when', 'combo-hours-from', 'combo-hours-until', 'combo-sale-from', 'combo-sale-until', 'combo-cooking']) {
         assert.match(template, new RegExp(`data-test="${hook}"`), hook);
     }
     assertKeysExist(template + script, 'ComboEditor');
@@ -142,8 +116,9 @@ test('C3 (fix order C-1, M1) the wizard sends the ticks only when they loaded an
     const changed = removableSaveDecision('ok', recipe, { ...asLoaded, o: { ticked: false, label: 'Onion', label_ar: '' }, b: { ticked: true, label: '', label_ar: '' } }, loaded);
     assert.equal(changed.send, true);
     assert.deepEqual([...changed.lines].map((l) => ({ ...l })), [
-        { ingredient_uuid: 'k', label: 'Ketchup', label_ar: 'كاتشب' },
-        { ingredient_uuid: 'b', label: null, label_ar: null },
+        // LAUNCH combo add-on — each tick carries its price ('0.000' = no change).
+        { ingredient_uuid: 'k', label: 'Ketchup', label_ar: 'كاتشب', price: '0.000' },
+        { ingredient_uuid: 'b', label: null, label_ar: null, price: '0.000' },
     ]);
     assert.deepEqual([...changed.expected].map((l) => ({ ...l })), loaded);
     // Unticking everything is a real change, sent with what was loaded.
