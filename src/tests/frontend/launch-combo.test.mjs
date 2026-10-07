@@ -75,7 +75,9 @@ test('the lines are saved included items first, choices with only what changes s
         { id: 9, kind: 'choice', product_uuid: null, quantity: null, upgrades: [], name: 'Drinks', name_ar: null, category_id: 3, pick_count: 4, items: [{ product_uuid: 'water', excluded: true, extra_price: '0.000' }] },
     ], (p) => `${p}-${++n}`);
     assert.deepEqual(JSON.parse(JSON.stringify(drafts)), [
-        { key: 'line-1', id: 4, kind: 'fixed', product_uuid: 'fries', quantity: 2, upgrades: [{ product_uuid: 'loaded', upgrade_price: '0.800' }] },
+        // Fix order 1 (C-12) — the saved name and availability ride along.
+        { key: 'line-1', id: 4, kind: 'fixed', product_uuid: 'fries', quantity: 2,
+            upgrades: [{ product_uuid: 'loaded', upgrade_price: '0.800', label: null, unavailable: false }], label: null, unavailable: false },
         { key: 'line-2', id: 9, kind: 'choice', name: 'Drinks', name_ar: '', category_id: 3, pick_count: 4, overrides: { water: { excluded: true, extra_price: '0.000' } } },
     ]);
 });
