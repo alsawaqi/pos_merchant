@@ -35,6 +35,7 @@ use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\ProductSoldOut;
 use App\Support\BranchScope;
+use App\Support\Costs\FoodCost;
 use App\Support\MerchantTenantContext;
 use App\Support\Recipes\ProductRecipeHistory;
 use App\Support\Recipes\RecipeEditGate;
@@ -121,6 +122,14 @@ class ProductsController extends Controller
             // -1 sentinel guarantees zero results when the
             // uuid was bogus or cross-tenant.
             $query->where('category_id', $categoryId ?? -1);
+        }
+
+        // LAUNCH costs & allergens add-on — ?food_cost=over: only the dishes
+        // over their target food cost % (the dashboard card's list). Needs
+        // reports.view (costs); ignored without it.
+        if ($request->query('food_cost') === 'over' && $request->user()?->can(MerchantPermission::ReportsView->value)) {
+            $over = array_column(array_filter(FoodCost::forCompany($companyId)->rows(), static fn (array $r): bool => $r['over_target']), 'product_id');
+            $query->whereIn('id', $over ?: [0]);
         }
 
         // v2 #12 — optional case-insensitive text search over name + name_ar.

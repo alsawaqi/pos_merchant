@@ -9,6 +9,7 @@ use App\Data\Security\AuditLogData;
 use App\Models\Product;
 use App\Models\ProductComponent;
 use App\Models\User;
+use App\Support\Catalogue\AllergenSync;
 use App\Support\Catalogue\OrderTypes;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
@@ -160,6 +161,8 @@ final readonly class UpdateProductComponentsAction
             // LAUNCH packaging add-on — the device config re-sends a product
             // only when its updated_at moves.
             $product->touch();
+            // LAUNCH costs & allergens add-on — components bring allergens.
+            AllergenSync::touch((int) $product->company_id, productIds: [(int) $product->id]);
 
             $this->writeAuditLog->handle(new AuditLogData(
                 event: 'catalogue.product.components_updated',

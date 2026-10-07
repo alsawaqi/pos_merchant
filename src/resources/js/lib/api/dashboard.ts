@@ -54,6 +54,10 @@ export interface DashboardSummaryPayload {
         branches: { branch_uuid: string; branch_name: string; negative: number; below_minimum: number }[];
     };
     recent_audit_events: DashboardAuditEvent[];
+    /** LAUNCH costs & allergens add-on — "Price alerts (last 30 days)". */
+    price_alerts?: { count: number; unseen: number; days: number; threshold_percent: number };
+    /** LAUNCH costs & allergens add-on — "Dishes over target". */
+    dishes_over_target?: { count: number; costed: number; no_recipe: number; target_percent: number };
     // v2 graphs (§5.2): trailing-14-day trend + MTD top-N breakdowns.
     sales_trend: SalesTrendPoint[];
     top_products: { product_name: string; revenue: string }[];

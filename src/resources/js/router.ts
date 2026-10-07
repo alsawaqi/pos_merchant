@@ -44,6 +44,7 @@ import SettingsOrderNumbering from '@/Pages/Merchant/Settings/OrderNumbering.vue
 import SettingsDineInRoundMode from '@/Pages/Merchant/Settings/DineInRoundMode.vue';
 import SettingsQrTableCards from '@/Pages/Merchant/Settings/QrTableCards.vue';
 import ReportsIndex from '@/Pages/Merchant/Reports/Index.vue';
+import CostsIndex from '@/Pages/Merchant/Costs/Index.vue';
 import ReportsSales from '@/Pages/Merchant/Reports/Sales.vue';
 import ReportsCustomers from '@/Pages/Merchant/Reports/Customers.vue';
 import ReportsDiscounts from '@/Pages/Merchant/Reports/Discounts.vue';
@@ -423,6 +424,9 @@ const routes: RouteRecordRaw[] = [
     // page. Server-side reports.view gates every fetch; the SPA
     // hides the sidebar entry too.
     { path: '/reports', name: 'merchant.reports', component: ReportsIndex, meta: { requiresAuth: true } },
+    // LAUNCH costs & allergens add-on — price alerts, dishes over target and
+    // the costs settings (reports.view to read; the server gates every call).
+    { path: '/costs', name: 'merchant.costs', component: CostsIndex, meta: { requiresAuth: true } },
     { path: '/reports/sales', name: 'merchant.reports.sales', component: ReportsSales, meta: { requiresAuth: true } },
     { path: '/reports/customers', name: 'merchant.reports.customers', component: ReportsCustomers, meta: { requiresAuth: true } },
     { path: '/reports/discounts', name: 'merchant.reports.discounts', component: ReportsDiscounts, meta: { requiresAuth: true } },

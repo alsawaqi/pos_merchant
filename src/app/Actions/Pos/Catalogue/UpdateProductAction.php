@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Support\Catalogue\MealMains;
 use App\Support\Catalogue\MenuExtras;
 use App\Support\Catalogue\OrderTypes;
+use App\Support\Costs\CostSettings;
 use App\Support\Inventory\ItemCodes;
 use App\Support\Inventory\PackagingUsage;
 use App\Support\MerchantTenantContext;
@@ -79,6 +80,8 @@ final readonly class UpdateProductAction
         'on_sale_from',
         'on_sale_until',
         'cooking_minutes',
+        // LAUNCH costs & allergens add-on — the dish's own target food cost %.
+        'target_food_cost_percent',
     ];
 
     /** LAUNCH review add-on — nullable fields where null and 0 / '' differ. */
@@ -179,6 +182,10 @@ final readonly class UpdateProductAction
                 // comparison.
                 if (in_array($field, ['base_price', 'delivery_price', 'low_stock_threshold', 'cost_price', 'tax_rate'], true)) {
                     $sameValue = (string) $oldComparable === (string) $newValue;
+                } elseif ($field === 'target_food_cost_percent') {
+                    // "28.5" and "28.50" are the same target; blank = the company's.
+                    $newValue = CostSettings::percent($newValue);
+                    $sameValue = CostSettings::percent($oldComparable) === $newValue;
                 } elseif (in_array($field, self::STRICT_FIELDS, true)) {
                     $newValue = $field === 'cooking_minutes' ? MenuExtras::minutes($newValue) : MenuExtras::day($newValue);
                     $sameValue = $oldComparable === $newValue

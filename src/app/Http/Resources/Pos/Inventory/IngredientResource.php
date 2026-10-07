@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Resources\Pos\Inventory;
 
 use App\Models\Ingredient;
+use App\Support\Catalogue\AllergenSync;
 use App\Support\Inventory\ContainerPresenter;
 use App\Support\Inventory\Containers;
 use App\Support\Recipes\PrepGraph;
@@ -78,6 +79,10 @@ class IngredientResource extends JsonResource
                 ];
             }),
             'status' => $this->status,
+            // LAUNCH costs & allergens add-on — the allergens ticked on the
+            // item, and (a prep item) with what its recipe brings.
+            'allergens' => AllergenSync::graph((int) $this->company_id)->ownIngredient((int) $this->id),
+            'allergens_all' => AllergenSync::graph((int) $this->company_id)->ingredient((int) $this->id),
             // v2 #13 — alternate units (when loaded), so the ingredient form can
             // render its unit list without a second round-trip.
             // LAUNCH review add-on (A2) — these are the item's CONTAINERS: each

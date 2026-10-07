@@ -174,6 +174,19 @@ final class PrepGraph
     }
 
     /**
+     * LAUNCH costs & allergens add-on — the graph with one RAW ingredient
+     * costed at $unitCost per base unit (a price-change alert's "at the old
+     * price" / "at the new price"); every prep item costs through it.
+     */
+    public function withUnitCost(int $ingredientId, string $unitCost): self
+    {
+        $costs = $this->costs;
+        $costs[$ingredientId] = $unitCost;
+
+        return new self($this->prep, $costs, $this->names, $this->deleted, $this->units);
+    }
+
+    /**
      * Explode recipe lines into raw ingredients, merged.
      *
      * @param  array<int, string|int|float|BigNumber>  $lines  ingredient id => base quantity (a prep id is exploded)

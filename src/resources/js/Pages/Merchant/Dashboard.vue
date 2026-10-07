@@ -401,6 +401,36 @@ const paymentMixChart = computed(() => {
                     <div class="mt-1 text-xs text-slate-500">{{ lowStockTotal > 0 && canViewInventory ? t('dashboard_widgets.low_stock_open') : t('dashboard_widgets.low_stock_subtitle') }}</div>
                 </component>
 
+                <!-- LAUNCH costs & allergens add-on — price alerts of the last 30
+                     days and the dishes over their target food cost %, each
+                     linking to its list. -->
+                <RouterLink
+                    v-if="summary.price_alerts"
+                    to="/costs?tab=alerts"
+                    class="block rounded-2xl border border-slate-200 bg-white p-5 shadow-sm card-hover"
+                    data-test="price-alerts-card"
+                >
+                    <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <AlertTriangle class="size-3.5" :class="summary.price_alerts.unseen > 0 ? 'text-amber-500' : 'text-slate-400'" />
+                        {{ t('costs.dashboard.price_alerts_title') }}
+                    </div>
+                    <div class="mt-2 text-3xl font-bold tabular-nums" :class="summary.price_alerts.unseen > 0 ? 'text-amber-600' : 'text-slate-950'">{{ summary.price_alerts.count }}</div>
+                    <div class="mt-1 text-xs text-slate-500">{{ t('costs.dashboard.price_alerts_unseen', { count: summary.price_alerts.unseen }) }}</div>
+                </RouterLink>
+                <RouterLink
+                    v-if="summary.dishes_over_target"
+                    to="/costs?tab=dishes"
+                    class="block rounded-2xl border border-slate-200 bg-white p-5 shadow-sm card-hover"
+                    data-test="dishes-over-target-card"
+                >
+                    <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <Target class="size-3.5" :class="summary.dishes_over_target.count > 0 ? 'text-rose-500' : 'text-slate-400'" />
+                        {{ t('costs.dashboard.dishes_title') }}
+                    </div>
+                    <div class="mt-2 text-3xl font-bold tabular-nums" :class="summary.dishes_over_target.count > 0 ? 'text-rose-700' : 'text-slate-950'">{{ summary.dishes_over_target.count }}</div>
+                    <div class="mt-1 text-xs text-slate-500">{{ t('costs.dashboard.dishes_hint', { target: summary.dishes_over_target.target_percent, costed: summary.dishes_over_target.costed }) }}</div>
+                </RouterLink>
+
                 <!-- Round-up donations today (§5.2) -->
                 <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm card-hover">
                     <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">

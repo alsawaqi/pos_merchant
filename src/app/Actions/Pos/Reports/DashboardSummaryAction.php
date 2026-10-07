@@ -7,6 +7,9 @@ namespace App\Actions\Pos\Reports;
 use App\Actions\Pos\Reports\Support\RevenueSql;
 use App\Enums\OrderStatus;
 use App\Enums\StockMovementType;
+use App\Support\Costs\CostSettings;
+use App\Support\Costs\FoodCost;
+use App\Support\Costs\PriceHistory;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -118,6 +121,50 @@ final readonly class DashboardSummaryAction
             // MTD sales split by order type (channel) — quick / dine-in / to-go
             // / delivery / car — for the channel-mix chart.
             'order_type_mix' => $this->orderTypeMix($companyId, $branchIds, $monthStart, $todayEnd),
+            // LAUNCH costs & allergens add-on — "Price alerts (last 30 days)"
+            // and "Dishes over target" (company-wide: purchases are an HQ act
+            // and recipes are the merchant's).
+            'price_alerts' => $this->priceAlerts($companyId),
+            'dishes_over_target' => $this->dishesOverTarget($companyId),
+        ];
+    }
+
+    /**
+     * Goods-received ingredient lines of the last 30 days whose price moved
+     * by at least the threshold ({@see PriceHistory::alerts()}).
+     *
+     * @return array{count: int, unseen: int, days: int, threshold_percent: float}
+     */
+    private function priceAlerts(int $companyId): array
+    {
+        $rows = PriceHistory::alerts($companyId, Carbon::now()->subDays(30)->startOfDay());
+        $seen = $rows->isEmpty() ? 0 : DB::table('pos_price_alert_reviews')->where('company_id', $companyId)
+            ->whereIn('purchase_receipt_line_id', $rows->pluck('id')->all())->count();
+
+        return [
+            'count' => $rows->count(),
+            'unseen' => $rows->count() - $seen,
+            'days' => 30,
+            'threshold_percent' => (float) CostSettings::threshold($companyId),
+        ];
+    }
+
+    /**
+     * Dishes whose food cost % is over their target: menu products and
+     * combos, and every active meal with each of its mains ({@see FoodCost}).
+     *
+     * @return array{count: int, costed: int, no_recipe: int, target_percent: float}
+     */
+    private function dishesOverTarget(int $companyId): array
+    {
+        $food = FoodCost::forCompany($companyId);
+        $rows = array_merge($food->rows(), $food->mealRows());
+
+        return [
+            'count' => count(array_filter($rows, static fn (array $r): bool => $r['over_target'])),
+            'costed' => count(array_filter($rows, static fn (array $r): bool => $r['status'] === 'ok')),
+            'no_recipe' => count(array_filter($rows, static fn (array $r): bool => $r['status'] === 'no_recipe')),
+            'target_percent' => (float) CostSettings::target($companyId),
         ];
     }
 

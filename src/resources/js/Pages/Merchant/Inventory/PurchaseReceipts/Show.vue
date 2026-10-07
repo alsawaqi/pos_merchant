@@ -15,6 +15,9 @@ import { MerchantPermission } from '@/lib/permissions';
 import { ApiError } from '@/lib/api';
 import { getPurchaseReceipt, recordReceiptPayment, type PurchaseReceipt, type ReceiptPaymentStatus } from '@/lib/api/purchaseReceipts';
 import { friendlyAmount, friendlyCost } from '@/lib/itemKind';
+// LAUNCH costs & allergens add-on — the purchase confirmation's price alerts.
+import type { PriceAlert } from '@/lib/api/costs';
+import { baisasText, changeText, friendlyUnitCost, pctText } from '@/lib/foodCost';
 
 const { t, locale } = useI18n();
 const route = useRoute();
@@ -23,6 +26,8 @@ const isAr = computed(() => locale.value === 'ar');
 const canManage = computed(() => can(MerchantPermission.InventoryManage));
 
 const receipt = ref<PurchaseReceipt | null>(null);
+const priceAlerts = ref<PriceAlert[]>([]);
+const canSeeCosts = computed(() => can(MerchantPermission.ReportsView));
 const loading = ref(true);
 const loadError = ref<string | null>(null);
 
@@ -136,6 +141,7 @@ onMounted(async () => {
     try {
         const res = await getPurchaseReceipt(String(route.params.uuid));
         receipt.value = res.data;
+        priceAlerts.value = res.data.price_alerts ?? [];
     } catch (e) {
         loadError.value = e instanceof ApiError ? (e.message || t('purchase_receipts.load_failed')) : t('purchase_receipts.load_failed');
     } finally {
@@ -172,6 +178,27 @@ onMounted(async () => {
                         </p>
                     </div>
                 </div>
+
+                <!-- LAUNCH costs & allergens add-on — prices on this delivery that
+                     moved by the threshold or more from the previous purchase,
+                     with the dishes they affect (for users who see costs). -->
+                <section v-if="priceAlerts.length > 0" class="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4" data-test="receipt-price-alerts">
+                    <h2 class="text-sm font-semibold text-amber-900">{{ t('costs.alerts.on_receipt_title') }}</h2>
+                    <ul class="mt-2 space-y-2">
+                        <li v-for="alert in priceAlerts" :key="alert.line_id" class="text-sm text-amber-950" data-test="receipt-price-alert">
+                            <span class="font-semibold">{{ isAr && alert.ingredient.name_ar ? alert.ingredient.name_ar : alert.ingredient.name }}</span>
+                            <span class="ms-2 tabular-nums">{{ friendlyUnitCost(alert.old_unit_cost, alert.ingredient.unit).amount }} → {{ friendlyUnitCost(alert.new_unit_cost, alert.ingredient.unit).amount }} OMR {{ t('costs.alerts.per_unit', { unit: friendlyUnitCost(alert.new_unit_cost, alert.ingredient.unit).unit }) }}</span>
+                            <bdi dir="ltr" class="ms-2 font-bold" :class="alert.change_pct > 0 ? 'text-rose-700' : 'text-emerald-700'">{{ changeText(alert.change_pct) }}</bdi>
+                            <ul v-if="alert.dishes && alert.dishes.length > 0" class="ms-4 mt-1 list-disc text-xs text-amber-900">
+                                <li v-for="dish in alert.dishes" :key="dish.product_uuid">
+                                    {{ t('costs.alerts.dish_line', { name: isAr && dish.name_ar ? dish.name_ar : dish.name, cost: baisasText(dish.cost_baisas), pct: pctText(dish.food_cost_pct) ?? '—', target: pctText(dish.target_pct) }) }}
+                                    <span v-if="dish.crossed_target" class="ms-1 rounded bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">{{ t('costs.alerts.crossed') }}</span>
+                                </li>
+                            </ul>
+                        </li>
+                    </ul>
+                    <RouterLink v-if="canSeeCosts" to="/costs?tab=alerts" class="mt-2 inline-block text-xs font-semibold text-teal-700 hover:underline">{{ t('costs.alerts.open_list') }}</RouterLink>
+                </section>
 
                 <p v-if="receipt.note" class="mt-4 rounded-lg bg-slate-50 px-4 py-2.5 text-sm text-slate-600">{{ receipt.note }}</p>
 

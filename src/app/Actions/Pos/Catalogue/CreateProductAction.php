@@ -13,6 +13,7 @@ use App\Models\ProductCategory;
 use App\Models\User;
 use App\Support\Catalogue\MealMains;
 use App\Support\Catalogue\MenuExtras;
+use App\Support\Costs\CostSettings;
 use App\Support\Inventory\ItemCodes;
 use App\Support\MerchantTenantContext;
 use Illuminate\Support\Facades\DB;
@@ -127,6 +128,8 @@ final readonly class CreateProductAction
                 'on_sale_from' => MenuExtras::day($attributes['on_sale_from'] ?? null),
                 'on_sale_until' => MenuExtras::day($attributes['on_sale_until'] ?? null),
                 'cooking_minutes' => MenuExtras::minutes($attributes['cooking_minutes'] ?? null),
+                // LAUNCH costs & allergens add-on — NULL = the company target.
+                'target_food_cost_percent' => CostSettings::percent($attributes['target_food_cost_percent'] ?? null),
             ]);
 
             $this->writeAuditLog->handle(new AuditLogData(
@@ -146,6 +149,7 @@ final readonly class CreateProductAction
                     'on_sale_from' => $product->on_sale_from,
                     'on_sale_until' => $product->on_sale_until,
                     'cooking_minutes' => $product->cooking_minutes,
+                    'target_food_cost_percent' => $product->target_food_cost_percent !== null ? (string) $product->target_food_cost_percent : null,
                 ], static fn ($value): bool => $value !== null),
             ));
 

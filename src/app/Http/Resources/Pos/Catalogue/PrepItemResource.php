@@ -6,6 +6,7 @@ namespace App\Http\Resources\Pos\Catalogue;
 
 use App\Models\Ingredient;
 use App\Models\IngredientRecipe;
+use App\Support\Catalogue\AllergenSync;
 use App\Support\Recipes\PrepGraph;
 use App\Support\Recipes\RecipeQuantity;
 use App\Support\StockDecimal;
@@ -43,6 +44,10 @@ class PrepItemResource extends JsonResource
             'is_prep' => true,
             'prep_yield_quantity' => (string) $this->prep_yield_quantity,
             'status' => $this->status,
+            // LAUNCH costs & allergens add-on — ticked on the prep item, and
+            // with everything its recipe brings (every level).
+            'allergens' => AllergenSync::graph((int) $this->company_id)->ownIngredient((int) $this->id),
+            'allergens_all' => AllergenSync::graph((int) $this->company_id)->ingredient((int) $this->id),
             'unit_cost' => $graph->unitCost((int) $this->id),
             // LAUNCH review add-on (A1) — every raw ingredient has a cost.
             'cost_complete' => $graph->costComplete((int) $this->id),

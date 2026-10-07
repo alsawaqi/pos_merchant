@@ -33,6 +33,9 @@ final class MenuExtras
             $prefix.'on_sale_from' => [...$head, 'date_format:Y-m-d'],
             $prefix.'on_sale_until' => [...$head, 'date_format:Y-m-d'],
             $prefix.'cooking_minutes' => [...$head, 'integer', 'between:0,'.self::MAX_COOKING_MINUTES],
+            // LAUNCH costs & allergens add-on — the dish's own target food
+            // cost % (blank = the company target).
+            $prefix.'target_food_cost_percent' => [...$head, 'numeric', 'min:0.1', 'max:100'],
         ];
     }
 

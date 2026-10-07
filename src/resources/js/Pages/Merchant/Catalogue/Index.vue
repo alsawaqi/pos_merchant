@@ -70,6 +70,8 @@ import ImageUploadField from './ImageUploadField.vue';
 import ProductThumb from './ProductThumb.vue';
 // LAUNCH review add-on — limited-time badges and Quick instructions.
 import { groupKind, muscatToday, saleBadge, shortDay } from '@/lib/menuExtras';
+// LAUNCH costs & allergens add-on — the food cost % column and its filter.
+import { foodCostTone, pctText } from '@/lib/foodCost';
 
 const { t, locale } = useI18n();
 const { can } = usePermissions();
@@ -122,6 +124,10 @@ const productCategoryFilter = ref<string>('');
 const productSearch = ref<string>('');
 // LAUNCH-P4 B4 — the "Sold out" filter (sold out at one of my branches).
 const soldOutOnly = ref<boolean>(false);
+// LAUNCH costs & allergens add-on — the dashboard's "Dishes over target"
+// opens the list filtered (?food_cost=over); costs need reports.view.
+const canSeeCosts = computed(() => can(MerchantPermission.ReportsView));
+const foodCostOverOnly = ref<boolean>(false);
 const soldOutTarget = ref<Product | null>(null);
 const productPage = ref<number>(1);
 const productsLoading = ref(false);
@@ -260,6 +266,7 @@ async function fetchProducts(): Promise<void> {
             category: productCategoryFilter.value === '' ? undefined : productCategoryFilter.value,
             page: productPage.value,
             sold_out: soldOutOnly.value,
+            food_cost_over: canSeeCosts.value && foodCostOverOnly.value,
         });
         products.value = response.data;
         productsMeta.value = response.meta;
@@ -281,7 +288,7 @@ watch(productSearch, () => {
     }, 250);
 });
 
-watch([productCategoryFilter, soldOutOnly], () => {
+watch([productCategoryFilter, soldOutOnly, foodCostOverOnly], () => {
     productPage.value = 1;
     void fetchProducts();
 });
@@ -376,6 +383,10 @@ onMounted(() => {
     const requestedTab = String(route.query.tab ?? '');
     if ((['categories', 'products', 'addons', 'providers'] as const).some((k) => k === requestedTab)) {
         activeTab.value = requestedTab as TabKey;
+    }
+    if (String(route.query.food_cost ?? '') === 'over') {
+        activeTab.value = 'products';
+        foodCostOverOnly.value = true;
     }
     void fetchAll();
 });
@@ -1060,6 +1071,11 @@ async function performProviderDelete(): Promise<void> {
                             <input v-model="soldOutOnly" type="checkbox" class="rounded border-slate-300 text-rose-600 focus:ring-2 focus:ring-rose-200" data-test="sold-out-filter">
                             {{ t('sold_out.filter') }}
                         </label>
+                        <!-- LAUNCH costs & allergens add-on — over target food cost only. -->
+                        <label v-if="canSeeCosts" class="inline-flex items-center gap-2 pb-2.5 text-sm font-medium text-slate-700">
+                            <input v-model="foodCostOverOnly" type="checkbox" class="rounded border-slate-300 text-rose-600 focus:ring-2 focus:ring-rose-200" data-test="food-cost-over-filter">
+                            {{ t('costs.food_cost.filter_over') }}
+                        </label>
                     </div>
                     <div class="flex flex-wrap gap-2">
                         <!-- LAUNCH-P4 B6 — menu import / export page. -->
@@ -1125,6 +1141,8 @@ async function performProviderDelete(): Promise<void> {
                                 <!-- Phase 5b — recipe cost + has-recipe badge columns. -->
                                 <th class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.table_cost_col') }}</th>
                                 <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('catalogue.table_recipe_col') }}</th>
+                                <!-- LAUNCH costs & allergens add-on — food cost % vs target. -->
+                                <th v-if="canSeeCosts" class="px-5 py-3 text-end text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('costs.food_cost.label') }}</th>
                                 <!-- LAUNCH-P4 B3 — channel icons. -->
                                 <th class="px-5 py-3 text-start text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('channels.column') }}</th>
                                 <!-- LAUNCH-P4 B4 — sold out per branch. -->
@@ -1221,6 +1239,20 @@ async function performProviderDelete(): Promise<void> {
                                         {{ t('catalogue.recipe.missing_badge') }}
                                     </span>
                                     <span v-else class="text-xs text-slate-400">—</span>
+                                </td>
+                                <td v-if="canSeeCosts" class="px-5 py-4 text-end text-xs tabular-nums" data-test="product-food-cost-cell">
+                                    <template v-if="prod.food_cost && prod.food_cost.status === 'ok'">
+                                        <span :class="foodCostTone(prod.food_cost) === 'over' ? 'font-bold text-rose-700' : 'text-slate-700'">{{ pctText(prod.food_cost.food_cost_pct) }}</span>
+                                        <span
+                                            v-if="prod.food_cost.over_target"
+                                            class="ms-1 inline-block size-2 rounded-full bg-rose-600 align-middle"
+                                            :title="t('costs.food_cost.over_target') + ' (' + pctText(prod.food_cost.target_pct) + ')'"
+                                            data-test="product-over-target-flag"
+                                        />
+                                        <span class="block text-[10px] text-slate-400">{{ t('costs.dishes.target') }} {{ pctText(prod.food_cost.target_pct) }}</span>
+                                    </template>
+                                    <span v-else-if="prod.food_cost" class="italic text-slate-400">{{ t(`costs.food_cost.${prod.food_cost.status}`) }}</span>
+                                    <span v-else class="text-slate-400">—</span>
                                 </td>
                                 <td class="px-5 py-4">
                                     <span class="inline-flex items-center gap-1" data-test="channel-icons">

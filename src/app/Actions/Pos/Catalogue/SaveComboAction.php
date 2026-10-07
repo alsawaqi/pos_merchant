@@ -87,6 +87,11 @@ final readonly class SaveComboAction
                     $fields[$field] = $field === 'cooking_minutes' ? MenuExtras::minutes($data[$field]) : MenuExtras::day($data[$field]);
                 }
             }
+            // LAUNCH costs & allergens add-on — the combo's own target food
+            // cost % (blank = the company target; absent = keep).
+            if (array_key_exists('target_food_cost_percent', $data)) {
+                $fields['target_food_cost_percent'] = $data['target_food_cost_percent'];
+            }
 
             if ($combo === null) {
                 $combo = $this->createProduct->handle($fields + [

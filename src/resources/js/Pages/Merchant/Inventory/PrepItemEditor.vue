@@ -61,6 +61,11 @@ import { prepLineWarning, translateAmount } from '@/lib/amountSafety';
 import { useAmountConfirm } from '@/composables/useAmountConfirm';
 import AmountConfirmDialog from './components/AmountConfirmDialog.vue';
 import AmountInput from './components/AmountInput.vue';
+// LAUNCH costs & allergens add-on — the prep item's own allergen ticks.
+import AllergenChips from '@/Pages/Merchant/Catalogue/AllergenChips.vue';
+import AllergenTicks from '@/Pages/Merchant/Catalogue/AllergenTicks.vue';
+import { saveIngredientAllergens } from '@/lib/api/costs';
+import { sameAllergens } from '@/lib/allergens';
 
 const route = useRoute();
 const router = useRouter();
@@ -233,6 +238,11 @@ function batchWarnings(): ReturnType<typeof prepLineWarning>[] {
     });
 }
 
+/** LAUNCH costs & allergens add-on — ticks on the prep item; what its recipe brings is worked out. */
+const allergens = ref<string[]>([]);
+const allergensBaseline = ref<string[]>([]);
+const allergensAll = ref<string[]>([]);
+
 async function save(): Promise<void> {
     if (!canSave.value) return;
     if (!(await confirmAmounts(batchWarnings()))) return;
@@ -249,10 +259,9 @@ async function save(): Promise<void> {
         note: form.note.trim() || null,
     };
     try {
-        if (isEdit) {
-            await updatePrepItem(editUuid!, payload);
-        } else {
-            await createPrepItem(payload);
+        const saved = isEdit ? await updatePrepItem(editUuid!, payload) : await createPrepItem(payload);
+        if (!sameAllergens(allergens.value, allergensBaseline.value)) {
+            await saveIngredientAllergens(saved.data.uuid, allergens.value);
         }
         void router.push({ path: '/inventory', query: { tab: 'prep_items' } });
     } catch (err) {
@@ -299,6 +308,9 @@ onMounted(async () => {
         ingredients.value = list.data;
         if (item) {
             current.value = item.data;
+            allergens.value = [...(item.data.allergens ?? [])];
+            allergensBaseline.value = [...(item.data.allergens ?? [])];
+            allergensAll.value = [...(item.data.allergens_all ?? [])];
             form.name = item.data.name;
             form.name_ar = item.data.name_ar ?? '';
             form.unit = item.data.unit;
@@ -461,6 +473,18 @@ onMounted(async () => {
                         <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('recipe_history.note_field') }}</span>
                         <input v-model="form.note" type="text" maxlength="1000" :placeholder="t('recipe_history.note_placeholder')" class="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100">
                     </label>
+                </section>
+
+                <!-- LAUNCH costs & allergens add-on — what the prep item adds itself;
+                     its recipe's allergens are added automatically (shown below). -->
+                <section class="rounded-xl border border-slate-200 bg-white p-4" data-test="prep-allergens">
+                    <h2 class="text-sm font-semibold text-slate-900">{{ t('allergens.title') }}</h2>
+                    <p class="mb-2 text-xs text-slate-500">{{ t('allergens.prep_hint') }}</p>
+                    <AllergenTicks v-model="allergens" :disabled="!canEditRecipes" test-id="prep-allergen-ticks" />
+                    <div v-if="isEdit" class="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600" data-test="prep-allergens-all">
+                        <span>{{ t('allergens.from_recipe') }}</span>
+                        <AllergenChips :contains="allergensAll" />
+                    </div>
                 </section>
 
                 <RecipeHistoryPanel v-if="isEdit" :load="loadHistory" :yield-unit="form.unit" />

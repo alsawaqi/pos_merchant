@@ -129,6 +129,12 @@ import AmountConfirmDialog from '@/Pages/Merchant/Inventory/components/AmountCon
 import AmountInput from '@/Pages/Merchant/Inventory/components/AmountInput.vue';
 // LAUNCH packaging add-on — "Used for" ticks per stock line.
 import OrderTypeTicks from '@/Pages/Merchant/Catalogue/OrderTypeTicks.vue';
+// LAUNCH costs & allergens add-on — the dish's target food cost % and its allergens.
+import AllergenChips from '@/Pages/Merchant/Catalogue/AllergenChips.vue';
+import AllergenTicks from '@/Pages/Merchant/Catalogue/AllergenTicks.vue';
+import { getCostSettings, saveProductAllergens } from '@/lib/api/costs';
+import { productAllergenPayload, sameAllergens } from '@/lib/allergens';
+import { baisasText, foodCostTone, pctText, targetPayload, targetProblem } from '@/lib/foodCost';
 import { ALL_ORDER_TYPES, costByType, localizedMessage, noTicks, ORDER_TYPE_BUCKETS, overlappingLines, readMask, recipeLineMask, recipeSavedFirst, recipeTicksShown as ticksShownFor } from '@/lib/orderTypes';
 
 const route = useRoute();
@@ -215,6 +221,8 @@ const form = reactive<{
     on_sale_from: string;
     on_sale_until: string;
     cooking_minutes: string;
+    /** LAUNCH costs & allergens add-on — '' = the company target. */
+    target_food_cost_percent: string;
     display_order: number;
     status: ProductStatus;
     stock_mode: string;
@@ -251,6 +259,7 @@ const form = reactive<{
     on_sale_from: '',
     on_sale_until: '',
     cooking_minutes: '',
+    target_food_cost_percent: '',
     display_order: 0,
     status: 'active',
     stock_mode: 'untracked',
@@ -270,6 +279,22 @@ const hasRecipeStep = computed(() => form.stock_mode === 'ingredient' || form.st
 // ---- LAUNCH review add-on — dates, cooking time, "Can be removed" ------
 const datesError = computed(() => (datesProblem(form.on_sale_from, form.on_sale_until) ? t('menu_extras.until_before_from') : null));
 const cookingError = computed(() => (cookingProblem(form.cooking_minutes) ? t('menu_extras.cooking_range') : null));
+
+// ---- LAUNCH costs & allergens add-on ----------------------------------
+// The target food cost % ('' = the company's), the saved dish's food cost
+// (shown to users who may see costs), and the allergen ticks: "contains"
+// the merchant adds (the worked-out ones are locked) and "may contain".
+const companyTarget = ref<string | null>(null);
+const targetError = computed(() => (targetProblem(form.target_food_cost_percent) ? t('costs.food_cost.target_invalid') : null));
+const savedFoodCost = computed(() => editTarget.value?.food_cost ?? null);
+const derivedAllergens = computed<string[]>(() => editTarget.value?.allergens?.derived ?? []);
+const ownContains = ref<string[]>([]);
+const ownMayContain = ref<string[]>([]);
+const allergensBaseline = ref<{ contains: string[]; may_contain: string[] }>({ contains: [], may_contain: [] });
+const allergensChanged = computed(() => {
+    const now = productAllergenPayload(derivedAllergens.value, ownContains.value, ownMayContain.value);
+    return !sameAllergens(now.contains, allergensBaseline.value.contains) || !sameAllergens(now.may_contain, allergensBaseline.value.may_contain);
+});
 /** Per ingredient uuid: ticked "Can be removed", with optional customer labels. */
 const removableTicks = ref<Record<string, RemovableDraft>>({});
 /** Tester call 16 — only a made-to-order product keeps a removed ingredient in stock. */
@@ -926,6 +951,7 @@ function validateStepOne(): boolean {
     // LAUNCH review add-on — "Until" on or after "From"; 0..240 minutes.
     if (datesError.value) missing.push(datesError.value);
     if (cookingError.value) missing.push(cookingError.value);
+    if (targetError.value) missing.push(targetError.value);
     stepOneErrors.value = missing;
     return missing.length === 0;
 }
@@ -1000,6 +1026,7 @@ function productPayload(): CreateProductPayload {
         on_sale_from: saleDay(form.on_sale_from),
         on_sale_until: saleDay(form.on_sale_until),
         cooking_minutes: cookingPayload(form.cooking_minutes),
+        target_food_cost_percent: targetPayload(form.target_food_cost_percent),
         stock_mode: form.stock_mode as 'unit' | 'ingredient' | 'untracked' | 'cooked',
         low_stock_threshold: isPieceCounted.value && form.low_stock_threshold !== '' ? form.low_stock_threshold : null,
         shelf_life_days: form.stock_mode === 'cooked' && form.shelf_life_days !== '' ? Number(form.shelf_life_days) : null,
@@ -1114,7 +1141,7 @@ async function submit(): Promise<void> {
     fieldErrors.value = {};
     try {
         if (!isEdit) {
-            await createProductWizard({
+            const created = await createProductWizard({
                 product: productPayload(),
                 addon_group_uuids: form.addon_group_uuids,
                 owned_groups: ownedGroupsPayload(),
@@ -1129,6 +1156,10 @@ async function submit(): Promise<void> {
                 // (only lines of the recipe sent with it).
                 removable: canEditRecipes.value && hasRecipeStep.value ? removablePayload(recipePayload(), removableTicks.value) : [],
             });
+            // LAUNCH costs & allergens add-on — the ticks, once the product exists.
+            if (ownContains.value.length > 0 || ownMayContain.value.length > 0) {
+                await saveProductAllergens(created.data.uuid, productAllergenPayload([], ownContains.value, ownMayContain.value));
+            }
         } else if (readOnly.value) {
             // Fix order 1, L8 — a recipe-only role (Edit recipes + catalogue
             // view) saves the recipe and nothing else of the product.
@@ -1176,6 +1207,10 @@ async function submit(): Promise<void> {
                 const value = String(row.price ?? '').trim();
                 await setProductDeliveryPrice(uuid, provider.uuid, { listed: row.listed, price: value === '' ? null : value });
             }
+            // LAUNCH costs & allergens add-on — the allergen ticks, when changed.
+            if (allergensChanged.value) {
+                await saveProductAllergens(uuid, productAllergenPayload(derivedAllergens.value, ownContains.value, ownMayContain.value));
+            }
         }
 
         leavingAfterSave.value = true;
@@ -1208,6 +1243,8 @@ async function submit(): Promise<void> {
 async function loadReferenceData(): Promise<void> {
     // Soft-fail the optional pickers exactly like the old modal did.
     await Promise.all([
+        // LAUNCH costs & allergens add-on — the company target (placeholder).
+        getCostSettings().then((r) => { companyTarget.value = r.data.target_food_cost_percent; }).catch(() => { companyTarget.value = null; }),
         listCategories().then((r) => { categories.value = r.data; }).catch(() => { categories.value = []; }),
         listAddOnGroups().then((r) => { addOnGroups.value = r.data; }).catch(() => { addOnGroups.value = []; }),
         // LAUNCH-P3 P3-4 — prep items are picked like ingredients.
@@ -1242,6 +1279,10 @@ function prefillFromProduct(product: Product): void {
     form.on_sale_from = product.on_sale_from ?? '';
     form.on_sale_until = product.on_sale_until ?? '';
     form.cooking_minutes = product.cooking_minutes != null ? String(product.cooking_minutes) : '';
+    form.target_food_cost_percent = product.target_food_cost_percent ?? '';
+    ownContains.value = [...(product.allergens?.own_contains ?? [])];
+    ownMayContain.value = [...(product.allergens?.own_may_contain ?? [])];
+    allergensBaseline.value = { contains: [...ownContains.value], may_contain: [...ownMayContain.value] };
     form.display_order = product.display_order;
     form.status = (product.status ?? 'active') as ProductStatus;
     form.stock_mode = product.stock_mode ?? 'untracked';
@@ -1581,6 +1622,24 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                     <span class="text-sm font-medium text-slate-700">{{ t('catalogue.fields.cost_price') }} (OMR)</span>
                                     <input v-model="form.cost_price" type="number" step="0.001" min="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100">
                                 </label>
+                            </div>
+                            <!-- LAUNCH costs & allergens add-on — the dish's own target (blank =
+                                 the company's) and its food cost against it, as saved. -->
+                            <div class="grid gap-3 sm:grid-cols-2" data-test="product-food-cost">
+                                <label class="block">
+                                    <span class="text-sm font-medium text-slate-700">{{ t('costs.food_cost.target_label') }}</span>
+                                    <input v-model="form.target_food_cost_percent" type="number" step="0.01" min="0.01" max="100" :placeholder="companyTarget ? t('costs.food_cost.target_placeholder', { target: Number(companyTarget) }) : ''" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100" data-test="product-target-food-cost">
+                                    <span class="mt-1 block text-xs text-slate-500">{{ t('costs.food_cost.target_hint') }}</span>
+                                    <span v-if="targetError || fieldError('target_food_cost_percent')" class="mt-1 block text-xs font-semibold text-rose-600">{{ targetError ?? fieldError('target_food_cost_percent') }}</span>
+                                </label>
+                                <div v-if="savedFoodCost" class="rounded-lg border px-3 py-2" :class="foodCostTone(savedFoodCost) === 'over' ? 'border-rose-200 bg-rose-50' : 'border-slate-200 bg-slate-50'" data-test="product-food-cost-now">
+                                    <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('costs.food_cost.label') }}</p>
+                                    <p v-if="savedFoodCost.status === 'ok'" class="text-sm font-semibold tabular-nums" :class="foodCostTone(savedFoodCost) === 'over' ? 'text-rose-700' : 'text-slate-900'">
+                                        {{ baisasText(savedFoodCost.cost_baisas) }} OMR · {{ t('costs.food_cost.summary', { pct: pctText(savedFoodCost.food_cost_pct), target: pctText(savedFoodCost.target_pct) }) }}
+                                        <span v-if="savedFoodCost.over_target" class="ms-1 rounded bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white" data-test="product-over-target">{{ t('costs.food_cost.over_target') }}</span>
+                                    </p>
+                                    <p v-else class="text-sm italic text-slate-500">{{ t(`costs.food_cost.${savedFoodCost.status}`) }}</p>
+                                </div>
                             </div>
                             <p class="text-xs text-slate-500" data-test="vat-hint">{{ t('tax_settings.product_hint') }}</p>
                         </section>
@@ -2113,6 +2172,24 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
 
                         <!-- LAUNCH-P4 H6/H7 — the branch rule moved to step 1
                              (Channels); shelf counts are never edited here. -->
+
+                        <!-- LAUNCH costs & allergens add-on — worked out from the recipe,
+                             prep items and components (locked); the merchant adds
+                             "contains" the recipe does not show and "may contain". -->
+                        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-test="product-allergens">
+                            <h2 class="text-sm font-semibold text-slate-900">{{ t('allergens.title') }}</h2>
+                            <div v-if="isEdit" class="mt-2" data-test="product-allergens-derived">
+                                <p class="text-xs font-semibold text-slate-600">{{ t('allergens.worked_out') }}</p>
+                                <AllergenChips :contains="derivedAllergens" />
+                                <p class="mt-1 text-xs text-slate-500">{{ t('allergens.worked_out_hint') }}</p>
+                            </div>
+                            <p class="mt-3 text-xs font-semibold text-slate-600">{{ t('allergens.contains') }}</p>
+                            <p class="mb-1 text-xs text-slate-500">{{ t('allergens.own_contains_hint') }}</p>
+                            <AllergenTicks v-model="ownContains" :locked="derivedAllergens" :disabled="!canManage" test-id="product-contains-ticks" />
+                            <p class="mt-3 text-xs font-semibold text-slate-600">{{ t('allergens.may_contain') }}</p>
+                            <p class="mb-1 text-xs text-slate-500">{{ t('allergens.may_contain_hint') }}</p>
+                            <AllergenTicks v-model="ownMayContain" :hidden="[...derivedAllergens, ...ownContains]" :disabled="!canManage" test-id="product-may-contain-ticks" />
+                        </section>
                     </template>
 
                     <!-- ============ STEP 3 — REVIEW ============ -->

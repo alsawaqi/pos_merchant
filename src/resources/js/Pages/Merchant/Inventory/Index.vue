@@ -63,6 +63,11 @@ import BarcodeChips from './components/BarcodeChips.vue';
 import ContainerRows, { type ContainerRowDraft } from './components/ContainerRows.vue';
 import ContainersEditor, { type ContainerDraft } from './components/ContainersEditor.vue';
 import PacksEditor from './components/PacksEditor.vue';
+// LAUNCH costs & allergens add-on — allergen ticks and the price history.
+import AllergenTicks from '@/Pages/Merchant/Catalogue/AllergenTicks.vue';
+import IngredientPriceHistory from './IngredientPriceHistory.vue';
+import { saveIngredientAllergens, saveProductAllergens } from '@/lib/api/costs';
+import { sameAllergens } from '@/lib/allergens';
 import ScanBox from './components/ScanBox.vue';
 import StockBreakdown from './components/StockBreakdown.vue';
 import { useAmountConfirm } from '@/composables/useAmountConfirm';
@@ -292,6 +297,13 @@ const ingModalOpen = ref(false);
 const ingModalBusy = ref(false);
 const ingModalMode = ref<'create' | 'edit'>('create');
 const ingModalTarget = ref<Ingredient | null>(null);
+// LAUNCH costs & allergens add-on — the ingredient page's tabs and allergen
+// ticks (saved after the item, only when they changed); a physical item's too.
+const ingTab = ref<'details' | 'history'>('details');
+const ingAllergens = ref<string[]>([]);
+const ingAllergensBaseline = ref<string[]>([]);
+const physicalAllergens = ref<string[]>([]);
+const physicalAllergensBaseline = ref<string[]>([]);
 const ingModalErrors = ref<Record<string, string[]>>({});
 const ingModalError = ref<string | null>(null);
 // LAUNCH review add-on — A1: no cost field (the cost comes from purchases);
@@ -802,6 +814,8 @@ function openCreatePhysicalItem(): void {
     physicalItemForm.sku = '';
     physicalItemModalErrors.value = {};
     physicalItemModalError.value = null;
+    physicalAllergens.value = [];
+    physicalAllergensBaseline.value = [];
     physicalItemModalOpen.value = true;
 }
 
@@ -817,6 +831,8 @@ function openEditPhysicalItem(item: PhysicalItem): void {
     physicalItemForm.sku = item.sku ?? '';
     physicalItemModalErrors.value = {};
     physicalItemModalError.value = null;
+    physicalAllergens.value = [...(item.allergens ?? [])];
+    physicalAllergensBaseline.value = [...(item.allergens ?? [])];
     physicalItemModalOpen.value = true;
 }
 
@@ -837,11 +853,17 @@ async function submitPhysicalItem(): Promise<void> {
         if (physicalItemModalMode.value === 'create') {
             // D3 — packs are added once the item is saved: reopen it for them.
             const created = await createPhysicalItem(payload);
+            if (physicalAllergens.value.length > 0) {
+                await saveProductAllergens(created.data.uuid, { contains: physicalAllergens.value, may_contain: [] });
+            }
             await fetchPhysicalItems();
             openEditPhysicalItem(physicalItems.value.find((i) => i.uuid === created.data.uuid) ?? created.data);
             return;
         } else if (physicalItemModalTarget.value) {
             await updatePhysicalItem(physicalItemModalTarget.value.uuid, { ...payload, status: physicalItemForm.status });
+            if (!sameAllergens(physicalAllergens.value, physicalAllergensBaseline.value)) {
+                await saveProductAllergens(physicalItemModalTarget.value.uuid, { contains: physicalAllergens.value, may_contain: [] });
+            }
         }
         physicalItemModalOpen.value = false;
         await fetchPhysicalItems();
@@ -1127,6 +1149,9 @@ function openCreateIngredient(): void {
     ingBarcodeDrafts.value = [];
     ingBarcodeError.value = null;
     ingBarcodeConflict.value = null;
+    ingTab.value = 'details';
+    ingAllergens.value = [];
+    ingAllergensBaseline.value = [];
     ingModalOpen.value = true;
 }
 
@@ -1150,6 +1175,9 @@ function openEditIngredient(ingredient: Ingredient): void {
     ingBarcodeDrafts.value = [];
     ingBarcodeError.value = null;
     ingBarcodeConflict.value = null;
+    ingTab.value = 'details';
+    ingAllergens.value = [...(ingredient.allergens ?? [])];
+    ingAllergensBaseline.value = [...(ingredient.allergens ?? [])];
     ingModalOpen.value = true;
 }
 
@@ -1199,6 +1227,11 @@ async function submitIngredient(): Promise<void> {
                 ...payload,
                 status: ingForm.status,
             })).data;
+        }
+        // LAUNCH costs & allergens add-on — the allergen ticks, when changed.
+        if (saved && !sameAllergens(ingAllergens.value, ingAllergensBaseline.value)) {
+            const allergens = (await saveIngredientAllergens(saved.uuid, ingAllergens.value)).data;
+            saved = { ...saved, allergens: allergens.allergens, allergens_all: allergens.allergens_all };
         }
         ingModalOpen.value = false;
         // Fix order B-2 (item 6) — the saved item shows at once (and counts), then the list is re-read.
@@ -3648,7 +3681,13 @@ async function submitSuggestions(): Promise<void> {
             :loading="ingModalBusy"
             @close="ingModalOpen = false"
         >
-                <form id="ing-modal-form" class="space-y-4" @submit.prevent="submitIngredient">
+                <!-- LAUNCH costs & allergens add-on — Details | Price history. -->
+                <div v-if="ingModalMode === 'edit' && ingModalTarget" class="mb-4 flex gap-2" data-test="ing-tabs">
+                    <button type="button" class="rounded-lg px-3 py-1.5 text-xs font-semibold transition" :class="ingTab === 'details' ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'" data-test="ing-tab-details" @click="ingTab = 'details'">{{ t('costs.history.tab_details') }}</button>
+                    <button type="button" class="rounded-lg px-3 py-1.5 text-xs font-semibold transition" :class="ingTab === 'history' ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'" data-test="ing-tab-history" @click="ingTab = 'history'">{{ t('costs.history.tab') }}</button>
+                </div>
+                <IngredientPriceHistory v-if="ingTab === 'history' && ingModalTarget" :ingredient-uuid="ingModalTarget.uuid" />
+                <form v-show="ingTab === 'details'" id="ing-modal-form" class="space-y-4" @submit.prevent="submitIngredient">
                     <div v-if="ingModalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
                         {{ ingModalError }}
                     </div>
@@ -3749,6 +3788,13 @@ async function submitSuggestions(): Promise<void> {
                             <option value="inactive">{{ t('inventory.statuses.inactive') }}</option>
                         </select>
                     </label>
+
+                    <!-- LAUNCH costs & allergens add-on — what the item contains. -->
+                    <fieldset data-test="ingredient-allergens">
+                        <legend class="text-sm font-medium text-slate-700">{{ t('allergens.title') }}</legend>
+                        <p class="mb-2 text-xs text-slate-500">{{ t('allergens.ingredient_hint') }}</p>
+                        <AllergenTicks v-model="ingAllergens" :disabled="!canManage" test-id="ingredient-allergen-ticks" />
+                    </fieldset>
 
                     <!-- A2 / A3 — "Containers — how do you buy it?": the same word in
                          different sizes, nested ("crate holds 12 × bottle 1 l"), one
@@ -4914,6 +4960,12 @@ async function submitSuggestions(): Promise<void> {
                         <option value="inactive">{{ t('catalogue.statuses.inactive') }}</option>
                     </select>
                 </label>
+                <!-- LAUNCH costs & allergens add-on — what it contains, if anything. -->
+                <fieldset data-test="physical-allergens">
+                    <legend class="text-sm font-medium text-slate-700">{{ t('allergens.title') }}</legend>
+                    <p class="mb-2 text-xs text-slate-500">{{ t('allergens.physical_hint') }}</p>
+                    <AllergenTicks v-model="physicalAllergens" :disabled="!canManage" test-id="physical-allergen-ticks" />
+                </fieldset>
                 <!-- D3 — packs ("box holds 50 cups") with barcodes per pack and per piece. -->
                 <PacksEditor
                     :item-uuid="physicalItemModalMode === 'edit' ? (physicalItemModalTarget?.uuid ?? null) : null"

@@ -41,6 +41,9 @@ export interface PrepItem {
     /** What one batch makes, in the prep item's own unit. */
     prep_yield_quantity: string;
     status: string;
+    /** LAUNCH costs & allergens add-on — ticked on the prep item, and with its recipe's (every level). */
+    allergens?: string[];
+    allergens_all?: string[];
     /** Live cost per base unit (6 decimals) and per batch. */
     unit_cost: string;
     batch_cost: string;

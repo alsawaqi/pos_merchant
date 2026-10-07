@@ -10,6 +10,7 @@
  */
 
 import { apiGet, apiPost, type JsonValue } from '@/lib/api';
+import type { PriceAlert } from '@/lib/api/costs';
 
 // ---- Domain types -----------------------------------------------
 
@@ -71,6 +72,8 @@ export interface PurchaseReceiptPayment {
 }
 
 export interface PurchaseReceipt {
+    /** LAUNCH costs & allergens add-on — the price alerts of this delivery (store / show). */
+    price_alerts?: PriceAlert[];
     uuid: string;
     reference: string | null;
     status: string;

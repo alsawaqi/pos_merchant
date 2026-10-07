@@ -5,14 +5,15 @@ declare(strict_types=1);
 namespace App\Actions\Pos\Catalogue;
 
 use App\Actions\Security\WriteAuditLogAction;
+use App\Data\Security\AuditLogData;
 use App\Exceptions\CookedRecipeSplitLinesException;
 use App\Exceptions\LocalizedException;
-use App\Data\Security\AuditLogData;
 use App\Models\Ingredient;
 use App\Models\Product;
 use App\Models\ProductRecipe;
 use App\Models\ProductRecipeVersion;
 use App\Models\User;
+use App\Support\Catalogue\AllergenSync;
 use App\Support\Catalogue\OrderTypes;
 use App\Support\MerchantTenantContext;
 use App\Support\Recipes\ExplodedPrecision;
@@ -227,6 +228,9 @@ final readonly class UpdateProductRecipeAction
             // gating availability on the stale recipe until their next full
             // sync.
             $product->touch();
+            // LAUNCH costs & allergens add-on — the recipe decides the dish's
+            // allergens: what uses this product moves too.
+            AllergenSync::touch((int) $product->company_id, productIds: [(int) $product->id]);
 
             // LAUNCH review add-on — a deleted recipe line can no longer be
             // removed: retire its "NO …" option (the others stay).

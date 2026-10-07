@@ -11,6 +11,7 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { fetchRecipeCostReport, type RecipeCostReportPayload } from '@/lib/api/reports';
 import { ORDER_TYPE_BUCKETS, type OrderTypeBucket } from '@/lib/orderTypes';
+import { pctText } from '@/lib/foodCost';
 import ReportShell from './components/ReportShell.vue';
 import ReportChart from './components/ReportChart.vue';
 import { useReportRunner } from './components/useReportRunner';
@@ -82,6 +83,10 @@ type ApexSeries = { name: string; data: number[] }[];
                             <th class="px-5 py-2 text-end">{{ t('reports.recipe_cost.columns.theoretical_cost') }}</th>
                             <th class="px-5 py-2 text-end">{{ t('reports.recipe_cost.columns.profit_per_unit') }}</th>
                             <th class="px-5 py-2 text-end">{{ t('reports.recipe_cost.columns.margin_pct') }}</th>
+                            <!-- LAUNCH costs & allergens add-on — food cost % (price excl. VAT), Target, Over by. -->
+                            <th class="px-5 py-2 text-end">{{ t('costs.report.food_cost') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('costs.report.target') }}</th>
+                            <th class="px-5 py-2 text-end">{{ t('costs.report.over_by') }}</th>
                             <th class="px-5 py-2 text-end">{{ t('reports.recipe_cost.columns.units_sold') }}</th>
                             <th class="px-5 py-2 text-end">{{ t('reports.recipe_cost.columns.actual_cost_per_unit') }}</th>
                             <th class="px-5 py-2 text-end">{{ t('reports.recipe_cost.columns.cost_change_per_unit') }}</th>
@@ -99,6 +104,12 @@ type ApexSeries = { name: string; data: number[] }[];
                             </td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.profit_per_unit }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.margin_pct }}%</td>
+                            <td class="px-5 py-2 text-end tabular-nums" :class="r.over_target ? 'font-semibold text-rose-700' : ''" data-test="recipe-cost-food-cost">{{ pctText(r.food_cost_pct) ?? '—' }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums text-slate-600" data-test="recipe-cost-target">{{ pctText(r.target_pct) ?? '—' }}</td>
+                            <td class="px-5 py-2 text-end tabular-nums" data-test="recipe-cost-over-by">
+                                <span v-if="r.over_target" class="rounded bg-rose-100 px-1.5 py-0.5 font-semibold text-rose-700">+{{ pctText(r.over_by_pct) }}</span>
+                                <span v-else class="text-slate-400">—</span>
+                            </td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.units_sold }}</td>
                             <td class="px-5 py-2 text-end tabular-nums">{{ r.actual_cost_per_unit ?? '—' }}</td>
                             <td class="px-5 py-2 text-end tabular-nums" :class="changeClass(r.cost_change_per_unit)">{{ r.cost_change_per_unit ?? '—' }}</td>

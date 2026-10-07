@@ -93,6 +93,9 @@ use Illuminate\Support\Str;
     'on_sale_from',
     'on_sale_until',
     'cooking_minutes',
+    // LAUNCH costs & allergens add-on — the dish's own target food cost %
+    // (NULL = the company target).
+    'target_food_cost_percent',
 ])]
 class Product extends Model
 {
@@ -127,6 +130,7 @@ class Product extends Model
             // LAUNCH review add-on. The two dates stay plain 'YYYY-MM-DD'
             // strings (no date cast: they are calendar days, not instants).
             'cooking_minutes' => 'integer',
+            'target_food_cost_percent' => 'decimal:2',
         ];
     }
 

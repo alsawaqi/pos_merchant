@@ -10,6 +10,8 @@
  */
 
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut, apiUpload, type JsonValue } from '@/lib/api';
+import type { ProductAllergens } from '@/lib/allergens';
+import type { FoodCostRow } from '@/lib/foodCost';
 
 // ---- LAUNCH-P4 B5 — photo upload ---------------------------------
 
@@ -144,6 +146,12 @@ export interface Product {
      * snapshot historical cost separately.
      */
     theoretical_cost: string;
+    /** LAUNCH costs & allergens add-on — the dish's own target food cost % ("28.50"), null = the company target. */
+    target_food_cost_percent?: string | null;
+    /** Its food cost against the target; null for a user who may not see costs. */
+    food_cost?: FoodCostRow | null;
+    /** Contains / may contain, the worked-out ones (locked) and the ticks set by hand. */
+    allergens?: ProductAllergens;
     /** Phase 5b — recipe lines when eager-loaded by the controller. */
     recipe_lines?: ProductRecipeLine[];
     /** Phase B — per-branch availability + unit stock when eager-loaded. */
@@ -419,6 +427,8 @@ export interface CreateProductPayload {
     on_sale_from?: string | null;
     on_sale_until?: string | null;
     cooking_minutes?: number | null;
+    /** LAUNCH costs & allergens add-on — the dish's own target food cost % (null = the company target). */
+    target_food_cost_percent?: string | null;
     display_order?: number;
 }
 
@@ -458,6 +468,8 @@ export interface UpdateProductPayload {
     on_sale_from?: string | null;
     on_sale_until?: string | null;
     cooking_minutes?: number | null;
+    /** LAUNCH costs & allergens add-on — the dish's own target food cost % (null = the company target). */
+    target_food_cost_percent?: string | null;
     display_order?: number;
     status?: ProductStatus;
 }
@@ -562,6 +574,8 @@ export interface ListProductsParams {
     page?: number;
     /** Default 50 server-side, clamped 1–200. */
     per_page?: number;
+    /** LAUNCH costs & allergens add-on — only the dishes over their target food cost % (needs reports.view). */
+    food_cost_over?: boolean;
     /** LAUNCH-P4 B4 — only items sold out at one of the user's branches. */
     sold_out?: boolean;
 }
@@ -574,6 +588,7 @@ export function listProducts(params: ListProductsParams = {}): Promise<Paginated
             page: params.page,
             per_page: params.per_page,
             sold_out: params.sold_out ? 1 : undefined,
+            food_cost: params.food_cost_over ? 'over' : undefined,
         },
     });
 }
@@ -893,6 +908,8 @@ export interface SaveComboPayload {
     on_sale_from?: string | null;
     on_sale_until?: string | null;
     cooking_minutes?: number | null;
+    /** LAUNCH costs & allergens add-on — the dish's own target food cost % (null = the company target). */
+    target_food_cost_percent?: string | null;
     display_order?: number;
     status?: ProductStatus;
     lines: ComboLinePayload[];

@@ -486,7 +486,8 @@
         "dine_in_round_mode": "Dine-in QR round handling",
         "qr_table_cards": "QR table cards",
         "profile": "My Profile",
-        "staff_permissions": "Staff permissions"
+        "staff_permissions": "Staff permissions",
+        "costs": "Costs"
     },
     "purchase_tax": {
         "label": "Tax paid",
@@ -4259,6 +4260,138 @@
             "sales_packaging": "The cost of goods includes {amount} OMR of per-order packaging, counted once per order.",
             "performance_note": "Per-order packaging belongs to the whole order, not to a product: it is in the Sales report's cost of goods, not here.",
             "recipe_cost_note": "A recipe with lines for some order types only shows its cost per order type. The theoretical cost is the dearest type, and the cost change compares the actual cost with the same mix of order types. Per-order packaging is never part of a recipe."
+        }
+    },
+    "allergens": {
+        "title": "Allergens",
+        "codes": {
+            "gluten": "Gluten",
+            "crustaceans": "Crustaceans",
+            "eggs": "Eggs",
+            "fish": "Fish",
+            "peanuts": "Peanuts",
+            "soy": "Soy",
+            "milk": "Milk",
+            "tree_nuts": "Tree nuts",
+            "celery": "Celery",
+            "mustard": "Mustard",
+            "sesame": "Sesame",
+            "sulphites": "Sulphites",
+            "lupin": "Lupin",
+            "molluscs": "Molluscs"
+        },
+        "ingredient_hint": "Tick what this item contains. Every dish that uses it shows these allergens.",
+        "prep_hint": "Tick what this prep item adds itself. What its recipe brings is added automatically.",
+        "physical_hint": "Tick what this item contains, if anything (for example a topping or a sauce sachet).",
+        "from_recipe": "From its recipe:",
+        "contains": "Contains",
+        "may_contain": "May contain",
+        "worked_out": "Worked out from the recipe and items",
+        "worked_out_hint": "These come from the ingredients and cannot be removed here. Change them on the ingredient or prep item.",
+        "own_contains_hint": "Add an allergen the recipe does not show (for example on a bought-in item).",
+        "may_contain_hint": "Traces, for example when it is made in a kitchen that uses nuts.",
+        "combo_hint": "A combo shows the allergens of all its items, including every choice and upgrade.",
+        "save_after_create": "Save the product first, then set its allergens.",
+        "none": "No allergens",
+        "locked": "From the ingredients",
+        "save_failed": "The allergens could not be saved.",
+        "load_failed": "The allergens could not be loaded."
+    },
+    "costs": {
+        "title": "Costs",
+        "subtitle": "Price changes from your suppliers and how they move your dishes' food cost.",
+        "tabs": {
+            "alerts": "Price alerts",
+            "dishes": "Dishes over target",
+            "settings": "Settings"
+        },
+        "alerts": {
+            "intro": "A purchase whose price per unit moved by {threshold}% or more from the previous purchase of the same item (any supplier).",
+            "empty": "No price alerts in the last {days} days.",
+            "ingredient": "Ingredient",
+            "old": "Old price",
+            "new": "New price",
+            "change": "Change",
+            "supplier": "Supplier",
+            "no_supplier": "No supplier",
+            "date": "Date",
+            "dishes": "Dishes affected",
+            "no_dishes": "No dish uses it.",
+            "dish_line": "{name}: {cost} OMR, {pct} (target {target})",
+            "crossed": "Now over target",
+            "over": "Over target",
+            "per_unit": "per {unit}",
+            "mark_seen": "Mark as seen",
+            "seen": "Seen",
+            "seen_by": "Seen by {name}",
+            "show_seen": "Show seen alerts",
+            "mark_failed": "The alert could not be marked as seen.",
+            "load_failed": "The price alerts could not be loaded.",
+            "on_receipt_title": "Price alerts on this delivery",
+            "on_receipt_hint": "These prices moved by {threshold}% or more from the previous purchase.",
+            "open_list": "All price alerts"
+        },
+        "dishes": {
+            "empty": "No dish is over its target.",
+            "dish": "Dish",
+            "cost": "Cost",
+            "price": "Price excl. VAT",
+            "food_cost": "Food cost",
+            "target": "Target",
+            "over_by": "Over by",
+            "show_all": "Show all dishes",
+            "meal": "Meal",
+            "combo": "Combo",
+            "partial": "Some ingredients have no cost yet.",
+            "load_failed": "The food costs could not be loaded."
+        },
+        "settings": {
+            "threshold": "Price alert threshold (%)",
+            "threshold_hint": "Alert when a purchase price moves by at least this much from the previous purchase.",
+            "target": "Target food cost (%)",
+            "target_hint": "The company target. Each dish may set its own on its page.",
+            "save": "Save",
+            "saved": "Saved.",
+            "save_failed": "The settings could not be saved."
+        },
+        "food_cost": {
+            "label": "Food cost",
+            "no_recipe": "No recipe",
+            "no_price": "No price",
+            "over_target": "Over target",
+            "within_target": "Within target",
+            "target_label": "Target food cost (%)",
+            "target_placeholder": "Company target ({target}%)",
+            "target_hint": "Leave blank to use the company target.",
+            "target_invalid": "Enter a number above 0 and up to 100.",
+            "summary": "{pct} of the price excl. VAT, target {target}",
+            "filter_over": "Over target only",
+            "clear_filter": "Show all products"
+        },
+        "dashboard": {
+            "price_alerts_title": "Price alerts (last 30 days)",
+            "price_alerts_unseen": "{count} not seen yet",
+            "dishes_title": "Dishes over target",
+            "dishes_hint": "Target {target}%, {costed} dishes costed",
+            "open": "Open"
+        },
+        "history": {
+            "tab_details": "Details",
+            "tab": "Price history",
+            "empty": "No priced purchases yet.",
+            "date": "Date",
+            "supplier": "Supplier",
+            "bought_as": "Bought as",
+            "unit_cost": "Price per {unit}",
+            "change": "Change",
+            "first": "First purchase",
+            "alert": "Alert",
+            "load_failed": "The price history could not be loaded."
+        },
+        "report": {
+            "food_cost": "Food cost %",
+            "target": "Target",
+            "over_by": "Over by"
         }
     },
     "meals": {

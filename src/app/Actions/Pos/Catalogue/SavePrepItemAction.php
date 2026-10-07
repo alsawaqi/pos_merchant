@@ -10,6 +10,7 @@ use App\Enums\IngredientUnit;
 use App\Models\Ingredient;
 use App\Models\IngredientRecipe;
 use App\Models\User;
+use App\Support\Catalogue\AllergenSync;
 use App\Support\MerchantTenantContext;
 use App\Support\Recipes\ExplodedPrecision;
 use App\Support\Recipes\PrepGraph;
@@ -248,6 +249,9 @@ final readonly class SavePrepItemAction
                 // Delta visibility for the devices: everything that explodes
                 // through this prep item now explodes differently.
                 PrepUsage::touchDependents($prep);
+                // LAUNCH costs & allergens add-on — and whatever uses those
+                // products (components, add-on options), for the allergens.
+                AllergenSync::touch($companyId, ingredientIds: [(int) $prep->id]);
             }
 
             return $prep;

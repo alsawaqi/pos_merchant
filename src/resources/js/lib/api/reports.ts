@@ -276,6 +276,13 @@ export interface RecipeCostReportPayload {
         revenue: string;
         actual_cost_per_unit: string | null;
         cost_change_per_unit: string | null;
+        /** LAUNCH costs & allergens add-on — the price excl. VAT and the food cost % vs the target ("Target", "Over by"). */
+        net_price?: string | null;
+        food_cost_pct?: number | null;
+        target_pct?: number | null;
+        target_source?: 'product' | 'company' | null;
+        over_target?: boolean;
+        over_by_pct?: number | null;
     }[];
 }
 

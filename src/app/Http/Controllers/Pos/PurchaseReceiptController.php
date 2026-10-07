@@ -20,6 +20,8 @@ use App\Models\Product;
 use App\Models\PurchaseReceipt;
 use App\Models\Supplier;
 use App\Support\BranchScope;
+use App\Support\Costs\PriceAlerts;
+use App\Support\Costs\PriceHistory;
 use App\Support\MerchantTenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -163,18 +165,38 @@ class PurchaseReceiptController extends Controller
         return response()->json([
             'data' => (new PurchaseReceiptResource(
                 $receipt->load(['lines', 'charges', 'supplier', 'recordedByUser', 'destinationBranch'])
-            ))->resolve($request),
+            ))->resolve($request) + ['price_alerts' => $this->priceAlerts($request, $receipt)],
         ], 201);
     }
 
-    public function show(Request $request, PurchaseReceipt $receipt): PurchaseReceiptResource
+    public function show(Request $request, PurchaseReceipt $receipt): JsonResponse
     {
         $this->ensure($request, MerchantPermission::InventoryView);
         $this->refuseIfNotInTenant($receipt);
 
         $receipt->load(['lines', 'charges', 'supplier', 'recordedByUser', 'destinationBranch', 'payments.recordedByUser']);
 
-        return PurchaseReceiptResource::make($receipt);
+        return response()->json([
+            'data' => (new PurchaseReceiptResource($receipt))->resolve($request) + ['price_alerts' => $this->priceAlerts($request, $receipt)],
+        ]);
+    }
+
+    /**
+     * LAUNCH costs & allergens add-on (tester call 1) — the purchase
+     * confirmation's price alerts: this receipt's ingredient lines whose
+     * price per base unit moved by at least the threshold from the previous
+     * purchase ({@see PriceAlerts}); the dishes affected only for a user who
+     * may see costs (reports.view).
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function priceAlerts(Request $request, PurchaseReceipt $receipt): array
+    {
+        $companyId = (int) $receipt->company_id;
+        $lineIds = $receipt->lines->pluck('id')->map(static fn ($id): int => (int) $id)->all();
+        $rows = PriceHistory::alerts($companyId, now(), lineIds: $lineIds);
+
+        return PriceAlerts::present($companyId, $rows, withDishes: (bool) $request->user()?->can(MerchantPermission::ReportsView->value));
     }
 
     /**

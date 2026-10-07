@@ -10,6 +10,7 @@ use App\Data\Reports\ReportFilter;
 use App\Enums\OrderStatus;
 use App\Models\Product;
 use App\Support\Catalogue\OrderTypes;
+use App\Support\Costs\FoodCost;
 use App\Support\MerchantTenantContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
@@ -76,8 +77,11 @@ final readonly class RecipeCostReportAction
             ->filter(static fn (Product $p): bool => $p->recipeLines->isNotEmpty());
 
         $sold = $this->sold($companyId, $filter, $branchScope, $products->modelKeys());
+        // LAUNCH costs & allergens add-on — the dish's food cost % against
+        // its target ({@see FoodCost}: today's recipe ÷ the price excluding VAT).
+        $food = FoodCost::forCompany($companyId);
 
-        $rows = $products->map(static function (Product $p) use ($sold): array {
+        $rows = $products->map(static function (Product $p) use ($sold, $food): array {
             $byType = null;
             // Fix order PK-B1 — a cooked batch uses every line whatever the
             // ticks: only a made-to-order recipe costs per order type.
@@ -125,7 +129,7 @@ final readonly class RecipeCostReportAction
                 'revenue' => $line !== null ? (string) BigDecimal::of($line['revenue'])->toScale(3, RoundingMode::HALF_UP) : '0.000',
                 'actual_cost_per_unit' => $actual !== null ? (string) $actual : null,
                 'cost_change_per_unit' => $actual !== null ? (string) $actual->minus($compareWith)->toScale(3, RoundingMode::HALF_UP) : null,
-            ];
+            ] + self::foodCostColumns($food->product((int) $p->id));
         })->sortByDesc(static fn (array $r): float => $r['margin_pct'])
             ->values()
             ->all();
@@ -138,6 +142,31 @@ final readonly class RecipeCostReportAction
                 'branch_ids' => $branchScope,
             ],
             'rows' => $rows,
+        ];
+    }
+
+    /**
+     * LAUNCH costs & allergens add-on — the report's "Target" and "Over by"
+     * columns:
+     *   net_price      the in-store price excluding VAT (3 dp)
+     *   food_cost_pct  theoretical cost ÷ net price × 100 (1 dp), null when
+     *                  the price is 0
+     *   target_pct     the product's own target, else the company's
+     *   over_target    over the target; over_by_pct = the % minus the
+     *                  target in points (null when not over)
+     *
+     * @param  array<string, mixed>|null  $row
+     * @return array<string, mixed>
+     */
+    private static function foodCostColumns(?array $row): array
+    {
+        return [
+            'net_price' => $row !== null ? (string) BigDecimal::of($row['net_price_baisas'])->dividedBy(1000, 3) : null,
+            'food_cost_pct' => $row['food_cost_pct'] ?? null,
+            'target_pct' => $row['target_pct'] ?? null,
+            'target_source' => $row['target_source'] ?? null,
+            'over_target' => (bool) ($row['over_target'] ?? false),
+            'over_by_pct' => $row['over_by_pct'] ?? null,
         ];
     }
 

@@ -120,6 +120,9 @@ export interface Ingredient {
     name: string;
     name_ar: string | null;
     unit: IngredientUnit;
+    /** LAUNCH costs & allergens add-on — the allergens ticked on it (a prep item: + its recipe's in allergens_all). */
+    allergens?: string[];
+    allergens_all?: string[];
     /** LAUNCH item kind — weighed / liquid / counted, read from the stored unit. */
     kind?: ItemKind;
     /** LAUNCH item kind, A2 — the kind can no longer change (stock, movements or recipe use). */

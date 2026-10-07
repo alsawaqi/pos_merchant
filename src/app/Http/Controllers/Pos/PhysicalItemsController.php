@@ -13,6 +13,7 @@ use App\Http\Requests\Pos\Inventory\CreatePhysicalItemRequest;
 use App\Http\Requests\Pos\Inventory\UpdatePhysicalItemRequest;
 use App\Models\ItemBarcode;
 use App\Models\Product;
+use App\Support\Catalogue\AllergenSync;
 use App\Support\Inventory\ItemCodes;
 use App\Support\Inventory\Packs;
 use App\Support\MerchantTenantContext;
@@ -248,6 +249,8 @@ class PhysicalItemsController extends Controller
             'low_stock_threshold' => $item->low_stock_threshold !== null ? (string) $item->low_stock_threshold : null,
             'status' => $item->status,
             'central_quantity' => number_format((float) ($item->getAttribute('central_quantity') ?? 0), 3, '.', ''),
+            // LAUNCH costs & allergens add-on — what the item contains (ticked).
+            'allergens' => AllergenSync::graph((int) $item->company_id)->ownProduct((int) $item->id)['contains'],
         ];
     }
 

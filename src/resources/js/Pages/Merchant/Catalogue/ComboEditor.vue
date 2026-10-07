@@ -41,6 +41,10 @@ import { comboPriceRange, draftsFrom, lineIssues, linesPayload, type LineDraft }
 // LAUNCH review add-on — dates, cooking time.
 import { comboCookingFigure, comboMenuFields, cookingProblem, datesProblem } from '@/lib/menuExtras';
 import { MerchantPermission } from '@/lib/permissions';
+// LAUNCH costs & allergens add-on — the combo's own target food cost %, its
+// food cost (items at their cheapest) and its allergens (all items, every choice).
+import AllergenChips from '@/Pages/Merchant/Catalogue/AllergenChips.vue';
+import { baisasText, foodCostTone, pctText, targetPayload, targetProblem } from '@/lib/foodCost';
 import { authState } from '@/stores/auth';
 
 const route = useRoute();
@@ -90,6 +94,7 @@ const form = reactive<{
     on_sale_from: string;
     on_sale_until: string;
     cooking_minutes: string;
+    target_food_cost_percent: string;
 }>({
     name: '',
     name_ar: '',
@@ -113,6 +118,7 @@ const form = reactive<{
     on_sale_from: '',
     on_sale_until: '',
     cooking_minutes: '',
+    target_food_cost_percent: '',
 });
 const providerRows = ref<Record<string, ProviderChannelRow>>({});
 
@@ -123,6 +129,9 @@ const rangeDelivery = computed(() => comboPriceRange(form.delivery_price || form
 // ---- LAUNCH review add-on: dates, cooking time ------------------------
 const datesError = computed(() => (datesProblem(form.on_sale_from, form.on_sale_until) ? t('menu_extras.until_before_from') : null));
 const cookingError = computed(() => (cookingProblem(form.cooking_minutes) ? t('menu_extras.cooking_range') : null));
+const targetError = computed(() => (targetProblem(form.target_food_cost_percent) ? t('costs.food_cost.target_invalid') : null));
+/** As saved: its food cost (users who see costs) and its allergens. */
+const saved = ref<Combo | null>(null);
 /** What customers see when the combo has no time of its own: its longest item. */
 const itemsCookingFigure = computed(() => comboCookingFigure('', form.lines.flatMap((line) => (line.kind === 'fixed'
     ? [line.product_uuid, ...line.upgrades.map((u) => u.product_uuid)]
@@ -169,6 +178,8 @@ function prefill(combo: Combo): void {
     form.on_sale_from = combo.on_sale_from ?? '';
     form.on_sale_until = combo.on_sale_until ?? '';
     form.cooking_minutes = combo.cooking_minutes != null ? String(combo.cooking_minutes) : '';
+    form.target_food_cost_percent = combo.target_food_cost_percent ?? '';
+    saved.value = combo;
     form.lines = draftsFrom(combo.combo?.lines ?? [], nextKey);
     providerRows.value = providerRowsFrom(activeProviders.value, combo.delivery_provider_prices ?? []);
 }
@@ -215,6 +226,7 @@ function payload(): SaveComboPayload {
         // as null, wiping them), the dates and the cooking time (fix order
         // C-1, L7: one pure, node-tested helper).
         ...comboMenuFields(form),
+        target_food_cost_percent: targetPayload(form.target_food_cost_percent),
         ...(isEdit ? { status: form.status } : {}),
         lines: linesPayload(form.lines, items.value),
         // Edit: every active provider is sent (listed at the default price
@@ -241,6 +253,7 @@ const blockingProblems = computed<string[]>(() => {
     if (isUnrestricted.value && form.branch_scope === 'selected' && form.branch_ids.length === 0) problems.push(t('channels.pick_a_branch'));
     if (datesError.value) problems.push(datesError.value);
     if (cookingError.value) problems.push(cookingError.value);
+    if (targetError.value) problems.push(targetError.value);
     return problems;
 });
 
@@ -405,6 +418,24 @@ async function save(): Promise<void> {
                         </span>
                         <span v-if="cookingError || fieldError('cooking_minutes')" class="mt-1 block text-xs font-semibold text-rose-600">{{ cookingError ?? fieldError('cooking_minutes') }}</span>
                     </label>
+                    <!-- LAUNCH costs & allergens add-on — target food cost % and, as saved,
+                         its food cost and allergens (every item, every choice). -->
+                    <label class="block max-w-xs">
+                        <span class="text-sm font-medium text-slate-700">{{ t('costs.food_cost.target_label') }}</span>
+                        <input v-model="form.target_food_cost_percent" type="number" step="0.01" min="0.01" max="100" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-100" data-test="combo-target-food-cost">
+                        <span class="mt-1 block text-xs text-slate-500">{{ t('costs.food_cost.target_hint') }}</span>
+                        <span v-if="targetError || fieldError('target_food_cost_percent')" class="mt-1 block text-xs font-semibold text-rose-600">{{ targetError ?? fieldError('target_food_cost_percent') }}</span>
+                    </label>
+                    <p v-if="saved?.food_cost" class="text-sm" :class="foodCostTone(saved.food_cost) === 'over' ? 'font-semibold text-rose-700' : 'text-slate-700'" data-test="combo-food-cost">
+                        {{ t('costs.food_cost.label') }}:
+                        <template v-if="saved.food_cost.status === 'ok'">{{ baisasText(saved.food_cost.cost_baisas) }} OMR · {{ t('costs.food_cost.summary', { pct: pctText(saved.food_cost.food_cost_pct), target: pctText(saved.food_cost.target_pct) }) }}</template>
+                        <template v-else>{{ t(`costs.food_cost.${saved.food_cost.status}`) }}</template>
+                    </p>
+                    <div v-if="saved?.allergens" data-test="combo-allergens">
+                        <p class="text-sm font-medium text-slate-700">{{ t('allergens.title') }}</p>
+                        <AllergenChips :contains="saved.allergens.contains" :may-contain="saved.allergens.may_contain" />
+                        <p class="mt-1 text-xs text-slate-500">{{ t('allergens.combo_hint') }}</p>
+                    </div>
                 </section>
 
                 <!-- Channels (B3) -->

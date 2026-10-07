@@ -71,6 +71,8 @@ const navigationCatalog: readonly NavItem[] = [
     { key: 'order_packaging', to: '/inventory/order-packaging', icon: Package, permission: MerchantPermission.CatalogueView, hideIf: MerchantPermission.InventoryView },
     // PD6 — Goods Received Notes (Saved Purchase Receipts).
     { key: 'purchase_receipts', to: '/inventory/receipts', icon: ClipboardList, permission: MerchantPermission.InventoryView },
+    // LAUNCH costs & allergens add-on — price alerts and dishes over target.
+    { key: 'costs', to: '/costs', icon: LineChart, permission: MerchantPermission.ReportsView },
     { key: 'production', to: '/production', icon: ChefHat, permission: MerchantPermission.ProductionView },
     // P-G6 — the inbox is for everyone; the page itself hides the
     // announcements tab without messages.send.

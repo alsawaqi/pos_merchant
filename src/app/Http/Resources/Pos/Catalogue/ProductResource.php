@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Http\Resources\Pos\Catalogue;
 
+use App\Enums\MerchantPermission;
+use App\Http\Controllers\Pos\AllergensController;
 use App\Http\Resources\Pos\DeliveryProviders\ProductDeliveryPriceResource;
 use App\Models\Product;
 use App\Support\Catalogue\ComboLinesInput;
 use App\Support\Catalogue\OrderTypes;
+use App\Support\Costs\FoodCost;
 use App\Support\Recipes\RecipeCostComplete;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -125,6 +128,18 @@ class ProductResource extends JsonResource
             'theoretical_cost' => $this->theoreticalCost(),
             // LAUNCH review add-on (A1) — false while a recipe ingredient has "No cost yet".
             'theoretical_cost_complete' => RecipeCostComplete::forProduct($this->resource),
+            // LAUNCH costs & allergens add-on — the dish's own target food
+            // cost % (null = the company target) and, for a user who may see
+            // costs (reports.view), its food cost: {status, cost_baisas,
+            // net_price_baisas, food_cost_pct, target_pct, target_source,
+            // over_target, over_by_pct, cost_complete} ({@see FoodCost}).
+            'target_food_cost_percent' => $this->target_food_cost_percent !== null ? (string) $this->target_food_cost_percent : null,
+            'food_cost' => $request->user()?->can(MerchantPermission::ReportsView->value)
+                ? FoodCost::forCompany((int) $this->company_id)->product((int) $this->id)
+                : null,
+            // The allergens: contains / may contain, what was worked out
+            // (locked) and the ticks set by hand ({@see AllergensController::present()}).
+            'allergens' => AllergensController::present((int) $this->company_id, (int) $this->id),
             'recipe_lines' => ProductRecipeResource::collection($this->whenLoaded('recipeLines')),
             // P-G2 — internal item (cups/lids): never on the POS menu or
             // tablet; full stock participation.

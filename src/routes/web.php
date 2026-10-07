@@ -13,6 +13,7 @@ use App\Http\Controllers\Portal\BranchesController;
 use App\Http\Controllers\Portal\PortalUsersController;
 use App\Http\Controllers\Pos\AddOnGroupsController;
 use App\Http\Controllers\Pos\AddOnsController;
+use App\Http\Controllers\Pos\AllergensController;
 use App\Http\Controllers\Pos\AttendanceController;
 use App\Http\Controllers\Pos\BranchesController as PosBranchesController;
 use App\Http\Controllers\Pos\BranchTargetsController;
@@ -22,6 +23,7 @@ use App\Http\Controllers\Pos\CategoriesController;
 use App\Http\Controllers\Pos\CombosController;
 use App\Http\Controllers\Pos\CommissionInvoicesController;
 use App\Http\Controllers\Pos\CompReasonsController;
+use App\Http\Controllers\Pos\CostsController;
 use App\Http\Controllers\Pos\CustomersController;
 use App\Http\Controllers\Pos\DashboardController;
 use App\Http\Controllers\Pos\DeliveriesController;
@@ -584,6 +586,32 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
         // Phase A — purchase batch history (Additions §2.4).
         Route::get('ingredients/{ingredient:uuid}/purchases', [IngredientsController::class, 'purchases'])
             ->name('ingredients.purchases');
+
+        // LAUNCH costs & allergens add-on — the ingredient page's price
+        // history and allergen ticks (prep items too), the price-change
+        // alerts, every dish's food cost %, the costs settings and the
+        // product's allergens. Gated in the controllers.
+        Route::get('ingredients/{ingredient:uuid}/price-history', [CostsController::class, 'priceHistory'])
+            ->name('ingredients.price-history');
+        Route::put('ingredients/{ingredient:uuid}/allergens', [AllergensController::class, 'updateIngredient'])
+            ->name('ingredients.allergens.update');
+        Route::get('allergens', [AllergensController::class, 'index'])
+            ->name('allergens.index');
+        Route::get('products/{product:uuid}/allergens', [AllergensController::class, 'showProduct'])
+            ->name('products.allergens.show');
+        Route::put('products/{product:uuid}/allergens', [AllergensController::class, 'updateProduct'])
+            ->name('products.allergens.update');
+        Route::get('price-alerts', [CostsController::class, 'alerts'])
+            ->name('price-alerts.index');
+        Route::post('price-alerts/{line}/seen', [CostsController::class, 'markSeen'])
+            ->whereNumber('line')
+            ->name('price-alerts.seen');
+        Route::get('food-costs', [CostsController::class, 'foodCosts'])
+            ->name('food-costs.index');
+        Route::get('settings/costs', [CostsController::class, 'settings'])
+            ->name('settings.costs.show');
+        Route::put('settings/costs', [CostsController::class, 'updateSettings'])
+            ->name('settings.costs.update');
 
         // LAUNCH-P3 P3-4 — prep items (a sauce, a dough): an ingredient row
         // with its own recipe per batch and a yield, used by recipes like an
