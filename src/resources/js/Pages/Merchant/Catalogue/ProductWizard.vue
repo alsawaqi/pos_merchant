@@ -133,7 +133,7 @@ import OrderTypeTicks from '@/Pages/Merchant/Catalogue/OrderTypeTicks.vue';
 import AllergenChips from '@/Pages/Merchant/Catalogue/AllergenChips.vue';
 import AllergenTicks from '@/Pages/Merchant/Catalogue/AllergenTicks.vue';
 import { getCostSettings, saveProductAllergens } from '@/lib/api/costs';
-import { productAllergenPayload, sameAllergens } from '@/lib/allergens';
+import { allergenTicksChanged, productAllergenPayload } from '@/lib/allergens';
 import { baisasText, foodCostTone, pctText, targetPayload, targetProblem } from '@/lib/foodCost';
 import { ALL_ORDER_TYPES, costByType, localizedMessage, noTicks, ORDER_TYPE_BUCKETS, overlappingLines, readMask, recipeLineMask, recipeSavedFirst, recipeTicksShown as ticksShownFor } from '@/lib/orderTypes';
 
@@ -291,10 +291,8 @@ const derivedAllergens = computed<string[]>(() => editTarget.value?.allergens?.d
 const ownContains = ref<string[]>([]);
 const ownMayContain = ref<string[]>([]);
 const allergensBaseline = ref<{ contains: string[]; may_contain: string[] }>({ contains: [], may_contain: [] });
-const allergensChanged = computed(() => {
-    const now = productAllergenPayload(derivedAllergens.value, ownContains.value, ownMayContain.value);
-    return !sameAllergens(now.contains, allergensBaseline.value.contains) || !sameAllergens(now.may_contain, allergensBaseline.value.may_contain);
-});
+// Fix order 1 (K-1) — the raw own ticks against the loaded ones.
+const allergensChanged = computed(() => allergenTicksChanged(productAllergenPayload(ownContains.value, ownMayContain.value), allergensBaseline.value));
 /** Per ingredient uuid: ticked "Can be removed", with optional customer labels. */
 const removableTicks = ref<Record<string, RemovableDraft>>({});
 /** Tester call 16 — only a made-to-order product keeps a removed ingredient in stock. */
@@ -1158,7 +1156,7 @@ async function submit(): Promise<void> {
             });
             // LAUNCH costs & allergens add-on — the ticks, once the product exists.
             if (ownContains.value.length > 0 || ownMayContain.value.length > 0) {
-                await saveProductAllergens(created.data.uuid, productAllergenPayload([], ownContains.value, ownMayContain.value));
+                await saveProductAllergens(created.data.uuid, productAllergenPayload(ownContains.value, ownMayContain.value));
             }
         } else if (readOnly.value) {
             // Fix order 1, L8 — a recipe-only role (Edit recipes + catalogue
@@ -1209,7 +1207,7 @@ async function submit(): Promise<void> {
             }
             // LAUNCH costs & allergens add-on — the allergen ticks, when changed.
             if (allergensChanged.value) {
-                await saveProductAllergens(uuid, productAllergenPayload(derivedAllergens.value, ownContains.value, ownMayContain.value));
+                await saveProductAllergens(uuid, productAllergenPayload(ownContains.value, ownMayContain.value));
             }
         }
 

@@ -161,9 +161,10 @@ final readonly class DashboardSummaryAction
         $rows = array_merge($food->rows(), $food->mealRows());
 
         return [
-            'count' => count(array_filter($rows, static fn (array $r): bool => $r['over_target'])),
-            'costed' => count(array_filter($rows, static fn (array $r): bool => $r['status'] === 'ok')),
-            'no_recipe' => count(array_filter($rows, static fn (array $r): bool => $r['status'] === 'no_recipe')),
+            // K-4 — only dishes on sale today (active, inside their dates).
+            'count' => count(array_filter($rows, static fn (array $r): bool => $r['over_target'] && $r['on_sale'])),
+            'costed' => count(array_filter($rows, static fn (array $r): bool => $r['status'] === 'ok' && $r['on_sale'])),
+            'no_recipe' => count(array_filter($rows, static fn (array $r): bool => $r['status'] === 'no_recipe' && $r['on_sale'])),
             'target_percent' => (float) CostSettings::target($companyId),
         ];
     }

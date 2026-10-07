@@ -39,14 +39,21 @@ export function toggleAllergen(codes: readonly string[], code: string, locked: r
 }
 
 /**
- * What the product page sends: its own "contains" ticks (never the worked-out
- * ones, which are not the merchant's to set) and its "may contain" ticks
- * (never something it contains).
+ * What the product page sends: the merchant's OWN ticks exactly as they are
+ * (fix order 1, K-1). A hand tick is kept even when the recipe brings the
+ * same allergen today — if the recipe changes later, the hand tick must still
+ * be there. The worked-out ones are never sent (the server works them out).
  */
-export function productAllergenPayload(derived: readonly string[], contains: readonly string[], mayContain: readonly string[]): { contains: AllergenCode[]; may_contain: AllergenCode[] } {
-    const own = normaliseAllergens(contains.filter((c) => !derived.includes(c)));
-    const all = new Set([...derived, ...own]);
-    return { contains: own, may_contain: normaliseAllergens(mayContain.filter((c) => !all.has(c))) };
+export function productAllergenPayload(contains: readonly string[], mayContain: readonly string[]): { contains: AllergenCode[]; may_contain: AllergenCode[] } {
+    return { contains: normaliseAllergens(contains), may_contain: normaliseAllergens(mayContain) };
+}
+
+/** Whether the own ticks differ from the ones loaded (raw lists, K-1): a price-only save sends nothing. */
+export function allergenTicksChanged(
+    now: { contains: readonly string[]; may_contain: readonly string[] },
+    loaded: { contains: readonly string[]; may_contain: readonly string[] },
+): boolean {
+    return !sameAllergens(now.contains, loaded.contains) || !sameAllergens(now.may_contain, loaded.may_contain);
 }
 
 /** Two tick lists hold the same codes. */

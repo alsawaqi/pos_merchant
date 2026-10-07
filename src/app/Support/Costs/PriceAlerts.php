@@ -44,8 +44,10 @@ final class PriceAlerts
             ->where('v.company_id', $companyId)->whereIn('v.purchase_receipt_line_id', $rows->pluck('id')->all())
             ->get(['v.purchase_receipt_line_id', 'v.seen_at', 'u.name as seen_by'])->keyBy('purchase_receipt_line_id');
         $food = $withDishes ? FoodCost::forCompany($companyId) : null;
+        // K-3 — one costing per (ingredient, old price, new price) in the request.
+        $cache = [];
 
-        return $rows->map(static function (object $row) use ($ingredients, $reviews, $food): array {
+        return $rows->map(static function (object $row) use ($ingredients, $reviews, $food, &$cache): array {
             $ingredient = $ingredients->get($row->ingredient_id);
             $review = $reviews->get($row->id);
 
@@ -67,7 +69,9 @@ final class PriceAlerts
                 'seen' => $review !== null,
                 'seen_at' => $review !== null ? Carbon::parse($review->seen_at)->toIso8601String() : null,
                 'seen_by' => $review?->seen_by,
-                'dishes' => $food === null ? null : self::dishes($food, (int) $row->ingredient_id, (string) $row->previous_unit_cost, (string) $row->unit_cost),
+                'dishes' => $food === null ? null
+                    : ($cache[$row->ingredient_id.'|'.$row->previous_unit_cost.'|'.$row->unit_cost]
+                        ??= self::dishes($food, (int) $row->ingredient_id, (string) $row->previous_unit_cost, (string) $row->unit_cost)),
             ];
         })->values()->all();
     }

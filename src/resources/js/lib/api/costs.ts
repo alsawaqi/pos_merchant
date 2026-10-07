@@ -72,6 +72,8 @@ export interface FoodCostListRow extends FoodCostRow {
     name_ar: string | null;
     product_type: string;
     product_status: string;
+    /** K-4 — active and on sale today (what the dashboard counts). */
+    on_sale: boolean;
 }
 
 export function getCostSettings(): Promise<{ data: CostSettings }> {

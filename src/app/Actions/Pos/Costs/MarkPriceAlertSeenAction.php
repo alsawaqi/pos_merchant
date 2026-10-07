@@ -44,14 +44,18 @@ final readonly class MarkPriceAlertSeenAction
         }
 
         return DB::transaction(function () use ($companyId, $lineId, $actor, $row): bool {
-            if (DB::table('pos_price_alert_reviews')->where('purchase_receipt_line_id', $lineId)->lockForUpdate()->exists()) {
-                return false;
-            }
+            // Fix order 1 (K-5) — insert-or-ignore on the UNIQUE line: two
+            // managers pressing "Mark as seen" at once both get 200; only the
+            // one that wrote the row is audited.
             $now = now();
-            $id = DB::table('pos_price_alert_reviews')->insertGetId([
+            $written = DB::table('pos_price_alert_reviews')->insertOrIgnore([
                 'company_id' => $companyId, 'purchase_receipt_line_id' => $lineId, 'seen_by_user_id' => (int) $actor->getKey(),
                 'seen_at' => $now, 'created_at' => $now, 'updated_at' => $now,
             ]);
+            if ($written === 0) {
+                return false;
+            }
+            $id = DB::table('pos_price_alert_reviews')->where('purchase_receipt_line_id', $lineId)->value('id');
             $this->writeAuditLog->handle(new AuditLogData(
                 event: 'inventory.price_alert.seen',
                 actorUserId: (int) $actor->getKey(),

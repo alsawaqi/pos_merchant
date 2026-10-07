@@ -22,9 +22,13 @@ use Illuminate\Support\Facades\DB;
  *   product(...)     on a product: 'contains' (a bought-in or physical item
  *                    has no recipe to work them out from) and 'may_contain'
  *                    (traces, by hand). What the product's recipe,
- *                    components or combo items bring is worked out, never
- *                    ticked: it is not stored here and cannot be unticked;
- *                    a "may contain" that the product contains is dropped.
+ *                    components or combo items bring is worked out on READ,
+ *                    never stored here, and cannot be unticked. Fix order 1
+ *                    (K-1): the merchant's own ticks are stored EXACTLY as
+ *                    given (normalised codes), even when the recipe brings
+ *                    the same allergen today — a recipe change must never
+ *                    take a hand tick away. Reads show a "may contain" only
+ *                    when it is not also contained.
  *
  * Full replace, one transaction. A change bumps every product and add-on
  * option above it so devices pull it ({@see AllergenSync::touch()}) and is
@@ -88,11 +92,8 @@ final readonly class SetAllergensAction
         if ((int) $product->company_id !== $companyId) {
             abort(404);
         }
-        $contains = Allergens::normalise($contains);
-        // What the product contains (ticked or worked out) is never also a "may contain".
-        $derived = Allergens::load($companyId)->derived((int) $product->id);
-        $mayContain = array_values(array_diff(Allergens::normalise($mayContain), $contains, $derived));
-        $new = ['contains' => $contains, 'may_contain' => $mayContain];
+        // Fix order 1 (K-1) — the hand ticks as given; nothing is dropped.
+        $new = ['contains' => Allergens::normalise($contains), 'may_contain' => Allergens::normalise($mayContain)];
 
         return DB::transaction(function () use ($product, $new, $actor, $companyId): array {
             $rows = DB::table('pos_product_allergens')->where('product_id', $product->id)->lockForUpdate()->get(['allergen', 'kind']);

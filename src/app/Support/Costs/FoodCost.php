@@ -34,7 +34,14 @@ use Throwable;
  *                             count at its cheapest offered item
  *   a meal with a main        the main's cost + the meal's lines (as a combo);
  *                             price = the main's price + the meal price
- * Packaging (components, per-order packaging) is not food and is left out.
+ *   + components              fix order 1 (K-2): every component that is not
+ *                             packaging (a cooked patty, a bought-in sauce
+ *                             cup, a general physical item) × its quantity at
+ *                             that component's own cost (a cooked product: its
+ *                             recipe per piece, else its cost price; a bought
+ *                             product: its cost price); with "Used for" ticks,
+ *                             the dearest order type
+ * Packaging physical items (and per-order packaging) are not food: left out.
  *
  * Price excluding VAT (baisas): the in-store base price; when the merchant
  * is VAT-registered and "Menu prices include VAT" is on, minus the VAT
@@ -56,6 +63,15 @@ final class FoodCost
 
     /** @var array<int, list<array{0: int, 1: string, 2: int}>> product id => [ingredient id, quantity, mask] */
     private array $recipes = [];
+
+    /** @var array<int, list<array{0: int, 1: string, 2: int}>> product id => [component product id, quantity, mask] (K-2) */
+    private array $components = [];
+
+    /** @var array<int, list<int>>|null raw ingredient id => dishes whose cost moves with it (K-3, built once) */
+    private ?array $dishMap = null;
+
+    /** @var array<int, bool> ingredient id => cost complete (per instance) */
+    private array $completeMemo = [];
 
     /** @var array<int, list<object>> combo product id => lines */
     private array $comboLines = [];
@@ -113,7 +129,7 @@ final class FoodCost
 
         foreach (DB::table('pos_products')->where('company_id', $companyId)->whereNull('deleted_at')
             ->get(['id', 'uuid', 'name', 'name_ar', 'category_id', 'base_price', 'cost_price', 'stock_mode', 'product_type',
-                'status', 'is_internal', 'target_food_cost_percent']) as $p) {
+                'status', 'is_internal', 'internal_purpose', 'target_food_cost_percent', 'on_sale_from', 'on_sale_until']) as $p) {
             $self->products[(int) $p->id] = $p;
             if ((string) $p->status === 'active' && (string) ($p->product_type ?? 'standard') === 'standard'
                 && ! (bool) $p->is_internal && $p->category_id !== null) {
@@ -125,9 +141,18 @@ final class FoodCost
             ->get(['product_id', 'ingredient_id', 'quantity', 'order_types']) as $line) {
             $self->recipes[(int) $line->product_id][] = [(int) $line->ingredient_id, (string) $line->quantity, OrderTypes::read($line->order_types ?? null)];
         }
+        // K-2 — components that are food (not packaging physical items).
+        foreach (DB::table('pos_product_components')->whereIn('product_id', $ids ?: [0])->orderBy('id')
+            ->get(['product_id', 'component_product_id', 'quantity', 'order_types']) as $line) {
+            $component = $self->products[(int) $line->component_product_id] ?? null;
+            if ($component === null || self::isPackaging($component)) {
+                continue;
+            }
+            $self->components[(int) $line->product_id][] = [(int) $line->component_product_id, (string) $line->quantity, OrderTypes::read($line->order_types ?? null)];
+        }
 
         $self->meals = DB::table('pos_meals')->where('company_id', $companyId)->whereNull('deleted_at')->where('status', 'active')
-            ->orderBy('sort_order')->orderBy('id')->get(['id', 'uuid', 'name', 'name_ar', 'meal_price'])->all();
+            ->orderBy('sort_order')->orderBy('id')->get(['id', 'uuid', 'name', 'name_ar', 'meal_price', 'on_sale_from', 'on_sale_until'])->all();
         $mealIds = array_map(static fn (object $m): int => (int) $m->id, $self->meals);
         $categories = DB::table('pos_meal_categories')->whereIn('meal_id', $mealIds ?: [0])->get(['meal_id', 'category_id'])->groupBy('meal_id');
         $excluded = DB::table('pos_meal_excluded_products')->whereIn('meal_id', $mealIds ?: [0])->get(['meal_id', 'product_id'])->groupBy('meal_id');
@@ -158,6 +183,7 @@ final class FoodCost
         $copy = clone $this;
         $copy->graph = $this->graph->withUnitCost($ingredientId, $unitCost);
         $copy->memo = [];
+        $copy->completeMemo = [];
 
         return $copy;
     }
@@ -179,6 +205,8 @@ final class FoodCost
             'name_ar' => $p->name_ar,
             'product_type' => (string) ($p->product_type ?? 'standard'),
             'product_status' => (string) $p->status,
+            // K-4 — active and on sale today (Asia/Muscat): what the dashboard counts.
+            'on_sale' => (string) $p->status === 'active' && self::onSaleToday($p->on_sale_from ?? null, $p->on_sale_until ?? null),
         ] + $this->figures($this->cost($productId), self::baisas($p->base_price), $target ?? $this->companyTarget, $target !== null ? 'product' : 'company');
     }
 
@@ -231,6 +259,8 @@ final class FoodCost
                             ? trim(($main->name_ar ?? $main->name).' '.($meal->name_ar ?? $meal->name)) : null,
                         'product_type' => 'meal',
                         'product_status' => 'active',
+                        'on_sale' => self::onSaleToday($meal->on_sale_from ?? null, $meal->on_sale_until ?? null)
+                            && self::onSaleToday($main->on_sale_from ?? null, $main->on_sale_until ?? null),
                     ] + $this->figures($cost, self::baisas($main->base_price) + self::baisas($meal->meal_price), $this->companyTarget, 'company');
                 }
             }
@@ -248,7 +278,24 @@ final class FoodCost
      */
     public function dishesUsing(int $ingredientId): array
     {
-        $direct = [];
+        return $this->dishMap()[$ingredientId] ?? [];
+    }
+
+    /**
+     * Fix order 1 (K-3) — raw ingredient → dishes, built ONCE per instance
+     * (every recipe exploded once): the products whose recipe uses it
+     * (directly or through prep items), then (K-2) every product using one of
+     * those as a food component, any level up, then the combos that can
+     * serve one of them. Physical items are never listed.
+     *
+     * @return array<int, list<int>>
+     */
+    private function dishMap(): array
+    {
+        if ($this->dishMap !== null) {
+            return $this->dishMap;
+        }
+        $byIngredient = [];
         foreach ($this->recipes as $productId => $lines) {
             $quantities = [];
             foreach ($lines as [$ingredient, $quantity]) {
@@ -259,25 +306,50 @@ final class FoodCost
             } catch (Throwable) {
                 continue;
             }
-            if (isset($raw[$ingredientId]) && isset($this->products[$productId]) && ! (bool) $this->products[$productId]->is_internal) {
-                $direct[] = (int) $productId;
+            foreach (array_keys($raw) as $ingredient) {
+                $byIngredient[(int) $ingredient][] = (int) $productId;
             }
         }
-        $combos = [];
+        $parents = [];
+        foreach ($this->components as $productId => $lines) {
+            foreach ($lines as [$componentId]) {
+                $parents[$componentId][] = (int) $productId;
+            }
+        }
+        $combosOf = [];
         foreach ($this->comboLines as $comboId => $lines) {
             if (! isset($this->products[$comboId])) {
                 continue;
             }
             foreach ($lines as $line) {
-                $items = $line->kind === 'fixed' ? [(int) $line->product_id] : $this->choiceItems($line);
-                if (array_intersect($items, $direct) !== []) {
-                    $combos[] = (int) $comboId;
-                    break;
+                foreach ($line->kind === 'fixed' ? [(int) $line->product_id] : $this->choiceItems($line) as $item) {
+                    $combosOf[$item][(int) $comboId] = true;
                 }
             }
         }
+        $map = [];
+        foreach ($byIngredient as $ingredient => $direct) {
+            $all = array_values(array_unique($direct));
+            for ($i = 0; $i < count($all); $i++) {
+                foreach ($parents[$all[$i]] ?? [] as $parent) {
+                    if (! in_array($parent, $all, true)) {
+                        $all[] = $parent;
+                    }
+                }
+            }
+            $dishes = [];
+            foreach ($all as $productId) {
+                if (isset($this->products[$productId]) && ! (bool) $this->products[$productId]->is_internal) {
+                    $dishes[$productId] = true;
+                }
+                foreach (array_keys($combosOf[$productId] ?? []) as $comboId) {
+                    $dishes[$comboId] = true;
+                }
+            }
+            $map[$ingredient] = array_keys($dishes);
+        }
 
-        return array_values(array_unique(array_merge($direct, $combos)));
+        return $this->dishMap = $map;
     }
 
     /**
@@ -330,11 +402,77 @@ final class FoodCost
         }
         $lines = $this->recipes[$productId] ?? [];
         if ($lines !== []) {
-            return $this->memo[$productId] = $this->recipeCost((string) $p->stock_mode, $lines);
+            $own = $this->recipeCost((string) $p->stock_mode, $lines);
+        } else {
+            $price = BigDecimal::of((string) ($p->cost_price ?? '0') ?: '0');
+            $own = $price->isPositive() ? ['cost' => $price->toBigRational(), 'complete' => true] : null;
         }
-        $price = BigDecimal::of((string) ($p->cost_price ?? '0') ?: '0');
+        // K-2 — plus its food components at their own cost.
+        $parts = $this->componentsCost($productId, (string) $p->stock_mode);
+        if ($parts === null) {
+            return $this->memo[$productId] = $own;
+        }
+        if ($own === null) {
+            return $this->memo[$productId] = $parts;
+        }
 
-        return $this->memo[$productId] = $price->isPositive() ? ['cost' => $price->toBigRational(), 'complete' => true] : null;
+        return $this->memo[$productId] = ['cost' => $own['cost']->plus($parts['cost']), 'complete' => $own['complete'] && $parts['complete']];
+    }
+
+    /**
+     * K-2 — Σ food component × quantity at the component's own cost; with
+     * "Used for" ticks the dearest order type. Null when it has none.
+     *
+     * @return array{cost: BigRational, complete: bool}|null
+     */
+    private function componentsCost(int $productId, string $stockMode): ?array
+    {
+        $lines = $this->components[$productId] ?? [];
+        if ($lines === []) {
+            return null;
+        }
+        $complete = true;
+        $unit = [];
+        foreach ($lines as [$componentId]) {
+            $c = $this->cost($componentId);
+            if ($c === null) {
+                $complete = false;
+            } else {
+                $complete = $complete && $c['complete'];
+            }
+            $unit[$componentId] = $c['cost'] ?? BigRational::zero();
+        }
+        $perType = $stockMode !== 'cooked' && array_filter($lines, static fn (array $l): bool => $l[2] !== OrderTypes::ALL) !== [];
+        $max = null;
+        foreach ($perType ? array_values(OrderTypes::BUCKETS) : [null] as $bit) {
+            $total = BigRational::zero();
+            foreach ($lines as [$componentId, $quantity, $mask]) {
+                if ($bit !== null && ! OrderTypes::includes($mask, $bit)) {
+                    continue;
+                }
+                $total = $total->plus($unit[$componentId]->multipliedBy(BigRational::of($quantity)));
+            }
+            if ($max === null || $total->isGreaterThan($max)) {
+                $max = $total;
+            }
+        }
+
+        return ['cost' => $max ?? BigRational::zero(), 'complete' => $complete];
+    }
+
+    /** A physical item used as packaging (legacy internal rows without a purpose are packaging). */
+    private static function isPackaging(object $product): bool
+    {
+        return (bool) $product->is_internal && ($product->internal_purpose ?? 'packaging') !== 'general';
+    }
+
+    /** On sale on the merchant's calendar day (inclusive bounds, NULL = open). */
+    private static function onSaleToday(mixed $from, mixed $until): bool
+    {
+        $today = now('Asia/Muscat')->format('Y-m-d');
+        $day = static fn (mixed $value): ?string => $value === null || $value === '' ? null : substr((string) $value, 0, 10);
+
+        return ($day($from) === null || $day($from) <= $today) && ($day($until) === null || $day($until) >= $today);
     }
 
     /**
@@ -365,7 +503,7 @@ final class FoodCost
             }
         }
         foreach ($lines as [$ingredient]) {
-            if (! $this->graph->costComplete($ingredient)) {
+            if (! ($this->completeMemo[$ingredient] ??= $this->graph->costComplete($ingredient))) {
                 $complete = false;
             }
         }

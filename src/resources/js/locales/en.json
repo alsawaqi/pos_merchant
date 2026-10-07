@@ -4343,7 +4343,9 @@
             "meal": "Meal",
             "combo": "Combo",
             "partial": "Some ingredients have no cost yet.",
-            "load_failed": "The food costs could not be loaded."
+            "load_failed": "The food costs could not be loaded.",
+            "inactive": "Inactive",
+            "not_on_sale": "Not on sale today"
         },
         "settings": {
             "threshold": "Price alert threshold (%)",
