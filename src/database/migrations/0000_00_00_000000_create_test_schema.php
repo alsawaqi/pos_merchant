@@ -1476,44 +1476,95 @@ return new class extends Migration
             $table->unique(['product_id', 'delivery_provider_id'], 'pos_product_delivery_prices_product_provider_unique');
         });
 
-        // ---- LAUNCH-P4 combos + sold out (data contract) -------------
-        // A combo's choice slots and the options in each. Raw DDL so the
-        // contract's CHECK constraints exist in sqlite too.
-        DB::statement('CREATE TABLE pos_combo_slots (
+        // ---- LAUNCH combo add-on (pos_admin 2026_10_07_100001 / _100002) ----
+        // Combos and meals are lists of lines; the LAUNCH-P4 choice slots are
+        // retired. Raw DDL so the contract's CHECK constraints exist in sqlite.
+        DB::statement('CREATE TABLE pos_meals (
             id integer primary key autoincrement not null,
             uuid varchar not null,
             company_id integer not null references pos_companies(id) on delete cascade,
-            combo_product_id integer not null references pos_products(id) on delete cascade,
             name varchar(64) not null,
             name_ar varchar(64) null,
-            min_choices integer not null default 1,
-            max_choices integer not null default 1,
+            meal_price numeric(12, 3) not null default 0,
+            status varchar(16) not null default \'active\',
+            on_sale_from date null,
+            on_sale_until date null,
             sort_order integer not null default 0,
-            is_main tinyint(1) not null default 0,
             created_at datetime null,
             updated_at datetime null,
-            CONSTRAINT pos_combo_slots_choices_check CHECK (min_choices >= 0 AND max_choices >= 1 AND max_choices >= min_choices)
+            deleted_at datetime null,
+            CONSTRAINT pos_meals_meal_price_check CHECK (meal_price >= 0),
+            CONSTRAINT pos_meals_status_check CHECK (status IN (\'active\', \'inactive\')),
+            CONSTRAINT pos_meals_dates_check CHECK (on_sale_until IS NULL OR on_sale_from IS NULL OR on_sale_until >= on_sale_from)
         )');
-        DB::statement('CREATE UNIQUE INDEX pos_combo_slots_uuid_unique ON pos_combo_slots (uuid)');
-        DB::statement('CREATE INDEX pos_combo_slots_combo_idx ON pos_combo_slots (combo_product_id)');
-        // LAUNCH review add-on (migration 09): is_main marks the slot offered
-        // as "Make it a meal?"; at most one main per combo.
-        DB::statement('CREATE UNIQUE INDEX pos_combo_slots_one_main_unique ON pos_combo_slots (combo_product_id) WHERE is_main = 1');
-
-        DB::statement('CREATE TABLE pos_combo_slot_options (
+        DB::statement('CREATE UNIQUE INDEX pos_meals_uuid_unique ON pos_meals (uuid)');
+        DB::statement('CREATE TABLE pos_meal_categories (
             id integer primary key autoincrement not null,
             company_id integer not null references pos_companies(id) on delete cascade,
-            slot_id integer not null references pos_combo_slots(id) on delete cascade,
-            product_id integer not null references pos_products(id) on delete restrict,
-            extra_price numeric(12, 3) not null default 0,
-            is_default tinyint(1) not null default 0,
+            meal_id integer not null references pos_meals(id) on delete cascade,
+            category_id integer not null references pos_product_categories(id) on delete cascade,
+            created_at datetime null,
+            updated_at datetime null
+        )');
+        DB::statement('CREATE UNIQUE INDEX pos_meal_categories_meal_category_unique ON pos_meal_categories (meal_id, category_id)');
+        DB::statement('CREATE TABLE pos_meal_excluded_products (
+            id integer primary key autoincrement not null,
+            company_id integer not null references pos_companies(id) on delete cascade,
+            meal_id integer not null references pos_meals(id) on delete cascade,
+            product_id integer not null references pos_products(id) on delete cascade,
+            created_at datetime null,
+            updated_at datetime null
+        )');
+        DB::statement('CREATE UNIQUE INDEX pos_meal_excluded_products_meal_product_unique ON pos_meal_excluded_products (meal_id, product_id)');
+        DB::statement('CREATE TABLE pos_combo_lines (
+            id integer primary key autoincrement not null,
+            company_id integer not null references pos_companies(id) on delete cascade,
+            combo_product_id integer null references pos_products(id) on delete cascade,
+            meal_id integer null references pos_meals(id) on delete cascade,
+            kind varchar(16) not null,
+            product_id integer null references pos_products(id) on delete restrict,
+            quantity integer null,
+            category_id integer null references pos_product_categories(id) on delete restrict,
+            pick_count integer null,
+            name varchar(64) null,
+            name_ar varchar(64) null,
             sort_order integer not null default 0,
             created_at datetime null,
             updated_at datetime null,
-            CONSTRAINT pos_combo_slot_options_extra_price_check CHECK (extra_price >= 0)
+            CONSTRAINT pos_combo_lines_owner_check CHECK ((combo_product_id IS NULL) <> (meal_id IS NULL)),
+            CONSTRAINT pos_combo_lines_kind_check CHECK ((kind = \'fixed\' AND product_id IS NOT NULL AND quantity BETWEEN 1 AND 99
+                AND category_id IS NULL AND pick_count IS NULL)
+                OR (kind = \'choice\' AND category_id IS NOT NULL AND pick_count BETWEEN 1 AND 20 AND name IS NOT NULL
+                AND product_id IS NULL AND quantity IS NULL))
         )');
-        DB::statement('CREATE UNIQUE INDEX pos_combo_slot_options_slot_product_unique ON pos_combo_slot_options (slot_id, product_id)');
+        DB::statement('CREATE INDEX pos_combo_lines_combo_sort_idx ON pos_combo_lines (combo_product_id, sort_order)');
+        DB::statement('CREATE INDEX pos_combo_lines_meal_sort_idx ON pos_combo_lines (meal_id, sort_order)');
+        DB::statement('CREATE TABLE pos_combo_line_upgrades (
+            id integer primary key autoincrement not null,
+            company_id integer not null references pos_companies(id) on delete cascade,
+            line_id integer not null references pos_combo_lines(id) on delete cascade,
+            product_id integer not null references pos_products(id) on delete restrict,
+            upgrade_price numeric(12, 3) not null default 0,
+            sort_order integer not null default 0,
+            created_at datetime null,
+            updated_at datetime null,
+            CONSTRAINT pos_combo_line_upgrades_price_check CHECK (upgrade_price >= 0)
+        )');
+        DB::statement('CREATE UNIQUE INDEX pos_combo_line_upgrades_line_product_unique ON pos_combo_line_upgrades (line_id, product_id)');
+        DB::statement('CREATE TABLE pos_combo_line_items (
+            id integer primary key autoincrement not null,
+            company_id integer not null references pos_companies(id) on delete cascade,
+            line_id integer not null references pos_combo_lines(id) on delete cascade,
+            product_id integer not null references pos_products(id) on delete cascade,
+            excluded tinyint(1) not null default 0,
+            extra_price numeric(12, 3) not null default 0,
+            created_at datetime null,
+            updated_at datetime null,
+            CONSTRAINT pos_combo_line_items_extra_price_check CHECK (extra_price >= 0)
+        )');
+        DB::statement('CREATE UNIQUE INDEX pos_combo_line_items_line_product_unique ON pos_combo_line_items (line_id, product_id)');
 
+        // ---- LAUNCH-P4 sold out (data contract) -----------------------
         // A row present = sold out at that branch; deleting it puts the
         // product back on sale. Manual only — never driven by stock.
         Schema::create('pos_product_sold_out', function (Blueprint $table): void {
@@ -1670,6 +1721,13 @@ return new class extends Migration
             // LAUNCH review add-on (migration 09): pos_api's snapshot of the
             // product's cooking time when the line was written (NULL = not set).
             $table->smallInteger('cooking_minutes')->nullable();
+            // LAUNCH combo add-on (pos_admin 2026_10_07_100003): a meal parent's
+            // meal, a child's combo / meal line, its kind and its share of the
+            // parent's line total (baisas).
+            $table->unsignedBigInteger('meal_id')->nullable();
+            $table->unsignedBigInteger('combo_line_id')->nullable();
+            $table->string('combo_child_kind', 16)->nullable();
+            $table->bigInteger('allocated_revenue_baisas')->nullable();
             $table->timestamps();
         });
 
@@ -2444,8 +2502,12 @@ return new class extends Migration
         Schema::dropIfExists('pos_staff_attendance');
         Schema::dropIfExists('pos_staff_branches');
         Schema::dropIfExists('pos_product_sold_out');
-        Schema::dropIfExists('pos_combo_slot_options');
-        Schema::dropIfExists('pos_combo_slots');
+        Schema::dropIfExists('pos_combo_line_items');
+        Schema::dropIfExists('pos_combo_line_upgrades');
+        Schema::dropIfExists('pos_combo_lines');
+        Schema::dropIfExists('pos_meal_excluded_products');
+        Schema::dropIfExists('pos_meal_categories');
+        Schema::dropIfExists('pos_meals');
         Schema::dropIfExists('pos_payment_reversal_results');
         Schema::dropIfExists('pos_payment_reversal_lines');
         Schema::dropIfExists('pos_payment_reversals');
