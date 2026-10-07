@@ -251,6 +251,8 @@ class PhysicalItemsController extends Controller
             'central_quantity' => number_format((float) ($item->getAttribute('central_quantity') ?? 0), 3, '.', ''),
             // LAUNCH costs & allergens add-on — what the item contains (ticked).
             'allergens' => AllergenSync::graph((int) $item->company_id)->ownProduct((int) $item->id)['contains'],
+            // Fix order 2 (K-12) — and its "may contain" ticks (kept as they are).
+            'may_contain' => AllergenSync::graph((int) $item->company_id)->ownProduct((int) $item->id)['may_contain'],
         ];
     }
 

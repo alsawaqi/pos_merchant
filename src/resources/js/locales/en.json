@@ -4360,6 +4360,7 @@
             "label": "Food cost",
             "no_recipe": "No recipe",
             "no_price": "No price",
+            "incomplete": "Cost incomplete",
             "over_target": "Over target",
             "within_target": "Within target",
             "target_label": "Target food cost (%)",

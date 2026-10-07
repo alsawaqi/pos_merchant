@@ -134,7 +134,7 @@ import AllergenChips from '@/Pages/Merchant/Catalogue/AllergenChips.vue';
 import AllergenTicks from '@/Pages/Merchant/Catalogue/AllergenTicks.vue';
 import { getCostSettings, saveProductAllergens } from '@/lib/api/costs';
 import { allergenTicksChanged, productAllergenPayload } from '@/lib/allergens';
-import { baisasText, foodCostTone, pctText, targetPayload, targetProblem } from '@/lib/foodCost';
+import { baisasText, foodCostTone, hasFoodCostPct, pctText, targetPayload, targetProblem } from '@/lib/foodCost';
 import { ALL_ORDER_TYPES, costByType, localizedMessage, noTicks, ORDER_TYPE_BUCKETS, overlappingLines, readMask, recipeLineMask, recipeSavedFirst, recipeTicksShown as ticksShownFor } from '@/lib/orderTypes';
 
 const route = useRoute();
@@ -1632,9 +1632,10 @@ const typeChangeLocked = computed<boolean>(() => !readOnly.value && typeOptions.
                                 </label>
                                 <div v-if="savedFoodCost" class="rounded-lg border px-3 py-2" :class="foodCostTone(savedFoodCost) === 'over' ? 'border-rose-200 bg-rose-50' : 'border-slate-200 bg-slate-50'" data-test="product-food-cost-now">
                                     <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ t('costs.food_cost.label') }}</p>
-                                    <p v-if="savedFoodCost.status === 'ok'" class="text-sm font-semibold tabular-nums" :class="foodCostTone(savedFoodCost) === 'over' ? 'text-rose-700' : 'text-slate-900'">
+                                    <p v-if="hasFoodCostPct(savedFoodCost)" class="text-sm font-semibold tabular-nums" :class="foodCostTone(savedFoodCost) === 'over' ? 'text-rose-700' : 'text-slate-900'">
                                         {{ baisasText(savedFoodCost.cost_baisas) }} OMR · {{ t('costs.food_cost.summary', { pct: pctText(savedFoodCost.food_cost_pct), target: pctText(savedFoodCost.target_pct) }) }}
                                         <span v-if="savedFoodCost.over_target" class="ms-1 rounded bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white" data-test="product-over-target">{{ t('costs.food_cost.over_target') }}</span>
+                                        <span v-if="savedFoodCost.status === 'incomplete'" class="block text-xs font-normal italic text-amber-700" data-test="product-cost-incomplete">{{ t('costs.food_cost.incomplete') }}</span>
                                     </p>
                                     <p v-else class="text-sm italic text-slate-500">{{ t(`costs.food_cost.${savedFoodCost.status}`) }}</p>
                                 </div>

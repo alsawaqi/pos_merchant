@@ -45,6 +45,8 @@ export interface PhysicalItem {
     central_quantity: string;
     /** LAUNCH costs & allergens add-on — what it contains (ticked). */
     allergens?: string[];
+    /** K-12 — its "may contain" ticks (never sent back by the Inventory modal). */
+    may_contain?: string[];
     /** A4 — the supplier's code, or a generated PHY-0001. */
     sku?: string | null;
     packs?: PhysicalItemPack[];

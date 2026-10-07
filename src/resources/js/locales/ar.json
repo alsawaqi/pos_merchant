@@ -4360,6 +4360,7 @@
             "label": "تكلفة الطعام",
             "no_recipe": "بدون وصفة",
             "no_price": "بدون سعر",
+            "incomplete": "التكلفة غير مكتملة",
             "over_target": "فوق الهدف",
             "within_target": "ضمن الهدف",
             "target_label": "هدف نسبة تكلفة الطعام (%)",

@@ -268,7 +268,7 @@ onMounted(() => {
                                     <!-- K-4 — an inactive or not-on-sale dish shows why the dashboard does not count it. -->
                                     <span v-if="row.product_status !== 'active'" class="ms-1 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-600" data-test="dish-inactive">{{ t('costs.dishes.inactive') }}</span>
                                     <span v-else-if="!row.on_sale" class="ms-1 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-600" data-test="dish-not-on-sale">{{ t('costs.dishes.not_on_sale') }}</span>
-                                    <span v-if="row.status === 'ok' && !row.cost_complete" class="block text-[10px] italic text-amber-700">{{ t('costs.dishes.partial') }}</span>
+                                    <span v-if="row.status === 'incomplete'" class="block text-[10px] italic text-amber-700" data-test="dish-incomplete">{{ t('costs.dishes.partial') }}</span>
                                 </td>
                                 <td class="px-4 py-2 text-end tabular-nums">{{ row.cost_baisas === null ? '—' : baisasText(row.cost_baisas) }}</td>
                                 <td class="px-4 py-2 text-end tabular-nums">{{ baisasText(row.net_price_baisas) }}</td>

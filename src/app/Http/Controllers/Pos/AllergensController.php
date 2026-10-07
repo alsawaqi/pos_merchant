@@ -88,11 +88,13 @@ class AllergensController extends Controller
         $data = $request->validate([
             'contains' => ['present', 'array', 'max:14'],
             'contains.*' => ['string', Rule::in(Allergens::CODES)],
-            'may_contain' => ['present', 'array', 'max:14'],
+            // Fix order 2 (K-12) — absent = keep the saved "may contain" (a
+            // screen that does not show it never wipes it).
+            'may_contain' => ['sometimes', 'array', 'max:14'],
             'may_contain.*' => ['string', Rule::in(Allergens::CODES)],
         ]);
 
-        $this->set->product($product, $data['contains'], $data['may_contain'], $request->user());
+        $this->set->product($product, $data['contains'], $data['may_contain'] ?? null, $request->user());
 
         return response()->json(['data' => self::present((int) $product->company_id, (int) $product->id)]);
     }

@@ -7,7 +7,8 @@
 
 /** A dish's food cost row (ProductResource.food_cost, GET /api/food-costs). */
 export interface FoodCostRow {
-    status: 'ok' | 'no_recipe' | 'no_price';
+    /** K-10 — 'incomplete': something it uses has no cost yet (the % is a floor). */
+    status: 'ok' | 'incomplete' | 'no_recipe' | 'no_price';
     cost_baisas: number | null;
     cost_complete: boolean;
     price_baisas: number;
@@ -34,9 +35,14 @@ export function changeText(value: number | null | undefined): string | null {
     return `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n).toFixed(1)}%`;
 }
 
+/** Whether the row has a % to show ('ok', or 'incomplete' shown as a floor). */
+export function hasFoodCostPct(row: Pick<FoodCostRow, 'status'> | null | undefined): boolean {
+    return !!row && (row.status === 'ok' || row.status === 'incomplete');
+}
+
 /** The badge: red over target, green within it, grey with no recipe / price. */
 export function foodCostTone(row: FoodCostRow | null | undefined): FoodCostTone {
-    if (!row || row.status !== 'ok') return 'none';
+    if (!row || !hasFoodCostPct(row)) return 'none';
     return row.over_target ? 'over' : 'ok';
 }
 

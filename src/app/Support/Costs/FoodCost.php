@@ -73,6 +73,9 @@ final class FoodCost
     /** @var array<int, bool> ingredient id => cost complete (per instance) */
     private array $completeMemo = [];
 
+    /** @var array<string, array{cost: BigRational, complete: bool}|null> "product:bit" => own cost (K-9) */
+    private array $ownMemo = [];
+
     /** @var array<int, list<object>> combo product id => lines */
     private array $comboLines = [];
 
@@ -184,6 +187,7 @@ final class FoodCost
         $copy->graph = $this->graph->withUnitCost($ingredientId, $unitCost);
         $copy->memo = [];
         $copy->completeMemo = [];
+        $copy->ownMemo = [];
 
         return $copy;
     }
@@ -208,6 +212,18 @@ final class FoodCost
             // K-4 — active and on sale today (Asia/Muscat): what the dashboard counts.
             'on_sale' => (string) $p->status === 'active' && self::onSaleToday($p->on_sale_from ?? null, $p->on_sale_until ?? null),
         ] + $this->figures($this->cost($productId), self::baisas($p->base_price), $target ?? $this->companyTarget, $target !== null ? 'product' : 'company');
+    }
+
+    /**
+     * K-11 — a product's cost as the food cost % uses it (the dearest order
+     * type, food components included) and, when it differs by order type,
+     * the cost of each type; null with no cost. For the Recipe & Cost report.
+     *
+     * @return array{cost: BigRational, complete: bool, by_type: array<string, BigRational>|null}|null
+     */
+    public function breakdown(int $productId): ?array
+    {
+        return $this->cost($productId);
     }
 
     /** @return list<array<string, mixed>> every menu product (not a physical item), in name order */
@@ -361,11 +377,14 @@ final class FoodCost
         $net = $this->net($price);
         $costBaisas = $cost === null ? null
             : $cost['cost']->multipliedBy(1000)->toScale(0, RoundingMode::HALF_UP)->toInt();
-        $status = $cost === null ? 'no_recipe' : ($net <= 0 ? 'no_price' : 'ok');
+        // K-10 — a cost that misses something (an ingredient with "No cost
+        // yet", a component or a bought item without a cost price) is
+        // 'incomplete', never 'ok': its % is a floor, shown as such.
+        $status = $cost === null ? 'no_recipe' : ($net <= 0 ? 'no_price' : ($cost['complete'] ? 'ok' : 'incomplete'));
         $pct = null;
         $over = false;
         $overBy = null;
-        if ($status === 'ok') {
+        if ($status === 'ok' || $status === 'incomplete') {
             $pct = (float) (string) BigDecimal::of($costBaisas)->multipliedBy(100)->dividedBy($net, 1, RoundingMode::HALF_UP);
             // Exact: cost × 100 > target × price (target in hundredths).
             $over = BigDecimal::of($costBaisas)->multipliedBy(10000)->isGreaterThan(BigDecimal::of($target)->multipliedBy(100)->multipliedBy($net));
@@ -386,78 +405,96 @@ final class FoodCost
         ];
     }
 
-    /** @return array{cost: BigRational, complete: bool}|null */
+    /**
+     * Fix order 2 (K-8, K-9, K-10) — a dish's cost, per ORDER TYPE as stock
+     * takes it (pos_api ConsumeInventoryAction / OrderTypes::applies): for
+     * each of the four types, its own cost for that type (the recipe lines
+     * ticked for it; a cooked dish's batch recipe whatever the ticks; else
+     * its cost price) + every food component row ticked for that type × the
+     * component's OWN per-piece cost (no components of its own: one level,
+     * like stock, so a loop can never recurse). The dish costs its dearest
+     * single order type. Complete only when its own cost and every component
+     * it uses are known.
+     *
+     * @return array{cost: BigRational, complete: bool, by_type: array<string, BigRational>|null}|null
+     */
     private function cost(int $productId): ?array
     {
         if (array_key_exists($productId, $this->memo)) {
             return $this->memo[$productId];
         }
-        $this->memo[$productId] = null; // a component loop costs nothing twice
         $p = $this->products[$productId] ?? null;
         if ($p === null) {
-            return null;
+            return $this->memo[$productId] = null;
         }
         if ((string) ($p->product_type ?? 'standard') === 'combo') {
-            return $this->memo[$productId] = $this->linesCost($this->comboLines[$productId] ?? []);
-        }
-        $lines = $this->recipes[$productId] ?? [];
-        if ($lines !== []) {
-            $own = $this->recipeCost((string) $p->stock_mode, $lines);
-        } else {
-            $price = BigDecimal::of((string) ($p->cost_price ?? '0') ?: '0');
-            $own = $price->isPositive() ? ['cost' => $price->toBigRational(), 'complete' => true] : null;
-        }
-        // K-2 — plus its food components at their own cost.
-        $parts = $this->componentsCost($productId, (string) $p->stock_mode);
-        if ($parts === null) {
-            return $this->memo[$productId] = $own;
-        }
-        if ($own === null) {
-            return $this->memo[$productId] = $parts;
-        }
+            $lines = $this->linesCost($this->comboLines[$productId] ?? []);
 
-        return $this->memo[$productId] = ['cost' => $own['cost']->plus($parts['cost']), 'complete' => $own['complete'] && $parts['complete']];
+            return $this->memo[$productId] = $lines === null ? null : $lines + ['by_type' => null];
+        }
+        $components = $this->components[$productId] ?? [];
+        $hasOwn = false;
+        $complete = true;
+        $totals = [];
+        foreach (OrderTypes::BUCKETS as $bucket => $bit) {
+            $own = $this->ownCost($productId, $bit);
+            $total = BigRational::zero();
+            if ($own !== null) {
+                $hasOwn = true;
+                $complete = $complete && $own['complete'];
+                $total = $own['cost'];
+            }
+            foreach ($components as [$componentId, $quantity, $mask]) {
+                if (! OrderTypes::includes($mask, $bit)) {
+                    continue;
+                }
+                $piece = $this->ownCost($componentId, $bit);
+                if ($piece === null) {
+                    $complete = false;
+
+                    continue;
+                }
+                $complete = $complete && $piece['complete'];
+                $total = $total->plus($piece['cost']->multipliedBy(BigRational::of($quantity)));
+            }
+            $totals[$bucket] = $total;
+        }
+        if (! $hasOwn && $components === []) {
+            return $this->memo[$productId] = null;
+        }
+        // K-10 — no own cost (a bought item without a cost price) is never complete.
+        $complete = $complete && $hasOwn;
+        $max = array_reduce($totals, static fn (?BigRational $m, BigRational $c): BigRational => $m === null || $c->isGreaterThan($m) ? $c : $m);
+        $same = count(array_unique(array_map(static fn (BigRational $c): string => (string) $c->simplified(), $totals))) === 1;
+
+        return $this->memo[$productId] = ['cost' => $max, 'complete' => $complete, 'by_type' => $same ? null : $totals];
     }
 
     /**
-     * K-2 — Σ food component × quantity at the component's own cost; with
-     * "Used for" ticks the dearest order type. Null when it has none.
+     * A product's OWN cost for one order type (bit), no components: its
+     * recipe (made to order: the lines ticked for that type; cooked: the
+     * whole batch recipe per piece), else its cost price; null when it has
+     * neither (K-9: a component is costed here, one level only).
      *
      * @return array{cost: BigRational, complete: bool}|null
      */
-    private function componentsCost(int $productId, string $stockMode): ?array
+    private function ownCost(int $productId, int $bit): ?array
     {
-        $lines = $this->components[$productId] ?? [];
-        if ($lines === []) {
-            return null;
+        $key = $productId.':'.$bit;
+        if (array_key_exists($key, $this->ownMemo)) {
+            return $this->ownMemo[$key];
         }
-        $complete = true;
-        $unit = [];
-        foreach ($lines as [$componentId]) {
-            $c = $this->cost($componentId);
-            if ($c === null) {
-                $complete = false;
-            } else {
-                $complete = $complete && $c['complete'];
-            }
-            $unit[$componentId] = $c['cost'] ?? BigRational::zero();
+        $p = $this->products[$productId] ?? null;
+        if ($p === null || (string) ($p->product_type ?? 'standard') === 'combo') {
+            return $this->ownMemo[$key] = null;
         }
-        $perType = $stockMode !== 'cooked' && array_filter($lines, static fn (array $l): bool => $l[2] !== OrderTypes::ALL) !== [];
-        $max = null;
-        foreach ($perType ? array_values(OrderTypes::BUCKETS) : [null] as $bit) {
-            $total = BigRational::zero();
-            foreach ($lines as [$componentId, $quantity, $mask]) {
-                if ($bit !== null && ! OrderTypes::includes($mask, $bit)) {
-                    continue;
-                }
-                $total = $total->plus($unit[$componentId]->multipliedBy(BigRational::of($quantity)));
-            }
-            if ($max === null || $total->isGreaterThan($max)) {
-                $max = $total;
-            }
+        $lines = $this->recipes[$productId] ?? [];
+        if ($lines !== []) {
+            return $this->ownMemo[$key] = $this->recipeCost((string) $p->stock_mode === 'cooked' ? null : $bit, $lines);
         }
+        $price = BigDecimal::of((string) ($p->cost_price ?? '0') ?: '0');
 
-        return ['cost' => $max ?? BigRational::zero(), 'complete' => $complete];
+        return $this->ownMemo[$key] = $price->isPositive() ? ['cost' => $price->toBigRational(), 'complete' => true] : null;
     }
 
     /** A physical item used as packaging (legacy internal rows without a purpose are packaging). */
@@ -476,39 +513,36 @@ final class FoodCost
     }
 
     /**
+     * The recipe lines ticked for one order type (bit), or every line (null:
+     * a cooked batch), at today's costs; complete when every ingredient used
+     * has a cost.
+     *
      * @param  list<array{0: int, 1: string, 2: int}>  $lines
      * @return array{cost: BigRational, complete: bool}
      */
-    private function recipeCost(string $stockMode, array $lines): array
+    private function recipeCost(?int $bit, array $lines): array
     {
-        $perType = $stockMode === 'ingredient' && array_filter($lines, static fn (array $l): bool => $l[2] !== OrderTypes::ALL) !== [];
-        $max = null;
-        $complete = true;
-        foreach ($perType ? array_values(OrderTypes::BUCKETS) : [null] as $bit) {
-            $quantities = [];
-            foreach ($lines as [$ingredient, $quantity, $mask]) {
-                if ($bit !== null && ! OrderTypes::includes($mask, $bit)) {
-                    continue;
-                }
-                $quantities[$ingredient] = (string) BigDecimal::of($quantities[$ingredient] ?? '0')->plus($quantity);
+        $quantities = [];
+        foreach ($lines as [$ingredient, $quantity, $mask]) {
+            if ($bit !== null && ! OrderTypes::includes($mask, $bit)) {
+                continue;
             }
-            try {
-                $cost = $this->graph->linesCostExact($quantities);
-            } catch (Throwable) {
-                $cost = BigRational::zero();
-                $complete = false;
-            }
-            if ($max === null || $cost->isGreaterThan($max)) {
-                $max = $cost;
-            }
+            $quantities[$ingredient] = (string) BigDecimal::of($quantities[$ingredient] ?? '0')->plus($quantity);
         }
-        foreach ($lines as [$ingredient]) {
+        $complete = true;
+        try {
+            $cost = $this->graph->linesCostExact($quantities);
+        } catch (Throwable) {
+            $cost = BigRational::zero();
+            $complete = false;
+        }
+        foreach (array_keys($quantities) as $ingredient) {
             if (! ($this->completeMemo[$ingredient] ??= $this->graph->costComplete($ingredient))) {
                 $complete = false;
             }
         }
 
-        return ['cost' => $max ?? BigRational::zero(), 'complete' => $complete];
+        return ['cost' => $cost, 'complete' => $complete];
     }
 
     /**

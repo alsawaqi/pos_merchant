@@ -83,24 +83,25 @@ final readonly class SetAllergensAction
 
     /**
      * @param  list<string>  $contains
-     * @param  list<string>  $mayContain
+     * @param  list<string>|null  $mayContain  null = keep the saved "may contain" (K-12)
      * @return array{contains: list<string>, may_contain: list<string>} the ticks now saved
      */
-    public function product(Product $product, array $contains, array $mayContain, User $actor): array
+    public function product(Product $product, array $contains, ?array $mayContain, User $actor): array
     {
         $companyId = $this->tenant->requiredId();
         if ((int) $product->company_id !== $companyId) {
             abort(404);
         }
         // Fix order 1 (K-1) — the hand ticks as given; nothing is dropped.
-        $new = ['contains' => Allergens::normalise($contains), 'may_contain' => Allergens::normalise($mayContain)];
+        $wanted = ['contains' => Allergens::normalise($contains), 'may_contain' => $mayContain === null ? null : Allergens::normalise($mayContain)];
 
-        return DB::transaction(function () use ($product, $new, $actor, $companyId): array {
+        return DB::transaction(function () use ($product, $wanted, $actor, $companyId): array {
             $rows = DB::table('pos_product_allergens')->where('product_id', $product->id)->lockForUpdate()->get(['allergen', 'kind']);
             $old = [
                 'contains' => Allergens::normalise($rows->where('kind', Allergens::CONTAINS)->pluck('allergen')),
                 'may_contain' => Allergens::normalise($rows->where('kind', Allergens::MAY_CONTAIN)->pluck('allergen')),
             ];
+            $new = ['contains' => $wanted['contains'], 'may_contain' => $wanted['may_contain'] ?? $old['may_contain']];
             if ($old === $new) {
                 return $new;
             }

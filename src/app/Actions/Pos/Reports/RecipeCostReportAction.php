@@ -13,6 +13,7 @@ use App\Support\Catalogue\OrderTypes;
 use App\Support\Costs\FoodCost;
 use App\Support\MerchantTenantContext;
 use Brick\Math\BigDecimal;
+use Brick\Math\BigNumber;
 use Brick\Math\RoundingMode;
 use Illuminate\Support\Facades\DB;
 
@@ -91,9 +92,19 @@ final readonly class RecipeCostReportAction
                     $byType[$bucket] = $p->theoreticalCost(orderTypeBit: $bit);
                 }
             }
-            $theoretical = $byType === null
+            $recipeOnly = $byType === null
                 ? BigDecimal::of($p->theoreticalCost())
                 : array_reduce($byType, static fn (BigDecimal $max, string $cost): BigDecimal => BigDecimal::of($cost)->isGreaterThan($max) ? BigDecimal::of($cost) : $max, BigDecimal::zero());
+            // Fix order 2 (K-11) — the row's cost, profit, margin and food
+            // cost % all come from ONE cost ({@see FoodCost}: the dearest
+            // order type, food components included). The sold columns keep
+            // comparing like for like with the RECIPE part (recipe_cost):
+            // the frozen order copies cost the recipe only.
+            $full = $food->breakdown((int) $p->id);
+            $theoretical = $full !== null ? self::money($full['cost']) : $recipeOnly;
+            $shownByType = $full !== null && $full['by_type'] !== null
+                ? array_map(static fn ($cost): string => (string) self::money($cost), $full['by_type'])
+                : null;
             $price = BigDecimal::of((string) $p->base_price);
             $profit = $price->minus($theoretical);
             $marginPct = $price->isPositive()
@@ -106,11 +117,11 @@ final readonly class RecipeCostReportAction
                 ? BigDecimal::of($line['recipe_baisas'])->dividedBy(1000, 3)->dividedBy($units, 3, RoundingMode::HALF_UP)
                 : null;
             // What today's recipe would cost for the same mix of order types.
-            $compareWith = $theoretical;
+            $compareWith = $recipeOnly;
             if ($byType !== null && $units->isPositive()) {
                 $weighted = BigDecimal::zero();
                 foreach ($line['units_by_type'] as $bucket => $typeUnits) {
-                    $weighted = $weighted->plus(BigDecimal::of($typeUnits)->multipliedBy($byType[$bucket] ?? (string) $theoretical));
+                    $weighted = $weighted->plus(BigDecimal::of($typeUnits)->multipliedBy($byType[$bucket] ?? (string) $recipeOnly));
                 }
                 $compareWith = $weighted->dividedBy($units, 3, RoundingMode::HALF_UP);
             }
@@ -121,7 +132,10 @@ final readonly class RecipeCostReportAction
                 'stock_mode' => $p->stock_mode,
                 'base_price' => (string) $price->toScale(3, RoundingMode::HALF_UP),
                 'theoretical_cost' => (string) $theoretical->toScale(3, RoundingMode::HALF_UP),
-                'theoretical_by_type' => $byType,
+                'theoretical_by_type' => $shownByType,
+                // K-11 — the recipe part alone (what actual_cost_per_unit and
+                // cost_change_per_unit compare with).
+                'recipe_cost' => (string) $recipeOnly->toScale(3, RoundingMode::HALF_UP),
                 'profit_per_unit' => (string) $profit->toScale(3, RoundingMode::HALF_UP),
                 'margin_pct' => $marginPct,
                 'recipe_line_count' => $p->recipeLines->count(),
@@ -143,6 +157,12 @@ final readonly class RecipeCostReportAction
             ],
             'rows' => $rows,
         ];
+    }
+
+    /** An exact cost as money (3 decimals, half up). */
+    private static function money(BigNumber $cost): BigDecimal
+    {
+        return $cost->toBigRational()->toScale(3, RoundingMode::HALF_UP);
     }
 
     /**

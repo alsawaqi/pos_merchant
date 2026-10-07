@@ -71,7 +71,7 @@ import ProductThumb from './ProductThumb.vue';
 // LAUNCH review add-on — limited-time badges and Quick instructions.
 import { groupKind, muscatToday, saleBadge, shortDay } from '@/lib/menuExtras';
 // LAUNCH costs & allergens add-on — the food cost % column and its filter.
-import { foodCostTone, pctText } from '@/lib/foodCost';
+import { foodCostTone, hasFoodCostPct, pctText } from '@/lib/foodCost';
 
 const { t, locale } = useI18n();
 const { can } = usePermissions();
@@ -1241,7 +1241,7 @@ async function performProviderDelete(): Promise<void> {
                                     <span v-else class="text-xs text-slate-400">—</span>
                                 </td>
                                 <td v-if="canSeeCosts" class="px-5 py-4 text-end text-xs tabular-nums" data-test="product-food-cost-cell">
-                                    <template v-if="prod.food_cost && prod.food_cost.status === 'ok'">
+                                    <template v-if="prod.food_cost && hasFoodCostPct(prod.food_cost)">
                                         <span :class="foodCostTone(prod.food_cost) === 'over' ? 'font-bold text-rose-700' : 'text-slate-700'">{{ pctText(prod.food_cost.food_cost_pct) }}</span>
                                         <span
                                             v-if="prod.food_cost.over_target"
@@ -1250,6 +1250,7 @@ async function performProviderDelete(): Promise<void> {
                                             data-test="product-over-target-flag"
                                         />
                                         <span class="block text-[10px] text-slate-400">{{ t('costs.dishes.target') }} {{ pctText(prod.food_cost.target_pct) }}</span>
+                                        <span v-if="prod.food_cost.status === 'incomplete'" class="block text-[10px] italic text-amber-700" data-test="product-cost-incomplete">{{ t('costs.food_cost.incomplete') }}</span>
                                     </template>
                                     <span v-else-if="prod.food_cost" class="italic text-slate-400">{{ t(`costs.food_cost.${prod.food_cost.status}`) }}</span>
                                     <span v-else class="text-slate-400">—</span>

@@ -44,7 +44,7 @@ import { MerchantPermission } from '@/lib/permissions';
 // LAUNCH costs & allergens add-on — the combo's own target food cost %, its
 // food cost (items at their cheapest) and its allergens (all items, every choice).
 import AllergenChips from '@/Pages/Merchant/Catalogue/AllergenChips.vue';
-import { baisasText, foodCostTone, pctText, targetPayload, targetProblem } from '@/lib/foodCost';
+import { baisasText, foodCostTone, hasFoodCostPct, pctText, targetPayload, targetProblem } from '@/lib/foodCost';
 import { authState } from '@/stores/auth';
 
 const route = useRoute();
@@ -428,7 +428,7 @@ async function save(): Promise<void> {
                     </label>
                     <p v-if="saved?.food_cost" class="text-sm" :class="foodCostTone(saved.food_cost) === 'over' ? 'font-semibold text-rose-700' : 'text-slate-700'" data-test="combo-food-cost">
                         {{ t('costs.food_cost.label') }}:
-                        <template v-if="saved.food_cost.status === 'ok'">{{ baisasText(saved.food_cost.cost_baisas) }} OMR · {{ t('costs.food_cost.summary', { pct: pctText(saved.food_cost.food_cost_pct), target: pctText(saved.food_cost.target_pct) }) }}</template>
+                        <template v-if="hasFoodCostPct(saved.food_cost)">{{ baisasText(saved.food_cost.cost_baisas) }} OMR · {{ t('costs.food_cost.summary', { pct: pctText(saved.food_cost.food_cost_pct), target: pctText(saved.food_cost.target_pct) }) }}<span v-if="saved.food_cost.status === 'incomplete'" class="ms-1 italic text-amber-700">({{ t('costs.food_cost.incomplete') }})</span></template>
                         <template v-else>{{ t(`costs.food_cost.${saved.food_cost.status}`) }}</template>
                     </p>
                     <div v-if="saved?.allergens" data-test="combo-allergens">

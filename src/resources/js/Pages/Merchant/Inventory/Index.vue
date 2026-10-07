@@ -854,7 +854,7 @@ async function submitPhysicalItem(): Promise<void> {
             // D3 — packs are added once the item is saved: reopen it for them.
             const created = await createPhysicalItem(payload);
             if (physicalAllergens.value.length > 0) {
-                await saveProductAllergens(created.data.uuid, { contains: physicalAllergens.value, may_contain: [] });
+                await saveProductAllergens(created.data.uuid, { contains: physicalAllergens.value });
             }
             await fetchPhysicalItems();
             openEditPhysicalItem(physicalItems.value.find((i) => i.uuid === created.data.uuid) ?? created.data);
@@ -862,7 +862,8 @@ async function submitPhysicalItem(): Promise<void> {
         } else if (physicalItemModalTarget.value) {
             await updatePhysicalItem(physicalItemModalTarget.value.uuid, { ...payload, status: physicalItemForm.status });
             if (!sameAllergens(physicalAllergens.value, physicalAllergensBaseline.value)) {
-                await saveProductAllergens(physicalItemModalTarget.value.uuid, { contains: physicalAllergens.value, may_contain: [] });
+                // K-12 — "may contain" is not on this screen: never sent, so never wiped.
+                await saveProductAllergens(physicalItemModalTarget.value.uuid, { contains: physicalAllergens.value });
             }
         }
         physicalItemModalOpen.value = false;

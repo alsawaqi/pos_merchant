@@ -108,7 +108,8 @@ export function getProductAllergens(productUuid: string): Promise<{ data: Produc
     return apiGet(`/api/products/${productUuid}/allergens`);
 }
 
-export function saveProductAllergens(productUuid: string, body: { contains: string[]; may_contain: string[] }): Promise<{ data: ProductAllergens }> {
+/** K-12 — leave may_contain out to keep the saved one (a screen that does not show it). */
+export function saveProductAllergens(productUuid: string, body: { contains: string[]; may_contain?: string[] }): Promise<{ data: ProductAllergens }> {
     return apiPut(`/api/products/${productUuid}/allergens`, body as unknown as JsonValue);
 }
 
