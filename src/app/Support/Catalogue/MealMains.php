@@ -115,6 +115,46 @@ final class MealMains
     }
 
     /**
+     * Fix order 2 (C-20) — every active, not-ended meal's clashes at once
+     * (the Meals page): the meals and their mains are loaded in a fixed
+     * number of queries, then compared in memory. The same result per meal
+     * as {@see clashes()}: the other meal by name, the products by name.
+     *
+     * @return array<int, list<array{product: string, product_id: int, meal: string, meal_uuid: string}>> meal id => clashes
+     */
+    public static function allClashes(int $companyId): array
+    {
+        $meals = self::rivals($companyId, null, null, null);
+        if ($meals->count() < 2) {
+            return [];
+        }
+        $categoryIds = $meals->flatMap(static fn (object $m): array => $m->categories)->unique()->values()->all();
+        $products = Product::query()->where('company_id', $companyId)
+            ->where('product_type', Product::TYPE_STANDARD)->where('is_internal', false)
+            ->whereIn('category_id', $categoryIds === [] ? [0] : $categoryIds)
+            ->orderBy('name')->get(['id', 'name', 'category_id']);
+        $mains = [];
+        foreach ($meals as $meal) {
+            $mains[$meal->id] = $products
+                ->filter(static fn (Product $p): bool => in_array((int) $p->category_id, $meal->categories, true) && ! in_array((int) $p->id, $meal->excluded, true))
+                ->mapWithKeys(static fn (Product $p): array => [(int) $p->id => (string) $p->name])->all();
+        }
+        $out = [];
+        foreach ($meals as $meal) {
+            foreach ($meals as $other) {
+                if ($other->id === $meal->id || ! self::overlap($meal->from, $meal->until, $other->from, $other->until)) {
+                    continue;
+                }
+                foreach (array_intersect_key($mains[$meal->id], $mains[$other->id]) as $productId => $name) {
+                    $out[$meal->id][] = ['product' => $name, 'product_id' => (int) $productId, 'meal' => $other->name, 'meal_uuid' => $other->uuid];
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * Fix order 1 (C-4) — a standard product put in $categoryId (created,
      * or moved there) would be a main of these active, not-ended meals; a
      * clash when two of them overlap in dates. Returns the message, or null.

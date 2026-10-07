@@ -45,7 +45,10 @@ class MealsController extends Controller
         $this->ensure($request, MerchantPermission::CatalogueView);
         $meals = Meal::query()->where('company_id', $this->tenant->requiredId())->orderBy('sort_order')->orderBy('name')->get();
 
-        return response()->json(['data' => $meals->map(fn (Meal $meal): array => $this->present($meal))->values()->all()]);
+        // Fix order 2 (C-20) — the clashes are worked out once per request.
+        $clashes = MealMains::allClashes($this->tenant->requiredId());
+
+        return response()->json(['data' => $meals->map(fn (Meal $meal): array => $this->present($meal, $clashes))->values()->all()]);
     }
 
     public function show(Request $request, Meal $meal): JsonResponse
@@ -103,9 +106,10 @@ class MealsController extends Controller
     }
 
     /**
+     * @param  array<int, list<array<string, mixed>>>|null  $clashes  {@see MealMains::allClashes()}; null = work them out for this meal
      * @return array<string, mixed>
      */
-    private function present(Meal $meal): array
+    private function present(Meal $meal, ?array $clashes = null): array
     {
         $categoryIds = $meal->categories()->orderBy('pos_product_categories.id')->pluck('pos_product_categories.id')
             ->map(static fn ($id): int => (int) $id)->all();
@@ -128,10 +132,10 @@ class MealsController extends Controller
             'lines' => ComboLinesInput::present(['meal_id' => (int) $meal->id]),
             // Fix order 1 (C-4) — a clash that arose outside a meal save (a
             // product moved, an older save), shown on the Meals page.
-            'clashes' => $meal->status === Meal::STATUS_ACTIVE
-                ? MealMains::clashes((int) $meal->company_id, (int) $meal->id, $categoryIds,
-                    $excluded->pluck('id')->map(static fn ($id): int => (int) $id)->all(), $meal->on_sale_from, $meal->on_sale_until)
-                : [],
+            'clashes' => $meal->status !== Meal::STATUS_ACTIVE ? [] : ($clashes !== null
+                ? ($clashes[(int) $meal->id] ?? [])
+                : MealMains::clashes((int) $meal->company_id, (int) $meal->id, $categoryIds,
+                    $excluded->pluck('id')->map(static fn ($id): int => (int) $id)->all(), $meal->on_sale_from, $meal->on_sale_until)),
         ];
     }
 

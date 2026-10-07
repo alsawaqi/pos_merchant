@@ -113,3 +113,48 @@ it('C-15: a clash that only appears while saving is a 422 naming the row too', f
     expect((string) $res->json('message'))->toContain('Row 3')->toContain('"Mushroom burger" would be in both');
     expect(Product::query()->where('name', 'Onion rings')->exists())->toBeFalse();
 });
+
+it('C-20: the Meals page works out the clashes once, not once per meal', function (): void {
+    $ctx = makeMerchantActor();
+    $sides = ProductCategory::factory()->for($ctx['company'], 'company')->create(['name' => 'Sides']);
+    $fries = p4Product($ctx['company'], 'Fries', '1.000', ['category_id' => $sides->id]);
+    // n active meals, each on its own category with one main (no clash).
+    $addMeals = function (int $count) use ($ctx, $fries): void {
+        static $n = 0;
+        for ($i = 0; $i < $count; $i++) {
+            $n++;
+            $category = ProductCategory::factory()->for($ctx['company'], 'company')->create(['name' => "Mains {$n}"]);
+            p4Product($ctx['company'], "Main {$n}", '2.000', ['category_id' => $category->id]);
+            $this->postJson('/api/meals', ['name' => "Meal {$n}", 'name_ar' => null, 'meal_price' => '1.000', 'category_ids' => [$category->id],
+                'excluded_product_uuids' => [], 'lines' => [['kind' => 'fixed', 'product_uuid' => $fries->uuid, 'quantity' => 1, 'upgrades' => []]]])
+                ->assertCreated();
+        }
+    };
+    $queries = function (): int {
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $this->getJson('/api/meals')->assertOk();
+        DB::disableQueryLog();
+
+        return count(DB::getQueryLog());
+    };
+
+    $addMeals(4);
+    $four = $queries();
+    $addMeals(4);
+    $eight = $queries();
+    $addMeals(1);
+    $perMeal = $queries() - $eight;
+    // Linear: four more meals cost four times one more meal (per-meal clash checks grow with every other meal).
+    expect($eight - $four)->toBe(4 * $perMeal);
+
+    // Same answer as before: a clash written outside a meal save still shows.
+    $big = $this->postJson('/api/meals', ['name' => 'Big meal', 'name_ar' => null, 'meal_price' => '1.000', 'status' => 'inactive',
+        'category_ids' => [Product::query()->where('name', 'Main 1')->value('category_id')], 'excluded_product_uuids' => [],
+        'lines' => [['kind' => 'fixed', 'product_uuid' => $fries->uuid, 'quantity' => 1, 'upgrades' => []]]])->assertCreated()->json('data.uuid');
+    DB::table('pos_meals')->where('uuid', $big)->update(['status' => 'active']);
+    $meals = collect($this->getJson('/api/meals')->assertOk()->json('data'))->keyBy('name');
+    expect($meals['Big meal']['clashes'])->toBe([['product' => 'Main 1', 'product_id' => (int) Product::query()->where('name', 'Main 1')->value('id'), 'meal' => 'Meal 1', 'meal_uuid' => $meals['Meal 1']['uuid']]])
+        ->and(collect($meals['Meal 1']['clashes'])->pluck('meal')->all())->toBe(['Big meal'])
+        ->and($meals['Meal 2']['clashes'])->toBe([]);
+});
