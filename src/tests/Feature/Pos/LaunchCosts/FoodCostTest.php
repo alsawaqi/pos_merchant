@@ -124,6 +124,9 @@ it('saves a dish\'s own target and a company target, and flags against the right
     expect(DB::table('pos_audit_logs')->count())->toBe($before);
     $this->patchJson('/api/products/'.$k['burger']->uuid, ['target_food_cost_percent' => 0])->assertUnprocessable();
     $this->patchJson('/api/products/'.$k['burger']->uuid, ['target_food_cost_percent' => '100.5'])->assertUnprocessable();
+    // The column keeps 2 decimals: a third is refused, never rounded; any value above 0 is a target.
+    $this->patchJson('/api/products/'.$k['burger']->uuid, ['target_food_cost_percent' => '28.555'])->assertUnprocessable();
+    $this->putJson('/api/settings/costs', ['target_food_cost_percent' => '0.05'])->assertOk()->assertJsonPath('data.target_food_cost_percent', '0.05');
 
     // The company target moves every dish without its own.
     $this->putJson('/api/settings/costs', ['target_food_cost_percent' => 50])->assertOk();

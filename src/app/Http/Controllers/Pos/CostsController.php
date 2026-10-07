@@ -61,8 +61,8 @@ class CostsController extends Controller
             $this->ensure($request, MerchantPermission::CatalogueManage);
         }
         $data = $request->validate([
-            'price_alert_threshold_percent' => ['sometimes', 'required', 'numeric', 'min:0.1', 'max:1000'],
-            'target_food_cost_percent' => ['sometimes', 'required', 'numeric', 'min:0.1', 'max:100'],
+            'price_alert_threshold_percent' => ['sometimes', 'required', 'numeric', 'gt:0', 'max:1000', 'decimal:0,2'],
+            'target_food_cost_percent' => ['sometimes', 'required', 'numeric', 'gt:0', 'max:100', 'decimal:0,2'],
         ]);
         if ($data === []) {
             return response()->json(['message' => 'Nothing to change.', 'errors' => ['target_food_cost_percent' => ['Nothing to change.']]], 422);
