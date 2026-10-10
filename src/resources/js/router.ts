@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
+import KitchenSettings from '@/Pages/Merchant/Settings/Kitchen.vue';
 import Login from '@/Pages/Auth/Login.vue';
 import ChangePassword from '@/Pages/Auth/ChangePassword.vue';
 import ForgotPassword from '@/Pages/Auth/ForgotPassword.vue';
@@ -472,6 +473,7 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true },
     },
 
+    { path: '/settings/kitchen', name: 'merchant.settings.kitchen', component: KitchenSettings, meta: { requiresAuth: true } },
     {
         path: '/settings/dine-in-round-mode',
         name: 'merchant.settings.dine-in-round-mode',

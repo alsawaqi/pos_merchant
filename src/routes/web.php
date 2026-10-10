@@ -213,6 +213,15 @@ Route::middleware([EnsureUserIsAuthenticated::class, EnsureMerchantSessionIsFres
     // MerchantTenantContext middleware that ran before this group.
     // Permission gating happens inside each controller method.
     Route::prefix('api')->middleware(RequireJsonRequest::class)->group(function (): void {
+        // Kitchen settings use merchant sessions, CSRF and the existing branch permission/scope gates.
+        Route::get('settings/kitchen', [\App\Http\Controllers\Pos\KitchenSettingsController::class, 'index']);
+        Route::post('settings/kitchen/policy-preview', [\App\Http\Controllers\Pos\KitchenSettingsController::class, 'previewPolicy']);
+        Route::put('settings/kitchen/policy', [\App\Http\Controllers\Pos\KitchenSettingsController::class, 'savePolicy']);
+        Route::get('settings/kitchen/branches/{branch}', [\App\Http\Controllers\Pos\KitchenSettingsController::class, 'show']);
+        Route::post('settings/kitchen/branches/{branch}/routing-preview', [\App\Http\Controllers\Pos\KitchenSettingsController::class, 'previewRouting']);
+        Route::put('settings/kitchen/branches/{branch}/routing', [\App\Http\Controllers\Pos\KitchenSettingsController::class, 'saveRouting']);
+        Route::post('settings/kitchen/branches/{branch}/activate', [\App\Http\Controllers\Pos\KitchenSettingsController::class, 'activate']);
+
         Route::get('portal-users', [PortalUsersController::class, 'index'])
             ->name('portal-users.index');
         Route::post('portal-users', [PortalUsersController::class, 'store'])

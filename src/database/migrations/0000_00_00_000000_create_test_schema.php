@@ -579,6 +579,7 @@ return new class extends Migration
             $table->string('device_type', 32)->default('cashier');
             $table->string('status', 32)->default('registered');
             $table->timestamp('assigned_at')->nullable();
+            $table->timestamp('assignment_activated_at')->nullable();
             $table->timestamp('last_seen_at')->nullable();
             // LAUNCH-P5 fix order 1, F2 — when the device first sent auth_v: 1
             // (a P5 build); the Approvals report counts its later "legacy"

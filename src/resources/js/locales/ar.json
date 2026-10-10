@@ -454,6 +454,7 @@
         }
     },
     "nav": {
+        "kitchen_setup": "إعداد المطبخ",
         "taxes": "الضرائب",
         "dashboard": "لوحة التحكم",
         "branches": "الفروع",

@@ -92,6 +92,7 @@ const navigationCatalog: readonly NavItem[] = [
     // page, the void + comp reasons (orders.cancel).
     { key: 'staff_permissions', to: '/settings/staff-permissions', icon: Settings, permission: [MerchantPermission.StaffPermissionsManage, MerchantPermission.OrdersCancel] },
     { key: 'order_numbering', to: '/settings/order-numbering', icon: Hash, permission: MerchantPermission.OrdersCancel },
+    { key: 'kitchen_setup', to: '/settings/kitchen', icon: ChefHat, permission: MerchantPermission.BranchesView },
     { key: 'dine_in_round_mode', to: '/settings/dine-in-round-mode', icon: ChefHat, permission: MerchantPermission.BranchesView },
     { key: 'qr_table_cards', to: '/settings/qr-table-cards', icon: ChefHat, permission: MerchantPermission.BranchesView },
 ];
